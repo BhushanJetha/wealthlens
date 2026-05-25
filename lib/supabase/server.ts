@@ -9,7 +9,7 @@ export const createClient = () => {
     {
       cookies: {
         getAll: () => cookieStore.getAll(),
-        setAll: (cs) => { try { cs.forEach(({ name, value, options }) => cookieStore.set(name, value, options)) } catch {} },
+        setAll: (cs: { name: string; value: string; options?: Record<string, unknown> }[]) => { try { cs.forEach(({ name, value, options }) => cookieStore.set(name, value, options as any)) } catch {} },
       },
     }
   )
