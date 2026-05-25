@@ -12,7 +12,7 @@ function getKeyMaterial(secret: string): Uint8Array {
 
 async function importKey(secret: string): Promise<CryptoKey> {
   const keyMaterial = getKeyMaterial(secret)
-  return crypto.subtle.importKey('raw', keyMaterial, { name: ALGO }, false, ['encrypt', 'decrypt'])
+  return crypto.subtle.importKey('raw', keyMaterial.buffer as ArrayBuffer, { name: ALGO }, false, ['encrypt', 'decrypt'])
 }
 
 export async function encrypt(plaintext: string): Promise<string> {
