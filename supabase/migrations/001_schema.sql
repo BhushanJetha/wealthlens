@@ -290,6 +290,9 @@ ALTER TABLE statement_uploads  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chat_sessions      ENABLE ROW LEVEL SECURITY;
 
 -- Profiles policies
+DROP POLICY IF EXISTS "profile_select" ON profiles;
+DROP POLICY IF EXISTS "profile_insert" ON profiles;
+DROP POLICY IF EXISTS "profile_update" ON profiles;
 CREATE POLICY "profile_select" ON profiles FOR SELECT USING (auth.uid() = id);
 CREATE POLICY "profile_insert" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
 CREATE POLICY "profile_update" ON profiles FOR UPDATE USING (auth.uid() = id);
@@ -303,6 +306,10 @@ BEGIN
     'recurring_deposits','home_loans','insurance_policies','budgets',
     'goals','statement_uploads','chat_sessions'
   ] LOOP
+    EXECUTE format('DROP POLICY IF EXISTS "%s_sel" ON %I', t, t);
+    EXECUTE format('DROP POLICY IF EXISTS "%s_ins" ON %I', t, t);
+    EXECUTE format('DROP POLICY IF EXISTS "%s_upd" ON %I', t, t);
+    EXECUTE format('DROP POLICY IF EXISTS "%s_del" ON %I', t, t);
     EXECUTE format('CREATE POLICY "%s_sel" ON %I FOR SELECT USING (auth.uid()=user_id)', t, t);
     EXECUTE format('CREATE POLICY "%s_ins" ON %I FOR INSERT WITH CHECK (auth.uid()=user_id)', t, t);
     EXECUTE format('CREATE POLICY "%s_upd" ON %I FOR UPDATE USING (auth.uid()=user_id)', t, t);
@@ -318,10 +325,13 @@ RETURNS TRIGGER AS $$
 BEGIN
   INSERT INTO profiles(id, email, full_name, avatar_url)
   VALUES (
-    NEW.id, NEW.email,
+    NEW.id,
+    COALESCE(NEW.email, NEW.raw_user_meta_data->>'email'),
     NEW.raw_user_meta_data->>'full_name',
     NEW.raw_user_meta_data->>'avatar_url'
   ) ON CONFLICT (id) DO NOTHING;
+  RETURN NEW;
+EXCEPTION WHEN OTHERS THEN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -336,6 +346,12 @@ RETURNS TRIGGER AS $$
 BEGIN NEW.updated_at = NOW(); RETURN NEW; END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS t_profiles_updated  ON profiles;
+DROP TRIGGER IF EXISTS t_accounts_updated  ON accounts;
+DROP TRIGGER IF EXISTS t_loans_updated     ON home_loans;
+DROP TRIGGER IF EXISTS t_insurance_updated ON insurance_policies;
+DROP TRIGGER IF EXISTS t_goals_updated     ON goals;
+DROP TRIGGER IF EXISTS t_chat_updated      ON chat_sessions;
 CREATE TRIGGER t_profiles_updated     BEFORE UPDATE ON profiles           FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
 CREATE TRIGGER t_accounts_updated     BEFORE UPDATE ON accounts           FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
 CREATE TRIGGER t_loans_updated        BEFORE UPDATE ON home_loans         FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
@@ -353,8 +369,9 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- Storage RLS — users can only access their own folder
+DROP POLICY IF EXISTS "statements_user_access" ON storage.objects;
+DROP POLICY IF EXISTS "insurance_user_access"  ON storage.objects;
 CREATE POLICY "statements_user_access" ON storage.objects
   FOR ALL USING (bucket_id = 'statements' AND auth.uid()::text = (storage.foldername(name))[1]);
-
 CREATE POLICY "insurance_user_access" ON storage.objects
   FOR ALL USING (bucket_id = 'insurance-docs' AND auth.uid()::text = (storage.foldername(name))[1]);

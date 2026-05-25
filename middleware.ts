@@ -22,11 +22,11 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   const { pathname } = request.nextUrl
 
-  const authPaths = ['/login', '/signup', '/forgot-password']
+  const authPaths = ['/auth/login', '/auth/signup', '/auth/forgot-password', '/auth/reset-password']
   const isAuthPage = authPaths.some(p => pathname.startsWith(p))
 
   if (!user && !isAuthPage && pathname !== '/') {
-    return NextResponse.redirect(new URL('/login', request.url))
+    return NextResponse.redirect(new URL('/auth/login', request.url))
   }
 
   if (user && isAuthPage) {

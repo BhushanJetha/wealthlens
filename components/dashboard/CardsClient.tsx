@@ -5,6 +5,7 @@ import MetricCard from '@/components/dashboard/MetricCard'
 import { CreditCard, Plus, AlertTriangle, Clock } from 'lucide-react'
 import AddAccountModal from '@/components/forms/AddAccountModal'
 
+
 const FX = 22.80
 function toINR(amt: number, cur: string) { return cur === 'AED' ? amt * FX : amt }
 

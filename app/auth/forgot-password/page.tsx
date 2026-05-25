@@ -29,7 +29,7 @@ export default function ForgotPasswordPage() {
       </div>
       <h2 className="text-xl font-bold text-white mb-2">Reset link sent</h2>
       <p className="text-sm text-slate-400 mb-4">Check your inbox at <strong className="text-white">{email}</strong></p>
-      <Link href="/login" className="text-sm text-[#00C9A7] hover:text-[#00A88A] flex items-center justify-center gap-1">
+      <Link href="/auth/login" className="text-sm text-[#00C9A7] hover:text-[#00A88A] flex items-center justify-center gap-1">
         <ArrowLeft size={14} /> Back to sign in
       </Link>
     </div>
@@ -37,7 +37,7 @@ export default function ForgotPasswordPage() {
 
   return (
     <>
-      <Link href="/login" className="flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-6 transition-colors">
+      <Link href="/auth/login" className="flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-6 transition-colors">
         <ArrowLeft size={14} /> Back to sign in
       </Link>
       <h1 className="text-xl font-bold text-white mb-1">Reset password</h1>

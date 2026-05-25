@@ -74,7 +74,7 @@ export default function LoginPage() {
         </div>
 
         <div className="flex justify-end">
-          <Link href="/forgot-password" className="text-xs text-[#00C9A7] hover:text-[#00A88A]">Forgot password?</Link>
+          <Link href="/auth/forgot-password" className="text-xs text-[#00C9A7] hover:text-[#00A88A]">Forgot password?</Link>
         </div>
 
         <button type="submit" disabled={loading}
@@ -104,7 +104,7 @@ export default function LoginPage() {
 
       <div className="mt-6 text-center text-sm text-slate-500">
         No account?{' '}
-        <Link href="/signup" className="text-[#00C9A7] hover:text-[#00A88A] font-semibold">Create one free</Link>
+        <Link href="/auth/signup" className="text-[#00C9A7] hover:text-[#00A88A] font-semibold">Create one free</Link>
       </div>
 
       <div className="mt-5 flex items-center justify-center gap-2 text-xs text-slate-600">

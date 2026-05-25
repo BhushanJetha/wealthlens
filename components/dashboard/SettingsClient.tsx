@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { User, Lock, Bell, Trash2, Plus, Save, Loader2, CheckCircle, Shield, CreditCard, Building2 } from 'lucide-react'
-import { AddAccountModal } from '@/components/forms/AddLoanModal'
+import AddAccountModal from '@/components/forms/AddAccountModal'
 
 type Tab = 'profile' | 'accounts' | 'security' | 'preferences'
 

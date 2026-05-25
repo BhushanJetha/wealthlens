@@ -56,7 +56,7 @@ export default function SignupPage() {
       <h2 className="text-xl font-bold text-white mb-2">Check your email</h2>
       <p className="text-sm text-slate-400 mb-4">We sent a verification link to <strong className="text-white">{email}</strong></p>
       <p className="text-xs text-slate-500">Click the link to activate your account and start your financial journey.</p>
-      <Link href="/login" className="mt-6 inline-block text-sm text-[#00C9A7] hover:text-[#00A88A]">← Back to sign in</Link>
+      <Link href="/auth/login" className="mt-6 inline-block text-sm text-[#00C9A7] hover:text-[#00A88A]">← Back to sign in</Link>
     </div>
   )
 
@@ -159,7 +159,7 @@ export default function SignupPage() {
 
       <div className="mt-6 text-center text-sm text-slate-500">
         Already have an account?{' '}
-        <Link href="/login" className="text-[#00C9A7] hover:text-[#00A88A] font-semibold">Sign in</Link>
+        <Link href="/auth/login" className="text-[#00C9A7] hover:text-[#00A88A] font-semibold">Sign in</Link>
       </div>
 
       <div className="mt-5 flex items-center justify-center gap-2 text-xs text-slate-600">
