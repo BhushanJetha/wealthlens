@@ -15,7 +15,7 @@ const SUGGESTIONS = [
 export default function ChatPanel({ userId }: { userId: string }) {
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'assistant', content: "👋 Hi! I'm your WealthLens AI advisor, powered by Claude. I have read-only access to your complete financial portfolio across UAE and India. Ask me anything — budget analysis, investment review, loan strategy, or credit optimization.", ts: Date.now() }
+    { role: 'assistant', content: "👋 Hi! I'm your WealthLens AI advisor, powered by Gemini. I have read-only access to your complete financial portfolio across UAE and India. Ask me anything — budget analysis, investment review, loan strategy, or credit optimization.", ts: Date.now() }
   ])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -37,10 +37,17 @@ export default function ChatPanel({ userId }: { userId: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: msg, history: messages.slice(-10) })
       })
-      const data = await res.json()
-      setMessages(prev => [...prev, { role: 'assistant', content: data.response ?? 'Sorry, I encountered an error. Please try again.', ts: Date.now() }])
-    } catch {
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Connection error. Please try again.', ts: Date.now() }])
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '')
+        let errMsg = 'Something went wrong. Please try again.'
+        try { const j = JSON.parse(errText); errMsg = j.details || j.error || errMsg } catch { /* ignore */ }
+        setMessages(prev => [...prev, { role: 'assistant', content: errMsg, ts: Date.now() }])
+      } else {
+        const data = await res.json()
+        setMessages(prev => [...prev, { role: 'assistant', content: data.response ?? 'No response received.', ts: Date.now() }])
+      }
+    } catch (e: any) {
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Network error — please check your connection and try again.', ts: Date.now() }])
     }
     setLoading(false)
   }
@@ -64,7 +71,7 @@ export default function ChatPanel({ userId }: { userId: string }) {
             </div>
             <div>
               <div className="text-[12px] font-bold text-[#00C9A7]">WealthLens AI</div>
-              <div className="text-[9px] text-slate-500 uppercase tracking-wider">Powered by Claude</div>
+              <div className="text-[9px] text-slate-500 uppercase tracking-wider">Powered by Gemini</div>
             </div>
           </div>
           <button onClick={() => setOpen(false)} className="text-slate-500 hover:text-white transition-colors">

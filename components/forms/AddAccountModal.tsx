@@ -25,12 +25,19 @@ export default function AddAccountModal({ onClose, type = 'credit_card' }: Props
       setForm(p => ({ ...p, [key]: e.target.value }))
   }
 
+  const Lbl = ({ children }: { children: React.ReactNode }) => (
+    <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1.5"
+      style={{ color: 'var(--text3)' }}>{children}</label>
+  )
+
   const inp = (label: string, key: string, t = 'text', ph = '') => (
     <div>
-      <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">{label}</label>
+      <Lbl>{label}</Lbl>
       <input
         type={t} value={form[key] ?? ''} onChange={f(key)} placeholder={ph}
-        className="w-full bg-[#0D1B2A] border border-white/10 rounded-lg px-3 py-2.5 text-[12px] text-white placeholder-slate-600 focus:outline-none focus:border-[#00C9A7] transition-colors"
+        className="wl-input"
+        onFocus={e => (e.target.style.borderColor = 'var(--sage)')}
+        onBlur={e => (e.target.style.borderColor = 'var(--border)')}
       />
     </div>
   )
@@ -62,17 +69,21 @@ export default function AddAccountModal({ onClose, type = 'credit_card' }: Props
   const title = isCreditCard ? 'Add Credit Card' : 'Add Bank Account'
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="bg-[#162032] border border-white/10 rounded-2xl p-6 w-full max-w-md">
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="rounded-2xl p-6 w-full max-w-md"
+        style={{ background: '#fff', border: '1px solid var(--border)', boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}>
         <div className="flex justify-between items-center mb-5">
-          <h2 className="text-[15px] font-bold text-white">{title}</h2>
-          <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors">
+          <h2 className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>{title}</h2>
+          <button onClick={onClose} style={{ color: 'var(--text3)' }}
+            onMouseEnter={e => (e.currentTarget.style.color = 'var(--text)')}
+            onMouseLeave={e => (e.currentTarget.style.color = 'var(--text3)')}>
             <X size={18} />
           </button>
         </div>
 
         {error && (
-          <div className="bg-rose-500/10 border border-rose-500/20 rounded-lg p-3 text-rose-400 text-[12px] mb-4">
+          <div className="rounded-lg p-3 text-[12px] mb-4"
+            style={{ background: 'var(--rose-bg)', border: '1px solid var(--rose)', color: 'var(--rose)' }}>
             {error}
           </div>
         )}
@@ -85,12 +96,13 @@ export default function AddAccountModal({ onClose, type = 'credit_card' }: Props
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Currency</label>
+              <Lbl>Currency</Lbl>
               <select
                 value={form.currency}
                 onChange={e => setForm(p => ({ ...p, currency: e.target.value, country: e.target.value === 'AED' ? 'UAE' : 'India' }))}
-                className="w-full bg-[#0D1B2A] border border-white/10 rounded-lg px-3 py-2.5 text-[12px] text-white focus:outline-none focus:border-[#00C9A7] transition-colors"
-              >
+                className="wl-input"
+                onFocus={e => (e.target.style.borderColor = 'var(--sage)')}
+                onBlur={e => (e.target.style.borderColor = 'var(--border)')}>
                 <option value="INR">₹ INR — India</option>
                 <option value="AED">AED — UAE</option>
               </select>
@@ -115,12 +127,11 @@ export default function AddAccountModal({ onClose, type = 'credit_card' }: Props
             <div className="grid grid-cols-2 gap-3">
               {inp('Current Balance', 'outstanding_bal', 'number', '125000')}
               <div>
-                <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Account Type</label>
-                <select
-                  value={form.account_type}
-                  onChange={f('account_type')}
-                  className="w-full bg-[#0D1B2A] border border-white/10 rounded-lg px-3 py-2.5 text-[12px] text-white focus:outline-none focus:border-[#00C9A7] transition-colors"
-                >
+                <Lbl>Account Type</Lbl>
+                <select value={form.account_type} onChange={f('account_type')}
+                  className="wl-input"
+                  onFocus={e => (e.target.style.borderColor = 'var(--sage)')}
+                  onBlur={e => (e.target.style.borderColor = 'var(--border)')}>
                   <option value="savings">Savings</option>
                   <option value="current">Current</option>
                   <option value="wallet">Wallet</option>
@@ -131,17 +142,14 @@ export default function AddAccountModal({ onClose, type = 'credit_card' }: Props
         </div>
 
         <div className="flex gap-3 mt-5">
-          <button
-            onClick={onClose}
-            className="flex-1 py-2.5 rounded-lg border border-white/10 text-slate-400 text-[12px] font-semibold hover:bg-white/4 transition-all"
-          >
+          <button onClick={onClose}
+            className="flex-1 py-2.5 rounded-lg text-[12px] font-semibold transition-all"
+            style={{ border: '1px solid var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>
             Cancel
           </button>
-          <button
-            onClick={save} disabled={saving}
-            className="flex-1 py-2.5 rounded-lg text-black text-[12px] font-bold flex items-center justify-center gap-2 disabled:opacity-50 transition-all"
-            style={{ background: 'linear-gradient(135deg,#00C9A7,#4A90D9)' }}
-          >
+          <button onClick={save} disabled={saving}
+            className="flex-1 py-2.5 rounded-lg text-white text-[12px] font-bold flex items-center justify-center gap-2 disabled:opacity-50 transition-all"
+            style={{ background: 'var(--sage)' }}>
             {saving ? <><Loader2 size={14} className="animate-spin" />Saving…</> : title}
           </button>
         </div>

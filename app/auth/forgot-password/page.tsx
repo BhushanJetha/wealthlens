@@ -15,7 +15,7 @@ export default function ForgotPasswordPage() {
     e.preventDefault()
     setLoading(true); setError('')
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/reset-password`
+      redirectTo: `${window.location.origin}/auth/reset-password`,
     })
     setLoading(false)
     if (error) { setError(error.message); return }
@@ -24,12 +24,16 @@ export default function ForgotPasswordPage() {
 
   if (sent) return (
     <div className="text-center py-4">
-      <div className="w-16 h-16 rounded-full bg-[#00C9A7]/10 flex items-center justify-center mx-auto mb-4">
-        <CheckCircle size={32} className="text-[#00C9A7]" />
+      <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"
+        style={{ background: 'var(--income-bg)' }}>
+        <CheckCircle size={32} style={{ color: 'var(--income)' }} />
       </div>
-      <h2 className="text-xl font-bold text-white mb-2">Reset link sent</h2>
-      <p className="text-sm text-slate-400 mb-4">Check your inbox at <strong className="text-white">{email}</strong></p>
-      <Link href="/auth/login" className="text-sm text-[#00C9A7] hover:text-[#00A88A] flex items-center justify-center gap-1">
+      <h2 className="text-xl font-bold mb-2" style={{ color: 'var(--text)' }}>Reset link sent</h2>
+      <p className="text-sm mb-4" style={{ color: 'var(--text3)' }}>
+        Check your inbox at <strong style={{ color: 'var(--text)' }}>{email}</strong>
+      </p>
+      <Link href="/auth/login" className="text-sm font-semibold flex items-center justify-center gap-1"
+        style={{ color: 'var(--sage)' }}>
         <ArrowLeft size={14} /> Back to sign in
       </Link>
     </div>
@@ -37,31 +41,36 @@ export default function ForgotPasswordPage() {
 
   return (
     <>
-      <Link href="/auth/login" className="flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-6 transition-colors">
+      <Link href="/auth/login" className="flex items-center gap-1 text-sm mb-6 font-semibold"
+        style={{ color: 'var(--text3)' }}>
         <ArrowLeft size={14} /> Back to sign in
       </Link>
-      <h1 className="text-xl font-bold text-white mb-1">Reset password</h1>
-      <p className="text-sm text-slate-400 mb-6">Enter your email and we'll send a reset link</p>
+      <h1 className="text-xl font-bold mb-1" style={{ color: 'var(--text)' }}>Reset password</h1>
+      <p className="text-sm mb-6" style={{ color: 'var(--text3)' }}>Enter your email and we'll send a reset link</p>
 
       {error && (
-        <div className="flex items-center gap-2 bg-rose-500/10 border border-rose-500/20 rounded-lg p-3 mb-4 text-rose-400 text-sm">
+        <div className="flex items-center gap-2 rounded-lg p-3 mb-4 text-sm"
+          style={{ background: 'var(--rose-bg)', border: '1px solid var(--rose)', color: 'var(--rose)' }}>
           <AlertCircle size={15} className="flex-shrink-0" />{error}
         </div>
       )}
 
       <form onSubmit={handleReset} className="space-y-4">
         <div>
-          <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Email</label>
+          <label className="block text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--text3)' }}>Email</label>
           <div className="relative">
-            <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text3)' }} />
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
               placeholder="you@example.com"
-              className="w-full bg-[#0D1B2A] border border-white/10 rounded-lg pl-9 pr-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-[#00C9A7] transition-colors" />
+              className="w-full rounded-lg pl-9 pr-4 py-3 text-sm focus:outline-none transition-colors"
+              style={{ background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }}
+              onFocus={e => (e.target.style.borderColor = 'var(--sage)')}
+              onBlur={e => (e.target.style.borderColor = 'var(--border)')} />
           </div>
         </div>
         <button type="submit" disabled={loading}
-          className="w-full py-3 rounded-lg font-bold text-sm text-black flex items-center justify-center gap-2"
-          style={{ background: 'linear-gradient(135deg, #00C9A7, #4A90D9)' }}>
+          className="w-full py-3 rounded-lg font-bold text-sm text-white flex items-center justify-center gap-2 disabled:opacity-50"
+          style={{ background: 'var(--sage)' }}>
           {loading ? <><Loader2 size={15} className="animate-spin" /> Sending…</> : 'Send Reset Link'}
         </button>
       </form>

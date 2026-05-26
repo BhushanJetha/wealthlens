@@ -20,12 +20,16 @@ export function Toaster() {
   return (
     <div className="fixed bottom-20 right-6 z-[200] flex flex-col gap-2">
       {toasts.map(t => (
-        <div key={t.id} className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl text-[13px] font-medium animate-fade-up border ${
-          t.type === 'success' ? 'bg-[#162032] border-[#00C9A7]/30 text-white' : 'bg-[#162032] border-rose-500/30 text-white'
-        }`}>
-          {t.type === 'success' ? <CheckCircle size={15} className="text-[#00C9A7]" /> : <AlertCircle size={15} className="text-rose-400" />}
+        <div key={t.id} className="flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg text-[13px] font-medium animate-fade-up"
+          style={t.type === 'success'
+            ? { background: '#fff', border: '1px solid var(--income)', color: 'var(--text)' }
+            : { background: '#fff', border: '1px solid var(--rose)', color: 'var(--text)' }}>
+          {t.type === 'success'
+            ? <CheckCircle size={15} style={{ color: 'var(--income)' }} />
+            : <AlertCircle size={15} style={{ color: 'var(--rose)' }} />}
           {t.message}
-          <button onClick={() => setToasts(p => p.filter(x => x.id !== t.id))} className="ml-2 text-slate-500 hover:text-white">
+          <button onClick={() => setToasts(p => p.filter(x => x.id !== t.id))} className="ml-2"
+            style={{ color: 'var(--text3)' }}>
             <X size={13} />
           </button>
         </div>

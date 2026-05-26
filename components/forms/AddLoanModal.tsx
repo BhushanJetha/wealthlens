@@ -1,159 +1,310 @@
 'use client'
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
-import { X, Loader2 } from 'lucide-react'
+import { X, Loader2, Upload, FileText, CheckCircle2, AlertCircle } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
-export function AddLoanModal({ onClose }: { onClose: () => void }) {
-  const [form, setForm] = useState<Record<string,string>>({ currency: 'INR', country: 'India' })
-  const [saving, setSaving] = useState(false)
+const Lbl = ({ children }: { children: React.ReactNode }) => (
+  <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1"
+    style={{ color: 'var(--text3)' }}>{children}</label>
+)
+
+const Inp = ({ label, value, onChange, type = 'text', placeholder = '' }: {
+  label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string
+}) => (
+  <div>
+    <Lbl>{label}</Lbl>
+    <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+      className="wl-input"
+      onFocus={e => (e.target.style.borderColor = 'var(--sage)')}
+      onBlur={e => (e.target.style.borderColor = 'var(--border)')} />
+  </div>
+)
+
+const Sel = ({ label, value, onChange, children }: {
+  label: string; value: string; onChange: (v: string) => void; children: React.ReactNode
+}) => (
+  <div>
+    <Lbl>{label}</Lbl>
+    <select value={value} onChange={e => onChange(e.target.value)} className="wl-input"
+      onFocus={e => (e.target.style.borderColor = 'var(--sage)')}
+      onBlur={e => (e.target.style.borderColor = 'var(--border)')}>
+      {children}
+    </select>
+  </div>
+)
+
+const LOAN_TYPES = [
+  { value: 'home_loan',     label: 'Home Loan'     },
+  { value: 'car_loan',      label: 'Car Loan'      },
+  { value: 'bike_loan',     label: 'Bike Loan'     },
+  { value: 'gold_loan',     label: 'Gold Loan'     },
+  { value: 'loan_on_card',  label: 'Loan on Card'  },
+  { value: 'personal_loan', label: 'Personal Loan' },
+  { value: 'other_loan',    label: 'Other Loan'    },
+]
+
+type ParseState = 'idle' | 'parsing' | 'done' | 'error'
+
+export function AddLoanModal({ onClose, defaultLoanType = 'home_loan' }: {
+  onClose: () => void
+  defaultLoanType?: string
+}) {
+  const [form, setForm] = useState<Record<string, string>>({
+    currency: 'INR', country: 'India', loan_type: defaultLoanType,
+  })
+  const [saving,     setSaving]     = useState(false)
+  const [parseState, setParseState] = useState<ParseState>('idle')
+  const [parseMsg,   setParseMsg]   = useState('')
+  const [mounted,    setMounted]    = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
   const supabase = createClient()
-  const router = useRouter()
-  const f = (key: string) => (e: React.ChangeEvent<HTMLInputElement|HTMLSelectElement>) => setForm(p => ({ ...p, [key]: e.target.value }))
-  const inp = (label: string, key: string, type = 'text', placeholder = '') => (
-    <div>
-      <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">{label}</label>
-      <input type={type} value={form[key]??''} onChange={f(key)} placeholder={placeholder}
-        className="w-full bg-[#0D1B2A] border border-white/10 rounded-lg px-3 py-2 text-[12px] text-white focus:outline-none focus:border-[#00C9A7]" />
-    </div>
-  )
+  const router   = useRouter()
+
+  useEffect(() => { setMounted(true) }, [])
+
+  const set = (key: string) => (val: string) => setForm(p => ({ ...p, [key]: val }))
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setParseState('parsing')
+    setParseMsg('Reading document with AI…')
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch('/api/parse-loan-document', { method: 'POST', body: fd })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        throw new Error(j.details || j.error || 'Parse failed')
+      }
+      const { data } = await res.json()
+      // Merge extracted values into form (skip nulls)
+      setForm(prev => {
+        const merged = { ...prev }
+        for (const [k, v] of Object.entries(data ?? {})) {
+          if (v != null && String(v).trim() !== '') merged[k] = String(v)
+        }
+        return merged
+      })
+      setParseState('done')
+      setParseMsg('Fields auto-filled from document — review and adjust before saving.')
+    } catch (err: any) {
+      setParseState('error')
+      setParseMsg(err.message ?? 'Could not read document. Fill in manually.')
+    }
+    // Reset input so same file can be re-uploaded
+    if (fileRef.current) fileRef.current.value = ''
+  }
 
   async function save() {
     setSaving(true)
+    const { data: { user } } = await supabase.auth.getUser()
     await supabase.from('home_loans').insert({
-      name: form.name, bank_name: form.bank_name, property_address: form.property_address,
-      sanctioned_amt: Number(form.sanctioned_amt), outstanding_amt: Number(form.outstanding_amt),
-      emi_amount: Number(form.emi_amount), interest_rate: Number(form.interest_rate),
-      loan_start_date: form.loan_start_date, tenure_months: Number(form.tenure_months),
-      months_paid: Number(form.months_paid ?? 0), currency: form.currency, country: form.country,
-      next_emi_date: form.next_emi_date,
+      name:             form.name,
+      bank_name:        form.bank_name,
+      property_address: form.property_address ?? null,
+      loan_type:        form.loan_type || 'home_loan',
+      sanctioned_amt:   Number(form.sanctioned_amt  || 0),
+      outstanding_amt:  Number(form.outstanding_amt || 0),
+      emi_amount:       Number(form.emi_amount      || 0),
+      interest_rate:    Number(form.interest_rate   || 0),
+      loan_start_date:  form.loan_start_date || null,
+      tenure_months:    Number(form.tenure_months   || 0),
+      months_paid:      Number(form.months_paid     || 0),
+      currency:         form.currency,
+      country:          form.currency === 'AED' ? 'UAE' : 'India',
+      next_emi_date:    form.next_emi_date || null,
+      is_active:        true,
+      user_id:          user!.id,
     })
-    router.refresh(); setSaving(false); onClose()
+    router.refresh()
+    setSaving(false)
+    onClose()
   }
 
-  return (
-    <Modal title="Add Home Loan" onClose={onClose}>
-      <div className="space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          {inp('Loan Name', 'name', 'text', 'Dubai Home Loan')}
-          {inp('Bank Name', 'bank_name', 'text', 'Mashreq Bank')}
-        </div>
-        {inp('Property Address (optional)', 'property_address', 'text', '123 JBR, Dubai')}
-        <div className="grid grid-cols-2 gap-3">
+  const loanTypeLabel = LOAN_TYPES.find(t => t.value === form.loan_type)?.label ?? 'Loan'
+
+  if (!mounted) return null
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] bg-black/50 flex items-start justify-center overflow-y-auto"
+      style={{ paddingTop: '64px', paddingLeft: '16px', paddingRight: '16px', paddingBottom: '16px' }}
+      onClick={onClose}>
+
+      {/* Panel */}
+      <div className="relative w-full max-w-2xl bg-white flex flex-col rounded-2xl shadow-2xl flex-shrink-0"
+        style={{ height: 'calc(100vh - 80px)', border: '1px solid var(--border)' }}
+        onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 flex-shrink-0"
+          style={{ borderBottom: '1px solid var(--border)' }}>
           <div>
-            <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">Currency</label>
-            <select value={form.currency} onChange={e => setForm(p => ({ ...p, currency: e.target.value, country: e.target.value === 'AED' ? 'UAE' : 'India' }))}
-              className="w-full bg-[#0D1B2A] border border-white/10 rounded-lg px-3 py-2 text-[12px] text-white focus:outline-none focus:border-[#00C9A7]">
-              <option value="INR">INR 🇮🇳</option>
-              <option value="AED">AED 🇦🇪</option>
-            </select>
+            <div className="text-[16px] font-bold" style={{ color: 'var(--text)' }}>Add Loan</div>
+            <div className="text-[11px] mt-0.5" style={{ color: 'var(--text3)' }}>
+              {loanTypeLabel} · enter manually or upload document
+            </div>
           </div>
-          {inp('Interest Rate (%)', 'interest_rate', 'number', '8.5')}
+          <button onClick={onClose} className="p-1.5 rounded-lg transition-colors"
+            style={{ color: 'var(--text3)' }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg2)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+            <X size={18} />
+          </button>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          {inp('Sanctioned Amount', 'sanctioned_amt', 'number', '7500000')}
-          {inp('Outstanding Amount', 'outstanding_amt', 'number', '5900000')}
+
+        {/* Scrollable form */}
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+
+          {/* PDF Upload */}
+          <div className="rounded-xl p-4" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <div className="text-[12px] font-bold" style={{ color: 'var(--text)' }}>Upload Loan Document</div>
+                <div className="text-[10px] mt-0.5" style={{ color: 'var(--text3)' }}>
+                  Sanction letter, repayment schedule, or statement (PDF, max 10MB)
+                </div>
+              </div>
+              {parseState === 'idle' && (
+                <button onClick={() => fileRef.current?.click()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-[11px] font-semibold flex-shrink-0"
+                  style={{ background: 'var(--sage)' }}>
+                  <Upload size={12} /> Upload
+                </button>
+              )}
+              {parseState === 'parsing' && (
+                <div className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--sage)' }}>
+                  <Loader2 size={12} className="animate-spin" /> Parsing…
+                </div>
+              )}
+              {parseState === 'done' && (
+                <button onClick={() => { setParseState('idle'); setParseMsg('') }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold"
+                  style={{ background: 'var(--sage-bg)', color: 'var(--sage)' }}>
+                  <Upload size={12} /> Re-upload
+                </button>
+              )}
+              {parseState === 'error' && (
+                <button onClick={() => { setParseState('idle'); setParseMsg('') }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold"
+                  style={{ background: 'var(--rose-bg)', color: 'var(--rose)' }}>
+                  <Upload size={12} /> Retry
+                </button>
+              )}
+            </div>
+
+            {parseState === 'idle' && !parseMsg && (
+              <div className="flex items-center gap-3 cursor-pointer" onClick={() => fileRef.current?.click()}>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                  style={{ background: 'var(--border)', color: 'var(--text3)' }}>
+                  <FileText size={18} />
+                </div>
+                <div className="text-[11px]" style={{ color: 'var(--text3)' }}>
+                  Click to select your loan document. AI will auto-fill all fields.
+                </div>
+              </div>
+            )}
+
+            {parseState === 'parsing' && (
+              <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text3)' }}>
+                <div className="w-4 h-4 rounded-full border-2 animate-spin"
+                  style={{ borderColor: 'var(--border)', borderTopColor: 'var(--sage)' }} />
+                {parseMsg}
+              </div>
+            )}
+
+            {parseState === 'done' && (
+              <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--sage)' }}>
+                <CheckCircle2 size={14} /> {parseMsg}
+              </div>
+            )}
+
+            {parseState === 'error' && (
+              <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--rose)' }}>
+                <AlertCircle size={14} /> {parseMsg}
+              </div>
+            )}
+
+            <input ref={fileRef} type="file" accept=".pdf,image/*" className="hidden" onChange={handleFile} />
+          </div>
+
+          {/* Divider */}
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-px" style={{ background: 'var(--border)' }} />
+            <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: 'var(--text3)' }}>Loan Details</span>
+            <div className="flex-1 h-px" style={{ background: 'var(--border)' }} />
+          </div>
+
+          {/* Loan type */}
+          <Sel label="Loan Type" value={form.loan_type ?? 'home_loan'} onChange={v => setForm(p => ({ ...p, loan_type: v }))}>
+            {LOAN_TYPES.map(lt => <option key={lt.value} value={lt.value}>{lt.label}</option>)}
+          </Sel>
+
+          {/* Name & Bank */}
+          <div className="grid grid-cols-2 gap-4">
+            <Inp label="Loan Name"     value={form.name ?? ''}      onChange={set('name')}      placeholder="Home Loan – HDFC" />
+            <Inp label="Bank / Lender" value={form.bank_name ?? ''} onChange={set('bank_name')} placeholder="HDFC Bank" />
+          </div>
+
+          {/* Property address (home loan only) */}
+          {form.loan_type === 'home_loan' && (
+            <Inp label="Property Address (optional)" value={form.property_address ?? ''}
+              onChange={set('property_address')} placeholder="123 JBR, Dubai" />
+          )}
+
+          {/* Currency & Interest */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Lbl>Currency</Lbl>
+              <select value={form.currency ?? 'INR'}
+                onChange={e => setForm(p => ({ ...p, currency: e.target.value, country: e.target.value === 'AED' ? 'UAE' : 'India' }))}
+                className="wl-input"
+                onFocus={e => (e.target.style.borderColor = 'var(--sage)')}
+                onBlur={e => (e.target.style.borderColor = 'var(--border)')}>
+                <option value="INR">INR 🇮🇳</option>
+                <option value="AED">AED 🇦🇪</option>
+              </select>
+            </div>
+            <Inp label="Interest Rate (%)" value={form.interest_rate ?? ''} onChange={set('interest_rate')} type="number" placeholder="8.5" />
+          </div>
+
+          {/* Amounts */}
+          <div className="grid grid-cols-2 gap-4">
+            <Inp label="Sanctioned Amount"  value={form.sanctioned_amt ?? ''}  onChange={set('sanctioned_amt')}  type="number" placeholder="7500000" />
+            <Inp label="Outstanding Amount" value={form.outstanding_amt ?? ''} onChange={set('outstanding_amt')} type="number" placeholder="5900000" />
+          </div>
+
+          {/* EMI details */}
+          <div className="grid grid-cols-3 gap-4">
+            <Inp label="Monthly EMI"     value={form.emi_amount ?? ''}     onChange={set('emi_amount')}     type="number" placeholder="68000" />
+            <Inp label="Tenure (months)" value={form.tenure_months ?? ''}  onChange={set('tenure_months')}  type="number" placeholder="240" />
+            <Inp label="Months Paid"     value={form.months_paid ?? ''}    onChange={set('months_paid')}    type="number" placeholder="56" />
+          </div>
+
+          {/* Dates */}
+          <div className="grid grid-cols-2 gap-4">
+            <Inp label="Loan Start Date" value={form.loan_start_date ?? ''} onChange={set('loan_start_date')} type="date" />
+            <Inp label="Next EMI Date"   value={form.next_emi_date ?? ''}   onChange={set('next_emi_date')}   type="date" />
+          </div>
         </div>
-        <div className="grid grid-cols-3 gap-3">
-          {inp('Monthly EMI', 'emi_amount', 'number', '68000')}
-          {inp('Tenure (months)', 'tenure_months', 'number', '240')}
-          {inp('Months Paid', 'months_paid', 'number', '56')}
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          {inp('Loan Start Date', 'loan_start_date', 'date')}
-          {inp('Next EMI Date', 'next_emi_date', 'date')}
+
+        {/* Footer */}
+        <div className="flex-shrink-0 px-6 py-4 flex gap-3" style={{ borderTop: '1px solid var(--border)' }}>
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-lg text-[12px] font-semibold"
+            style={{ border: '1px solid var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>
+            Cancel
+          </button>
+          <button onClick={save} disabled={saving || !form.name}
+            className="flex-1 py-2.5 rounded-lg text-white text-[12px] font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+            style={{ background: 'var(--sage)' }}>
+            {saving ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : 'Add Loan'}
+          </button>
         </div>
       </div>
-      <ModalActions onClose={onClose} onSave={save} saving={saving} label="Add Loan" />
-    </Modal>
-  )
-}
-
-export function AddAccountModal({ onClose, type }: { onClose: () => void; type: 'credit_card' | 'savings' }) {
-  const [form, setForm] = useState<Record<string,string>>({ currency: 'INR', country: 'India', account_type: type })
-  const [saving, setSaving] = useState(false)
-  const supabase = createClient()
-  const router = useRouter()
-  const f = (key: string) => (e: React.ChangeEvent<HTMLInputElement|HTMLSelectElement>) => setForm(p => ({ ...p, [key]: e.target.value }))
-  const inp = (label: string, key: string, t = 'text', ph = '') => (
-    <div>
-      <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">{label}</label>
-      <input type={t} value={form[key]??''} onChange={f(key)} placeholder={ph}
-        className="w-full bg-[#0D1B2A] border border-white/10 rounded-lg px-3 py-2 text-[12px] text-white focus:outline-none focus:border-[#00C9A7]" />
-    </div>
-  )
-
-  async function save() {
-    setSaving(true)
-    await supabase.from('accounts').insert({
-      name: form.name, bank_name: form.bank_name, account_type: type,
-      currency: form.currency, country: form.country,
-      last_four: form.last_four, credit_limit: Number(form.credit_limit ?? 0),
-      outstanding_bal: Number(form.outstanding_bal ?? 0), minimum_due: Number(form.minimum_due ?? 0),
-      due_date: form.due_date || null,
-    })
-    router.refresh(); setSaving(false); onClose()
-  }
-
-  return (
-    <Modal title={type === 'credit_card' ? 'Add Credit Card' : 'Add Bank Account'} onClose={onClose}>
-      <div className="space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          {inp('Card / Account Name', 'name', 'text', 'HDFC Regalia')}
-          {inp('Bank Name', 'bank_name', 'text', 'HDFC Bank')}
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">Currency</label>
-            <select value={form.currency} onChange={e => setForm(p => ({ ...p, currency: e.target.value, country: e.target.value === 'AED' ? 'UAE' : 'India' }))}
-              className="w-full bg-[#0D1B2A] border border-white/10 rounded-lg px-3 py-2 text-[12px] text-white focus:outline-none focus:border-[#00C9A7]">
-              <option value="INR">INR 🇮🇳</option>
-              <option value="AED">AED 🇦🇪</option>
-            </select>
-          </div>
-          {inp('Last 4 Digits', 'last_four', 'text', '4521')}
-        </div>
-        {type === 'credit_card' && <>
-          <div className="grid grid-cols-2 gap-3">
-            {inp('Credit Limit', 'credit_limit', 'number', '400000')}
-            {inp('Outstanding Balance', 'outstanding_bal', 'number', '82000')}
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            {inp('Minimum Due', 'minimum_due', 'number', '16400')}
-            {inp('Due Date', 'due_date', 'date')}
-          </div>
-        </>}
-      </div>
-      <ModalActions onClose={onClose} onSave={save} saving={saving} label={type === 'credit_card' ? 'Add Card' : 'Add Account'} />
-    </Modal>
-  )
-}
-
-// Shared helpers
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="bg-[#162032] border border-white/10 rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="flex justify-between items-center mb-5">
-          <h2 className="text-[15px] font-bold text-white">{title}</h2>
-          <button onClick={onClose} className="text-slate-500 hover:text-white"><X size={18} /></button>
-        </div>
-        {children}
-      </div>
-    </div>
-  )
-}
-
-function ModalActions({ onClose, onSave, saving, label }: { onClose: () => void; onSave: () => void; saving: boolean; label: string }) {
-  return (
-    <div className="flex gap-3 mt-5">
-      <button onClick={onClose} className="flex-1 py-2.5 rounded-lg border border-white/10 text-slate-400 text-[12px] font-semibold hover:bg-white/4">Cancel</button>
-      <button onClick={onSave} disabled={saving}
-        className="flex-1 py-2.5 rounded-lg text-black text-[12px] font-bold flex items-center justify-center gap-2 disabled:opacity-50"
-        style={{ background: 'linear-gradient(135deg,#00C9A7,#4A90D9)' }}>
-        {saving ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : label}
-      </button>
-    </div>
+    </div>,
+    document.body
   )
 }
 

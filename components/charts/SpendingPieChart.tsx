@@ -13,14 +13,14 @@ export function SpendingPieChart({ data }: { data: Array<{ name: string; value: 
             {data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
           </Pie>
           <Tooltip
-            contentStyle={{ background: '#1E2D40', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 11 }}
+            contentStyle={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 8, fontSize: 11 }}
             formatter={(v: any) => [`₹${Number(v).toLocaleString('en-IN')}`, '']}
           />
         </PieChart>
       </ResponsiveContainer>
       <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1">
         {data.slice(0, 6).map((d, i) => (
-          <div key={i} className="flex items-center gap-1 text-[10px] text-slate-400">
+          <div key={i} className="flex items-center gap-1 text-[10px]" style={{ color: 'var(--text3)' }}>
             <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
             {d.name} {total > 0 ? `${Math.round(d.value / total * 100)}%` : ''}
           </div>

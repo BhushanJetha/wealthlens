@@ -14,15 +14,15 @@ export function CashFlowPanel({ loans, insurance, sym }: { loans: any[]; insuran
     if (!l.next_emi_date) return
     const d = Math.ceil((new Date(l.next_emi_date).getTime() - today.getTime()) / 86400000)
     const entry = { name: `${l.name} EMI`, amount: Number(l.emi_amount), sym: l.currency === 'AED' ? 'AED ' : '₹' }
-    if (d <= 7) next7.push(entry)
+    if (d <= 7)  next7.push(entry)
     if (d <= 30) next30.push(entry)
   })
 
   insurance.forEach(p => {
     if (!p.next_premium_date) return
     const d = Math.ceil((new Date(p.next_premium_date).getTime() - today.getTime()) / 86400000)
-    const entry = { name: `${p.policy_name}`, amount: Number(p.annual_premium), sym: p.currency === 'AED' ? 'AED ' : '₹' }
-    if (d <= 7) next7.push(entry)
+    const entry = { name: p.policy_name, amount: Number(p.annual_premium), sym: p.currency === 'AED' ? 'AED ' : '₹' }
+    if (d <= 7)  next7.push(entry)
     if (d <= 30) next30.push(entry)
   })
 
@@ -30,43 +30,35 @@ export function CashFlowPanel({ loans, insurance, sym }: { loans: any[]; insuran
   const total30 = next30.reduce((a, i) => a + toINR(i.amount, i.sym === 'AED ' ? 'AED' : 'INR'), 0)
 
   return (
-    <div className="bg-[#162032] border border-white/7 rounded-xl p-4">
-      <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-3">Predictive Cash Flow</div>
+    <div className="wl-card p-4">
+      <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>
+        Predictive Cash Flow
+      </div>
       <div className="grid grid-cols-2 gap-3">
-        <div className="bg-[#1E2D40] rounded-lg p-3">
-          <div className="flex items-center gap-1.5 text-[10px] text-slate-500 uppercase tracking-wider font-semibold mb-2">
-            <CalendarDays size={11} /> Next 7 Days
+        {[
+          { icon: <CalendarDays size={11} />, label: 'Next 7 Days', total: total7, items: next7, color: 'var(--rose)' },
+          { icon: <Calendar size={11} />,     label: 'Next 30 Days', total: total30, items: next30, color: 'var(--gold)' },
+        ].map(({ icon, label, total, items, color }) => (
+          <div key={label} className="rounded-xl p-3" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-semibold mb-2" style={{ color: 'var(--text3)' }}>
+              {icon} {label}
+            </div>
+            <div className="text-[20px] font-bold font-mono mb-2" style={{ color: 'var(--text)' }}>
+              ₹{Math.round(total).toLocaleString('en-IN')}
+            </div>
+            <div className="space-y-1">
+              {items.length === 0
+                ? <div className="text-[11px]" style={{ color: 'var(--text3)' }}>No dues ✓</div>
+                : items.map((item, i) => (
+                    <div key={i} className="flex justify-between text-[10px]">
+                      <span className="truncate" style={{ color: 'var(--text3)' }}>{item.name}</span>
+                      <span className="font-mono font-semibold" style={{ color }}>{item.sym}{item.amount.toLocaleString('en-IN')}</span>
+                    </div>
+                  ))
+              }
+            </div>
           </div>
-          <div className="text-[22px] font-bold font-mono text-white">₹{Math.round(total7).toLocaleString('en-IN')}</div>
-          <div className="mt-2 space-y-1">
-            {next7.length === 0
-              ? <div className="text-[11px] text-slate-600">No dues in 7 days ✓</div>
-              : next7.map((item, i) => (
-                <div key={i} className="flex justify-between text-[10px]">
-                  <span className="text-slate-500 truncate">{item.name}</span>
-                  <span className="text-rose-400 font-mono font-semibold">{item.sym}{item.amount.toLocaleString('en-IN')}</span>
-                </div>
-              ))
-            }
-          </div>
-        </div>
-        <div className="bg-[#1E2D40] rounded-lg p-3">
-          <div className="flex items-center gap-1.5 text-[10px] text-slate-500 uppercase tracking-wider font-semibold mb-2">
-            <Calendar size={11} /> Next 30 Days
-          </div>
-          <div className="text-[22px] font-bold font-mono text-white">₹{Math.round(total30).toLocaleString('en-IN')}</div>
-          <div className="mt-2 space-y-1">
-            {next30.length === 0
-              ? <div className="text-[11px] text-slate-600">No dues in 30 days ✓</div>
-              : next30.map((item, i) => (
-                <div key={i} className="flex justify-between text-[10px]">
-                  <span className="text-slate-500 truncate">{item.name}</span>
-                  <span className="text-[#F4A535] font-mono font-semibold">{item.sym}{item.amount.toLocaleString('en-IN')}</span>
-                </div>
-              ))
-            }
-          </div>
-        </div>
+        ))}
       </div>
     </div>
   )

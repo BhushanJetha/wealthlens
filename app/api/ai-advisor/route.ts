@@ -1,103 +1,119 @@
 import { NextResponse } from 'next/server'
-import Anthropic from '@anthropic-ai/sdk'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 import { createClient } from '@/lib/supabase/server'
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-
 export async function POST(req: Request) {
-  const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  try {
+    const apiKey = process.env.GEMINI_API_KEY
+    if (!apiKey) {
+      return NextResponse.json({
+        error: 'AI service not configured',
+        details: 'GEMINI_API_KEY is missing from .env.local. Restart the dev server after adding it.',
+      }, { status: 503 })
+    }
 
-  const { message, history } = await req.json()
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // Fetch financial context for this user
-  const [txnsRes, loansRes, cardsRes, insRes, goalsRes, budgetsRes] = await Promise.all([
-    supabase.from('transactions').select('category,amount,currency,txn_date').eq('user_id', user.id).order('txn_date', { ascending: false }).limit(200),
-    supabase.from('home_loans').select('*').eq('user_id', user.id).eq('is_active', true),
-    supabase.from('accounts').select('*').eq('user_id', user.id).eq('account_type', 'credit_card'),
-    supabase.from('insurance_policies').select('*').eq('user_id', user.id).eq('is_active', true),
-    supabase.from('goals').select('*').eq('user_id', user.id),
-    supabase.from('budgets').select('*').eq('user_id', user.id),
-  ])
+    const { message, history } = await req.json()
+    if (!message) return NextResponse.json({ error: 'No message' }, { status: 400 })
 
-  const fxRate = 22.80
-  const toINR = (amt: number, cur: string) => cur === 'AED' ? amt * fxRate : amt
+    // Fetch financial context in parallel
+    const [txnsRes, loansRes, cardsRes, insRes, goalsRes, budgetsRes] = await Promise.all([
+      supabase.from('transactions').select('category,amount,currency,txn_date').eq('user_id', user.id).order('txn_date', { ascending: false }).limit(200),
+      supabase.from('home_loans').select('*').eq('user_id', user.id).eq('is_active', true),
+      supabase.from('accounts').select('*').eq('user_id', user.id).eq('account_type', 'credit_card'),
+      supabase.from('insurance_policies').select('*').eq('user_id', user.id).eq('is_active', true),
+      supabase.from('goals').select('*').eq('user_id', user.id),
+      supabase.from('budgets').select('*').eq('user_id', user.id),
+    ])
 
-  // Build context summary
-  const txns = txnsRes.data ?? []
-  const thisMonth = new Date().toISOString().slice(0, 7)
-  const monthlyTxns = txns.filter(t => t.txn_date?.startsWith(thisMonth))
-  const monthlySpend = monthlyTxns.reduce((a, t) => a + toINR(Number(t.amount), t.currency), 0)
+    const fxRate    = 22.80
+    const toINR     = (amt: number, cur: string) => cur === 'AED' ? amt * fxRate : amt
+    const txns      = txnsRes.data ?? []
+    const thisMonth = new Date().toISOString().slice(0, 7)
 
-  const catSpend: Record<string, number> = {}
-  monthlyTxns.forEach(t => { catSpend[t.category] = (catSpend[t.category] ?? 0) + toINR(Number(t.amount), t.currency) })
-  const topCats = Object.entries(catSpend).sort((a, b) => b[1] - a[1]).slice(0, 5)
+    const monthlyTxns  = txns.filter(t => t.txn_date?.startsWith(thisMonth))
+    const monthlySpend = monthlyTxns.reduce((a, t) => a + toINR(Number(t.amount), t.currency), 0)
 
-  const cards = cardsRes.data ?? []
-  const cardUtil = cards.map(c => ({
-    name: c.name,
-    utilization: c.credit_limit ? Math.round((Number(c.outstanding_bal) / Number(c.credit_limit)) * 100) : 0
-  }))
+    const catSpend: Record<string, number> = {}
+    monthlyTxns.forEach(t => { catSpend[t.category] = (catSpend[t.category] ?? 0) + toINR(Number(t.amount), t.currency) })
+    const topCats = Object.entries(catSpend).sort((a, b) => b[1] - a[1]).slice(0, 5)
 
-  const loans = loansRes.data ?? []
-  const insurance = insRes.data ?? []
-  const goals = goalsRes.data ?? []
-  const budgets = budgetsRes.data ?? []
+    const cards      = cardsRes.data ?? []
+    const loans      = loansRes.data ?? []
+    const insurance  = insRes.data ?? []
+    const goals      = goalsRes.data ?? []
+    const budgets    = budgetsRes.data ?? []
 
-  const budgetStatus = budgets.map(b => {
-    const spent = catSpend[b.category] ?? 0
-    return { category: b.category, spent: Math.round(spent), cap: Number(b.monthly_cap), pct: Math.round(spent / Number(b.monthly_cap) * 100) }
-  })
+    const cardUtil = cards.map(c => ({
+      name: c.name,
+      utilization: c.credit_limit ? Math.round((Number(c.outstanding_bal) / Number(c.credit_limit)) * 100) : 0,
+    }))
 
-  const context = `
-FINANCIAL CONTEXT (read-only, current data):
+    const budgetStatus = budgets.map(b => {
+      const spent = catSpend[b.category] ?? 0
+      return { category: b.category, spent: Math.round(spent), cap: Number(b.monthly_cap), pct: Math.round(spent / Number(b.monthly_cap) * 100) }
+    })
+
+    const financialContext = `
+FINANCIAL CONTEXT (read-only snapshot):
 User: ${user.email}
 Month: ${thisMonth}
 
-Monthly spending (INR normalized): ₹${Math.round(monthlySpend).toLocaleString('en-IN')}
-Top expense categories:
-${topCats.map(([cat, amt]) => `  - ${cat}: ₹${Math.round(amt).toLocaleString('en-IN')}`).join('\n')}
+Monthly spending: ₹${Math.round(monthlySpend).toLocaleString('en-IN')}
+Top categories:
+${topCats.map(([cat, amt]) => `  - ${cat}: ₹${Math.round(amt).toLocaleString('en-IN')}`).join('\n') || '  (no transactions this month)'}
 
 Credit cards:
-${cardUtil.map(c => `  - ${c.name}: ${c.utilization}% utilized ${c.utilization > 30 ? '⚠️ HIGH' : '✅'}`).join('\n')}
+${cardUtil.length ? cardUtil.map(c => `  - ${c.name}: ${c.utilization}% utilized ${c.utilization > 30 ? '⚠️' : '✅'}`).join('\n') : '  (none)'}
 
-Home loans:
-${loans.map(l => `  - ${l.name}: Outstanding ${l.currency} ${Number(l.outstanding_amt).toLocaleString()} @ ${l.interest_rate}% | EMI: ${l.currency} ${Number(l.emi_amount).toLocaleString()}`).join('\n')}
+Loans:
+${loans.length ? loans.map(l => `  - ${l.name} (${l.loan_type ?? 'loan'}): Outstanding ${l.currency} ${Number(l.outstanding_amt).toLocaleString()} @ ${l.interest_rate}% | EMI: ${l.currency} ${Number(l.emi_amount).toLocaleString()}`).join('\n') : '  (none)'}
 
-Insurance policies:
-${insurance.map(p => `  - ${p.policy_name} (${p.policy_type}): Expiry ${p.expiry_date} | Next due: ${p.next_premium_date}`).join('\n')}
+Insurance:
+${insurance.length ? insurance.map(p => `  - ${p.policy_name} (${p.policy_type}): Expiry ${p.expiry_date}`).join('\n') : '  (none)'}
 
-Financial goals:
-${goals.map(g => `  - ${g.name}: ${Math.round(Number(g.current_amount) / Number(g.target_amount) * 100)}% complete (${g.currency} ${Number(g.current_amount).toLocaleString()} of ${Number(g.target_amount).toLocaleString()})`).join('\n')}
+Goals:
+${goals.length ? goals.map(g => `  - ${g.name}: ${Math.round(Number(g.current_amount) / Number(g.target_amount) * 100)}% complete`).join('\n') : '  (none)'}
 
 Budget status:
-${budgetStatus.map(b => `  - ${b.category}: ${b.pct}% used (₹${b.spent.toLocaleString()} of ₹${b.cap.toLocaleString()}) ${b.pct > 100 ? '🔴 OVER' : b.pct > 75 ? '🟡' : '🟢'}`).join('\n')}
+${budgetStatus.length ? budgetStatus.map(b => `  - ${b.category}: ${b.pct}% used ${b.pct > 100 ? '🔴 OVER' : b.pct > 75 ? '🟡' : '🟢'}`).join('\n') : '  (none set)'}
 `
 
-  const systemPrompt = `You are WealthLens AI, a personal financial advisor with deep expertise in UAE and Indian financial systems.
+    const systemInstruction = `You are WealthLens AI, a personal financial advisor specializing in UAE and Indian finance. You are powered by Google Gemini.
 
-You have READ-ONLY access to the user's financial data. Be specific, reference actual numbers from the context, and give actionable advice.
+You have READ-ONLY access to the user's financial data provided in the context. Be specific, reference actual numbers, and give actionable advice. Keep responses concise with bullet points where helpful. Do not make up numbers not present in the context.
 
-For UAE: know about DEWA, Etisalat/du, RTA, ENBD, ADCB, FAB, Mashreq; gratuity, DEWS pension, remittances
-For India: know about 80C, ELSS, PPF, NPS, HRA, LTCG/STCG, SEBI regulations, SBI, HDFC, ICICI
+UAE expertise: DEWA, Etisalat/du, ENBD, ADCB, FAB, Mashreq, gratuity, DEWS pension, free zone rules
+India expertise: Section 80C, ELSS, PPF, NPS, HRA, LTCG/STCG, SBI, HDFC, ICICI, EPF
 
-Keep responses concise and formatted. Use bullet points for lists. Always note you're AI and not a SEBI/DFSA-registered advisor for major decisions.
+Disclaimer: You are an AI assistant, not a SEBI/DFSA-registered advisor. Recommend consulting a certified professional for major financial decisions.
 
-${context}`
+${financialContext}`
 
-  const messages = [
-    ...(history ?? []).map((m: any) => ({ role: m.role, content: m.content })),
-    { role: 'user' as const, content: message }
-  ]
+    // Build Gemini chat history (role must be 'user' | 'model')
+    const chatHistory = (history ?? [])
+      .slice(-10)
+      .map((m: any) => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }],
+      }))
 
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 800,
-    system: systemPrompt,
-    messages,
-  })
+    const genAI = new GoogleGenerativeAI(apiKey)
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-1.5-flash',
+      systemInstruction,
+    })
 
-  const text = response.content[0].type === 'text' ? response.content[0].text : 'Unable to generate response.'
-  return NextResponse.json({ response: text })
+    const chat   = model.startChat({ history: chatHistory })
+    const result = await chat.sendMessage(message)
+    const text   = result.response.text()
+
+    return NextResponse.json({ response: text })
+  } catch (err: any) {
+    console.error('AI advisor error:', err)
+    return NextResponse.json({ error: 'AI service error', details: err.message }, { status: 500 })
+  }
 }

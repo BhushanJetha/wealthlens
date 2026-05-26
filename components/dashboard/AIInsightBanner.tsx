@@ -7,10 +7,11 @@ export function AIInsightBanner({ utilPct, monthlySpend, sym }: { utilPct: numbe
   if (insights.length === 0) insights.push('Your financials are in good shape. Ask the AI Advisor for personalized optimization tips →')
 
   return (
-    <div className="flex items-start gap-3 bg-[#00C9A7]/6 border border-[#00C9A7]/18 rounded-xl px-4 py-3">
-      <Sparkles size={15} className="text-[#00C9A7] flex-shrink-0 mt-0.5" />
-      <div className="text-[12px] text-slate-300 leading-relaxed">
-        <span className="text-[#00C9A7] font-bold">AI Insight: </span>
+    <div className="flex items-start gap-3 rounded-xl px-4 py-3"
+      style={{ background: 'var(--sage-bg)', border: '1px solid var(--sage)', opacity: 0.9 }}>
+      <Sparkles size={15} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--sage)' }} />
+      <div className="text-[12px] leading-relaxed" style={{ color: 'var(--text2)' }}>
+        <span className="font-bold" style={{ color: 'var(--sage)' }}>AI Insight: </span>
         {insights.join(' · ')}
       </div>
     </div>

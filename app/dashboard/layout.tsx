@@ -7,7 +7,7 @@ import ChatPanel from '@/components/layout/ChatPanel'
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
+  if (!user) redirect('/auth/login')
 
   const { data: profile } = await supabase
     .from('profiles')
@@ -16,7 +16,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .single()
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#0D1B2A]">
+    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg)' }}>
       <Sidebar />
       <div className="flex flex-col flex-1 overflow-hidden">
         <Topbar user={profile} />
