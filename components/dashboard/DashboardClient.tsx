@@ -25,7 +25,8 @@ function fmt(n: number, sym: string) {
 const DONUT_COLORS = ['#3D7A58','#D4920A','#3B7DD8','#C96A3A','#7C5CBF','#2E7D52']
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
-export default function DashboardClient({ transactions, loans, accounts, stocks, mutualFunds, fixedDeposits, insurance, goals, budgets }: any) {
+export default function DashboardClient({ transactions, loans, accounts, stocks, mutualFunds, fixedDeposits, insurance, goals, budgets,
+  recurringDeposits = [], npsAccounts = [], licPolicies = [], goldInvestments = [], bondInvestments = [], etfInvestments = [] }: any) {
   const { view, fromMonth, toMonth } = useViewStore()
 
   const inRange = (txn_date: string) => {
@@ -67,8 +68,23 @@ export default function DashboardClient({ transactions, loans, accounts, stocks,
     const totalBal   = filteredCards.reduce((a:number,c:any)=>a+Number(c.outstanding_bal??0),0)
     const utilPct    = totalLimit > 0 ? Math.round(totalBal/totalLimit*100) : 0
 
-    return { sym, totalAssets, totalLiab, netWorth, monthlyIncome, monthlyExpense, savingsRate, utilPct, filteredLoans, filteredCards }
-  }, [view, fromMonth, toMonth, transactions, loans, accounts, stocks, mutualFunds, fixedDeposits])
+    // Full equity (all investment types) for D/E widget
+    const rdVal    = (recurringDeposits ?? []).reduce((a: number, r: any) => a + toINR(Number(r.monthly_amount) * r.tenure_months, r.currency), 0)
+    const npsVal   = (npsAccounts ?? []).reduce((a: number, n: any) => a + Number(n.corpus_amount ?? 0), 0)
+    const licPaid  = (licPolicies ?? []).reduce((a: number, l: any) => a + Number(l.total_paid ?? 0), 0)
+    const goldVal  = (goldInvestments ?? []).reduce((a: number, g: any) => {
+      if (g.current_price_per_gram && g.quantity_grams) return a + Number(g.current_price_per_gram) * Number(g.quantity_grams)
+      return a + Number(g.invested_amount ?? 0)
+    }, 0)
+    const bondVal  = (bondInvestments ?? []).reduce((a: number, b: any) => a + Number(b.current_value ?? b.invested_amount ?? 0), 0)
+    const etfVal   = (etfInvestments ?? []).reduce((a: number, e: any) => a + Number(e.units ?? 0) * Number(e.current_price ?? e.avg_buy_price ?? 0), 0)
+    const fullEquity = totalAssets + rdVal + npsVal + licPaid + goldVal + bondVal + etfVal
+    const totalPortfolio = fullEquity + totalLiab
+    const debtPct = totalPortfolio > 0 ? Math.round(totalLiab / totalPortfolio * 100) : 0
+    const deZone  = debtPct > 60 ? 'high_debt' : debtPct > 30 ? 'moderate' : totalLiab === 0 && fullEquity > 0 ? 'debt_free' : 'healthy'
+
+    return { sym, totalAssets, totalLiab, netWorth, monthlyIncome, monthlyExpense, savingsRate, utilPct, filteredLoans, filteredCards, fullEquity, debtPct, deZone }
+  }, [view, fromMonth, toMonth, transactions, loans, accounts, stocks, mutualFunds, fixedDeposits, recurringDeposits, npsAccounts, licPolicies, goldInvestments, bondInvestments, etfInvestments])
 
   const { sym } = metrics
 
@@ -211,6 +227,50 @@ export default function DashboardClient({ transactions, loans, accounts, stocks,
           icon={<Percent size={14} />}
         />
       </div>
+
+      {/* D/E Ratio Widget */}
+      {(() => {
+        const { debtPct, deZone, fullEquity, totalLiab } = metrics
+        const zoneColor   = deZone === 'high_debt' ? '#EF4444' : deZone === 'moderate' ? '#F59E0B' : '#10B981'
+        const zoneBg      = deZone === 'high_debt' ? '#FEF2F2' : deZone === 'moderate' ? '#FFFBEB' : '#ECFDF5'
+        const zoneLabel   = deZone === 'high_debt' ? 'High Debt' : deZone === 'moderate' ? 'Moderate' : deZone === 'debt_free' ? 'Debt Free' : 'Healthy'
+        const zoneMessage = deZone === 'high_debt'
+          ? 'Debt exceeds investments. Prioritise loan repayment.'
+          : deZone === 'moderate'
+          ? 'Balanced but room to improve. Grow investments steadily.'
+          : deZone === 'debt_free'
+          ? 'No debt! Focus on compounding your investments.'
+          : 'Investments outweigh debt. Keep growing your equity.'
+        return (
+          <div className="wl-card p-4 flex items-center gap-4" style={{ border: `1.5px solid ${zoneColor}30`, background: zoneBg }}>
+            {/* Mini gauge bar */}
+            <div className="flex-shrink-0">
+              <div className="w-16 h-16 rounded-full flex items-center justify-center font-black text-[18px]"
+                style={{ background: `conic-gradient(${zoneColor} ${debtPct * 3.6}deg, #E5E7EB ${debtPct * 3.6}deg)`, color: zoneColor }}>
+                <div className="w-11 h-11 bg-white rounded-full flex items-center justify-center text-[13px] font-black" style={{ color: zoneColor }}>
+                  {debtPct}%
+                </div>
+              </div>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-[13px] font-bold" style={{ color: 'var(--text)' }}>Debt vs Equity</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: zoneColor + '20', color: zoneColor }}>{zoneLabel}</span>
+              </div>
+              <div className="text-[11px] mb-2" style={{ color: 'var(--text3)' }}>{zoneMessage}</div>
+              <div className="flex gap-3 text-[11px]">
+                <span><span style={{ color: '#10B981' }}>▲</span> Equity <span className="font-mono font-bold" style={{ color: 'var(--text)' }}>{fmt(fullEquity, sym)}</span></span>
+                <span><span style={{ color: '#EF4444' }}>▼</span> Debt <span className="font-mono font-bold" style={{ color: 'var(--text)' }}>{fmt(totalLiab, sym)}</span></span>
+              </div>
+            </div>
+            <Link href="/dashboard/financial-health"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-semibold flex-shrink-0"
+              style={{ background: zoneColor, color: '#fff' }}>
+              Full Analysis <ArrowRight size={11} />
+            </Link>
+          </div>
+        )
+      })()}
 
       {/* Row 2: Budget | Income&Expense | Bills */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

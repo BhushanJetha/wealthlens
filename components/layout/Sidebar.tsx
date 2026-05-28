@@ -7,7 +7,7 @@ import {
   CreditCard, Shield, Target, Upload, LogOut, Settings,
   ChevronDown, BarChart2, RefreshCw, Landmark, Briefcase,
   FileText, Activity, Gem, Car, Home, User, CircleDollarSign,
-  ArrowDownCircle, ArrowUpCircle, PieChart
+  ArrowDownCircle, ArrowUpCircle, PieChart, HeartPulse
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -52,8 +52,9 @@ const MAIN_NAV = [
 ]
 
 const OTHER_NAV = [
-  { href: '/dashboard/insurance',  icon: Shield,          label: 'Insurance'         },
-  { href: '/dashboard/ingest',     icon: Upload,          label: 'Upload Statements' },
+  { href: '/dashboard/financial-health', icon: HeartPulse, label: 'Financial Health'   },
+  { href: '/dashboard/insurance',        icon: Shield,     label: 'Insurance'          },
+  { href: '/dashboard/ingest',           icon: Upload,     label: 'Upload Statements'  },
 ]
 
 export default function Sidebar() {

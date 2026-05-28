@@ -1,46 +1,41 @@
 import { createClient } from '@/lib/supabase/server'
-import DashboardClient from '@/components/dashboard/DashboardClient'
+import FinancialHealthClient from '@/components/dashboard/FinancialHealthClient'
 
-export default async function DashboardPage() {
+export default async function FinancialHealthPage() {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const [txnsRes, loansRes, accsRes, stocksRes, mfRes, fdRes, insRes, goalsRes, budgetsRes,
-    rdRes, npsRes, licRes, goldRes, bondRes, etfRes] = await Promise.all([
-    supabase.from('transactions').select('*').eq('user_id', user!.id).order('txn_date', { ascending: false }).limit(500),
-    supabase.from('home_loans').select('*').eq('user_id', user!.id).eq('is_active', true),
-    supabase.from('accounts').select('*').eq('user_id', user!.id).eq('is_active', true),
+  const [
+    stocksRes, mfRes, fdRes, rdRes, npsRes, licRes,
+    goldRes, bondRes, etfRes, loansRes, txnsRes,
+  ] = await Promise.all([
     supabase.from('stocks').select('*').eq('user_id', user!.id),
     supabase.from('mutual_funds').select('*').eq('user_id', user!.id),
     supabase.from('fixed_deposits').select('*').eq('user_id', user!.id).eq('is_active', true),
-    supabase.from('insurance_policies').select('*').eq('user_id', user!.id).eq('is_active', true),
-    supabase.from('goals').select('*').eq('user_id', user!.id),
-    supabase.from('budgets').select('*').eq('user_id', user!.id),
     supabase.from('recurring_deposits').select('*').eq('user_id', user!.id).eq('is_active', true),
     supabase.from('nps_accounts').select('*').eq('user_id', user!.id),
     supabase.from('lic_policies').select('*').eq('user_id', user!.id).eq('is_active', true),
     supabase.from('gold_investments').select('*').eq('user_id', user!.id),
     supabase.from('bond_investments').select('*').eq('user_id', user!.id),
     supabase.from('etf_investments').select('*').eq('user_id', user!.id),
+    supabase.from('home_loans').select('*').eq('user_id', user!.id).eq('is_active', true),
+    supabase.from('transactions').select('txn_type,amount,currency,txn_date').eq('user_id', user!.id)
+      .eq('txn_type', 'income').order('txn_date', { ascending: false }).limit(200),
   ])
 
   return (
-    <DashboardClient
-      transactions={txnsRes.data ?? []}
-      loans={loansRes.data ?? []}
-      accounts={accsRes.data ?? []}
+    <FinancialHealthClient
       stocks={stocksRes.data ?? []}
       mutualFunds={mfRes.data ?? []}
       fixedDeposits={fdRes.data ?? []}
-      insurance={insRes.data ?? []}
-      goals={goalsRes.data ?? []}
-      budgets={budgetsRes.data ?? []}
       recurringDeposits={rdRes.data ?? []}
       npsAccounts={npsRes.data ?? []}
       licPolicies={licRes.data ?? []}
       goldInvestments={goldRes.data ?? []}
       bondInvestments={bondRes.data ?? []}
       etfInvestments={etfRes.data ?? []}
+      loans={loansRes.data ?? []}
+      transactions={txnsRes.data ?? []}
     />
   )
 }
