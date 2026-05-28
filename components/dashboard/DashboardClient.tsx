@@ -68,16 +68,17 @@ export default function DashboardClient({ transactions, loans, accounts, stocks,
     const totalBal   = filteredCards.reduce((a:number,c:any)=>a+Number(c.outstanding_bal??0),0)
     const utilPct    = totalLimit > 0 ? Math.round(totalBal/totalLimit*100) : 0
 
-    // Full equity (all investment types) for D/E widget
-    const rdVal    = (recurringDeposits ?? []).reduce((a: number, r: any) => a + toINR(Number(r.monthly_amount) * r.tenure_months, r.currency), 0)
-    const npsVal   = (npsAccounts ?? []).reduce((a: number, n: any) => a + Number(n.corpus_amount ?? 0), 0)
-    const licPaid  = (licPolicies ?? []).reduce((a: number, l: any) => a + Number(l.total_paid ?? 0), 0)
-    const goldVal  = (goldInvestments ?? []).reduce((a: number, g: any) => {
+    // Full equity (all investment types) for D/E widget — view-filtered
+    const convV = (amt: number, cur: string) => view === 'consolidated' ? toINR(amt, cur) : amt
+    const rdVal    = filterByView(recurringDeposits ?? []).reduce((a: number, r: any) => a + convV(Number(r.monthly_amount) * r.tenure_months, r.currency ?? 'INR'), 0)
+    const npsVal   = filterByView(npsAccounts ?? []).reduce((a: number, n: any) => a + Number(n.corpus_amount ?? 0), 0)
+    const licPaid  = filterByView(licPolicies ?? []).reduce((a: number, l: any) => a + Number(l.total_paid ?? 0), 0)
+    const goldVal  = filterByView(goldInvestments ?? []).reduce((a: number, g: any) => {
       if (g.current_price_per_gram && g.quantity_grams) return a + Number(g.current_price_per_gram) * Number(g.quantity_grams)
       return a + Number(g.invested_amount ?? 0)
     }, 0)
-    const bondVal  = (bondInvestments ?? []).reduce((a: number, b: any) => a + Number(b.current_value ?? b.invested_amount ?? 0), 0)
-    const etfVal   = (etfInvestments ?? []).reduce((a: number, e: any) => a + Number(e.units ?? 0) * Number(e.current_price ?? e.avg_buy_price ?? 0), 0)
+    const bondVal  = filterByView(bondInvestments ?? []).reduce((a: number, b: any) => a + Number(b.current_value ?? b.invested_amount ?? 0), 0)
+    const etfVal   = filterByView(etfInvestments ?? []).reduce((a: number, e: any) => a + Number(e.units ?? 0) * Number(e.current_price ?? e.avg_buy_price ?? 0), 0)
     const fullEquity = totalAssets + rdVal + npsVal + licPaid + goldVal + bondVal + etfVal
     const totalPortfolio = fullEquity + totalLiab
     const debtPct = totalPortfolio > 0 ? Math.round(totalLiab / totalPortfolio * 100) : 0

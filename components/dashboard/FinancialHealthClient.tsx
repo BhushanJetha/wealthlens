@@ -1,19 +1,23 @@
 'use client'
 import { useMemo } from 'react'
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
+import { useViewStore } from '@/store/viewStore'
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis } from 'recharts'
 import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle2, Zap, ArrowRight, Target, Shield } from 'lucide-react'
 import Link from 'next/link'
 
-const FX = 22.80
-function toINR(amt: number, cur: string) { return cur === 'AED' ? amt * FX : amt }
-function fmt(n: number) {
+function fmtINR(n: number) {
   if (Math.abs(n) >= 10000000) return `₹${(n / 10000000).toFixed(2)}Cr`
   if (Math.abs(n) >= 100000)   return `₹${(n / 100000).toFixed(2)}L`
   return `₹${Math.round(n).toLocaleString('en-IN')}`
 }
-function fmtK(n: number) {
+function fmtAED(n: number) {
+  if (Math.abs(n) >= 1000000) return `AED ${(n / 1000000).toFixed(2)}M`
+  if (Math.abs(n) >= 1000)    return `AED ${(n / 1000).toFixed(1)}K`
+  return `AED ${Math.round(n).toLocaleString()}`
+}
+function fmtKINR(n: number) {
   if (n >= 100000) return `₹${(n / 100000).toFixed(1)}L`
-  if (n >= 1000) return `₹${(n / 1000).toFixed(0)}K`
+  if (n >= 1000)   return `₹${(n / 1000).toFixed(0)}K`
   return `₹${Math.round(n).toLocaleString('en-IN')}`
 }
 
@@ -34,11 +38,11 @@ function getZone(debtPct: number, totalDebt: number, totalEquity: number): Zone 
 }
 
 const ZONE_CONFIG = {
-  high_debt:  { label: 'High Debt',    color: '#EF4444', bg: '#FEF2F2', icon: AlertTriangle, description: 'Your debt significantly outweighs your investments. Focus on reducing high-interest loans first.' },
-  moderate:   { label: 'Moderate',     color: '#F59E0B', bg: '#FFFBEB', icon: Zap,           description: 'You\'re balancing debt and investments, but there\'s room to improve. Gradually shift more toward equity.' },
-  healthy:    { label: 'Healthy',      color: '#10B981', bg: '#ECFDF5', icon: CheckCircle2,   description: 'Excellent! Your investments outweigh your debt. Keep growing your equity and consider prepaying high-rate loans.' },
-  debt_free:  { label: 'Debt Free',    color: '#3D7A58', bg: '#F0FDF4', icon: Shield,        description: 'Outstanding! You carry no debt. Focus entirely on growing your investment portfolio.' },
-  no_data:    { label: 'No Data',      color: '#9CA3AF', bg: '#F9FAFB', icon: Target,        description: 'Add your investments and loans to see your financial health analysis.' },
+  high_debt: { label: 'High Debt',  color: '#EF4444', bg: '#FEF2F2', icon: AlertTriangle, description: 'Your debt significantly outweighs your investments. Focus on reducing high-interest loans first.' },
+  moderate:  { label: 'Moderate',   color: '#F59E0B', bg: '#FFFBEB', icon: Zap,           description: 'You\'re balancing debt and investments, but there\'s room to improve. Gradually shift more toward equity.' },
+  healthy:   { label: 'Healthy',    color: '#10B981', bg: '#ECFDF5', icon: CheckCircle2,  description: 'Excellent! Your investments outweigh your debt. Keep growing your equity and consider prepaying high-rate loans.' },
+  debt_free: { label: 'Debt Free',  color: '#3D7A58', bg: '#F0FDF4', icon: Shield,        description: 'Outstanding! You carry no debt. Focus entirely on growing your investment portfolio.' },
+  no_data:   { label: 'No Data',    color: '#9CA3AF', bg: '#F9FAFB', icon: Target,        description: 'Add your investments and loans to see your financial health analysis.' },
 }
 
 function DebtGauge({ debtPct, zone }: { debtPct: number; zone: Zone }) {
@@ -61,7 +65,6 @@ function DebtGauge({ debtPct, zone }: { debtPct: number; zone: Zone }) {
         <div className="text-3xl font-black" style={{ color, lineHeight: 1 }}>{Math.round(debtPct)}%</div>
         <div className="text-[10px] font-semibold uppercase tracking-wider mt-0.5" style={{ color: '#9CA3AF' }}>Debt Ratio</div>
       </div>
-      {/* Zone labels */}
       <div className="absolute bottom-0 w-full flex justify-between px-2">
         <span className="text-[9px] font-semibold" style={{ color: '#10B981' }}>0% · Healthy</span>
         <span className="text-[9px] font-semibold" style={{ color: '#EF4444' }}>100% · High Debt</span>
@@ -73,36 +76,57 @@ function DebtGauge({ debtPct, zone }: { debtPct: number; zone: Zone }) {
 export default function FinancialHealthClient({ stocks, mutualFunds, fixedDeposits, recurringDeposits,
   npsAccounts, licPolicies, goldInvestments, bondInvestments, etfInvestments, loans, transactions }: any) {
 
-  const { totalEquity, totalDebt, breakdown, loanList, debtPct, deRatio,
-    zone, monthlyIncome, avgMonthly } = useMemo(() => {
+  const { view, fxRate } = useViewStore()
+  const isUAE = view === 'uae'
+  const sym   = isUAE ? 'AED' : '₹'
+  const fmt   = isUAE ? fmtAED : fmtINR
+  const fmtK  = isUAE ? fmtAED : fmtKINR
 
-    // --- Equity components ---
-    const stVal   = (stocks ?? []).reduce((a: number, s: any) => a + toINR(s.quantity * (s.current_price ?? s.avg_buy_price), s.currency), 0)
-    const mfVal   = (mutualFunds ?? []).reduce((a: number, m: any) => a + m.units * (m.current_nav ?? m.avg_nav), 0)
-    const etfVal  = (etfInvestments ?? []).reduce((a: number, e: any) => a + Number(e.units ?? 0) * Number(e.current_price ?? e.avg_buy_price ?? 0), 0)
-    const fdVal   = (fixedDeposits ?? []).reduce((a: number, f: any) => a + toINR(Number(f.principal), f.currency), 0)
-    const rdVal   = (recurringDeposits ?? []).reduce((a: number, r: any) => a + toINR(Number(r.monthly_amount) * r.tenure_months, r.currency), 0)
-    const npsVal  = (npsAccounts ?? []).reduce((a: number, n: any) => a + Number(n.corpus_amount ?? 0), 0)
-    const licVal  = (licPolicies ?? []).reduce((a: number, l: any) => a + Number(l.total_paid ?? 0), 0)
-    const goldVal = (goldInvestments ?? []).reduce((a: number, g: any) => {
+  const filterArr = (arr: any[]) =>
+    view === 'uae'   ? arr.filter((x: any) => x.currency === 'AED' || x.country === 'UAE')
+    : view === 'india' ? arr.filter((x: any) => x.currency === 'INR' || x.country === 'India')
+    : arr
+
+  const convAmt = (amt: number, cur: string) =>
+    view === 'consolidated' ? (cur === 'AED' ? amt * fxRate : amt) : amt
+
+  const { totalEquity, totalDebt, breakdown, loanList, debtPct, deRatio,
+    zone, avgMonthly } = useMemo(() => {
+
+    const fSt   = filterArr(stocks ?? [])
+    const fMF   = filterArr(mutualFunds ?? [])
+    const fETF  = filterArr(etfInvestments ?? [])
+    const fFD   = filterArr(fixedDeposits ?? [])
+    const fRD   = filterArr(recurringDeposits ?? [])
+    const fNPS  = filterArr(npsAccounts ?? [])
+    const fLIC  = filterArr(licPolicies ?? [])
+    const fGold = filterArr(goldInvestments ?? [])
+    const fBond = filterArr(bondInvestments ?? [])
+    const fLoan = filterArr(loans ?? [])
+
+    const stVal   = fSt.reduce((a: number, s: any) => a + convAmt(s.quantity * (s.current_price ?? s.avg_buy_price), s.currency), 0)
+    const mfVal   = fMF.reduce((a: number, m: any) => a + m.units * (m.current_nav ?? m.avg_nav), 0)
+    const etfVal  = fETF.reduce((a: number, e: any) => a + Number(e.units ?? 0) * Number(e.current_price ?? e.avg_buy_price ?? 0), 0)
+    const fdVal   = fFD.reduce((a: number, f: any) => a + convAmt(Number(f.principal), f.currency), 0)
+    const rdVal   = fRD.reduce((a: number, r: any) => a + convAmt(Number(r.monthly_amount) * r.tenure_months, r.currency), 0)
+    const npsVal  = fNPS.reduce((a: number, n: any) => a + Number(n.corpus_amount ?? 0), 0)
+    const licVal  = fLIC.reduce((a: number, l: any) => a + Number(l.total_paid ?? 0), 0)
+    const goldVal = fGold.reduce((a: number, g: any) => {
       if (g.current_price_per_gram && g.quantity_grams)
         return a + Number(g.current_price_per_gram) * Number(g.quantity_grams)
       return a + Number(g.invested_amount ?? 0)
     }, 0)
-    const bondVal = (bondInvestments ?? []).reduce((a: number, b: any) => a + Number(b.current_value ?? b.invested_amount ?? 0), 0)
+    const bondVal = fBond.reduce((a: number, b: any) => a + Number(b.current_value ?? b.invested_amount ?? 0), 0)
 
     const totalEquity = stVal + mfVal + etfVal + fdVal + rdVal + npsVal + licVal + goldVal + bondVal
 
-    // --- Debt ---
-    const totalDebt = (loans ?? []).reduce((a: number, l: any) => a + toINR(Number(l.outstanding_amt), l.currency), 0)
+    const totalDebt = fLoan.reduce((a: number, l: any) => a + convAmt(Number(l.outstanding_amt), l.currency), 0)
 
-    // --- Ratio ---
     const totalPortfolio = totalEquity + totalDebt
     const debtPct  = totalPortfolio > 0 ? (totalDebt / totalPortfolio) * 100 : 0
     const deRatio  = totalEquity > 0 ? (totalDebt / totalEquity).toFixed(2) : totalDebt > 0 ? '∞' : '0'
     const zone     = getZone(debtPct, totalDebt, totalEquity)
 
-    // --- Investment breakdown for chart ---
     const breakdown = [
       { name: 'Stocks',    value: Math.round(stVal),   color: '#3B7DD8' },
       { name: 'Mutual\nFunds', value: Math.round(mfVal), color: '#3D7A58' },
@@ -115,33 +139,30 @@ export default function FinancialHealthClient({ stocks, mutualFunds, fixedDeposi
       { name: 'Bonds',     value: Math.round(bondVal), color: '#0891B2' },
     ].filter(d => d.value > 0)
 
-    // --- Loan list enriched ---
-    const loanList = (loans ?? []).map((l: any) => ({
+    const loanList = fLoan.map((l: any) => ({
       ...l,
-      outstanding: toINR(Number(l.outstanding_amt), l.currency),
+      outstanding: convAmt(Number(l.outstanding_amt), l.currency),
       remaining: Math.max(0, l.tenure_months - (l.months_paid ?? 0)),
       typeLabel: LOAN_TYPE_LABELS[l.loan_type ?? 'home_loan'] ?? 'Loan',
     })).sort((a: any, b: any) => b.interest_rate - a.interest_rate)
 
-    // --- Monthly income (last 6 months avg) ---
     const now = new Date()
     const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1).toISOString().slice(0, 7)
-    const recentIncome = (transactions ?? []).filter((t: any) =>
+    const recentIncome = filterArr(transactions ?? []).filter((t: any) =>
       t.txn_type === 'income' && t.txn_date?.slice(0, 7) >= sixMonthsAgo
-    ).reduce((a: number, t: any) => a + Number(t.amount), 0)
+    ).reduce((a: number, t: any) => a + convAmt(Number(t.amount), t.currency ?? 'INR'), 0)
     const avgMonthly = Math.round(recentIncome / 6)
-    const monthlyIncome = avgMonthly
 
-    return { totalEquity, totalDebt, breakdown, loanList, debtPct, deRatio, zone, monthlyIncome, avgMonthly }
-  }, [stocks, mutualFunds, fixedDeposits, recurringDeposits, npsAccounts, licPolicies, goldInvestments, bondInvestments, etfInvestments, loans, transactions])
+    return { totalEquity, totalDebt, breakdown, loanList, debtPct, deRatio, zone, avgMonthly }
+  }, [view, fxRate, stocks, mutualFunds, fixedDeposits, recurringDeposits, npsAccounts,
+    licPolicies, goldInvestments, bondInvestments, etfInvestments, loans, transactions])
 
   const zoneConf = ZONE_CONFIG[zone]
   const ZoneIcon = zoneConf.icon
 
-  // --- Recommendations ---
   const recommendations = useMemo(() => {
     const recs = []
-    const highestRateLoan = loanList[0] // already sorted desc by interest_rate
+    const highestRateLoan = loanList[0]
 
     if (zone === 'high_debt') {
       if (highestRateLoan) {
@@ -149,23 +170,23 @@ export default function FinancialHealthClient({ stocks, mutualFunds, fixedDeposi
         const interestSaved = Math.round(extra * highestRateLoan.remaining * Number(highestRateLoan.interest_rate) / 1200)
         const monthsEarly = Math.min(highestRateLoan.remaining, Math.round(extra * highestRateLoan.remaining / Number(highestRateLoan.outstanding)))
         recs.push({
-          type: 'debt', priority: 'high', color: '#EF4444', bg: '#FEF2F2',
-          icon: TrendingDown, title: `Prepay ${highestRateLoan.name}`,
+          type: 'debt', color: '#EF4444', bg: '#FEF2F2', icon: TrendingDown,
+          title: `Prepay ${highestRateLoan.name}`,
           body: `At ${highestRateLoan.interest_rate}% interest, paying ${fmt(extra)} extra/month closes this loan ~${monthsEarly} months early and saves ${fmt(interestSaved)} in total interest.`,
           tag: `Saves ${fmt(interestSaved)} interest`,
         })
       }
       const sipAmount = avgMonthly > 0 ? Math.max(1000, Math.round(avgMonthly * 0.05 / 500) * 500) : 2000
       recs.push({
-        type: 'invest', priority: 'medium', color: '#3D7A58', bg: 'var(--sage-bg)',
-        icon: TrendingUp, title: 'Start a small SIP alongside',
+        type: 'invest', color: '#3D7A58', bg: 'var(--sage-bg)', icon: TrendingUp,
+        title: 'Start a small SIP alongside',
         body: `Even ${fmt(sipAmount)}/month in a low-cost index fund builds an investing habit and compounds over time while you reduce debt.`,
         tag: `${fmt(sipAmount)}/month builds the habit`,
       })
-      const emergencyFund = avgMonthly > 0 ? fmt(avgMonthly * 3) : '₹1–2L'
+      const emergencyFund = avgMonthly > 0 ? fmt(avgMonthly * 3) : `${sym} 1–2L`
       recs.push({
-        type: 'protect', priority: 'medium', color: '#6B7280', bg: 'var(--bg2)',
-        icon: Shield, title: 'Build a 3-month emergency buffer',
+        type: 'protect', color: '#6B7280', bg: 'var(--bg2)', icon: Shield,
+        title: 'Build a 3-month emergency buffer',
         body: `Before aggressive debt prepayment, keep ${emergencyFund} liquid so you don't need to take new loans for emergencies.`,
         tag: 'Prevents new debt cycles',
       })
@@ -174,25 +195,25 @@ export default function FinancialHealthClient({ stocks, mutualFunds, fixedDeposi
       const sipToHealthy = equityNeeded > 0 ? Math.round(equityNeeded / 36 / 500) * 500 : 0
       if (sipToHealthy > 0) {
         recs.push({
-          type: 'invest', priority: 'high', color: '#10B981', bg: '#ECFDF5',
-          icon: TrendingUp, title: 'Increase SIP to reach Healthy zone',
-          body: `You need ${fmt(equityNeeded)} more in investments to cross into the Healthy zone. A SIP of ${fmt(sipToHealthy)}/month gets you there in ~3 years (before market returns).`,
-          tag: `${fmt(sipToHealthy)}/month → Healthy in 3 yrs`,
+          type: 'invest', color: '#10B981', bg: '#ECFDF5', icon: TrendingUp,
+          title: 'Increase SIP to reach Healthy zone',
+          body: `You need ${fmt(equityNeeded)} more in investments to cross into the Healthy zone. A SIP of ${fmtK(sipToHealthy)}/month gets you there in ~3 years (before market returns).`,
+          tag: `${fmtK(sipToHealthy)}/month → Healthy in 3 yrs`,
         })
       }
       if (highestRateLoan) {
         const extra = Math.max(1000, Math.round(highestRateLoan.emi_amount * 0.15 / 500) * 500)
         const interestSaved = Math.round(extra * highestRateLoan.remaining * Number(highestRateLoan.interest_rate) / 1200)
         recs.push({
-          type: 'debt', priority: 'medium', color: '#F59E0B', bg: '#FFFBEB',
-          icon: TrendingDown, title: `Pay extra on ${highestRateLoan.name} (${highestRateLoan.interest_rate}%)`,
+          type: 'debt', color: '#F59E0B', bg: '#FFFBEB', icon: TrendingDown,
+          title: `Pay extra on ${highestRateLoan.name} (${highestRateLoan.interest_rate}%)`,
           body: `Your highest-interest loan — paying ${fmt(extra)} extra/month reduces this balance faster and saves ${fmt(interestSaved)} over the loan tenure.`,
           tag: `Saves ${fmt(interestSaved)} in interest`,
         })
       }
       recs.push({
-        type: 'invest', priority: 'low', color: '#3B7DD8', bg: 'var(--blue-bg)',
-        icon: Target, title: 'Diversify your investments',
+        type: 'invest', color: '#3B7DD8', bg: 'var(--blue-bg)', icon: Target,
+        title: 'Diversify your investments',
         body: 'If your equity is concentrated in one asset type, spread across mutual funds, FD, and gold to reduce risk while growing total equity.',
         tag: 'Reduces concentration risk',
       })
@@ -201,46 +222,45 @@ export default function FinancialHealthClient({ stocks, mutualFunds, fixedDeposi
         const extra = Math.max(2000, Math.round(highestRateLoan.emi_amount * 0.20 / 500) * 500)
         const interestSaved = Math.round(extra * highestRateLoan.remaining * Number(highestRateLoan.interest_rate) / 1200)
         recs.push({
-          type: 'debt', priority: 'medium', color: '#10B981', bg: '#ECFDF5',
-          icon: CheckCircle2, title: `Optionally prepay ${highestRateLoan.name}`,
-          body: `Your highest-rate loan is at ${highestRateLoan.interest_rate}%. Paying ${fmt(extra)} extra/month saves ${fmt(interestSaved)} and frees up cash flow. But compare this to your expected investment returns first.`,
+          type: 'debt', color: '#10B981', bg: '#ECFDF5', icon: CheckCircle2,
+          title: `Optionally prepay ${highestRateLoan.name}`,
+          body: `Your highest-rate loan is at ${highestRateLoan.interest_rate}%. Paying ${fmt(extra)} extra/month saves ${fmt(interestSaved)} and frees up cash flow. Compare this to expected investment returns first.`,
           tag: `Frees ${fmt(Number(highestRateLoan.emi_amount))}/month sooner`,
         })
       }
       recs.push({
-        type: 'invest', priority: 'high', color: '#3D7A58', bg: 'var(--sage-bg)',
-        icon: TrendingUp, title: 'Grow your equity aggressively',
+        type: 'invest', color: '#3D7A58', bg: 'var(--sage-bg)', icon: TrendingUp,
+        title: 'Grow your equity aggressively',
         body: 'With your debt well under control, this is the time to maximise SIPs, increase NPS contributions (tax benefit), and look at international index funds for diversification.',
         tag: 'Compound growth phase',
       })
       recs.push({
-        type: 'invest', priority: 'low', color: '#6D28D9', bg: '#EDE9FE',
-        icon: Shield, title: 'Maximise tax-efficient instruments',
+        type: 'invest', color: '#6D28D9', bg: '#EDE9FE', icon: Shield,
+        title: 'Maximise tax-efficient instruments',
         body: 'NPS (up to ₹50K extra under 80CCD), ELSS (₹1.5L under 80C), and SGBs for gold give you both growth and tax savings.',
         tag: 'Saves tax + builds wealth',
       })
     } else if (zone === 'debt_free') {
       recs.push({
-        type: 'invest', priority: 'high', color: '#3D7A58', bg: 'var(--sage-bg)',
-        icon: TrendingUp, title: 'You\'re debt-free — invest aggressively',
+        type: 'invest', color: '#3D7A58', bg: 'var(--sage-bg)', icon: TrendingUp,
+        title: 'You\'re debt-free — invest aggressively',
         body: 'Without any EMI burden, redirect all surplus into equity mutual funds and NPS. A monthly SIP of 40–50% of income accelerates wealth creation significantly.',
         tag: 'Maximum compounding potential',
       })
     }
     return recs
-  }, [zone, loanList, totalEquity, totalDebt, avgMonthly])
+  }, [zone, loanList, totalEquity, totalDebt, avgMonthly, fmt, fmtK, sym])
 
-  // --- Path to Healthy calculation ---
   const pathData = useMemo(() => {
     if (zone === 'healthy' || zone === 'debt_free') return null
-    const equityTarget = (7 / 3) * totalDebt  // equity needed for healthy (debtPct = 30%)
+    const equityTarget = (7 / 3) * totalDebt
     const equityGap    = Math.max(0, equityTarget - totalEquity)
-    const sipNeeded    = Math.round(equityGap / 36 / 500) * 500 // 3-year plan
+    const sipNeeded    = Math.round(equityGap / 36 / 500) * 500
     const currentDebtPct = Math.round(debtPct)
     const steps = [
       { pct: currentDebtPct, label: `Now (${currentDebtPct}%)`, active: true },
       { pct: 50, label: '50% · Moderate', active: currentDebtPct > 50 },
-      { pct: 30, label: '30% · Healthy', active: currentDebtPct > 30 },
+      { pct: 30, label: '30% · Healthy',  active: currentDebtPct > 30 },
     ]
     return { equityGap, sipNeeded, steps }
   }, [zone, totalDebt, totalEquity, debtPct])
@@ -251,7 +271,11 @@ export default function FinancialHealthClient({ stocks, mutualFunds, fixedDeposi
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-xl font-bold" style={{ color: 'var(--text)' }}>Financial Health</h1>
-          <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>Debt vs Equity Analysis — all investments vs all active loans</p>
+          <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
+            Debt vs Equity Analysis ·{' '}
+            {view === 'uae' ? 'UAE (AED)' : view === 'india' ? 'India (INR)' : 'Consolidated (INR)'}
+            {' '}— all investments vs all active loans
+          </p>
         </div>
         <div className="flex gap-2">
           <Link href="/dashboard/investments"
@@ -270,12 +294,9 @@ export default function FinancialHealthClient({ stocks, mutualFunds, fixedDeposi
       {/* Zone Hero */}
       <div className="wl-card p-5" style={{ background: zoneConf.bg, border: `1.5px solid ${zoneConf.color}30` }}>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-center">
-          {/* Gauge */}
           <div>
             <DebtGauge debtPct={debtPct} zone={zone} />
           </div>
-
-          {/* Zone status */}
           <div className="lg:col-span-2">
             <div className="flex items-center gap-2 mb-2">
               <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: zoneConf.color + '20' }}>
@@ -285,7 +306,6 @@ export default function FinancialHealthClient({ stocks, mutualFunds, fixedDeposi
             </div>
             <p className="text-[13px] mb-4" style={{ color: 'var(--text2)' }}>{zoneConf.description}</p>
 
-            {/* Zone scale bar */}
             <div className="mb-3">
               <div className="flex justify-between text-[9px] font-semibold mb-1" style={{ color: '#9CA3AF' }}>
                 <span>Debt-Free</span><span>Healthy</span><span>Moderate</span><span>High Debt</span>
@@ -301,12 +321,11 @@ export default function FinancialHealthClient({ stocks, mutualFunds, fixedDeposi
               </div>
             </div>
 
-            {/* Three KPI chips */}
             <div className="grid grid-cols-3 gap-2">
               {[
                 { label: 'Total Equity', value: fmt(totalEquity), color: '#10B981' },
-                { label: 'Total Debt', value: fmt(totalDebt), color: '#EF4444' },
-                { label: 'D/E Ratio', value: `${deRatio}×`, color: zoneConf.color },
+                { label: 'Total Debt',   value: fmt(totalDebt),   color: '#EF4444' },
+                { label: 'D/E Ratio',    value: `${deRatio}×`,    color: zoneConf.color },
               ].map(k => (
                 <div key={k.label} className="rounded-xl p-2.5 text-center" style={{ background: '#fff' }}>
                   <div className="text-[15px] font-black" style={{ color: k.color }}>{k.value}</div>
@@ -397,7 +416,7 @@ export default function FinancialHealthClient({ stocks, mutualFunds, fixedDeposi
                       <div className="h-full rounded-full" style={{ width: `${pct}%`, background: '#EF4444' }} />
                     </div>
                     <div className="flex justify-between text-[10px]" style={{ color: 'var(--text3)' }}>
-                      <span>EMI: <span className="font-semibold" style={{ color: 'var(--text)' }}>₹{Number(l.emi_amount).toLocaleString('en-IN')}</span></span>
+                      <span>EMI: <span className="font-semibold" style={{ color: 'var(--text)' }}>{fmt(Number(l.emi_amount))}</span></span>
                       <span>{l.remaining} months left</span>
                       <span>{pct}% of total debt</span>
                     </div>
@@ -440,11 +459,10 @@ export default function FinancialHealthClient({ stocks, mutualFunds, fixedDeposi
         <div className="wl-card p-4" style={{ background: 'linear-gradient(135deg, var(--sage-bg) 0%, #fff 60%)' }}>
           <div className="text-[11px] font-bold uppercase tracking-wider mb-4" style={{ color: 'var(--text3)' }}>Path to Healthy Zone</div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-center">
-            {/* Progress steps */}
             <div className="flex items-center gap-2">
               {pathData.steps.map((s, i) => (
                 <div key={i} className="flex items-center gap-2">
-                  <div className={`flex flex-col items-center`}>
+                  <div className="flex flex-col items-center">
                     <div className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
                       style={{ background: s.active ? ZONE_CONFIG[zone].color : '#10B981' }}>
                       {s.active ? '→' : '✓'}
@@ -459,8 +477,6 @@ export default function FinancialHealthClient({ stocks, mutualFunds, fixedDeposi
                 </div>
               ))}
             </div>
-
-            {/* Numbers */}
             <div className="space-y-2.5">
               <div className="flex items-baseline justify-between p-3 rounded-xl" style={{ background: '#fff' }}>
                 <div>
@@ -472,7 +488,7 @@ export default function FinancialHealthClient({ stocks, mutualFunds, fixedDeposi
               {pathData.sipNeeded > 0 && (
                 <div className="flex items-baseline justify-between p-3 rounded-xl" style={{ background: '#fff' }}>
                   <div>
-                    <div className="text-[11px] font-semibold" style={{ color: 'var(--text)' }}>Suggested monthly SIP</div>
+                    <div className="text-[11px] font-semibold" style={{ color: 'var(--text)' }}>Suggested monthly SIP / investment</div>
                     <div className="text-[10px]" style={{ color: 'var(--text3)' }}>Reaches Healthy zone in ~3 years</div>
                   </div>
                   <div className="text-[16px] font-black" style={{ color: '#3D7A58' }}>{fmtK(pathData.sipNeeded)}</div>
