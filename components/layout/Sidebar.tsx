@@ -7,7 +7,7 @@ import {
   CreditCard, Shield, Target, Upload, LogOut, Settings,
   ChevronDown, BarChart2, RefreshCw, Landmark, Briefcase,
   FileText, Activity, Gem, Car, Home, User, CircleDollarSign,
-  HelpCircle
+  ArrowDownCircle, ArrowUpCircle, PieChart
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -35,9 +35,16 @@ const LOAN_SUBS = [
   { href: '/dashboard/loans/other',    icon: Building2,  label: 'Other Loans'   },
 ]
 
+const TXN_SUBS = [
+  { href: '/dashboard/income',          icon: ArrowUpCircle,   label: 'Income'          },
+  { href: '/dashboard/income/report',   icon: PieChart,        label: 'Income Report'   },
+  { href: '/dashboard/expenses',        icon: ArrowDownCircle, label: 'Expenses'        },
+  { href: '/dashboard/expenses/report', icon: PieChart,        label: 'Expense Report'  },
+]
+
 const MAIN_NAV = [
   { href: '/dashboard',            icon: LayoutDashboard, label: 'Dashboard'         },
-  { href: '/dashboard/expenses',   icon: Receipt,         label: 'Transactions'      },
+  { href: '/dashboard/income',     icon: Receipt,         label: 'Transactions',     sub: 'txn'  },
   { href: '/dashboard/investments',icon: TrendingUp,      label: 'Investments',      sub: 'inv'  },
   { href: '/dashboard/loans',      icon: Building2,       label: 'Loans',            sub: 'loan' },
   { href: '/dashboard/cards',      icon: CreditCard,      label: 'Credit Cards'      },
@@ -55,8 +62,10 @@ export default function Sidebar() {
   const supabase = createClient()
   const isInvActive  = pathname.startsWith('/dashboard/investments')
   const isLoanActive = pathname.startsWith('/dashboard/loans')
+  const isTxnActive  = pathname.startsWith('/dashboard/income') || pathname.startsWith('/dashboard/expenses') || pathname.startsWith('/dashboard/expenses/report') || pathname.startsWith('/dashboard/income/report')
   const [invOpen,  setInvOpen]  = useState(isInvActive)
   const [loanOpen, setLoanOpen] = useState(isLoanActive)
+  const [txnOpen,  setTxnOpen]  = useState(isTxnActive)
 
   async function signOut() {
     await supabase.auth.signOut()
@@ -145,6 +154,18 @@ export default function Sidebar() {
         <SectionLabel>Main Menu</SectionLabel>
         <div className="space-y-0.5">
           {MAIN_NAV.map(item => {
+            if (item.sub === 'txn') {
+              return (
+                <div key={item.href}>
+                  <ExpandItem label={item.label} icon={item.icon} active={isTxnActive} open={txnOpen} onToggle={() => setTxnOpen(p => !p)} />
+                  {txnOpen && (
+                    <div className="space-y-0.5 py-0.5">
+                      {TXN_SUBS.map(sub => <SubItem key={sub.href} {...sub} />)}
+                    </div>
+                  )}
+                </div>
+              )
+            }
             if (item.sub === 'inv') {
               return (
                 <div key={item.href}>

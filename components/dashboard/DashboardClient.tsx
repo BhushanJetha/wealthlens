@@ -26,7 +26,12 @@ const DONUT_COLORS = ['#3D7A58','#D4920A','#3B7DD8','#C96A3A','#7C5CBF','#2E7D52
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 export default function DashboardClient({ transactions, loans, accounts, stocks, mutualFunds, fixedDeposits, insurance, goals, budgets }: any) {
-  const { view } = useViewStore()
+  const { view, fromMonth, toMonth } = useViewStore()
+
+  const inRange = (txn_date: string) => {
+    const m = txn_date?.slice(0, 7) ?? ''
+    return m >= fromMonth && m <= toMonth
+  }
 
   const metrics = useMemo(() => {
     const creditCards = accounts.filter((a: any) => a.account_type === 'credit_card')
@@ -53,10 +58,9 @@ export default function DashboardClient({ transactions, loans, accounts, stocks,
     const totalLiab = loanLiab + cardLiab
     const netWorth  = totalAssets - totalLiab
 
-    const thisMonth = new Date().toISOString().slice(0, 7)
-    const txMonth = filterByView(transactions.filter((t: any) => t.txn_date?.startsWith(thisMonth)))
-    const monthlyIncome  = txMonth.filter((t:any)=>t.txn_type==='income').reduce((a:number,t:any)=>a+(view==='consolidated'?toINR(Number(t.amount),t.currency):Number(t.amount)),0)
-    const monthlyExpense = txMonth.filter((t:any)=>t.txn_type==='expense').reduce((a:number,t:any)=>a+(view==='consolidated'?toINR(Number(t.amount),t.currency):Number(t.amount)),0)
+    const txRange = filterByView(transactions.filter((t: any) => inRange(t.txn_date)))
+    const monthlyIncome  = txRange.filter((t:any)=>t.txn_type==='income').reduce((a:number,t:any)=>a+(view==='consolidated'?toINR(Number(t.amount),t.currency):Number(t.amount)),0)
+    const monthlyExpense = txRange.filter((t:any)=>t.txn_type==='expense').reduce((a:number,t:any)=>a+(view==='consolidated'?toINR(Number(t.amount),t.currency):Number(t.amount)),0)
     const savingsRate    = monthlyIncome > 0 ? Math.round((monthlyIncome - monthlyExpense) / monthlyIncome * 100) : 0
 
     const totalLimit = filteredCards.reduce((a:number,c:any)=>a+Number(c.credit_limit??0),0)
@@ -64,51 +68,64 @@ export default function DashboardClient({ transactions, loans, accounts, stocks,
     const utilPct    = totalLimit > 0 ? Math.round(totalBal/totalLimit*100) : 0
 
     return { sym, totalAssets, totalLiab, netWorth, monthlyIncome, monthlyExpense, savingsRate, utilPct, filteredLoans, filteredCards }
-  }, [view, transactions, loans, accounts, stocks, mutualFunds, fixedDeposits])
+  }, [view, fromMonth, toMonth, transactions, loans, accounts, stocks, mutualFunds, fixedDeposits])
 
   const { sym } = metrics
 
-  // 6-month income/expense bar data
-  const incomeExpenseData = useMemo(() => {
+  // Build all months in selected range, cap display at 12 for charts
+  const rangeMonths = useMemo(() => {
     const months: string[] = []
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(); d.setMonth(d.getMonth() - i)
-      months.push(d.toISOString().slice(0, 7))
+    let cur = fromMonth
+    while (cur <= toMonth && months.length < 60) {
+      months.push(cur)
+      const [y, m] = cur.split('-').map(Number)
+      const d = new Date(y, m, 1)
+      cur = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
     }
-    return months.map(m => {
+    return months
+  }, [fromMonth, toMonth])
+
+  const displayMonths = rangeMonths.length > 12 ? rangeMonths.slice(-12) : rangeMonths
+
+  // True if selected range includes today's month
+  const todayMonth = new Date().toISOString().slice(0, 7)
+  const isLiveRange = fromMonth <= todayMonth && toMonth >= todayMonth
+
+  // Whether there's any transaction data in the selected range
+  const hasRangeData = transactions.some((t: any) => inRange(t.txn_date))
+
+  // Income/expense bar data — strictly for the selected range months
+  const incomeExpenseData = useMemo(() => {
+    return displayMonths.map(m => {
       const monthTxns = transactions.filter((t: any) => t.txn_date?.startsWith(m))
       const income  = monthTxns.filter((t:any)=>t.txn_type==='income').reduce((a:number,t:any)=>a+Number(t.amount),0)
       const expense = monthTxns.filter((t:any)=>t.txn_type==='expense').reduce((a:number,t:any)=>a+Number(t.amount),0)
       const savings = income - expense
       return { month: MONTHS_SHORT[Number(m.slice(5))-1], income: Math.round(income), expense: Math.round(expense), savings: Math.max(0,Math.round(savings)) }
     })
-  }, [transactions])
+  }, [transactions, displayMonths])
 
-  // Net worth 6-month trend (simulated from current NW)
+  // NW trend — only shown for live range; simulated from current NW across range months
   const nwTrend = useMemo(() => {
-    const months: string[] = []
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(); d.setMonth(d.getMonth() - i)
-      months.push(d.toISOString().slice(0, 7))
-    }
-    return months.map((m, idx) => ({
+    if (!isLiveRange) return []
+    return displayMonths.map((m, idx) => ({
       month: MONTHS_SHORT[Number(m.slice(5))-1],
-      value: Math.round(metrics.netWorth * (0.78 + idx * 0.044))
+      value: Math.round(metrics.netWorth * (0.78 + idx * (0.22 / Math.max(displayMonths.length - 1, 1))))
     }))
-  }, [metrics.netWorth])
+  }, [metrics.netWorth, displayMonths, isLiveRange])
 
   // Budget donut data
   const budgetData = useMemo(() => {
-    const thisMonth = new Date().toISOString().slice(0, 7)
     const spendMap: Record<string, number> = {}
-    transactions.filter((t:any)=>t.txn_type==='expense'&&t.txn_date?.startsWith(thisMonth)).forEach((t:any)=>{ spendMap[t.category]=(spendMap[t.category]??0)+Number(t.amount) })
+    transactions.filter((t:any)=>t.txn_type==='expense'&&inRange(t.txn_date)).forEach((t:any)=>{ spendMap[t.category]=(spendMap[t.category]??0)+Number(t.amount) })
     return Object.entries(spendMap).map(([name, value]) => ({ name, value: Math.round(value) })).sort((a,b)=>b.value-a.value).slice(0,6)
-  }, [transactions])
+  }, [transactions, fromMonth, toMonth])
 
   const budgetTotal = budgetData.reduce((a,d)=>a+d.value,0)
 
-  // Upcoming bills
+  // Upcoming bills — only meaningful when viewing the current/future period
   const upcomingBills = useMemo(() => {
+    if (!isLiveRange) return []
     const today = new Date()
     const items: Array<{ name: string; amount: string; date: string; daysLeft: number; status: 'paid' | 'upcoming' | 'urgent' }> = []
     loans.forEach((l: any) => {
@@ -124,7 +141,7 @@ export default function DashboardClient({ transactions, loans, accounts, stocks,
       }
     })
     return items.sort((a,b)=>a.daysLeft-b.daysLeft).slice(0,6)
-  }, [loans, insurance])
+  }, [loans, insurance, isLiveRange])
 
   // Debt payoff
   const totalDebt = metrics.totalLiab
@@ -146,37 +163,49 @@ export default function DashboardClient({ transactions, loans, accounts, stocks,
           </p>
         </div>
         <div className="text-[12px] font-medium px-3 py-1.5 rounded-lg" style={{ background: 'var(--sage-bg)', color: 'var(--sage)' }}>
-          {new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
+          {fromMonth === toMonth
+            ? new Date(fromMonth + '-01').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+            : `${new Date(fromMonth + '-01').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })} – ${new Date(toMonth + '-01').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}`}
         </div>
       </div>
+
+      {/* No-data banner for historical periods */}
+      {!hasRangeData && (
+        <div className="rounded-xl p-4 flex items-center gap-3"
+          style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+          <AlertCircle size={16} style={{ color: 'var(--gold)', flexShrink: 0 }} />
+          <div className="text-[12px]" style={{ color: 'var(--text2)' }}>
+            No transaction data found for the selected period. Charts and metrics below reflect current portfolio values or are empty.
+          </div>
+        </div>
+      )}
 
       {/* KPI Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <MetricCard
           label="Total Net Worth"
-          value={fmt(metrics.netWorth, sym)}
-          delta="+6.1% vs Apr"  positive
+          value={isLiveRange ? fmt(metrics.netWorth, sym) : '—'}
+          delta={isLiveRange ? 'Current value' : 'Live period only'}
+          positive={isLiveRange}
           accent="sage"
           icon={<TrendingUp size={14} />}
         />
         <MetricCard
-          label="Monthly Income"
-          value={fmt(metrics.monthlyIncome, sym)}
-          delta="+4.2% vs Apr" positive
+          label={fromMonth === toMonth ? 'Monthly Income' : 'Period Income'}
+          value={hasRangeData ? fmt(metrics.monthlyIncome, sym) : '—'}
           accent="income"
           icon={<Wallet size={14} />}
         />
         <MetricCard
-          label="Monthly Expenses"
-          value={fmt(metrics.monthlyExpense, sym)}
-          delta="-2.1% vs Apr" positive
+          label={fromMonth === toMonth ? 'Monthly Expenses' : 'Period Expenses'}
+          value={hasRangeData ? fmt(metrics.monthlyExpense, sym) : '—'}
           accent="expense"
           icon={<TrendingDown size={14} />}
         />
         <MetricCard
           label="Savings Rate"
-          value={`${metrics.savingsRate}%`}
-          delta={metrics.savingsRate >= 20 ? '✓ On Track' : '⚠ Low'}
+          value={hasRangeData ? `${metrics.savingsRate}%` : '—'}
+          delta={hasRangeData ? (metrics.savingsRate >= 20 ? '✓ On Track' : '⚠ Low') : 'No data'}
           positive={metrics.savingsRate >= 20}
           accent="gold"
           icon={<Percent size={14} />}
@@ -206,7 +235,7 @@ export default function DashboardClient({ transactions, loans, accounts, stocks,
                   </ResponsiveContainer>
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
                     <div className="text-[13px] font-bold font-mono" style={{ color: 'var(--text)' }}>{fmt(budgetTotal, sym)}</div>
-                    <div className="text-[9px]" style={{ color: 'var(--text3)' }}>This month</div>
+                    <div className="text-[9px]" style={{ color: 'var(--text3)' }}>Selected period</div>
                   </div>
                 </div>
               </div>
@@ -227,7 +256,7 @@ export default function DashboardClient({ transactions, loans, accounts, stocks,
             </>
           ) : (
             <div className="flex items-center justify-center h-32 text-[12px]" style={{ color: 'var(--text3)' }}>
-              Upload statements to see spending
+              {hasRangeData ? 'Upload statements to see spending' : 'No data for selected period'}
             </div>
           )}
         </div>
@@ -240,29 +269,37 @@ export default function DashboardClient({ transactions, loans, accounts, stocks,
               View Reports <ArrowRight size={10} />
             </Link>
           </div>
-          <div className="flex items-center gap-3 mb-3">
-            {[['Income','var(--income)'],['Expenses','var(--expense)'],['Savings','var(--gold)']].map(([l,c])=>(
-              <div key={l} className="flex items-center gap-1 text-[10px]">
-                <span className="w-2.5 h-2 rounded-sm" style={{ background: c as string }} />
-                <span style={{ color: 'var(--text3)' }}>{l}</span>
+          {hasRangeData ? (
+            <>
+              <div className="flex items-center gap-3 mb-3">
+                {[['Income','var(--income)'],['Expenses','var(--expense)'],['Savings','var(--gold)']].map(([l,c])=>(
+                  <div key={l} className="flex items-center gap-1 text-[10px]">
+                    <span className="w-2.5 h-2 rounded-sm" style={{ background: c as string }} />
+                    <span style={{ color: 'var(--text3)' }}>{l}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <ResponsiveContainer width="100%" height={160}>
-            <BarChart data={incomeExpenseData} barCategoryGap="25%">
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-              <XAxis dataKey="month" tick={{ fill:'var(--text3)', fontSize:10 }} axisLine={false} tickLine={false} />
-              <YAxis hide />
-              <Tooltip
-                contentStyle={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:8, fontSize:11 }}
-                formatter={(v:any,n:string)=>[fmt(v,sym), n.charAt(0).toUpperCase()+n.slice(1)]}
-                labelStyle={{ color:'var(--text)' }}
-              />
-              <Bar dataKey="income"  fill="var(--income)"  radius={[3,3,0,0]} />
-              <Bar dataKey="expense" fill="var(--expense)" radius={[3,3,0,0]} />
-              <Line type="monotone" dataKey="savings" stroke="var(--gold)" strokeWidth={1.5} dot={{ r:2, fill:'var(--gold)' }} />
-            </BarChart>
-          </ResponsiveContainer>
+              <ResponsiveContainer width="100%" height={160}>
+                <BarChart data={incomeExpenseData} barCategoryGap="25%">
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="month" tick={{ fill:'var(--text3)', fontSize:10 }} axisLine={false} tickLine={false} />
+                  <YAxis hide />
+                  <Tooltip
+                    contentStyle={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:8, fontSize:11 }}
+                    formatter={(v:any,n:string)=>[fmt(v,sym), n.charAt(0).toUpperCase()+n.slice(1)]}
+                    labelStyle={{ color:'var(--text)' }}
+                  />
+                  <Bar dataKey="income"  fill="var(--income)"  radius={[3,3,0,0]} />
+                  <Bar dataKey="expense" fill="var(--expense)" radius={[3,3,0,0]} />
+                  <Line type="monotone" dataKey="savings" stroke="var(--gold)" strokeWidth={1.5} dot={{ r:2, fill:'var(--gold)' }} />
+                </BarChart>
+              </ResponsiveContainer>
+            </>
+          ) : (
+            <div className="flex items-center justify-center h-40 text-[12px]" style={{ color: 'var(--text3)' }}>
+              No income or expense data for selected period
+            </div>
+          )}
         </div>
 
         {/* Bill Tracker */}
@@ -274,7 +311,9 @@ export default function DashboardClient({ transactions, loans, accounts, stocks,
             </Link>
           </div>
           {upcomingBills.length === 0 ? (
-            <div className="flex items-center justify-center h-32 text-[12px]" style={{ color: 'var(--text3)' }}>No upcoming bills</div>
+            <div className="flex items-center justify-center h-32 text-center text-[12px] px-4" style={{ color: 'var(--text3)' }}>
+              {isLiveRange ? 'No upcoming bills in the next 45 days' : 'Select current or future period to see upcoming bills'}
+            </div>
           ) : (
             <div className="space-y-2">
               {upcomingBills.map((b, i) => {
@@ -377,33 +416,41 @@ export default function DashboardClient({ transactions, loans, accounts, stocks,
               View Net Worth <ArrowRight size={10} />
             </Link>
           </div>
-          <ResponsiveContainer width="100%" height={150}>
-            <LineChart data={nwTrend}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-              <XAxis dataKey="month" tick={{ fill:'var(--text3)', fontSize:10 }} axisLine={false} tickLine={false} />
-              <YAxis hide />
-              <Tooltip
-                contentStyle={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:8, fontSize:11 }}
-                formatter={(v:any)=>[fmt(v,sym),'Net Worth']}
-                labelStyle={{ color:'var(--text)' }}
-              />
-              <Line type="monotone" dataKey="value" stroke="var(--sage)" strokeWidth={2.5}
-                dot={{ r:3, fill:'var(--sage)', strokeWidth:0 }}
-                activeDot={{ r:5, fill:'var(--sage)' }} />
-            </LineChart>
-          </ResponsiveContainer>
+          {isLiveRange && nwTrend.length > 0 ? (
+            <ResponsiveContainer width="100%" height={150}>
+              <LineChart data={nwTrend}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                <XAxis dataKey="month" tick={{ fill:'var(--text3)', fontSize:10 }} axisLine={false} tickLine={false} />
+                <YAxis hide />
+                <Tooltip
+                  contentStyle={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:8, fontSize:11 }}
+                  formatter={(v:any)=>[fmt(v,sym),'Net Worth']}
+                  labelStyle={{ color:'var(--text)' }}
+                />
+                <Line type="monotone" dataKey="value" stroke="var(--sage)" strokeWidth={2.5}
+                  dot={{ r:3, fill:'var(--sage)', strokeWidth:0 }}
+                  activeDot={{ r:5, fill:'var(--sage)' }} />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex items-center justify-center h-[150px] text-center text-[12px] px-4" style={{ color: 'var(--text3)' }}>
+              Net worth trend is available for the current period only
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Monthly Review Banner */}
-      <div className="wl-card p-4 flex items-center gap-4"
+      {/* Monthly Review Banner — only shown when there's data */}
+      {hasRangeData && <div className="wl-card p-4 flex items-center gap-4"
         style={{ background: 'linear-gradient(135deg, var(--sage-bg) 0%, #fff 60%)' }}>
         <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--sage)', color: '#fff' }}>
           <Target size={18} />
         </div>
         <div className="flex-1">
           <div className="text-[13px] font-bold" style={{ color: 'var(--text)' }}>
-            Monthly Review — {new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
+            {fromMonth === toMonth ? 'Monthly Review' : 'Period Review'} — {fromMonth === toMonth
+              ? new Date(fromMonth + '-01').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+              : `${new Date(fromMonth + '-01').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })} – ${new Date(toMonth + '-01').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}`}
           </div>
           <div className="text-[11px] mt-0.5" style={{ color: 'var(--text2)' }}>
             {metrics.monthlyExpense < metrics.monthlyIncome
@@ -416,7 +463,7 @@ export default function DashboardClient({ transactions, loans, accounts, stocks,
           style={{ background: 'var(--sage)' }}>
           Review in Detail <ArrowRight size={12} />
         </Link>
-      </div>
+      </div>}
     </div>
   )
 }
