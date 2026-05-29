@@ -1,518 +1,647 @@
 'use client'
-import { useMemo } from 'react'
-import { useViewStore } from '@/store/viewStore'
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis } from 'recharts'
-import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle2, Zap, ArrowRight, Target, Shield } from 'lucide-react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import Link from 'next/link'
+import {
+  Target, TrendingUp, Shield, CheckCircle2, AlertTriangle, ChevronRight,
+  Star, Zap, Heart, BookOpen, Award, Layers, PiggyBank, BarChart2, Globe, Clock,
+} from 'lucide-react'
 
-function fmtINR(n: number) {
-  if (Math.abs(n) >= 10000000) return `₹${(n / 10000000).toFixed(2)}Cr`
-  if (Math.abs(n) >= 100000)   return `₹${(n / 100000).toFixed(2)}L`
-  return `₹${Math.round(n).toLocaleString('en-IN')}`
-}
-function fmtAED(n: number) {
-  if (Math.abs(n) >= 1000000) return `AED ${(n / 1000000).toFixed(2)}M`
-  if (Math.abs(n) >= 1000)    return `AED ${(n / 1000).toFixed(1)}K`
-  return `AED ${Math.round(n).toLocaleString()}`
-}
-function fmtKINR(n: number) {
-  if (n >= 100000) return `₹${(n / 100000).toFixed(1)}L`
-  if (n >= 1000)   return `₹${(n / 1000).toFixed(0)}K`
-  return `₹${Math.round(n).toLocaleString('en-IN')}`
-}
-
-const LOAN_TYPE_LABELS: Record<string, string> = {
-  home_loan: 'Home Loan', car_loan: 'Car Loan', bike_loan: 'Bike/Vehicle',
-  gold_loan: 'Gold Loan', loan_on_card: 'Loan on Card',
-  personal_loan: 'Personal Loan', other_loan: 'Other Loan',
-}
-
-type Zone = 'high_debt' | 'moderate' | 'healthy' | 'debt_free' | 'no_data'
-
-function getZone(debtPct: number, totalDebt: number, totalEquity: number): Zone {
-  if (totalDebt === 0 && totalEquity === 0) return 'no_data'
-  if (totalDebt === 0) return 'debt_free'
-  if (debtPct > 60) return 'high_debt'
-  if (debtPct > 30) return 'moderate'
-  return 'healthy'
+// ── Scroll animation helpers ──────────────────────────────────────────────────
+function useInView(threshold = 0.12) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const obs = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) { setVisible(true); obs.disconnect() } },
+      { threshold }
+    )
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [threshold])
+  return { ref, visible }
 }
 
-const ZONE_CONFIG = {
-  high_debt: { label: 'High Debt',  color: '#EF4444', bg: '#FEF2F2', icon: AlertTriangle, description: 'Your debt significantly outweighs your investments. Focus on reducing high-interest loans first.' },
-  moderate:  { label: 'Moderate',   color: '#F59E0B', bg: '#FFFBEB', icon: Zap,           description: 'You\'re balancing debt and investments, but there\'s room to improve. Gradually shift more toward equity.' },
-  healthy:   { label: 'Healthy',    color: '#10B981', bg: '#ECFDF5', icon: CheckCircle2,  description: 'Excellent! Your investments outweigh your debt. Keep growing your equity and consider prepaying high-rate loans.' },
-  debt_free: { label: 'Debt Free',  color: '#3D7A58', bg: '#F0FDF4', icon: Shield,        description: 'Outstanding! You carry no debt. Focus entirely on growing your investment portfolio.' },
-  no_data:   { label: 'No Data',    color: '#9CA3AF', bg: '#F9FAFB', icon: Target,        description: 'Add your investments and loans to see your financial health analysis.' },
-}
-
-function DebtGauge({ debtPct, zone }: { debtPct: number; zone: Zone }) {
-  const color = ZONE_CONFIG[zone].color
-  const data = [
-    { value: Math.round(debtPct), fill: color },
-    { value: Math.round(100 - debtPct), fill: '#F3F4F6' },
-  ]
+function FadeUp({ children, delay = 0, className = '' }: {
+  children: React.ReactNode; delay?: number; className?: string
+}) {
+  const { ref, visible } = useInView()
   return (
-    <div className="relative" style={{ height: 160 }}>
-      <ResponsiveContainer width="100%" height={160}>
-        <PieChart>
-          <Pie data={data} cx="50%" cy="90%" startAngle={180} endAngle={0}
-            innerRadius={75} outerRadius={105} dataKey="value" paddingAngle={1} strokeWidth={0}>
-            {data.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
-          </Pie>
-        </PieChart>
-      </ResponsiveContainer>
-      <div className="absolute inset-0 flex flex-col items-center" style={{ paddingTop: 80 }}>
-        <div className="text-3xl font-black" style={{ color, lineHeight: 1 }}>{Math.round(debtPct)}%</div>
-        <div className="text-[10px] font-semibold uppercase tracking-wider mt-0.5" style={{ color: '#9CA3AF' }}>Debt Ratio</div>
-      </div>
-      <div className="absolute bottom-0 w-full flex justify-between px-2">
-        <span className="text-[9px] font-semibold" style={{ color: '#10B981' }}>0% · Healthy</span>
-        <span className="text-[9px] font-semibold" style={{ color: '#EF4444' }}>100% · High Debt</span>
-      </div>
+    <div ref={ref} className={className} style={{
+      opacity: visible ? 1 : 0,
+      transform: visible ? 'translateY(0)' : 'translateY(24px)',
+      transition: `opacity 0.55s ease ${delay}ms, transform 0.55s ease ${delay}ms`,
+    }}>
+      {children}
     </div>
   )
 }
 
-export default function FinancialHealthClient({ stocks, mutualFunds, fixedDeposits, recurringDeposits,
-  npsAccounts, licPolicies, goldInvestments, bondInvestments, etfInvestments, loans, transactions }: any) {
+function AnimBar({ pct, color, delay = 0 }: { pct: number; color: string; delay?: number }) {
+  const { ref, visible } = useInView()
+  return (
+    <div ref={ref} className="h-2.5 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}>
+      <div style={{
+        height: '100%', borderRadius: 9999,
+        width: visible ? `${Math.min(100, pct)}%` : '0%',
+        background: color,
+        transition: `width 0.9s ease ${delay}ms`,
+      }} />
+    </div>
+  )
+}
 
-  const { view, fxRate } = useViewStore()
-  const isUAE = view === 'uae'
-  const sym   = isUAE ? 'AED' : '₹'
-  const fmt   = isUAE ? fmtAED : fmtINR
-  const fmtK  = isUAE ? fmtAED : fmtKINR
+// ── Types ─────────────────────────────────────────────────────────────────────
+interface Props {
+  stocks: any[]; mutualFunds: any[]; fixedDeposits: any[]; recurringDeposits: any[]
+  npsAccounts: any[]; licPolicies: any[]; goldInvestments: any[]; bondInvestments: any[]
+  etfInvestments: any[]; loans: any[]; transactions: any[]; goals: any[]; goalInvestments: any[]
+}
 
-  const filterArr = (arr: any[]) =>
-    view === 'uae'   ? arr.filter((x: any) => x.currency === 'AED' || x.country === 'UAE')
-    : view === 'india' ? arr.filter((x: any) => x.currency === 'INR' || x.country === 'India')
-    : arr
+interface HealthData {
+  score: number
+  pillars: { label: string; pts: number; max: number; desc: string; color: string; bg: string }[]
+  equityVal: number; debtVal: number; totalCurr: number; numTypes: number
+  fdVal: number; rdVal: number; savingsRate: number; goalCount: number
+  linkedInvPct: number; avgMonthlyIncome: number; totalRet: number; licPaid: number
+}
 
-  const convAmt = (amt: number, cur: string) =>
-    view === 'consolidated' ? (cur === 'AED' ? amt * fxRate : amt) : amt
+// ── Health score computation ───────────────────────────────────────────────────
+function computeHealthData(p: Props): HealthData {
+  const sum = (arr: any[], key: string) => arr.reduce((a, x) => a + (Number(x[key]) || 0), 0)
 
-  const { totalEquity, totalDebt, breakdown, loanList, debtPct, deRatio,
-    zone, avgMonthly } = useMemo(() => {
+  const stockVal = sum(p.stocks, 'current_value')
+  const mfVal    = sum(p.mutualFunds, 'current_value')
+  const fdVal    = sum(p.fixedDeposits, 'principal_amount')
+  const rdVal    = sum(p.recurringDeposits, 'monthly_installment') * 12
+  const npsVal   = sum(p.npsAccounts, 'current_value')
+  const goldVal  = sum(p.goldInvestments, 'current_value')
+  const bondVal  = sum(p.bondInvestments, 'current_value')
+  const etfVal   = sum(p.etfInvestments, 'current_value')
+  const licPaid  = sum(p.licPolicies, 'annual_premium')
 
-    const fSt   = filterArr(stocks ?? [])
-    const fMF   = filterArr(mutualFunds ?? [])
-    const fETF  = filterArr(etfInvestments ?? [])
-    const fFD   = filterArr(fixedDeposits ?? [])
-    const fRD   = filterArr(recurringDeposits ?? [])
-    const fNPS  = filterArr(npsAccounts ?? [])
-    const fLIC  = filterArr(licPolicies ?? [])
-    const fGold = filterArr(goldInvestments ?? [])
-    const fBond = filterArr(bondInvestments ?? [])
-    const fLoan = filterArr(loans ?? [])
+  const equityVal = stockVal + mfVal + etfVal + npsVal
+  const debtVal   = fdVal + rdVal + bondVal
+  const totalCurr = equityVal + debtVal + goldVal
 
-    const stVal   = fSt.reduce((a: number, s: any) => a + convAmt(s.quantity * (s.current_price ?? s.avg_buy_price), s.currency), 0)
-    const mfVal   = fMF.reduce((a: number, m: any) => a + m.units * (m.current_nav ?? m.avg_nav), 0)
-    const etfVal  = fETF.reduce((a: number, e: any) => a + Number(e.units ?? 0) * Number(e.current_price ?? e.avg_buy_price ?? 0), 0)
-    const fdVal   = fFD.reduce((a: number, f: any) => a + convAmt(Number(f.principal), f.currency), 0)
-    const rdVal   = fRD.reduce((a: number, r: any) => a + convAmt(Number(r.monthly_amount) * r.tenure_months, r.currency), 0)
-    const npsVal  = fNPS.reduce((a: number, n: any) => a + Number(n.corpus_amount ?? 0), 0)
-    const licVal  = fLIC.reduce((a: number, l: any) => a + Number(l.total_paid ?? 0), 0)
-    const goldVal = fGold.reduce((a: number, g: any) => {
-      if (g.current_price_per_gram && g.quantity_grams)
-        return a + Number(g.current_price_per_gram) * Number(g.quantity_grams)
-      return a + Number(g.invested_amount ?? 0)
-    }, 0)
-    const bondVal = fBond.reduce((a: number, b: any) => a + Number(b.current_value ?? b.invested_amount ?? 0), 0)
+  const numTypes = [stockVal, mfVal, fdVal, rdVal, npsVal, goldVal, bondVal, etfVal].filter(v => v > 0).length
 
-    const totalEquity = stVal + mfVal + etfVal + fdVal + rdVal + npsVal + licVal + goldVal + bondVal
+  const incomes = p.transactions.filter((t: any) => t.txn_type === 'income')
+  const avgMonthlyIncome = incomes.length
+    ? incomes.reduce((a, t) => a + (Number(t.amount) || 0), 0) / Math.max(1, incomes.length)
+    : 50000
 
-    const totalDebt = fLoan.reduce((a: number, l: any) => a + convAmt(Number(l.outstanding_amt), l.currency), 0)
+  const savingsRate = avgMonthlyIncome > 0
+    ? Math.min(100, Math.round((totalCurr / (avgMonthlyIncome * 12)) * 100)) : 0
 
-    const totalPortfolio = totalEquity + totalDebt
-    const debtPct  = totalPortfolio > 0 ? (totalDebt / totalPortfolio) * 100 : 0
-    const deRatio  = totalEquity > 0 ? (totalDebt / totalEquity).toFixed(2) : totalDebt > 0 ? '∞' : '0'
-    const zone     = getZone(debtPct, totalDebt, totalEquity)
+  const goalCount   = p.goals.length
+  const linkedIds   = new Set(p.goalInvestments.map((gi: any) => gi.investment_id))
+  const allInvIds   = [
+    ...p.stocks, ...p.mutualFunds, ...p.fixedDeposits, ...p.npsAccounts,
+    ...p.goldInvestments, ...p.bondInvestments, ...p.etfInvestments,
+  ].map((x: any) => x.id)
+  const linkedInvPct = allInvIds.length > 0
+    ? Math.round((allInvIds.filter(id => linkedIds.has(id)).length / allInvIds.length) * 100) : 0
 
-    const breakdown = [
-      { name: 'Stocks',    value: Math.round(stVal),   color: '#3B7DD8' },
-      { name: 'Mutual\nFunds', value: Math.round(mfVal), color: '#3D7A58' },
-      { name: 'ETF',       value: Math.round(etfVal),  color: '#7C5CBF' },
-      { name: 'FD',        value: Math.round(fdVal),   color: '#D4920A' },
-      { name: 'RD',        value: Math.round(rdVal),   color: '#C96A3A' },
-      { name: 'NPS',       value: Math.round(npsVal),  color: '#059669' },
-      { name: 'LIC',       value: Math.round(licVal),  color: '#6D28D9' },
-      { name: 'Gold',      value: Math.round(goldVal), color: '#D97706' },
-      { name: 'Bonds',     value: Math.round(bondVal), color: '#0891B2' },
-    ].filter(d => d.value > 0)
+  const mfRets = p.mutualFunds.map((m: any) => Number(m.returns_1yr) || 0).filter(Boolean)
+  const totalRet = mfRets.length ? mfRets.reduce((a, b) => a + b, 0) / mfRets.length : 0
 
-    const loanList = fLoan.map((l: any) => ({
-      ...l,
-      outstanding: convAmt(Number(l.outstanding_amt), l.currency),
-      remaining: Math.max(0, l.tenure_months - (l.months_paid ?? 0)),
-      typeLabel: LOAN_TYPE_LABELS[l.loan_type ?? 'home_loan'] ?? 'Loan',
-    })).sort((a: any, b: any) => b.interest_rate - a.interest_rate)
+  const emergencyPts = Math.min(20, avgMonthlyIncome > 0
+    ? Math.round(((fdVal + rdVal) / (avgMonthlyIncome * 6)) * 20) : 0)
+  const diversityPts = Math.min(20, numTypes * 3)
+  const goalPts      = Math.min(20, goalCount > 0 ? Math.round(linkedInvPct / 5) : 0)
+  const returnPts    = totalRet >= 15 ? 20 : totalRet >= 10 ? 16 : totalRet >= 8 ? 12 : totalRet > 0 ? 8 : 4
+  const savingsPts   = savingsRate >= 20 ? 20 : savingsRate >= 10 ? 14 : savingsRate >= 5 ? 8 : 4
 
-    const now = new Date()
-    const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1).toISOString().slice(0, 7)
-    const recentIncome = filterArr(transactions ?? []).filter((t: any) =>
-      t.txn_type === 'income' && t.txn_date?.slice(0, 7) >= sixMonthsAgo
-    ).reduce((a: number, t: any) => a + convAmt(Number(t.amount), t.currency ?? 'INR'), 0)
-    const avgMonthly = Math.round(recentIncome / 6)
+  return {
+    score: emergencyPts + diversityPts + goalPts + returnPts + savingsPts,
+    pillars: [
+      { label: 'Emergency Fund',  pts: emergencyPts, max: 20, desc: '6-month expenses in FD / RD', color: '#2563EB', bg: '#EFF6FF' },
+      { label: 'Diversification', pts: diversityPts, max: 20, desc: 'Spread across asset classes', color: '#7C3AED', bg: '#F5F3FF' },
+      { label: 'Goal Coverage',   pts: goalPts,      max: 20, desc: 'Investments linked to goals', color: '#16A34A', bg: '#F0FDF4' },
+      { label: 'Return Quality',  pts: returnPts,    max: 20, desc: 'Avg MF 1-yr return benchmark', color: '#D97706', bg: '#FFFBEB' },
+      { label: 'Savings Rate',    pts: savingsPts,   max: 20, desc: '% of annual income invested', color: '#E11D48', bg: '#FFF1F2' },
+    ],
+    equityVal, debtVal, totalCurr, numTypes, fdVal, rdVal, savingsRate,
+    goalCount, linkedInvPct, avgMonthlyIncome, totalRet, licPaid,
+  }
+}
 
-    return { totalEquity, totalDebt, breakdown, loanList, debtPct, deRatio, zone, avgMonthly }
-  }, [view, fxRate, stocks, mutualFunds, fixedDeposits, recurringDeposits, npsAccounts,
-    licPolicies, goldInvestments, bondInvestments, etfInvestments, loans, transactions])
+// ── Pyramid ───────────────────────────────────────────────────────────────────
+const PYRAMID = [
+  { level: 5, name: 'Legacy',      icon: Globe,      color: '#D97706', lightBg: '#FFFBEB',
+    desc: 'Estate planning, wealth transfer, philanthropy',
+    check: (d: HealthData) => d.numTypes >= 5 && d.totalCurr > 5_000_000 },
+  { level: 4, name: 'Flexibility', icon: Zap,        color: '#7C3AED', lightBg: '#F5F3FF',
+    desc: 'Multiple income streams, financial freedom',
+    check: (d: HealthData) => d.goalCount > 0 && d.linkedInvPct > 40 },
+  { level: 3, name: 'Growth',      icon: TrendingUp, color: '#16A34A', lightBg: '#F0FDF4',
+    desc: 'Equity investments, wealth accumulation',
+    check: (d: HealthData) => d.equityVal > 50_000 },
+  { level: 2, name: 'Stability',   icon: Shield,     color: '#2563EB', lightBg: '#EFF6FF',
+    desc: 'Emergency fund, insurance, debt-free lifestyle',
+    check: (d: HealthData) => d.fdVal + d.rdVal > 30_000 },
+  { level: 1, name: 'Foundation',  icon: PiggyBank,  color: '#6B7280', lightBg: '#F9FAFB',
+    desc: 'Basic savings, life insurance, budgeting',
+    check: (d: HealthData) => d.fdVal + d.rdVal > 0 || d.licPaid > 0 },
+]
 
-  const zoneConf = ZONE_CONFIG[zone]
-  const ZoneIcon = zoneConf.icon
+// ── Decades ───────────────────────────────────────────────────────────────────
+const DECADES = [
+  { label: '20s', phase: 'Build Foundation',      icon: '🌱', color: '#16A34A',
+    goals: ['Start emergency fund (3–6 months)', 'Get health + term life insurance',
+             'Begin SIP — even ₹500/mo matters',   'Pay off student loans aggressively'],
+    milestone: 'Save your first ₹1 lakh',
+    tip: 'Time is your biggest asset. Start now, even small.', widthPct: 20 },
+  { label: '30s', phase: 'Accelerate Growth',     icon: '🌿', color: '#2563EB',
+    goals: ['Increase SIP to 20% of income',  'Term cover = 10× annual income',
+             'Goal-based investing (home, education)', 'Net worth target: 2× annual salary'],
+    milestone: 'Net worth ≥ 2× annual salary',
+    tip: 'Compound interest rewards patience. Stay invested.', widthPct: 40 },
+  { label: '40s', phase: 'Maximise Accumulation', icon: '🌳', color: '#7C3AED',
+    goals: ['60% equity, 40% debt allocation', 'Max NPS for retirement corpus',
+             "Fund children's education goals", 'Net worth target: 5× annual salary'],
+    milestone: 'Net worth ≥ 5× annual salary',
+    tip: 'Peak earning years — maximise every rupee invested.', widthPct: 60 },
+  { label: '50s', phase: 'Preserve & Shift',      icon: '🏡', color: '#D97706',
+    goals: ['Gradually shift to 50:50 equity-debt', 'Pre-pay home loan if outstanding',
+             'Retirement corpus = 25× annual expenses', 'Review and reduce insurance cover'],
+    milestone: 'Retirement corpus = 25× annual expenses',
+    tip: 'Preserve your gains. Reduce volatility risk gradually.', widthPct: 80 },
+  { label: '60s', phase: 'Harvest & Legacy',      icon: '🌅', color: '#E11D48',
+    goals: ['Set up systematic withdrawal plan (SWP)', 'Equity < 30%, Debt > 70%',
+             'Write a Will and do estate planning',   'Senior Citizen FD / SCSS for income'],
+    milestone: 'Sustainable income for 30+ years',
+    tip: "Make your money work, so you don't have to.", widthPct: 100 },
+]
 
-  const recommendations = useMemo(() => {
-    const recs = []
-    const highestRateLoan = loanList[0]
+// ── 10 Money Habits ───────────────────────────────────────────────────────────
+const HABITS = [
+  { icon: '📊', title: 'Track Every Rupee',        desc: 'Know where your money goes before optimising it' },
+  { icon: '🎯', title: 'Pay Yourself First',        desc: 'Auto-invest before spending. SIP on salary day.' },
+  { icon: '🛡️', title: 'Insurance Before Invest',  desc: 'Term + health cover before any investment product' },
+  { icon: '🚫', title: 'Avoid Lifestyle Inflation', desc: "Don't increase spending every time income grows" },
+  { icon: '📈', title: "Invest, Don't Just Save",   desc: 'Idle cash loses to inflation. Put it to work.' },
+  { icon: '🔄', title: 'Automate Everything',       desc: 'SIP, EMI, tax savings — set it and forget it' },
+  { icon: '📚', title: 'Learn Continuously',        desc: '1 finance book or podcast per month minimum' },
+  { icon: '⚖️', title: 'Rebalance Annually',        desc: 'Realign your equity-debt ratio every year' },
+  { icon: '🧾', title: 'Optimise Tax',              desc: '80C, 80D, ELSS, NPS — use every exemption' },
+  { icon: '🎁', title: 'Give & Gratitude',           desc: 'Generosity builds an abundance mindset' },
+]
 
-    if (zone === 'high_debt') {
-      if (highestRateLoan) {
-        const extra = Math.max(2000, Math.round(highestRateLoan.emi_amount * 0.10 / 500) * 500)
-        const interestSaved = Math.round(extra * highestRateLoan.remaining * Number(highestRateLoan.interest_rate) / 1200)
-        const monthsEarly = Math.min(highestRateLoan.remaining, Math.round(extra * highestRateLoan.remaining / Number(highestRateLoan.outstanding)))
-        recs.push({
-          type: 'debt', color: '#EF4444', bg: '#FEF2F2', icon: TrendingDown,
-          title: `Prepay ${highestRateLoan.name}`,
-          body: `At ${highestRateLoan.interest_rate}% interest, paying ${fmt(extra)} extra/month closes this loan ~${monthsEarly} months early and saves ${fmt(interestSaved)} in total interest.`,
-          tag: `Saves ${fmt(interestSaved)} interest`,
-        })
-      }
-      const sipAmount = avgMonthly > 0 ? Math.max(1000, Math.round(avgMonthly * 0.05 / 500) * 500) : 2000
-      recs.push({
-        type: 'invest', color: '#3D7A58', bg: 'var(--sage-bg)', icon: TrendingUp,
-        title: 'Start a small SIP alongside',
-        body: `Even ${fmt(sipAmount)}/month in a low-cost index fund builds an investing habit and compounds over time while you reduce debt.`,
-        tag: `${fmt(sipAmount)}/month builds the habit`,
-      })
-      const emergencyFund = avgMonthly > 0 ? fmt(avgMonthly * 3) : `${sym} 1–2L`
-      recs.push({
-        type: 'protect', color: '#6B7280', bg: 'var(--bg2)', icon: Shield,
-        title: 'Build a 3-month emergency buffer',
-        body: `Before aggressive debt prepayment, keep ${emergencyFund} liquid so you don't need to take new loans for emergencies.`,
-        tag: 'Prevents new debt cycles',
-      })
-    } else if (zone === 'moderate') {
-      const equityNeeded = Math.max(0, (7 / 3) * totalDebt - totalEquity)
-      const sipToHealthy = equityNeeded > 0 ? Math.round(equityNeeded / 36 / 500) * 500 : 0
-      if (sipToHealthy > 0) {
-        recs.push({
-          type: 'invest', color: '#10B981', bg: '#ECFDF5', icon: TrendingUp,
-          title: 'Increase SIP to reach Healthy zone',
-          body: `You need ${fmt(equityNeeded)} more in investments to cross into the Healthy zone. A SIP of ${fmtK(sipToHealthy)}/month gets you there in ~3 years (before market returns).`,
-          tag: `${fmtK(sipToHealthy)}/month → Healthy in 3 yrs`,
-        })
-      }
-      if (highestRateLoan) {
-        const extra = Math.max(1000, Math.round(highestRateLoan.emi_amount * 0.15 / 500) * 500)
-        const interestSaved = Math.round(extra * highestRateLoan.remaining * Number(highestRateLoan.interest_rate) / 1200)
-        recs.push({
-          type: 'debt', color: '#F59E0B', bg: '#FFFBEB', icon: TrendingDown,
-          title: `Pay extra on ${highestRateLoan.name} (${highestRateLoan.interest_rate}%)`,
-          body: `Your highest-interest loan — paying ${fmt(extra)} extra/month reduces this balance faster and saves ${fmt(interestSaved)} over the loan tenure.`,
-          tag: `Saves ${fmt(interestSaved)} in interest`,
-        })
-      }
-      recs.push({
-        type: 'invest', color: '#3B7DD8', bg: 'var(--blue-bg)', icon: Target,
-        title: 'Diversify your investments',
-        body: 'If your equity is concentrated in one asset type, spread across mutual funds, FD, and gold to reduce risk while growing total equity.',
-        tag: 'Reduces concentration risk',
-      })
-    } else if (zone === 'healthy') {
-      if (highestRateLoan) {
-        const extra = Math.max(2000, Math.round(highestRateLoan.emi_amount * 0.20 / 500) * 500)
-        const interestSaved = Math.round(extra * highestRateLoan.remaining * Number(highestRateLoan.interest_rate) / 1200)
-        recs.push({
-          type: 'debt', color: '#10B981', bg: '#ECFDF5', icon: CheckCircle2,
-          title: `Optionally prepay ${highestRateLoan.name}`,
-          body: `Your highest-rate loan is at ${highestRateLoan.interest_rate}%. Paying ${fmt(extra)} extra/month saves ${fmt(interestSaved)} and frees up cash flow. Compare this to expected investment returns first.`,
-          tag: `Frees ${fmt(Number(highestRateLoan.emi_amount))}/month sooner`,
-        })
-      }
-      recs.push({
-        type: 'invest', color: '#3D7A58', bg: 'var(--sage-bg)', icon: TrendingUp,
-        title: 'Grow your equity aggressively',
-        body: 'With your debt well under control, this is the time to maximise SIPs, increase NPS contributions (tax benefit), and look at international index funds for diversification.',
-        tag: 'Compound growth phase',
-      })
-      recs.push({
-        type: 'invest', color: '#6D28D9', bg: '#EDE9FE', icon: Shield,
-        title: 'Maximise tax-efficient instruments',
-        body: 'NPS (up to ₹50K extra under 80CCD), ELSS (₹1.5L under 80C), and SGBs for gold give you both growth and tax savings.',
-        tag: 'Saves tax + builds wealth',
-      })
-    } else if (zone === 'debt_free') {
-      recs.push({
-        type: 'invest', color: '#3D7A58', bg: 'var(--sage-bg)', icon: TrendingUp,
-        title: 'You\'re debt-free — invest aggressively',
-        body: 'Without any EMI burden, redirect all surplus into equity mutual funds and NPS. A monthly SIP of 40–50% of income accelerates wealth creation significantly.',
-        tag: 'Maximum compounding potential',
-      })
-    }
-    return recs
-  }, [zone, loanList, totalEquity, totalDebt, avgMonthly, fmt, fmtK, sym])
+// ── Age equity rules ──────────────────────────────────────────────────────────
+const AGE_RULES = [
+  { name: '100 − Age', desc: 'Conservative', color: '#2563EB', lightBg: '#EFF6FF', rule: (a: number) => 100 - a },
+  { name: '110 − Age', desc: 'Moderate',     color: '#7C3AED', lightBg: '#F5F3FF', rule: (a: number) => 110 - a },
+  { name: '120 − Age', desc: 'Aggressive',   color: '#E11D48', lightBg: '#FFF1F2', rule: (a: number) => 120 - a },
+]
 
-  const pathData = useMemo(() => {
-    if (zone === 'healthy' || zone === 'debt_free') return null
-    const equityTarget = (7 / 3) * totalDebt
-    const equityGap    = Math.max(0, equityTarget - totalEquity)
-    const sipNeeded    = Math.round(equityGap / 36 / 500) * 500
-    const currentDebtPct = Math.round(debtPct)
-    const steps = [
-      { pct: currentDebtPct, label: `Now (${currentDebtPct}%)`, active: true },
-      { pct: 50, label: '50% · Moderate', active: currentDebtPct > 50 },
-      { pct: 30, label: '30% · Healthy',  active: currentDebtPct > 30 },
-    ]
-    return { equityGap, sipNeeded, steps }
-  }, [zone, totalDebt, totalEquity, debtPct])
+// ── Score helpers ─────────────────────────────────────────────────────────────
+function scoreInfo(s: number) {
+  if (s >= 80) return { label: 'Excellent', color: '#16A34A', lightBg: '#F0FDF4', ring: '#16A34A' }
+  if (s >= 60) return { label: 'Good',      color: '#2563EB', lightBg: '#EFF6FF', ring: '#2563EB' }
+  if (s >= 40) return { label: 'Fair',      color: '#D97706', lightBg: '#FFFBEB', ring: '#D97706' }
+  return               { label: 'Needs Work', color: '#E11D48', lightBg: '#FFF1F2', ring: '#E11D48' }
+}
+
+function fmtV(n: number) {
+  if (n >= 1_00_00_000) return `₹${(n / 1_00_00_000).toFixed(1)}Cr`
+  if (n >= 1_00_000)    return `₹${(n / 1_00_000).toFixed(1)}L`
+  if (n >= 1_000)       return `₹${(n / 1_000).toFixed(0)}K`
+  return `₹${n.toFixed(0)}`
+}
+
+// ── Section header ─────────────────────────────────────────────────────────────
+function SectionHeader({ icon: Icon, color, title, sub }: {
+  icon: any; color: string; title: string; sub?: string
+}) {
+  return (
+    <div className="mb-5">
+      <div className="flex items-center gap-2 mb-0.5">
+        <Icon size={17} style={{ color }} />
+        <h2 className="text-[16px] font-bold" style={{ color: 'var(--text)' }}>{title}</h2>
+      </div>
+      {sub && <p className="text-[12px]" style={{ color: 'var(--text3)' }}>{sub}</p>}
+    </div>
+  )
+}
+
+// ── Main Component ────────────────────────────────────────────────────────────
+export default function FinancialHealthClient(props: Props) {
+  const data = useMemo(() => computeHealthData(props), [])
+  const [age, setAge] = useState(30)
+  const [activeDecade, setActiveDecade] = useState(0)
+
+  const si = scoreInfo(data.score)
+
+  const pyramidLevel = useMemo(() => {
+    for (const p of PYRAMID) { if (p.check(data)) return p.level }
+    return 0
+  }, [data])
+
+  const currentPyramidEntry = PYRAMID.find(p => p.level === pyramidLevel)
+  const nextSteps = data.pillars.filter(p => p.pts < p.max * 0.6).slice(0, 3)
 
   return (
-    <div className="space-y-5 animate-fade-up">
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text)' }}>Financial Health</h1>
-          <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
-            Debt vs Equity Analysis ·{' '}
-            {view === 'uae' ? 'UAE (AED)' : view === 'india' ? 'India (INR)' : 'Consolidated (INR)'}
-            {' '}— all investments vs all active loans
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Link href="/dashboard/investments"
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-semibold border"
-            style={{ background: 'var(--sage-bg)', borderColor: 'var(--sage)' + '40', color: 'var(--sage)' }}>
-            <TrendingUp size={12} /> Investments
-          </Link>
-          <Link href="/dashboard/loans"
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-semibold border"
-            style={{ background: 'var(--blue-bg)', borderColor: 'var(--blue)' + '40', color: 'var(--blue)' }}>
-            <TrendingDown size={12} /> Loans
-          </Link>
-        </div>
-      </div>
+    <div className="space-y-8 animate-fade-up pb-16">
 
-      {/* Zone Hero */}
-      <div className="wl-card p-5" style={{ background: zoneConf.bg, border: `1.5px solid ${zoneConf.color}30` }}>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-center">
-          <div>
-            <DebtGauge debtPct={debtPct} zone={zone} />
+      {/* ── HERO SCORE ── */}
+      <FadeUp>
+        <div className="wl-card p-6" style={{ borderColor: `${si.color}30` }}>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-6">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-2">
+                <Heart size={16} style={{ color: si.color }} />
+                <span className="text-[11px] font-semibold uppercase tracking-widest"
+                  style={{ color: 'var(--text3)' }}>Financial Health Score</span>
+              </div>
+              <div className="flex items-end gap-3 mb-3">
+                <span className="text-[52px] font-black leading-none" style={{ color: si.color }}>
+                  {data.score}
+                </span>
+                <span className="text-[16px] font-semibold mb-2" style={{ color: 'var(--text3)' }}>/100</span>
+                <span className="mb-2 px-3 py-1 rounded-full text-[12px] font-bold"
+                  style={{ background: si.lightBg, color: si.color }}>
+                  {si.label}
+                </span>
+              </div>
+              <p className="text-[13px]" style={{ color: 'var(--text2)' }}>
+                Measured across 5 pillars of financial wellness. Improve each pillar to level up your wealth stage.
+              </p>
+            </div>
+
+            {/* Score ring */}
+            <div className="relative w-32 h-32 shrink-0">
+              <svg className="w-full h-full -rotate-90" viewBox="0 0 120 120">
+                <circle cx="60" cy="60" r="50" fill="none" stroke="var(--border)" strokeWidth="10" />
+                <circle cx="60" cy="60" r="50" fill="none" stroke={si.ring} strokeWidth="10"
+                  strokeLinecap="round"
+                  strokeDasharray={`${(data.score / 100) * 314} 314`}
+                  style={{ transition: 'stroke-dasharray 1.2s ease' }} />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-[22px] font-black" style={{ color: si.color }}>{data.score}</span>
+                <span className="text-[10px] font-semibold" style={{ color: 'var(--text3)' }}>/ 100</span>
+              </div>
+            </div>
           </div>
-          <div className="lg:col-span-2">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: zoneConf.color + '20' }}>
-                <ZoneIcon size={16} style={{ color: zoneConf.color }} />
-              </div>
-              <span className="text-[18px] font-black" style={{ color: zoneConf.color }}>{zoneConf.label}</span>
-            </div>
-            <p className="text-[13px] mb-4" style={{ color: 'var(--text2)' }}>{zoneConf.description}</p>
+        </div>
+      </FadeUp>
 
-            <div className="mb-3">
-              <div className="flex justify-between text-[9px] font-semibold mb-1" style={{ color: '#9CA3AF' }}>
-                <span>Debt-Free</span><span>Healthy</span><span>Moderate</span><span>High Debt</span>
-              </div>
-              <div className="h-3 rounded-full overflow-hidden" style={{ background: 'linear-gradient(to right, #10B981, #34D399, #F59E0B, #EF4444)' }}>
-                <div className="relative h-full">
-                  <div className="absolute top-0 bottom-0 w-0.5 rounded bg-white shadow-lg"
-                    style={{ left: `${Math.min(98, Math.max(2, Math.round(debtPct)))}%`, transform: 'translateX(-50%)' }} />
+      {/* ── 5-PILLAR BREAKDOWN ── */}
+      <div>
+        <FadeUp>
+          <SectionHeader icon={BarChart2} color="var(--blue)" title="Score Breakdown"
+            sub="How each pillar contributes to your overall financial health" />
+        </FadeUp>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {data.pillars.map((p, i) => (
+            <FadeUp key={p.label} delay={i * 70}>
+              <div className="wl-card p-4">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{p.label}</span>
+                  <span className="text-[13px] font-bold" style={{ color: p.color }}>{p.pts}/{p.max}</span>
                 </div>
+                <AnimBar pct={(p.pts / p.max) * 100} color={p.color} delay={i * 70 + 200} />
+                <p className="text-[11px] mt-1.5" style={{ color: 'var(--text3)' }}>{p.desc}</p>
               </div>
-              <div className="text-[10px] mt-1 font-medium" style={{ color: 'var(--text3)' }}>
-                Your position: <span style={{ color: zoneConf.color, fontWeight: 700 }}>{Math.round(debtPct)}% debt</span>
-              </div>
-            </div>
+            </FadeUp>
+          ))}
+        </div>
 
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { label: 'Total Equity', value: fmt(totalEquity), color: '#10B981' },
-                { label: 'Total Debt',   value: fmt(totalDebt),   color: '#EF4444' },
-                { label: 'D/E Ratio',    value: `${deRatio}×`,    color: zoneConf.color },
-              ].map(k => (
-                <div key={k.label} className="rounded-xl p-2.5 text-center" style={{ background: '#fff' }}>
-                  <div className="text-[15px] font-black" style={{ color: k.color }}>{k.value}</div>
-                  <div className="text-[9px] font-semibold uppercase tracking-wider mt-0.5" style={{ color: '#9CA3AF' }}>{k.label}</div>
+        {nextSteps.length > 0 && (
+          <FadeUp delay={380} className="mt-3">
+            <div className="wl-card p-4" style={{ borderColor: '#D9770630', background: '#FFFBEB' }}>
+              <div className="flex items-center gap-2 mb-2.5">
+                <AlertTriangle size={14} style={{ color: '#D97706' }} />
+                <span className="text-[12px] font-bold" style={{ color: '#D97706' }}>
+                  Quick wins to boost your score
+                </span>
+              </div>
+              {nextSteps.map(s => (
+                <div key={s.label} className="flex items-start gap-2 text-[12px] mb-1.5"
+                  style={{ color: 'var(--text2)' }}>
+                  <ChevronRight size={13} className="shrink-0 mt-0.5" style={{ color: '#D97706' }} />
+                  <span>
+                    <strong style={{ color: 'var(--text)' }}>{s.label}</strong> — {s.desc}{' '}
+                    <span style={{ color: '#D97706' }}>({s.pts}/{s.max} pts, +{s.max - s.pts} possible)</span>
+                  </span>
                 </div>
               ))}
             </div>
-          </div>
-        </div>
+          </FadeUp>
+        )}
       </div>
 
-      {/* Breakdown row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Investment breakdown */}
-        <div className="wl-card p-4">
-          <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>
-            Investment Breakdown · {fmt(totalEquity)}
-          </div>
-          {breakdown.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-40 gap-2 text-[12px]" style={{ color: 'var(--text3)' }}>
-              <TrendingUp size={24} style={{ color: 'var(--border2)' }} />
-              No investments added yet
-              <Link href="/dashboard/investments" className="text-[11px]" style={{ color: 'var(--sage)' }}>Add Investments <ArrowRight size={10} className="inline" /></Link>
-            </div>
-          ) : (
-            <>
-              <ResponsiveContainer width="100%" height={170}>
-                <BarChart data={breakdown} layout="vertical" margin={{ left: 0, right: 16 }}>
-                  <XAxis type="number" hide />
-                  <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: 'var(--text3)' }} width={50} axisLine={false} tickLine={false} />
-                  <Tooltip contentStyle={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 8, fontSize: 11 }}
-                    formatter={(v: any) => [fmt(v), 'Value']} />
-                  <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                    {breakdown.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-              <div className="mt-2 space-y-1">
-                {breakdown.slice(0, 5).map((d, i) => (
-                  <div key={i} className="flex items-center justify-between text-[11px]">
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: d.color }} />
-                      <span style={{ color: 'var(--text2)' }}>{d.name.replace('\n', ' ')}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono" style={{ color: 'var(--text)' }}>{fmt(d.value)}</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'var(--bg2)', color: 'var(--text3)' }}>
-                        {totalEquity > 0 ? Math.round(d.value / totalEquity * 100) : 0}%
-                      </span>
-                    </div>
+      {/* ── FINANCIAL PYRAMID ── */}
+      <div>
+        <FadeUp>
+          <SectionHeader icon={Layers} color="var(--purple)" title="Financial Wellness Pyramid"
+            sub="Build from the base upward — which level are you at?" />
+        </FadeUp>
+
+        <div className="flex flex-col gap-2.5 max-w-xl mx-auto">
+          {PYRAMID.map((lvl, i) => {
+            const Icon     = lvl.icon
+            const achieved = lvl.check(data)
+            const isCurrent = lvl.level === pyramidLevel
+            const widths   = ['w-full', 'w-5/6', 'w-4/6', 'w-3/6', 'w-2/6']
+            return (
+              <FadeUp key={lvl.name} delay={i * 90} className={`mx-auto ${widths[i]}`}>
+                <div className="wl-card p-3.5 flex items-center gap-3 transition-all"
+                  style={achieved
+                    ? { borderColor: `${lvl.color}40`, background: lvl.lightBg }
+                    : { opacity: 0.45 }}>
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                    style={{ background: achieved ? `${lvl.color}20` : 'var(--bg2)' }}>
+                    <Icon size={17} style={{ color: achieved ? lvl.color : 'var(--text3)' }} />
                   </div>
-                ))}
-              </div>
-            </>
-          )}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[13px] font-bold" style={{ color: 'var(--text)' }}>
+                        {lvl.name}
+                      </span>
+                      {isCurrent && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold animate-pulse"
+                          style={{ background: `${lvl.color}20`, color: lvl.color }}>
+                          YOU ARE HERE
+                        </span>
+                      )}
+                      {achieved && !isCurrent && (
+                        <CheckCircle2 size={13} style={{ color: '#16A34A' }} />
+                      )}
+                    </div>
+                    <p className="text-[11px] truncate" style={{ color: 'var(--text3)' }}>{lvl.desc}</p>
+                  </div>
+                  <span className="text-[11px] font-bold shrink-0" style={{ color: lvl.color }}>
+                    L{lvl.level}
+                  </span>
+                </div>
+              </FadeUp>
+            )
+          })}
         </div>
 
-        {/* Loan breakdown */}
-        <div className="wl-card p-4">
-          <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>
-            Loan Breakdown · {fmt(totalDebt)}
+        <FadeUp delay={500} className="mt-4">
+          <div className="wl-card p-3.5 text-center" style={{ background: 'var(--bg2)' }}>
+            <span className="text-[13px]" style={{ color: 'var(--text2)' }}>
+              You are at{' '}
+              <strong style={{ color: 'var(--text)' }}>Level {pyramidLevel}</strong> —{' '}
+              <strong style={{ color: currentPyramidEntry?.color ?? 'var(--text)' }}>
+                {currentPyramidEntry?.name ?? 'Starting Out'}
+              </strong>.{' '}
+              {pyramidLevel < 5
+                ? `Next: reach Level ${pyramidLevel + 1} (${PYRAMID.find(p => p.level === pyramidLevel + 1)?.name})`
+                : '🎉 You\'ve reached the top tier!'}
+            </span>
           </div>
-          {loanList.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-40 gap-2 text-[12px]" style={{ color: 'var(--text3)' }}>
-              <TrendingDown size={24} style={{ color: 'var(--border2)' }} />
-              No active loans
+        </FadeUp>
+      </div>
+
+      {/* ── EQUITY BY AGE ── */}
+      <div>
+        <FadeUp>
+          <SectionHeader icon={Target} color="var(--sage)" title="Equity Exposure by Age"
+            sub="Slide your age to see recommended equity allocation by popular thumb rules" />
+        </FadeUp>
+
+        <FadeUp delay={80}>
+          <div className="wl-card p-5">
+            {/* Slider */}
+            <div className="flex items-center gap-4 mb-5">
+              <span className="text-[12px] font-semibold w-8" style={{ color: 'var(--text3)' }}>Age</span>
+              <input type="range" min={20} max={70} value={age}
+                onChange={e => setAge(Number(e.target.value))}
+                className="flex-1 cursor-pointer" style={{ accentColor: 'var(--sage)' }} />
+              <span className="text-[22px] font-black w-10 text-right" style={{ color: 'var(--text)' }}>
+                {age}
+              </span>
             </div>
-          ) : (
-            <div className="space-y-3">
-              {loanList.map((l: any, i: number) => {
-                const pct = totalDebt > 0 ? Math.round(l.outstanding / totalDebt * 100) : 0
-                const interestColor = Number(l.interest_rate) >= 12 ? '#EF4444' : Number(l.interest_rate) >= 8 ? '#F59E0B' : '#10B981'
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {AGE_RULES.map(rule => {
+                const eq   = Math.max(0, Math.min(100, rule.rule(age)))
+                const debt = 100 - eq
                 return (
-                  <div key={i} className="p-3 rounded-xl" style={{ background: 'var(--bg2)' }}>
-                    <div className="flex items-start justify-between mb-1.5">
-                      <div>
-                        <div className="text-[12px] font-semibold" style={{ color: 'var(--text)' }}>{l.name}</div>
-                        <div className="text-[10px]" style={{ color: 'var(--text3)' }}>{l.typeLabel} · {l.bank_name}</div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-[13px] font-bold font-mono" style={{ color: '#EF4444' }}>{fmt(l.outstanding)}</div>
-                        <span className="text-[10px] font-bold" style={{ color: interestColor }}>
-                          {Number(l.interest_rate).toFixed(1)}% p.a.
-                        </span>
-                      </div>
+                  <div key={rule.name} className="rounded-xl p-4" style={{ background: rule.lightBg }}>
+                    <div className="text-[10px] font-semibold uppercase tracking-wide mb-0.5"
+                      style={{ color: 'var(--text3)' }}>{rule.name}</div>
+                    <div className="text-[12px] font-bold mb-1" style={{ color: rule.color }}>
+                      {rule.desc}
                     </div>
-                    <div className="h-1.5 rounded-full mb-1.5 overflow-hidden" style={{ background: 'var(--border)' }}>
-                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: '#EF4444' }} />
+                    <div className="flex items-end gap-1.5 mb-2.5">
+                      <span className="text-[28px] font-black leading-none" style={{ color: rule.color }}>
+                        {eq}%
+                      </span>
+                      <span className="text-[11px] mb-0.5" style={{ color: 'var(--text3)' }}>equity</span>
                     </div>
-                    <div className="flex justify-between text-[10px]" style={{ color: 'var(--text3)' }}>
-                      <span>EMI: <span className="font-semibold" style={{ color: 'var(--text)' }}>{fmt(Number(l.emi_amount))}</span></span>
-                      <span>{l.remaining} months left</span>
-                      <span>{pct}% of total debt</span>
+                    {/* stacked bar */}
+                    <div className="h-2.5 rounded-full overflow-hidden flex gap-0.5"
+                      style={{ background: 'var(--border)' }}>
+                      <div className="h-full rounded-l-full transition-all duration-700"
+                        style={{ width: `${eq}%`, background: rule.color }} />
+                      <div className="h-full flex-1 rounded-r-full"
+                        style={{ background: `${rule.color}25` }} />
+                    </div>
+                    <div className="flex justify-between text-[10px] mt-1" style={{ color: 'var(--text3)' }}>
+                      <span>Equity {eq}%</span>
+                      <span>Debt {debt}%</span>
                     </div>
                   </div>
                 )
               })}
             </div>
-          )}
-        </div>
-      </div>
 
-      {/* Action Plan */}
-      <div className="wl-card p-4">
-        <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>
-          Your Action Plan · {zoneConf.label} Zone
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-          {recommendations.map((r, i) => {
-            const Icon = r.icon
-            return (
-              <div key={i} className="p-4 rounded-xl border" style={{ background: r.bg, borderColor: r.color + '30' }}>
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: r.color + '20' }}>
-                    <Icon size={14} style={{ color: r.color }} />
-                  </div>
-                  <span className="text-[12px] font-bold" style={{ color: 'var(--text)' }}>{r.title}</span>
-                </div>
-                <p className="text-[11px] mb-3 leading-relaxed" style={{ color: 'var(--text2)' }}>{r.body}</p>
-                <div className="text-[10px] font-bold px-2 py-1 rounded-lg inline-block" style={{ background: r.color + '18', color: r.color }}>
-                  {r.tag}
-                </div>
+            {data.totalCurr > 0 && (
+              <div className="mt-4 p-3 rounded-xl flex items-center gap-2"
+                style={{ background: 'var(--bg2)' }}>
+                <div className="w-2 h-2 rounded-full shrink-0" style={{ background: '#D97706' }} />
+                <span className="text-[12px]" style={{ color: 'var(--text2)' }}>
+                  Your current portfolio:{' '}
+                  <strong style={{ color: 'var(--text)' }}>{fmtV(data.equityVal)}</strong> equity (
+                  {Math.round((data.equityVal / Math.max(1, data.totalCurr)) * 100)}%) vs{' '}
+                  <strong style={{ color: 'var(--text)' }}>{fmtV(data.debtVal)}</strong> debt (
+                  {Math.round((data.debtVal / Math.max(1, data.totalCurr)) * 100)}%)
+                </span>
               </div>
-            )
-          })}
+            )}
+          </div>
+        </FadeUp>
+
+        {/* Thumb rules */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+          {[
+            { icon: '⚡', title: 'Rule of 72',         color: '#2563EB', bg: '#EFF6FF',
+              desc: 'Divide 72 by your annual return to find years needed to double your money.',
+              eg: '72 ÷ 12% = 6 years to 2×' },
+            { icon: '📈', title: 'SIP Step-Up Rule',   color: '#16A34A', bg: '#F0FDF4',
+              desc: 'Increase your SIP by 10–15% every year as income grows.',
+              eg: '₹5K SIP + 10%/yr → ₹15K in 12 yrs' },
+            { icon: '🏠', title: 'Debt-Free by 50',    color: '#D97706', bg: '#FFFBEB',
+              desc: 'Clear all liabilities before shifting focus to retirement.',
+              eg: 'No EMI after 50 = 40% more investable cash' },
+          ].map((r, i) => (
+            <FadeUp key={r.title} delay={i * 80}>
+              <div className="wl-card p-4 h-full">
+                <div className="text-2xl mb-2">{r.icon}</div>
+                <div className="text-[13px] font-bold mb-1" style={{ color: 'var(--text)' }}>{r.title}</div>
+                <p className="text-[11px] mb-2" style={{ color: 'var(--text2)' }}>{r.desc}</p>
+                <div className="text-[11px] px-2.5 py-1.5 rounded-lg font-semibold"
+                  style={{ background: r.bg, color: r.color }}>{r.eg}</div>
+              </div>
+            </FadeUp>
+          ))}
         </div>
       </div>
 
-      {/* Path to Healthy — only for non-healthy zones */}
-      {pathData && (
-        <div className="wl-card p-4" style={{ background: 'linear-gradient(135deg, var(--sage-bg) 0%, #fff 60%)' }}>
-          <div className="text-[11px] font-bold uppercase tracking-wider mb-4" style={{ color: 'var(--text3)' }}>Path to Healthy Zone</div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-center">
-            <div className="flex items-center gap-2">
-              {pathData.steps.map((s, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <div className="flex flex-col items-center">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
-                      style={{ background: s.active ? ZONE_CONFIG[zone].color : '#10B981' }}>
-                      {s.active ? '→' : '✓'}
-                    </div>
-                    <div className="text-[9px] font-semibold mt-1 text-center max-w-[64px]" style={{ color: s.active ? ZONE_CONFIG[zone].color : '#10B981' }}>
-                      {s.label}
-                    </div>
-                  </div>
-                  {i < pathData.steps.length - 1 && (
-                    <div className="h-0.5 w-8 flex-shrink-0" style={{ background: 'var(--border)' }} />
-                  )}
-                </div>
-              ))}
-            </div>
-            <div className="space-y-2.5">
-              <div className="flex items-baseline justify-between p-3 rounded-xl" style={{ background: '#fff' }}>
+      {/* ── WEALTH BY DECADE ── */}
+      <div>
+        <FadeUp>
+          <SectionHeader icon={Clock} color="var(--gold)" title="Wealth Milestones by Decade"
+            sub="Where should you be at each life stage?" />
+        </FadeUp>
+
+        <FadeUp delay={80}>
+          <div className="flex gap-2 overflow-x-auto pb-1 mb-3">
+            {DECADES.map((d, i) => (
+              <button key={d.label} onClick={() => setActiveDecade(i)}
+                className="shrink-0 px-4 py-2 rounded-xl text-[12px] font-bold transition-all border"
+                style={activeDecade === i
+                  ? { background: d.color, color: '#fff', borderColor: d.color }
+                  : { background: 'var(--bg2)', color: 'var(--text3)', borderColor: 'var(--border)' }}>
+                {d.icon} {d.label}
+              </button>
+            ))}
+          </div>
+        </FadeUp>
+
+        {DECADES.map((d, i) => i !== activeDecade ? null : (
+          <FadeUp key={d.label} delay={160}>
+            <div className="wl-card p-5" style={{ borderColor: `${d.color}30` }}>
+              <div className="flex items-center gap-3 mb-4">
+                <span className="text-3xl">{d.icon}</span>
                 <div>
-                  <div className="text-[11px] font-semibold" style={{ color: 'var(--text)' }}>Investment gap to Healthy</div>
-                  <div className="text-[10px]" style={{ color: 'var(--text3)' }}>Equity needed: equity &gt; 2.3× your total debt</div>
+                  <h3 className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>{d.phase}</h3>
+                  <p className="text-[12px] font-semibold" style={{ color: d.color }}>In your {d.label}</p>
                 </div>
-                <div className="text-[16px] font-black" style={{ color: '#3D7A58' }}>{fmt(pathData.equityGap)}</div>
               </div>
-              {pathData.sipNeeded > 0 && (
-                <div className="flex items-baseline justify-between p-3 rounded-xl" style={{ background: '#fff' }}>
-                  <div>
-                    <div className="text-[11px] font-semibold" style={{ color: 'var(--text)' }}>Suggested monthly SIP / investment</div>
-                    <div className="text-[10px]" style={{ color: 'var(--text3)' }}>Reaches Healthy zone in ~3 years</div>
-                  </div>
-                  <div className="text-[16px] font-black" style={{ color: '#3D7A58' }}>{fmtK(pathData.sipNeeded)}</div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Healthy celebration */}
-      {(zone === 'healthy' || zone === 'debt_free') && (
-        <div className="wl-card p-5 text-center" style={{ background: 'linear-gradient(135deg, var(--sage-bg) 0%, #fff 80%)' }}>
-          <div className="text-2xl mb-2">🎉</div>
-          <div className="text-[16px] font-black" style={{ color: 'var(--sage)' }}>
-            {zone === 'debt_free' ? 'You are completely debt-free!' : 'Your investments outweigh your debt!'}
+              <div className="p-3 rounded-xl text-center text-[13px] font-semibold mb-4"
+                style={{ background: `${d.color}12`, color: d.color, border: `1px solid ${d.color}25` }}>
+                🏆 Milestone: {d.milestone}
+              </div>
+
+              <ul className="space-y-2 mb-4">
+                {d.goals.map((g, gi) => (
+                  <li key={gi} className="flex items-start gap-2 text-[13px]"
+                    style={{ color: 'var(--text2)' }}>
+                    <CheckCircle2 size={14} className="shrink-0 mt-0.5" style={{ color: d.color }} />
+                    {g}
+                  </li>
+                ))}
+              </ul>
+
+              <div className="p-3 rounded-xl flex gap-2 mb-4"
+                style={{ background: 'var(--bg2)' }}>
+                <Star size={14} className="shrink-0 mt-0.5" style={{ color: '#D97706' }} />
+                <span className="text-[12px] italic" style={{ color: 'var(--text3)' }}>{d.tip}</span>
+              </div>
+
+              <div>
+                <div className="flex justify-between text-[11px] mb-1" style={{ color: 'var(--text3)' }}>
+                  <span>Journey Progress</span><span>{d.widthPct}%</span>
+                </div>
+                <AnimBar pct={d.widthPct} color={d.color} delay={200} />
+              </div>
+            </div>
+          </FadeUp>
+        ))}
+      </div>
+
+      {/* ── 10 MONEY HABITS ── */}
+      <div>
+        <FadeUp>
+          <SectionHeader icon={Award} color="var(--rose)" title="10 Money Habits of the Wealthy"
+            sub="Behaviours that separate the financially free from the financially stressed" />
+        </FadeUp>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {HABITS.map((h, i) => (
+            <FadeUp key={h.title} delay={i * 40}>
+              <div className="wl-card p-4 flex items-start gap-3">
+                <span className="text-2xl shrink-0">{h.icon}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-bold mb-0.5" style={{ color: 'var(--text)' }}>
+                    {h.title}
+                  </div>
+                  <p className="text-[11px]" style={{ color: 'var(--text3)' }}>{h.desc}</p>
+                </div>
+                <span className="text-[11px] font-bold shrink-0" style={{ color: 'var(--border2)' }}>
+                  #{i + 1}
+                </span>
+              </div>
+            </FadeUp>
+          ))}
+        </div>
+      </div>
+
+      {/* ── FINANCIAL LITERACY ── */}
+      <FadeUp>
+        <div className="wl-card p-5" style={{ background: '#F0FDF4', borderColor: '#16A34A30' }}>
+          <div className="flex items-center gap-2 mb-4">
+            <BookOpen size={16} style={{ color: '#16A34A' }} />
+            <h2 className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>
+              Financial Literacy Essentials
+            </h2>
           </div>
-          <div className="text-[12px] mt-1" style={{ color: 'var(--text2)' }}>
-            {zone === 'debt_free'
-              ? 'Focus on compounding your wealth. Invest aggressively into equity, NPS, and diversified instruments.'
-              : `You have ${fmt(totalEquity - totalDebt)} more in investments than debt. Keep growing your equity.`}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+            {[
+              { term: 'CAGR',           def: 'Compounded Annual Growth Rate — how fast wealth grows year-over-year' },
+              { term: 'XIRR',           def: 'Actual return on uneven cash flows like SIPs (Extended IRR)' },
+              { term: 'Net Worth',      def: 'Total Assets − Total Liabilities = your real wealth number' },
+              { term: 'Expense Ratio',  def: 'Annual fee charged by mutual funds. Lower = more returns for you.' },
+              { term: 'Rebalancing',    def: 'Resetting portfolio back to target allocation every year.' },
+              { term: 'Inflation',      def: 'Money loses ~6–7% value per year. Invest to beat it.' },
+              { term: 'Liquidity',      def: 'How quickly you can convert assets to cash without loss.' },
+              { term: 'Risk Profile',   def: 'Conservative / Moderate / Aggressive based on goals & age.' },
+              { term: 'Asset Allocation', def: 'Splitting investments across equity, debt, gold, etc.' },
+            ].map(item => (
+              <div key={item.term} className="p-3 rounded-xl" style={{ background: '#fff', border: '1px solid #16A34A15' }}>
+                <div className="text-[12px] font-bold mb-0.5" style={{ color: '#16A34A' }}>{item.term}</div>
+                <p className="text-[11px]" style={{ color: 'var(--text2)' }}>{item.def}</p>
+              </div>
+            ))}
           </div>
         </div>
-      )}
+      </FadeUp>
+
+      {/* ── CTA ── */}
+      <FadeUp>
+        <div className="wl-card p-6 text-center" style={{ background: 'var(--bg2)' }}>
+          <div className="text-4xl mb-3">🚀</div>
+          <h2 className="text-[17px] font-bold mb-2" style={{ color: 'var(--text)' }}>
+            Ready to level up your finances?
+          </h2>
+          <p className="text-[13px] mb-5 max-w-sm mx-auto" style={{ color: 'var(--text2)' }}>
+            Set goals, link investments, and watch your health score climb over time.
+          </p>
+          <div className="flex flex-wrap gap-3 justify-center">
+            <Link href="/dashboard/goals"
+              className="px-5 py-2.5 rounded-xl font-bold text-[13px] text-white transition-all hover:opacity-90"
+              style={{ background: 'var(--sage)' }}>
+              Manage Goals
+            </Link>
+            <Link href="/dashboard/investments"
+              className="px-5 py-2.5 rounded-xl font-bold text-[13px] transition-all hover:opacity-80"
+              style={{ background: '#EFF6FF', color: '#2563EB' }}>
+              View Investments
+            </Link>
+          </div>
+        </div>
+      </FadeUp>
+
     </div>
   )
 }

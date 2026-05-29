@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import InvPageShell, { InvEmptyState } from './InvPageShell'
@@ -7,22 +7,69 @@ import AddInvestmentModal from '@/components/forms/AddInvestmentModal'
 import { PdfUploadModal } from '@/components/forms/PdfUploadModal'
 import { VoiceInputModal } from '@/components/forms/VoiceInputModal'
 import { ExcelUploadModal } from '@/components/forms/ExcelUploadModal'
+import FilterBar from './FilterBar'
+import HolderFilter from './HolderFilter'
 import { Pencil, Trash2, TrendingUp, TrendingDown } from 'lucide-react'
 import { useViewStore } from '@/store/viewStore'
+import { useHolderStore } from '@/store/holderStore'
+
+const SORT_OPTS = [
+  { value: 'value_desc',   label: 'Value ↓' },
+  { value: 'returns_desc', label: 'Returns ↓' },
+  { value: 'invested_desc',label: 'Invested ↓' },
+  { value: 'name_asc',     label: 'Name A–Z' },
+]
+
+const SECTOR_CHIPS = [
+  { value: 'IT',          label: 'IT',        color: 'var(--blue)' },
+  { value: 'Banking',     label: 'Banking',   color: 'var(--purple)' },
+  { value: 'FMCG',        label: 'FMCG',      color: 'var(--gold)' },
+  { value: 'Pharma',      label: 'Pharma',    color: 'var(--sage)' },
+  { value: 'Auto',        label: 'Auto',      color: 'var(--income)' },
+]
 
 export default function StocksClient({ data }: { data: any[] }) {
-  const [showAdd, setShowAdd] = useState(false)
-  const [showPdf, setShowPdf] = useState(false)
+  const [showAdd,   setShowAdd]   = useState(false)
+  const [showPdf,   setShowPdf]   = useState(false)
   const [showVoice, setShowVoice] = useState(false)
   const [showExcel, setShowExcel] = useState(false)
-  const [editItem, setEditItem] = useState<any>(null)
-  const router = useRouter()
-  const supabase = createClient()
-  const { view } = useViewStore()
+  const [editItem,  setEditItem]  = useState<any>(null)
+  const [search,    setSearch]    = useState('')
+  const [sort,      setSort]      = useState('value_desc')
+  const [typeFilter,setTypeFilter]= useState('')
+  const router    = useRouter()
+  const supabase  = createClient()
+  const { view }  = useViewStore()
+  const { selectedHolder } = useHolderStore()
 
-  const filtered = view === 'uae'   ? data.filter(x => x.currency === 'AED' || x.country === 'UAE')
-    : view === 'india' ? data.filter(x => x.currency === 'INR' || x.country === 'India')
-    : data
+  const filtered = useMemo(() => {
+    let arr = view === 'uae'   ? data.filter(x => x.currency === 'AED' || x.country === 'UAE')
+            : view === 'india' ? data.filter(x => x.currency === 'INR' || x.country === 'India')
+            : data
+
+    if (selectedHolder) arr = arr.filter(x => (x.holder_name ?? 'Self') === selectedHolder)
+    if (search)    arr = arr.filter(x => `${x.name} ${x.exchange ?? ''} ${x.sector ?? ''}`.toLowerCase().includes(search.toLowerCase()))
+    if (typeFilter) arr = arr.filter(x => x.sector === typeFilter)
+
+    const curVal = (s: any) => s.quantity * (s.current_price ?? s.avg_buy_price)
+    const invVal = (s: any) => s.quantity * s.avg_buy_price
+    const ret    = (s: any) => invVal(s) > 0 ? (curVal(s) - invVal(s)) / invVal(s) * 100 : 0
+
+    return [...arr].sort((a, b) => {
+      if (sort === 'value_desc')    return curVal(b) - curVal(a)
+      if (sort === 'returns_desc')  return ret(b) - ret(a)
+      if (sort === 'invested_desc') return invVal(b) - invVal(a)
+      return (a.name ?? '').localeCompare(b.name ?? '')
+    })
+  }, [data, view, selectedHolder, search, typeFilter, sort])
+
+  const base = useMemo(() => {
+    let arr = view === 'uae'   ? data.filter(x => x.currency === 'AED' || x.country === 'UAE')
+            : view === 'india' ? data.filter(x => x.currency === 'INR' || x.country === 'India')
+            : data
+    if (selectedHolder) arr = arr.filter(x => (x.holder_name ?? 'Self') === selectedHolder)
+    return arr
+  }, [data, view, selectedHolder])
 
   const totalInvested = filtered.reduce((a, s) => a + s.quantity * s.avg_buy_price, 0)
   const totalCurrent  = filtered.reduce((a, s) => a + s.quantity * (s.current_price ?? s.avg_buy_price), 0)
@@ -43,13 +90,23 @@ export default function StocksClient({ data }: { data: any[] }) {
       onAdd={() => setShowAdd(true)} onPdf={() => setShowPdf(true)} onVoice={() => setShowVoice(true)}
       onExcel={() => setShowExcel(true)}>
 
+      <HolderFilter />
+
+      <FilterBar
+        search={search} onSearch={setSearch}
+        sort={sort} onSort={setSort} sortOptions={SORT_OPTS}
+        chips={SECTOR_CHIPS} activeChip={typeFilter} onChip={setTypeFilter}
+        resultCount={filtered.length} totalCount={base.length}
+        searchPlaceholder="Search by name, exchange, sector…"
+      />
+
       {/* Summary */}
       <div className="grid grid-cols-4 gap-3">
         {[
           { label: 'Total Invested',  value: `₹${Math.round(totalInvested).toLocaleString('en-IN')}`, color: 'var(--blue)' },
           { label: 'Current Value',   value: `₹${Math.round(totalCurrent).toLocaleString('en-IN')}`,  color: 'var(--sage)' },
           { label: 'Total Returns',   value: `${Number(totalReturn)>=0?'+':''}${totalReturn}%`,        color: Number(totalReturn)>=0?'var(--income)':'var(--rose)' },
-          { label: 'Today\'s P&L',   value: `${dailyPnL>=0?'▲':'▼'} ₹${Math.abs(Math.round(dailyPnL)).toLocaleString('en-IN')}`, color: dailyPnL>=0?'var(--income)':'var(--rose)' },
+          { label: "Today's P&L",     value: `${dailyPnL>=0?'▲':'▼'} ₹${Math.abs(Math.round(dailyPnL)).toLocaleString('en-IN')}`, color: dailyPnL>=0?'var(--income)':'var(--rose)' },
         ].map(c => (
           <div key={c.label} className="wl-card p-3">
             <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>{c.label}</div>
@@ -59,7 +116,7 @@ export default function StocksClient({ data }: { data: any[] }) {
       </div>
 
       {/* Stock cards grid */}
-      {filtered.length === 0 ? <InvEmptyState msg="No stocks yet. Click Add New or upload a statement." /> : (
+      {filtered.length === 0 ? <InvEmptyState msg="No stocks match your filters." /> : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {filtered.map((s, i) => {
             const curVal = s.quantity * (s.current_price ?? s.avg_buy_price)
@@ -72,6 +129,10 @@ export default function StocksClient({ data }: { data: any[] }) {
                   <div>
                     <div className="text-[13px] font-bold" style={{ color: 'var(--text)' }}>{s.name}</div>
                     <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text3)' }}>{s.exchange} · {s.sector ?? 'Equity'} · {s.currency}</div>
+                    {s.holder_name && s.holder_name !== 'Self' && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold mt-0.5 inline-block"
+                        style={{ background: 'var(--blue-bg)', color: 'var(--blue)' }}>{s.holder_name}</span>
+                    )}
                   </div>
                   <div className="flex gap-1">
                     <button onClick={() => setEditItem({ ...s, _type: 'stock' })} className="p-1 rounded" style={{ color: 'var(--text3)' }}><Pencil size={12} /></button>

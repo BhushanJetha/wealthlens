@@ -1,13 +1,25 @@
 'use client'
 import { useState, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 import { useViewStore } from '@/store/viewStore'
+import { useHolderStore } from '@/store/holderStore'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { Plus, Building2, ChevronLeft } from 'lucide-react'
+import { Plus, Building2, ChevronLeft, Pencil, Trash2, Loader2 } from 'lucide-react'
 import AddLoanModal from '@/components/forms/AddLoanModal'
+import FilterBar from './FilterBar'
+import HolderFilter from './HolderFilter'
 import Link from 'next/link'
 
 const FX = 22.80
 function toINR(amt: number, cur: string) { return cur === 'AED' ? amt * FX : amt }
+
+const LOAN_SORT_OPTS = [
+  { value: 'outstanding_desc', label: 'Outstanding ↓' },
+  { value: 'emi_desc',         label: 'EMI ↓' },
+  { value: 'paid_desc',        label: '% Paid ↓' },
+  { value: 'name_asc',         label: 'Name A–Z' },
+]
 
 interface Props {
   loans: any[]
@@ -17,14 +29,38 @@ interface Props {
 
 export default function LoanCategoryClient({ loans, title, loanType }: Props) {
   const { view } = useViewStore()
-  const [showAdd, setShowAdd] = useState(false)
+  const router   = useRouter()
+  const supabase = createClient()
+
+  const [showAdd,   setShowAdd]   = useState(false)
+  const [editLoan,  setEditLoan]  = useState<any | null>(null)
+  const [deleteId,  setDeleteId]  = useState<string | null>(null)
+  const [deleting,  setDeleting]  = useState(false)
   const [extraPayments, setExtraPayments] = useState<Record<string,number>>({})
+  const [search,    setSearch]    = useState('')
+  const [sort,      setSort]      = useState('outstanding_desc')
+  const { selectedHolder } = useHolderStore()
+
+  const base = useMemo(() => {
+    let arr = view === 'uae'   ? loans.filter(l => l.currency === 'AED')
+            : view === 'india' ? loans.filter(l => l.currency === 'INR')
+            : loans
+    if (selectedHolder) arr = arr.filter(l => (l.holder_name ?? 'Self') === selectedHolder)
+    return arr
+  }, [loans, view, selectedHolder])
 
   const filtered = useMemo(() => {
-    if (view === 'uae')   return loans.filter(l => l.currency === 'AED')
-    if (view === 'india') return loans.filter(l => l.currency === 'INR')
-    return loans
-  }, [loans, view])
+    let arr = [...base]
+    if (search) arr = arr.filter(l => `${l.name} ${l.bank_name ?? ''}`.toLowerCase().includes(search.toLowerCase()))
+    const paidPct = (l: any) => Number(l.sanctioned_amt) > 0
+      ? (Number(l.sanctioned_amt) - Number(l.outstanding_amt)) / Number(l.sanctioned_amt) * 100 : 0
+    return arr.sort((a, b) => {
+      if (sort === 'outstanding_desc') return Number(b.outstanding_amt) - Number(a.outstanding_amt)
+      if (sort === 'emi_desc')         return Number(b.emi_amount) - Number(a.emi_amount)
+      if (sort === 'paid_desc')        return paidPct(b) - paidPct(a)
+      return (a.name ?? '').localeCompare(b.name ?? '')
+    })
+  }, [base, search, sort])
 
   const conv = (amt: number, cur: string) => view === 'consolidated' ? toINR(amt, cur) : amt
   const sym  = view === 'uae' ? 'AED ' : '₹'
@@ -50,6 +86,15 @@ export default function LoanCategoryClient({ loans, title, loanType }: Props) {
     })
   }, [filtered, view])
 
+  async function handleDelete() {
+    if (!deleteId) return
+    setDeleting(true)
+    await supabase.from('home_loans').update({ is_active: false }).eq('id', deleteId)
+    setDeleting(false)
+    setDeleteId(null)
+    router.refresh()
+  }
+
   function calcInterestSaved(loan: any, extra: number) {
     if (!extra) return 0
     const totalMonths = loan.tenure_months - (loan.months_paid ?? 0)
@@ -74,6 +119,15 @@ export default function LoanCategoryClient({ loans, title, loanType }: Props) {
           <Plus size={14} /> Add {title}
         </button>
       </div>
+
+      <HolderFilter />
+
+      <FilterBar
+        search={search} onSearch={setSearch}
+        sort={sort} onSort={setSort} sortOptions={LOAN_SORT_OPTS}
+        resultCount={filtered.length} totalCount={base.length}
+        searchPlaceholder="Search by loan name or bank…"
+      />
 
       {filtered.length === 0 ? (
         <div className="wl-card py-16 text-center" style={{ borderStyle: 'dashed' }}>
@@ -106,16 +160,33 @@ export default function LoanCategoryClient({ loans, title, loanType }: Props) {
             const interestSaved = calcInterestSaved(loan, extra)
             const monthsSaved = extra > 0 ? Math.round(interestSaved / Number(loan.emi_amount) * 1.5) : 0
             return (
-              <div key={i} className="wl-card p-5 space-y-4">
-                <div className="flex items-start justify-between">
-                  <div>
+              <div key={loan.id ?? i} className="wl-card p-5 space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <Building2 size={16} style={{ color: 'var(--blue)' }} />
-                      <span className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>{loan.name}</span>
+                      <span className="text-[15px] font-bold truncate" style={{ color: 'var(--text)' }}>{loan.name}</span>
                     </div>
-                    <div className="text-[11px] mt-0.5" style={{ color: 'var(--text3)' }}>{loan.bank_name} · {loan.interest_rate}% p.a. · {loan.tenure_months}mo tenure</div>
+                    <div className="text-[11px] mt-0.5" style={{ color: 'var(--text3)' }}>
+                      {loan.bank_name} · {loan.interest_rate}% p.a. · {loan.tenure_months}mo tenure
+                    </div>
                   </div>
-                  <span className="text-[12px] font-bold px-3 py-1 rounded-lg" style={{ background: 'var(--gold-bg)', color: 'var(--gold)' }}>{paidPct}% paid</span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[12px] font-bold px-2.5 py-1 rounded-lg"
+                      style={{ background: 'var(--gold-bg)', color: 'var(--gold)' }}>{paidPct}% paid</span>
+                    <button onClick={() => setEditLoan(loan)}
+                      className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
+                      style={{ background: 'var(--blue-bg)', color: 'var(--blue)' }}
+                      title="Edit loan">
+                      <Pencil size={13} />
+                    </button>
+                    <button onClick={() => setDeleteId(loan.id)}
+                      className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
+                      style={{ background: 'var(--rose-bg)', color: 'var(--rose)' }}
+                      title="Delete loan">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
                 </div>
 
                 <div>
@@ -188,7 +259,49 @@ export default function LoanCategoryClient({ loans, title, loanType }: Props) {
         </>
       )}
 
+      {/* Add modal */}
       {showAdd && <AddLoanModal onClose={() => setShowAdd(false)} defaultLoanType={loanType} />}
+
+      {/* Edit modal */}
+      {editLoan && (
+        <AddLoanModal
+          onClose={() => setEditLoan(null)}
+          defaultLoanType={editLoan.loan_type ?? loanType}
+          initialData={editLoan}
+          loanId={editLoan.id}
+        />
+      )}
+
+      {/* Delete confirmation */}
+      {deleteId && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="rounded-2xl p-6 w-full max-w-sm"
+            style={{ background: '#fff', border: '1px solid var(--border)', boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}>
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center"
+                style={{ background: 'var(--rose-bg)' }}>
+                <Trash2 size={18} style={{ color: 'var(--rose)' }} />
+              </div>
+              <h2 className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>Delete Loan?</h2>
+            </div>
+            <p className="text-[13px] mb-5" style={{ color: 'var(--text2)' }}>
+              This loan will be removed from your dashboard. Transaction history remains intact.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteId(null)}
+                className="flex-1 py-2.5 rounded-lg text-[12px] font-semibold"
+                style={{ border: '1px solid var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>
+                Cancel
+              </button>
+              <button onClick={handleDelete} disabled={deleting}
+                className="flex-1 py-2.5 rounded-lg text-white text-[12px] font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                style={{ background: 'var(--rose)' }}>
+                {deleting ? <><Loader2 size={13} className="animate-spin" />Deleting…</> : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

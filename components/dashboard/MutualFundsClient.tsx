@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import InvPageShell, { InvEmptyState } from './InvPageShell'
@@ -7,25 +7,68 @@ import AddInvestmentModal from '@/components/forms/AddInvestmentModal'
 import { PdfUploadModal } from '@/components/forms/PdfUploadModal'
 import { VoiceInputModal } from '@/components/forms/VoiceInputModal'
 import { ExcelUploadModal } from '@/components/forms/ExcelUploadModal'
+import FilterBar from './FilterBar'
+import HolderFilter from './HolderFilter'
 import { Pencil, Trash2 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { useViewStore } from '@/store/viewStore'
+import { useHolderStore } from '@/store/holderStore'
 
 const COLORS = ['#3D7A58','#D4920A','#3B7DD8','#C96A3A','#7C5CBF','#2E7D52']
 
-export default function MutualFundsClient({ data }: { data: any[] }) {
-  const [showAdd, setShowAdd] = useState(false)
-  const [showPdf, setShowPdf] = useState(false)
-  const [showVoice, setShowVoice] = useState(false)
-  const [showExcel, setShowExcel] = useState(false)
-  const [editItem, setEditItem] = useState<any>(null)
-  const router = useRouter()
-  const supabase = createClient()
-  const { view } = useViewStore()
+const SORT_OPTS = [
+  { value: 'value_desc',   label: 'Value ↓' },
+  { value: 'returns_desc', label: 'Returns ↓' },
+  { value: 'invested_desc',label: 'Invested ↓' },
+  { value: 'name_asc',     label: 'Name A–Z' },
+]
 
-  const filtered = view === 'uae'   ? data.filter(x => x.currency === 'AED' || x.country === 'UAE')
-    : view === 'india' ? data.filter(x => x.currency === 'INR' || x.country === 'India')
-    : data
+const TYPE_CHIPS = [
+  { value: 'equity',  label: 'Equity',  color: '#3D7A58' },
+  { value: 'debt',    label: 'Debt',    color: '#3B7DD8' },
+  { value: 'hybrid',  label: 'Hybrid',  color: '#D4920A' },
+  { value: 'elss',    label: 'ELSS',    color: '#7C5CBF' },
+  { value: 'liquid',  label: 'Liquid',  color: '#6B7280' },
+]
+
+export default function MutualFundsClient({ data }: { data: any[] }) {
+  const [showAdd,    setShowAdd]    = useState(false)
+  const [showPdf,    setShowPdf]    = useState(false)
+  const [showVoice,  setShowVoice]  = useState(false)
+  const [showExcel,  setShowExcel]  = useState(false)
+  const [editItem,   setEditItem]   = useState<any>(null)
+  const [search,     setSearch]     = useState('')
+  const [sort,       setSort]       = useState('value_desc')
+  const [typeFilter, setTypeFilter] = useState('')
+  const router    = useRouter()
+  const supabase  = createClient()
+  const { view }  = useViewStore()
+  const { selectedHolder } = useHolderStore()
+
+  const base = useMemo(() => {
+    let arr = view === 'uae'   ? data.filter(x => x.currency === 'AED' || x.country === 'UAE')
+            : view === 'india' ? data.filter(x => x.currency === 'INR' || x.country === 'India')
+            : data
+    if (selectedHolder) arr = arr.filter(x => (x.holder_name ?? 'Self') === selectedHolder)
+    return arr
+  }, [data, view, selectedHolder])
+
+  const filtered = useMemo(() => {
+    let arr = [...base]
+    if (search)     arr = arr.filter(m => `${m.fund_name} ${m.fund_type ?? ''}`.toLowerCase().includes(search.toLowerCase()))
+    if (typeFilter) arr = arr.filter(m => m.fund_type === typeFilter)
+
+    const curVal = (m: any) => m.units * (m.current_nav ?? m.avg_nav)
+    const invVal = (m: any) => Number(m.invested_amount)
+    const ret    = (m: any) => invVal(m) > 0 ? (curVal(m) - invVal(m)) / invVal(m) * 100 : 0
+
+    return arr.sort((a, b) => {
+      if (sort === 'value_desc')    return curVal(b) - curVal(a)
+      if (sort === 'returns_desc')  return ret(b) - ret(a)
+      if (sort === 'invested_desc') return invVal(b) - invVal(a)
+      return (a.fund_name ?? '').localeCompare(b.fund_name ?? '')
+    })
+  }, [base, search, typeFilter, sort])
 
   const totalInvested = filtered.reduce((a, m) => a + Number(m.invested_amount), 0)
   const totalCurrent  = filtered.reduce((a, m) => a + m.units * (m.current_nav ?? m.avg_nav), 0)
@@ -46,6 +89,16 @@ export default function MutualFundsClient({ data }: { data: any[] }) {
       onAdd={() => setShowAdd(true)} onPdf={() => setShowPdf(true)} onVoice={() => setShowVoice(true)}
       onExcel={() => setShowExcel(true)} onEmail={() => window.open('/dashboard/investments?email=mutual_fund', '_self')}>
 
+      <HolderFilter />
+
+      <FilterBar
+        search={search} onSearch={setSearch}
+        sort={sort} onSort={setSort} sortOptions={SORT_OPTS}
+        chips={TYPE_CHIPS} activeChip={typeFilter} onChip={setTypeFilter}
+        resultCount={filtered.length} totalCount={base.length}
+        searchPlaceholder="Search by fund name or type…"
+      />
+
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-3">
         {[
@@ -61,7 +114,7 @@ export default function MutualFundsClient({ data }: { data: any[] }) {
       </div>
 
       {/* Charts row */}
-      {data.length > 0 && pieData.length > 0 && (
+      {pieData.length > 0 && (
         <div className="wl-card p-4">
           <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>Allocation by Fund Type</div>
           <div className="flex items-center gap-6">
@@ -87,7 +140,7 @@ export default function MutualFundsClient({ data }: { data: any[] }) {
       )}
 
       {/* Table */}
-      {filtered.length === 0 ? <InvEmptyState msg="No mutual funds yet. Click Add New or upload a statement." /> : (
+      {filtered.length === 0 ? <InvEmptyState msg="No mutual funds match your filters." /> : (
         <div className="wl-card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-[12px]">
@@ -105,7 +158,13 @@ export default function MutualFundsClient({ data }: { data: any[] }) {
                   const ret = inv > 0 ? ((cur-inv)/inv*100).toFixed(1) : '0.0'
                   return (
                     <tr key={m.id ?? i} style={{ borderBottom: '1px solid var(--border)' }} className="hover:bg-stone-50 transition-colors">
-                      <td className="px-4 py-3 font-semibold" style={{ color: 'var(--text)' }}>{m.fund_name}</td>
+                      <td className="px-4 py-3 font-semibold" style={{ color: 'var(--text)' }}>
+                        {m.fund_name}
+                        {m.holder_name && m.holder_name !== 'Self' && (
+                          <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded font-semibold"
+                            style={{ background: 'var(--blue-bg)', color: 'var(--blue)' }}>{m.holder_name}</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3"><span className="px-2 py-0.5 rounded text-[10px] uppercase font-semibold" style={{ background:'var(--blue-bg)', color:'var(--blue)' }}>{m.fund_type}</span></td>
                       <td className="px-4 py-3 font-mono" style={{ color: 'var(--text2)' }}>{Number(m.units).toFixed(3)}</td>
                       <td className="px-4 py-3 font-mono" style={{ color: 'var(--text2)' }}>₹{Number(m.avg_nav).toFixed(2)}</td>

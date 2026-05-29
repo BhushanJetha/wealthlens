@@ -2,33 +2,74 @@
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useViewStore } from '@/store/viewStore'
+import { useHolderStore } from '@/store/holderStore'
 import { createClient } from '@/lib/supabase/client'
 import InvPageShell, { InvEmptyState } from './InvPageShell'
 import AddInvestmentModal from '@/components/forms/AddInvestmentModal'
 import { PdfUploadModal } from '@/components/forms/PdfUploadModal'
 import { VoiceInputModal } from '@/components/forms/VoiceInputModal'
 import { ExcelUploadModal } from '@/components/forms/ExcelUploadModal'
+import FilterBar from './FilterBar'
+import HolderFilter from './HolderFilter'
 import { Pencil, Trash2 } from 'lucide-react'
 
 const TYPE_COLORS: Record<string,string> = {
   govt: 'var(--blue)', corporate: 'var(--purple)', tax_free: 'var(--income)', rbi_bonds: 'var(--gold)', sgb: 'var(--sage)',
 }
 
+const SORT_OPTS = [
+  { value: 'value_desc',   label: 'Value ↓' },
+  { value: 'returns_desc', label: 'Returns ↓' },
+  { value: 'coupon_desc',  label: 'Coupon ↓' },
+  { value: 'name_asc',     label: 'Name A–Z' },
+]
+
+const TYPE_CHIPS = [
+  { value: 'govt',       label: 'Govt',       color: '#3B7DD8' },
+  { value: 'corporate',  label: 'Corporate',  color: '#7C5CBF' },
+  { value: 'tax_free',   label: 'Tax-Free',   color: '#3D7A58' },
+  { value: 'rbi_bonds',  label: 'RBI Bonds',  color: '#D4920A' },
+  { value: 'sgb',        label: 'SGB',        color: '#2E7D52' },
+]
+
 export default function BondsClient({ data }: { data: any[] }) {
-  const [showAdd, setShowAdd] = useState(false)
-  const [showPdf, setShowPdf] = useState(false)
-  const [showVoice, setShowVoice] = useState(false)
-  const [showExcel, setShowExcel] = useState(false)
-  const [editItem, setEditItem] = useState<any>(null)
-  const router = useRouter()
-  const supabase = createClient()
-  const { view } = useViewStore()
+  const [showAdd,    setShowAdd]    = useState(false)
+  const [showPdf,    setShowPdf]    = useState(false)
+  const [showVoice,  setShowVoice]  = useState(false)
+  const [showExcel,  setShowExcel]  = useState(false)
+  const [editItem,   setEditItem]   = useState<any>(null)
+  const [search,     setSearch]     = useState('')
+  const [sort,       setSort]       = useState('value_desc')
+  const [typeFilter, setTypeFilter] = useState('')
+  const router    = useRouter()
+  const supabase  = createClient()
+  const { view }  = useViewStore()
+  const { selectedHolder } = useHolderStore()
+
+  const base = useMemo(() => {
+    let arr = view === 'uae'   ? data.filter(x => x.currency === 'AED' || x.country === 'UAE')
+            : view === 'india' ? data.filter(x => x.currency === 'INR' || x.country === 'India')
+            : data
+    if (selectedHolder) arr = arr.filter(x => (x.holder_name ?? 'Self') === selectedHolder)
+    return arr
+  }, [data, view, selectedHolder])
 
   const filtered = useMemo(() => {
-    if (view === 'uae')   return data.filter(x => x.currency === 'AED' || x.country === 'UAE')
-    if (view === 'india') return data.filter(x => x.currency === 'INR' || x.country === 'India')
-    return data
-  }, [data, view])
+    let arr = [...base]
+    if (search)     arr = arr.filter(b => `${b.name} ${b.bond_type ?? ''}`.toLowerCase().includes(search.toLowerCase()))
+    if (typeFilter) arr = arr.filter(b => b.bond_type === typeFilter)
+
+    const curVal = (b: any) => Number(b.current_value || b.invested_amount || 0)
+    const invVal = (b: any) => Number(b.invested_amount || 0)
+    const ret    = (b: any) => invVal(b) > 0 ? (curVal(b) - invVal(b)) / invVal(b) * 100 : 0
+
+    return arr.sort((a, b) => {
+      if (sort === 'value_desc')   return curVal(b) - curVal(a)
+      if (sort === 'returns_desc') return ret(b) - ret(a)
+      if (sort === 'coupon_desc')  return Number(b.coupon_rate || 0) - Number(a.coupon_rate || 0)
+      return (a.name ?? '').localeCompare(b.name ?? '')
+    })
+  }, [base, search, typeFilter, sort])
 
   const sym = view === 'uae' ? 'AED ' : '₹'
   const totalInvested = filtered.reduce((a, b) => a + Number(b.invested_amount || 0), 0)
@@ -47,6 +88,16 @@ export default function BondsClient({ data }: { data: any[] }) {
       onAdd={() => setShowAdd(true)} onPdf={() => setShowPdf(true)} onVoice={() => setShowVoice(true)}
       onExcel={() => setShowExcel(true)}>
 
+      <HolderFilter />
+
+      <FilterBar
+        search={search} onSearch={setSearch}
+        sort={sort} onSort={setSort} sortOptions={SORT_OPTS}
+        chips={TYPE_CHIPS} activeChip={typeFilter} onChip={setTypeFilter}
+        resultCount={filtered.length} totalCount={base.length}
+        searchPlaceholder="Search by bond name or type…"
+      />
+
       <div className="grid grid-cols-3 gap-3">
         {[
           { label: 'Total Invested', value: `${sym}${Math.round(totalInvested).toLocaleString('en-IN')}`, color: 'var(--blue)' },
@@ -60,7 +111,7 @@ export default function BondsClient({ data }: { data: any[] }) {
         ))}
       </div>
 
-      {filtered.length === 0 ? <InvEmptyState msg="No bonds yet. Add government, corporate or tax-free bonds." /> : (
+      {filtered.length === 0 ? <InvEmptyState msg="No bonds match your filters." /> : (
         <div className="wl-card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-[12px]">
@@ -79,7 +130,13 @@ export default function BondsClient({ data }: { data: any[] }) {
                   const col = TYPE_COLORS[b.bond_type] || 'var(--blue)'
                   return (
                     <tr key={b.id ?? i} style={{ borderBottom: '1px solid var(--border)' }} className="hover:bg-stone-50">
-                      <td className="px-4 py-3 font-semibold" style={{ color:'var(--text)' }}>{b.name}</td>
+                      <td className="px-4 py-3 font-semibold" style={{ color:'var(--text)' }}>
+                        {b.name}
+                        {b.holder_name && b.holder_name !== 'Self' && (
+                          <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded font-semibold"
+                            style={{ background: 'var(--blue-bg)', color: 'var(--blue)' }}>{b.holder_name}</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3"><span className="px-2 py-0.5 rounded text-[10px] uppercase font-semibold" style={{ background: col+'18', color: col }}>{b.bond_type?.replace('_',' ')}</span></td>
                       <td className="px-4 py-3 font-mono" style={{ color:'var(--text2)' }}>{b.quantity}</td>
                       <td className="px-4 py-3 font-mono" style={{ color:'var(--text2)' }}>{sym}{Number(b.face_value||0).toLocaleString('en-IN')}</td>

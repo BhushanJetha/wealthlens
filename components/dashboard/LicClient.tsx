@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import InvPageShell, { InvEmptyState } from './InvPageShell'
@@ -7,22 +7,63 @@ import AddInvestmentModal from '@/components/forms/AddInvestmentModal'
 import { PdfUploadModal } from '@/components/forms/PdfUploadModal'
 import { VoiceInputModal } from '@/components/forms/VoiceInputModal'
 import { ExcelUploadModal } from '@/components/forms/ExcelUploadModal'
+import FilterBar from './FilterBar'
+import HolderFilter from './HolderFilter'
 import { Pencil, Trash2, Shield, Calendar } from 'lucide-react'
 import { useViewStore } from '@/store/viewStore'
+import { useHolderStore } from '@/store/holderStore'
+
+const SORT_OPTS = [
+  { value: 'assured_desc', label: 'Sum Assured ↓' },
+  { value: 'premium_desc', label: 'Premium ↓' },
+  { value: 'next_due_asc', label: 'Due Soon' },
+  { value: 'name_asc',     label: 'Name A–Z' },
+]
+
+const FREQ_CHIPS = [
+  { value: 'annual',      label: 'Annual',      color: '#3D7A58' },
+  { value: 'semi-annual', label: 'Semi-Annual',  color: '#3B7DD8' },
+  { value: 'quarterly',   label: 'Quarterly',   color: '#D4920A' },
+  { value: 'monthly',     label: 'Monthly',     color: '#7C5CBF' },
+]
 
 export default function LicClient({ data }: { data: any[] }) {
-  const [showAdd, setShowAdd] = useState(false)
-  const [showPdf, setShowPdf] = useState(false)
-  const [showVoice, setShowVoice] = useState(false)
-  const [showExcel, setShowExcel] = useState(false)
-  const [editItem, setEditItem] = useState<any>(null)
-  const router = useRouter()
-  const supabase = createClient()
-  const { view } = useViewStore()
+  const [showAdd,    setShowAdd]    = useState(false)
+  const [showPdf,    setShowPdf]    = useState(false)
+  const [showVoice,  setShowVoice]  = useState(false)
+  const [showExcel,  setShowExcel]  = useState(false)
+  const [editItem,   setEditItem]   = useState<any>(null)
+  const [search,     setSearch]     = useState('')
+  const [sort,       setSort]       = useState('assured_desc')
+  const [typeFilter, setTypeFilter] = useState('')
+  const router    = useRouter()
+  const supabase  = createClient()
+  const { view }  = useViewStore()
+  const { selectedHolder } = useHolderStore()
 
-  const filtered = view === 'uae'   ? data.filter(x => x.currency === 'AED' || x.country === 'UAE')
-    : view === 'india' ? data.filter(x => x.currency === 'INR' || x.country === 'India')
-    : data
+  const base = useMemo(() => {
+    let arr = view === 'uae'   ? data.filter(x => x.currency === 'AED' || x.country === 'UAE')
+            : view === 'india' ? data.filter(x => x.currency === 'INR' || x.country === 'India')
+            : data
+    if (selectedHolder) arr = arr.filter(x => (x.holder_name ?? 'Self') === selectedHolder)
+    return arr
+  }, [data, view, selectedHolder])
+
+  const filtered = useMemo(() => {
+    let arr = [...base]
+    if (search)     arr = arr.filter(l => `${l.name} ${l.plan_name ?? ''}`.toLowerCase().includes(search.toLowerCase()))
+    if (typeFilter) arr = arr.filter(l => l.premium_frequency === typeFilter)
+    return arr.sort((a, b) => {
+      if (sort === 'assured_desc') return Number(b.sum_assured) - Number(a.sum_assured)
+      if (sort === 'premium_desc') return Number(b.annual_premium) - Number(a.annual_premium)
+      if (sort === 'next_due_asc') {
+        const da = a.next_premium_date ? new Date(a.next_premium_date).getTime() : Infinity
+        const db = b.next_premium_date ? new Date(b.next_premium_date).getTime() : Infinity
+        return da - db
+      }
+      return (a.name ?? '').localeCompare(b.name ?? '')
+    })
+  }, [base, search, typeFilter, sort])
 
   const totalSumAssured = filtered.reduce((a, l) => a + Number(l.sum_assured), 0)
   const totalPremium    = filtered.reduce((a, l) => a + Number(l.annual_premium), 0)
@@ -40,12 +81,22 @@ export default function LicClient({ data }: { data: any[] }) {
       onAdd={() => setShowAdd(true)} onPdf={() => setShowPdf(true)} onVoice={() => setShowVoice(true)}
       onExcel={() => setShowExcel(true)}>
 
+      <HolderFilter />
+
+      <FilterBar
+        search={search} onSearch={setSearch}
+        sort={sort} onSort={setSort} sortOptions={SORT_OPTS}
+        chips={FREQ_CHIPS} activeChip={typeFilter} onChip={setTypeFilter}
+        resultCount={filtered.length} totalCount={base.length}
+        searchPlaceholder="Search by policy name or plan…"
+      />
+
       {/* Summary */}
       <div className="grid grid-cols-3 gap-3">
         {[
           { label: 'Total Sum Assured', value: `₹${Math.round(totalSumAssured).toLocaleString('en-IN')}`, color: 'var(--sage)' },
-          { label: 'Annual Premium', value: `₹${Math.round(totalPremium).toLocaleString('en-IN')}/yr`, color: 'var(--blue)' },
-          { label: 'Total Paid', value: `₹${Math.round(totalPaid).toLocaleString('en-IN')}`, color: 'var(--income)' },
+          { label: 'Annual Premium',    value: `₹${Math.round(totalPremium).toLocaleString('en-IN')}/yr`,  color: 'var(--blue)' },
+          { label: 'Total Paid',        value: `₹${Math.round(totalPaid).toLocaleString('en-IN')}`,        color: 'var(--income)' },
         ].map(c => (
           <div key={c.label} className="wl-card p-3">
             <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>{c.label}</div>
@@ -55,7 +106,7 @@ export default function LicClient({ data }: { data: any[] }) {
       </div>
 
       {/* LIC Policy cards */}
-      {filtered.length === 0 ? <InvEmptyState msg="No LIC policies yet. Click Add New or upload a statement." /> : (
+      {filtered.length === 0 ? <InvEmptyState msg="No LIC policies match your filters." /> : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {filtered.map((l, i) => {
             const daysToMaturity = l.maturity_date ? Math.ceil((new Date(l.maturity_date).getTime() - Date.now()) / 86400000) : null
@@ -70,6 +121,10 @@ export default function LicClient({ data }: { data: any[] }) {
                     <div>
                       <div className="text-[13px] font-bold" style={{ color:'var(--text)' }}>{l.name}</div>
                       <div className="text-[10px]" style={{ color:'var(--text3)' }}>{l.plan_name ?? 'LIC Policy'} {l.policy_number ? `· ${l.policy_number}` : ''}</div>
+                      {l.holder_name && l.holder_name !== 'Self' && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold mt-0.5 inline-block"
+                          style={{ background: 'var(--blue-bg)', color: 'var(--blue)' }}>{l.holder_name}</span>
+                      )}
                     </div>
                   </div>
                   <div className="flex gap-1">

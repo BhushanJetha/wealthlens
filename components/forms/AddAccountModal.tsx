@@ -7,14 +7,31 @@ import { useRouter } from 'next/navigation'
 interface Props {
   onClose: () => void
   type?: 'credit_card' | 'savings' | 'current' | 'wallet'
+  initialData?: any
+  cardId?: string
 }
 
-export default function AddAccountModal({ onClose, type = 'credit_card' }: Props) {
-  const [form, setForm] = useState<Record<string, string>>({
-    currency: 'INR',
-    country: 'India',
-    account_type: type,
-  })
+export default function AddAccountModal({ onClose, type = 'credit_card', initialData, cardId }: Props) {
+  const isEdit = !!cardId
+
+  const [form, setForm] = useState<Record<string, string>>(
+    initialData ? {
+      name:            initialData.name ?? '',
+      bank_name:       initialData.bank_name ?? '',
+      currency:        initialData.currency ?? 'INR',
+      country:         initialData.country ?? 'India',
+      last_four:       initialData.last_four ?? '',
+      credit_limit:    String(initialData.credit_limit ?? ''),
+      outstanding_bal: String(initialData.outstanding_bal ?? ''),
+      minimum_due:     String(initialData.minimum_due ?? ''),
+      due_date:        initialData.due_date ?? '',
+      account_type:    type,
+    } : {
+      currency: 'INR',
+      country: 'India',
+      account_type: type,
+    }
+  )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const supabase = createClient()
@@ -46,7 +63,7 @@ export default function AddAccountModal({ onClose, type = 'credit_card' }: Props
     if (!form.name || !form.bank_name) { setError('Name and bank are required'); return }
     setSaving(true); setError('')
 
-    const { error: err } = await supabase.from('accounts').insert({
+    const payload = {
       name:            form.name,
       bank_name:       form.bank_name,
       account_type:    type,
@@ -57,7 +74,11 @@ export default function AddAccountModal({ onClose, type = 'credit_card' }: Props
       outstanding_bal: form.outstanding_bal ? Number(form.outstanding_bal) : 0,
       minimum_due:     form.minimum_due     ? Number(form.minimum_due)     : null,
       due_date:        form.due_date        || null,
-    })
+    }
+
+    const { error: err } = isEdit
+      ? await supabase.from('accounts').update(payload).eq('id', cardId!)
+      : await supabase.from('accounts').insert(payload)
 
     setSaving(false)
     if (err) { setError(err.message); return }
@@ -66,7 +87,9 @@ export default function AddAccountModal({ onClose, type = 'credit_card' }: Props
   }
 
   const isCreditCard = type === 'credit_card'
-  const title = isCreditCard ? 'Add Credit Card' : 'Add Bank Account'
+  const title = isCreditCard
+    ? (isEdit ? 'Edit Credit Card' : 'Add Credit Card')
+    : (isEdit ? 'Edit Bank Account' : 'Add Bank Account')
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">

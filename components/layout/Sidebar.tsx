@@ -7,7 +7,7 @@ import {
   CreditCard, Shield, Target, Upload, LogOut, Settings,
   ChevronDown, BarChart2, RefreshCw, Landmark, Briefcase,
   FileText, Activity, Gem, Car, Home, User, CircleDollarSign,
-  ArrowDownCircle, ArrowUpCircle, PieChart, HeartPulse
+  ArrowDownCircle, ArrowUpCircle, PieChart, HeartPulse, Flag
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -48,10 +48,11 @@ const MAIN_NAV = [
   { href: '/dashboard/investments',icon: TrendingUp,      label: 'Investments',      sub: 'inv'  },
   { href: '/dashboard/loans',      icon: Building2,       label: 'Loans',            sub: 'loan' },
   { href: '/dashboard/cards',      icon: CreditCard,      label: 'Credit Cards'      },
-  { href: '/dashboard/budgets',    icon: Target,          label: 'Budgets & Goals'   },
+  { href: '/dashboard/budgets',    icon: Target,          label: 'Budgets'           },
 ]
 
 const OTHER_NAV = [
+  { href: '/dashboard/goals',            icon: Flag,       label: 'Goals'              },
   { href: '/dashboard/financial-health', icon: HeartPulse, label: 'Financial Health'   },
   { href: '/dashboard/insurance',        icon: Shield,     label: 'Insurance'          },
   { href: '/dashboard/ingest',           icon: Upload,     label: 'Upload Statements'  },

@@ -5,6 +5,8 @@ import { createClient } from '@/lib/supabase/client'
 import { X, Loader2, Upload, FileText, CheckCircle2, AlertCircle } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
+
+
 const Lbl = ({ children }: { children: React.ReactNode }) => (
   <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1"
     style={{ color: 'var(--text3)' }}>{children}</label>
@@ -47,22 +49,48 @@ const LOAN_TYPES = [
 
 type ParseState = 'idle' | 'parsing' | 'done' | 'error'
 
-export function AddLoanModal({ onClose, defaultLoanType = 'home_loan' }: {
+export function AddLoanModal({ onClose, defaultLoanType = 'home_loan', initialData, loanId }: {
   onClose: () => void
   defaultLoanType?: string
+  initialData?: any
+  loanId?: string
 }) {
-  const [form, setForm] = useState<Record<string, string>>({
-    currency: 'INR', country: 'India', loan_type: defaultLoanType,
-  })
+  const isEdit = !!loanId
+
+  const [form, setForm] = useState<Record<string, string>>(
+    initialData ? {
+      currency:         initialData.currency         ?? 'INR',
+      country:          initialData.country           ?? 'India',
+      loan_type:        initialData.loan_type         ?? defaultLoanType,
+      name:             initialData.name              ?? '',
+      bank_name:        initialData.bank_name         ?? '',
+      property_address: initialData.property_address  ?? '',
+      interest_rate:    String(initialData.interest_rate  ?? ''),
+      sanctioned_amt:   String(initialData.sanctioned_amt ?? ''),
+      outstanding_amt:  String(initialData.outstanding_amt ?? ''),
+      emi_amount:       String(initialData.emi_amount      ?? ''),
+      tenure_months:    String(initialData.tenure_months   ?? ''),
+      months_paid:      String(initialData.months_paid     ?? ''),
+      loan_start_date:  initialData.loan_start_date   ?? '',
+      next_emi_date:    initialData.next_emi_date      ?? '',
+    } : {
+      currency: 'INR', country: 'India', loan_type: defaultLoanType, holder_name: 'Self',
+    }
+  )
   const [saving,     setSaving]     = useState(false)
   const [parseState, setParseState] = useState<ParseState>('idle')
   const [parseMsg,   setParseMsg]   = useState('')
   const [mounted,    setMounted]    = useState(false)
+  const [members,    setMembers]    = useState<{ name: string }[]>([])
   const fileRef = useRef<HTMLInputElement>(null)
   const supabase = createClient()
   const router   = useRouter()
 
-  useEffect(() => { setMounted(true) }, [])
+  useEffect(() => {
+    setMounted(true)
+    supabase.from('family_members').select('name').eq('is_active', true).order('created_at')
+      .then(({ data }) => setMembers(data ?? []))
+  }, [])
 
   const set = (key: string) => (val: string) => setForm(p => ({ ...p, [key]: val }))
 
@@ -100,8 +128,7 @@ export function AddLoanModal({ onClose, defaultLoanType = 'home_loan' }: {
 
   async function save() {
     setSaving(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('home_loans').insert({
+    const payload = {
       name:             form.name,
       bank_name:        form.bank_name,
       property_address: form.property_address ?? null,
@@ -116,9 +143,14 @@ export function AddLoanModal({ onClose, defaultLoanType = 'home_loan' }: {
       currency:         form.currency,
       country:          form.currency === 'AED' ? 'UAE' : 'India',
       next_emi_date:    form.next_emi_date || null,
-      is_active:        true,
-      user_id:          user!.id,
-    })
+      holder_name:      form.holder_name || 'Self',
+    }
+    if (isEdit) {
+      await supabase.from('home_loans').update(payload).eq('id', loanId!)
+    } else {
+      const { data: { user } } = await supabase.auth.getUser()
+      await supabase.from('home_loans').insert({ ...payload, is_active: true, user_id: user!.id })
+    }
     router.refresh()
     setSaving(false)
     onClose()
@@ -142,9 +174,11 @@ export function AddLoanModal({ onClose, defaultLoanType = 'home_loan' }: {
         <div className="flex items-center justify-between px-6 py-4 flex-shrink-0"
           style={{ borderBottom: '1px solid var(--border)' }}>
           <div>
-            <div className="text-[16px] font-bold" style={{ color: 'var(--text)' }}>Add Loan</div>
+            <div className="text-[16px] font-bold" style={{ color: 'var(--text)' }}>
+              {isEdit ? 'Edit Loan' : 'Add Loan'}
+            </div>
             <div className="text-[11px] mt-0.5" style={{ color: 'var(--text3)' }}>
-              {loanTypeLabel} · enter manually or upload document
+              {loanTypeLabel} · {isEdit ? 'update loan details below' : 'enter manually or upload document'}
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg transition-colors"
@@ -158,8 +192,8 @@ export function AddLoanModal({ onClose, defaultLoanType = 'home_loan' }: {
         {/* Scrollable form */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
 
-          {/* PDF Upload */}
-          <div className="rounded-xl p-4" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+          {/* PDF Upload — add mode only */}
+          {!isEdit && <div className="rounded-xl p-4" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
             <div className="flex items-start justify-between mb-3">
               <div>
                 <div className="text-[12px] font-bold" style={{ color: 'var(--text)' }}>Upload Loan Document</div>
@@ -228,7 +262,7 @@ export function AddLoanModal({ onClose, defaultLoanType = 'home_loan' }: {
             )}
 
             <input ref={fileRef} type="file" accept=".pdf,image/*" className="hidden" onChange={handleFile} />
-          </div>
+          </div>}
 
           {/* Divider */}
           <div className="flex items-center gap-3">
@@ -241,6 +275,18 @@ export function AddLoanModal({ onClose, defaultLoanType = 'home_loan' }: {
           <Sel label="Loan Type" value={form.loan_type ?? 'home_loan'} onChange={v => setForm(p => ({ ...p, loan_type: v }))}>
             {LOAN_TYPES.map(lt => <option key={lt.value} value={lt.value}>{lt.label}</option>)}
           </Sel>
+
+          {/* Loan holder */}
+          <div>
+            <Lbl>Loan In Name Of</Lbl>
+            <select value={form.holder_name ?? 'Self'} onChange={e => setForm(p => ({ ...p, holder_name: e.target.value }))}
+              className="wl-input"
+              onFocus={e => (e.target.style.borderColor = 'var(--sage)')}
+              onBlur={e => (e.target.style.borderColor = 'var(--border)')}>
+              <option value="Self">Self</option>
+              {members.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
+            </select>
+          </div>
 
           {/* Name & Bank */}
           <div className="grid grid-cols-2 gap-4">
@@ -299,7 +345,7 @@ export function AddLoanModal({ onClose, defaultLoanType = 'home_loan' }: {
           <button onClick={save} disabled={saving || !form.name}
             className="flex-1 py-2.5 rounded-lg text-white text-[12px] font-bold flex items-center justify-center gap-2 disabled:opacity-50"
             style={{ background: 'var(--sage)' }}>
-            {saving ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : 'Add Loan'}
+            {saving ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : isEdit ? 'Save Changes' : 'Add Loan'}
           </button>
         </div>
       </div>

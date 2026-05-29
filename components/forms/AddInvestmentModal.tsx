@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { X, Loader2, Save } from 'lucide-react'
 import { useRouter } from 'next/navigation'
@@ -26,11 +26,18 @@ export default function AddInvestmentModal({ onClose, defaultType = 'stock', edi
     currency: 'INR', country: 'India', fund_type: 'equity',
     exchange: 'NSE', tier: 'Tier I', premium_frequency: 'Annually',
     gold_type: 'physical', bond_type: 'govt', etf_type: 'equity',
+    holder_name: 'Self',
     ...( editData ? Object.fromEntries(Object.entries(editData).map(([k,v])=>[k, String(v??'')])) : {} ),
   })
   const [saving, setSaving] = useState(false)
+  const [members, setMembers] = useState<{ name: string }[]>([])
   const supabase = createClient()
   const router = useRouter()
+
+  useEffect(() => {
+    supabase.from('family_members').select('name').eq('is_active', true).order('created_at')
+      .then(({ data }) => setMembers(data ?? []))
+  }, [])
 
   const f = (key: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(p => ({ ...p, [key]: e.target.value }))
@@ -70,7 +77,7 @@ export default function AddInvestmentModal({ onClose, defaultType = 'stock', edi
     const cur = form.currency || 'INR'
     const ctry = cur === 'AED' ? 'UAE' : 'India'
 
-    let payload: any = { currency: cur, country: ctry }
+    let payload: any = { currency: cur, country: ctry, holder_name: form.holder_name || 'Self' }
 
     if (type === 'stock') payload = { ...payload,
       symbol: form.symbol, name: form.name, exchange: form.exchange,
@@ -171,6 +178,19 @@ export default function AddInvestmentModal({ onClose, defaultType = 'stock', edi
           )}
 
           <div className="space-y-3">
+            {/* Holder */}
+            <div>
+              <label className="block text-[10px] uppercase tracking-wider mb-1 font-semibold" style={{ color:'var(--text3)' }}>
+                Invested In Name Of
+              </label>
+              <select value={form.holder_name ?? 'Self'} onChange={f('holder_name')}
+                className="w-full rounded-lg px-3 py-2 text-[12px] focus:outline-none"
+                style={{ background:'var(--bg2)', border:'1px solid var(--border)', color:'var(--text)' }}>
+                <option value="Self">Self</option>
+                {members.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
+              </select>
+            </div>
+
             {/* Currency row */}
             <div className="grid grid-cols-2 gap-3">
               {sel('Currency', 'currency', [{ value:'INR',label:'INR 🇮🇳' }, { value:'AED',label:'AED 🇦🇪' }])}
