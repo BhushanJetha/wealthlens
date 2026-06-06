@@ -8,8 +8,7 @@ import MetricCard from '@/components/dashboard/MetricCard'
 import AddInsuranceModal from '@/components/forms/AddInsuranceModal'
 import { Shield, Upload, CheckCircle, AlertCircle, Loader2, X, Plus, Pencil, Trash2 } from 'lucide-react'
 
-const FX = 22.80
-function toINR(amt: number, cur: string) { return cur === 'AED' ? amt * FX : amt }
+function toINR(amt: number, cur: string, fx: number) { return cur === 'AED' ? amt * fx : amt }
 
 const TYPE_COLORS: Record<string, string> = {
   term_life: 'var(--sage)',
@@ -26,7 +25,7 @@ const TYPE_LABELS: Record<string, string> = {
 }
 
 export default function InsuranceClient({ policies }: { policies: any[] }) {
-  const { view } = useViewStore()
+  const { view, fxRate: FX } = useViewStore()
   const router   = useRouter()
   const supabase = createClient()
 
@@ -43,7 +42,7 @@ export default function InsuranceClient({ policies }: { policies: any[] }) {
     : view === 'india' ? localPolicies.filter(p => p.currency === 'INR') : localPolicies
 
   const sym  = view === 'uae' ? 'AED ' : '₹'
-  const conv = (amt: number, cur: string) => view === 'consolidated' ? toINR(amt, cur) : amt
+  const conv = (amt: number, cur: string) => view === 'consolidated' ? toINR(amt, cur, FX) : amt
 
   const totalPremium = filtered.reduce((a, p) => a + conv(Number(p.annual_premium), p.currency), 0)
   const totalAssured = filtered.reduce((a, p) => a + conv(Number(p.sum_assured ?? 0), p.currency), 0)

@@ -1,9 +1,10 @@
 'use client'
 import { CalendarDays, Calendar } from 'lucide-react'
+import { useViewStore } from '@/store/viewStore'
 
 export function CashFlowPanel({ loans, insurance, sym }: { loans: any[]; insurance: any[]; sym: string }) {
+  const { fxRate: FX } = useViewStore()
   const today = new Date()
-  const FX = 22.80
 
   function toINR(amt: number, cur: string) { return cur === 'AED' ? amt * FX : amt }
 

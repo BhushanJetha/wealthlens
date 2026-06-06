@@ -8,11 +8,10 @@ import MetricCard from '@/components/dashboard/MetricCard'
 import { CreditCard, Plus, AlertTriangle, Clock, Pencil, Trash2, BookOpen, Loader2 } from 'lucide-react'
 import AddAccountModal from '@/components/forms/AddAccountModal'
 
-const FX = 22.80
-function toINR(amt: number, cur: string) { return cur === 'AED' ? amt * FX : amt }
+function toINR(amt: number, cur: string, fx: number) { return cur === 'AED' ? amt * fx : amt }
 
 export default function CardsClient({ cards }: { cards: any[] }) {
-  const { view } = useViewStore()
+  const { view, fxRate: FX } = useViewStore()
   const router = useRouter()
   const supabase = createClient()
 
@@ -24,7 +23,7 @@ export default function CardsClient({ cards }: { cards: any[] }) {
   const filtered = view === 'uae'   ? cards.filter(c => c.currency === 'AED')
     : view === 'india' ? cards.filter(c => c.currency === 'INR') : cards
 
-  const conv = (amt: number, cur: string) => view === 'consolidated' ? toINR(amt, cur) : amt
+  const conv = (amt: number, cur: string) => view === 'consolidated' ? toINR(amt, cur, FX) : amt
   const sym  = view === 'uae' ? 'AED ' : '₹'
 
   const totalBal    = filtered.reduce((a, c) => a + conv(Number(c.outstanding_bal ?? 0), c.currency), 0)

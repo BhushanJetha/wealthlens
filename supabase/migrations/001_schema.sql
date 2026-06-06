@@ -326,12 +326,10 @@ BEGIN
   INSERT INTO profiles(id, email, full_name, avatar_url)
   VALUES (
     NEW.id,
-    COALESCE(NEW.email, NEW.raw_user_meta_data->>'email'),
+    COALESCE(NEW.email, NEW.raw_user_meta_data->>'email', ''),
     NEW.raw_user_meta_data->>'full_name',
     NEW.raw_user_meta_data->>'avatar_url'
   ) ON CONFLICT (id) DO NOTHING;
-  RETURN NEW;
-EXCEPTION WHEN OTHERS THEN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

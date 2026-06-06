@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 
 interface Props {
   onClose: () => void
-  type?: 'credit_card' | 'savings' | 'current' | 'wallet'
+  type?: string
   initialData?: any
   cardId?: string
 }
@@ -66,7 +66,7 @@ export default function AddAccountModal({ onClose, type = 'credit_card', initial
     const payload = {
       name:            form.name,
       bank_name:       form.bank_name,
-      account_type:    type,
+      account_type:    form.account_type || type,
       currency:        form.currency,
       country:         form.country,
       last_four:       form.last_four || null,
@@ -157,6 +157,10 @@ export default function AddAccountModal({ onClose, type = 'credit_card', initial
                   onBlur={e => (e.target.style.borderColor = 'var(--border)')}>
                   <option value="savings">Savings</option>
                   <option value="current">Current</option>
+                  <option value="salary">Salary</option>
+                  <option value="nre">NRE</option>
+                  <option value="nro">NRO</option>
+                  <option value="joint">Joint</option>
                   <option value="wallet">Wallet</option>
                 </select>
               </div>

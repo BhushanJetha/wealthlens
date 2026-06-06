@@ -16,7 +16,6 @@ import {
   ResponsiveContainer, ReferenceLine, BarChart, Bar,
 } from 'recharts'
 
-const FX = 22.80
 
 const CAT_LABELS: Record<string, string> = {
   equity: 'Equity', mutual_fund: 'Mutual Funds', fixed_income: 'Fixed Income',
@@ -81,7 +80,7 @@ interface Props {
 }
 
 export default function GoalDetailClient({ goal, linkedInvestments, allInvestments }: Props) {
-  const { view } = useViewStore()
+  const { view, fxRate: FX } = useViewStore()
   const router = useRouter()
   const supabase = createClient()
   const [tab, setTab] = useState<TabKey>('overview')

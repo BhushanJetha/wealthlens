@@ -10,8 +10,7 @@ import ManageFamilyModal from '@/components/forms/ManageFamilyModal'
 import { useHolderStore } from '@/store/holderStore'
 import Link from 'next/link'
 
-const FX = 22.80
-function toINR(amt: number, cur: string) { return cur === 'AED' ? amt * FX : amt }
+function toINR(amt: number, cur: string, fx: number) { return cur === 'AED' ? amt * fx : amt }
 
 const LOAN_CATEGORIES = [
   { type: 'home_loan',     label: 'Home Loan',     color: '#3D7A58', href: '/dashboard/loans/home'     },
@@ -30,7 +29,7 @@ function fmt(n: number, sym: string) {
 }
 
 export default function LoansClient({ loans, familyMembers = [] }: { loans: any[]; familyMembers?: any[] }) {
-  const { view } = useViewStore()
+  const { view, fxRate: FX } = useViewStore()
   const { selectedHolder, setSelectedHolder } = useHolderStore()
   const router   = useRouter()
   const supabase = createClient()
@@ -49,7 +48,7 @@ export default function LoansClient({ loans, familyMembers = [] }: { loans: any[
     return base
   }, [loans, view, selectedHolder])
 
-  const conv = (amt: number, cur: string) => view === 'consolidated' ? toINR(amt, cur) : amt
+  const conv = (amt: number, cur: string) => view === 'consolidated' ? toINR(amt, cur, FX) : amt
   const sym  = view === 'uae' ? 'AED ' : '₹'
 
   const totalOutstanding = filtered.reduce((a,l) => a + conv(Number(l.outstanding_amt), l.currency), 0)

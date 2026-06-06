@@ -1,10 +1,10 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
 import { useViewStore } from '@/store/viewStore'
-import { ArrowLeftRight, User, ChevronLeft, ChevronRight, Calendar, X } from 'lucide-react'
+import { ArrowLeftRight, User, ChevronLeft, ChevronRight, Calendar, X, Upload } from 'lucide-react'
 import NotificationsPanel from './NotificationsPanel'
+import BankStatementUploadModal from '@/components/forms/BankStatementUploadModal'
 
-const FX = process.env.NEXT_PUBLIC_AED_TO_INR ?? '22.80'
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const MONTH_NAMES_LONG = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
@@ -163,9 +163,18 @@ function MonthRangePicker({ from, to, onApply, onClose }: {
 }
 
 export default function Topbar({ user }: { user: any }) {
-  const { view, setView, fromMonth, toMonth, setDateRange } = useViewStore()
-  const [pickerOpen, setPickerOpen] = useState(false)
+  const { view, setView, fromMonth, toMonth, setDateRange, fxRate, setFxRate } = useViewStore()
+  const [pickerOpen,  setPickerOpen]  = useState(false)
+  const [showUpload,  setShowUpload]  = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
+
+  // Fetch live AED→INR rate once on mount; store in viewStore so all pages share it
+  useEffect(() => {
+    fetch('/api/fx-rate')
+      .then(r => r.json())
+      .then(d => { if (d.rate && d.rate > 1) setFxRate(Number(d.rate)) })
+      .catch(() => {})
+  }, [])
 
   // Close picker when clicking outside
   useEffect(() => {
@@ -195,6 +204,7 @@ export default function Topbar({ user }: { user: any }) {
   }
 
   return (
+    <>
     <header className="px-5 py-3 flex items-center gap-3 flex-wrap min-h-[52px]"
       style={{ background: 'var(--card)', borderBottom: '1px solid var(--border)' }}>
 
@@ -263,10 +273,19 @@ export default function Topbar({ user }: { user: any }) {
         style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
         <ArrowLeftRight size={11} style={{ color: 'var(--text3)' }} />
         <span style={{ color: 'var(--text3)' }}>1 AED =</span>
-        <span className="font-bold font-mono" style={{ color: 'var(--gold)' }}>₹{FX}</span>
+        <span className="font-bold font-mono" style={{ color: 'var(--gold)' }}>₹{fxRate.toFixed(2)}</span>
+        <span className="text-[9px] px-1 py-0.5 rounded font-semibold" style={{ background: '#D1FAE5', color: '#065F46' }}>Live</span>
       </div>
 
       <div className="ml-auto flex items-center gap-3">
+        {/* Universal Import Statement button — updates all sections */}
+        <button
+          onClick={() => setShowUpload(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all"
+          style={{ background: 'var(--sage-bg)', borderColor: 'var(--sage)', color: 'var(--sage)' }}
+          title="Import bank statement — updates expenses, income, loans & fixed deposits">
+          <Upload size={12} /> Import Statement
+        </button>
         <NotificationsPanel />
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: 'var(--sage-bg)' }}>
@@ -278,5 +297,8 @@ export default function Topbar({ user }: { user: any }) {
         </div>
       </div>
     </header>
+
+    {showUpload && <BankStatementUploadModal onClose={() => setShowUpload(false)} />}
+  </>
   )
 }

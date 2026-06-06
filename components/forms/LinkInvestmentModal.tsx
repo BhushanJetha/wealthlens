@@ -63,17 +63,21 @@ export default function LinkInvestmentModal({ goalId, goal, allInvestments, link
 
   const monthsLeft = getMonthsLeft(goal.target_date)
 
-  // Build flat item list with scores
+  const goalCurrency = goal.currency ?? 'INR'
+
+  // Build flat item list with scores — only investments in the goal's currency
+  // (an India/INR goal links Indian investments only; UAE/AED for an AED goal)
   const allItems = useMemo(() => {
     const items: { type: string; id: string; name: string; value: number; currency: string; score: number; record: any }[] = []
     Object.entries(allInvestments).forEach(([type, records]) => {
       records.forEach((rec: any) => {
+        if ((rec.currency ?? 'INR') !== goalCurrency) return
         const score = scoreInvestmentForGoal(type, rec, goal.category, monthsLeft)
         items.push({ type, id: rec.id, name: getInvName(type, rec), value: getInvCurrentValue(type, rec), currency: rec.currency ?? 'INR', score, record: rec })
       })
     })
     return items.sort((a, b) => b.score - a.score)
-  }, [allInvestments, goal.category, monthsLeft])
+  }, [allInvestments, goal.category, goalCurrency, monthsLeft])
 
   // Initial selection state + allocation %
   const initSelected = useMemo(() => {
@@ -316,7 +320,7 @@ export default function LinkInvestmentModal({ goalId, goal, allInvestments, link
             {filtered.length === 0 && (
               <div className="text-center py-8" style={{ color: 'var(--text3)' }}>
                 <Search size={24} className="mx-auto mb-2 opacity-40" />
-                <p className="text-[12px]">{search ? 'No investments match your search' : 'No investments found. Add investments first.'}</p>
+                <p className="text-[12px]">{search ? 'No investments match your search' : `No ${goalCurrency === 'AED' ? 'UAE (AED)' : 'India (INR)'} investments found for this goal.`}</p>
               </div>
             )}
           </div>

@@ -1,15 +1,44 @@
 'use client'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useViewStore } from '@/store/viewStore'
 import { Download, ChevronLeft, ChevronRight } from 'lucide-react'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, Cell } from 'recharts'
 
-const EXPENSE_CATS = ['Food','Shopping','Utilities','Transport','Health','Entertainment','Travel','Education','EMI/Loan','Investment','Other']
+// ─── Analytics Utilities ────────────────────────────────────────────────────
+
+function linearForecast(values: number[], steps = 3): number[] {
+  const n = values.length
+  if (n < 2) return Array(steps).fill(values[0] ?? 0)
+  const xMean = (n - 1) / 2
+  const yMean = values.reduce((a, v) => a + v, 0) / n
+  const denom = values.reduce((a, _, i) => a + (i - xMean) ** 2, 0)
+  const slope = denom === 0 ? 0 : values.reduce((a, v, i) => a + (i - xMean) * (v - yMean), 0) / denom
+  const intercept = yMean - slope * xMean
+  return Array.from({ length: steps }, (_, k) => Math.max(0, Math.round(intercept + slope * (n + k))))
+}
+
+function zScores(values: number[]): number[] {
+  const mean = values.reduce((a, v) => a + v, 0) / values.length
+  const std = Math.sqrt(values.reduce((a, v) => a + (v - mean) ** 2, 0) / values.length)
+  return values.map(v => std === 0 ? 0 : (v - mean) / std)
+}
+
+function momChange(curr: number, prev: number): number | null {
+  return prev === 0 ? null : Math.round((curr - prev) / prev * 100)
+}
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const EXPENSE_CATS = [
+  'Food','Shopping','Utilities','Transport','Health','Entertainment',
+  'Travel','Education','Subscription','EMI/Loan','Investment','Transfer','Other',
+]
 const CAT_COLORS: Record<string,string> = {
   Food:'#D97706', Shopping:'#2563EB', Utilities:'#7C3AED', Transport:'#16A34A',
   Health:'#059669', Entertainment:'#E11D48', Travel:'#EA580C', Education:'#0284C7',
-  'EMI/Loan':'#9333EA', Investment:'#0EA5E9', Other:'#6B7280',
+  Subscription:'#EC4899', 'EMI/Loan':'#9333EA', Investment:'#0EA5E9',
+  Transfer:'#3B7DD8', Other:'#6B7280',
 }
-
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 function buildMonths(from: string, to: string): string[] {
@@ -27,7 +56,7 @@ function buildMonths(from: string, to: string): string[] {
 function fmt(n: number): string {
   if (n === 0) return '—'
   if (n >= 100000) return `${(n / 100000).toFixed(1)}L`
-  if (n >= 1000) return `${(n / 1000).toFixed(0)}K`
+  if (n >= 1000)   return `${(n / 1000).toFixed(0)}K`
   return String(Math.round(n))
 }
 
@@ -40,23 +69,23 @@ function csvExport(rows: string[][]): void {
 }
 
 export default function ExpensesReportClient({ transactions }: { transactions: any[] }) {
-  const { view, fromMonth, toMonth, setDateRange } = useViewStore()
-  const FX = 22.80
+  const { view, fromMonth, toMonth, fxRate: FX } = useViewStore()
 
   const toDisplay = (amt: number, cur: string) =>
     view === 'consolidated' ? (cur === 'AED' ? amt * FX : amt) : amt
-
   const sym = view === 'uae' ? 'AED ' : '₹'
 
-  // Year navigator — default to fromMonth's year
   const [viewYear, setViewYear] = useState(() => parseInt(fromMonth.slice(0, 4)))
+
+  // Sync year when the date-range control in the topbar changes
+  useEffect(() => {
+    setViewYear(parseInt(fromMonth.slice(0, 4)))
+  }, [fromMonth])
 
   const yearFrom = `${viewYear}-01`
   const yearTo   = `${viewYear}-12`
+  const months   = buildMonths(yearFrom, yearTo)
 
-  const months = buildMonths(yearFrom, yearTo)
-
-  // Filter transactions for the viewed year
   const yearTxns = useMemo(() => transactions.filter(t => {
     const m = t.txn_date?.slice(0, 7) ?? ''
     if (m < yearFrom || m > yearTo) return false
@@ -69,9 +98,8 @@ export default function ExpensesReportClient({ transactions }: { transactions: a
   const pivot = useMemo(() => {
     const map: Record<string, Record<string, number>> = {}
     EXPENSE_CATS.forEach(cat => { map[cat] = {} })
-
     yearTxns.forEach(t => {
-      const m = t.txn_date?.slice(0, 7)
+      const m   = t.txn_date?.slice(0, 7)
       if (!m) return
       const cat = EXPENSE_CATS.includes(t.category) ? t.category : 'Other'
       map[cat][m] = (map[cat][m] ?? 0) + toDisplay(Number(t.amount), t.currency)
@@ -79,31 +107,58 @@ export default function ExpensesReportClient({ transactions }: { transactions: a
     return map
   }, [yearTxns, view])
 
-  // Column totals (per month)
   const colTotals = useMemo(() => {
     const totals: Record<string, number> = {}
-    months.forEach(m => {
-      totals[m] = EXPENSE_CATS.reduce((a, cat) => a + (pivot[cat]?.[m] ?? 0), 0)
-    })
+    months.forEach(m => { totals[m] = EXPENSE_CATS.reduce((a, cat) => a + (pivot[cat]?.[m] ?? 0), 0) })
     return totals
   }, [pivot, months])
 
-  // Row totals (per category)
   const rowTotals = useMemo(() => {
     const totals: Record<string, number> = {}
-    EXPENSE_CATS.forEach(cat => {
-      totals[cat] = months.reduce((a, m) => a + (pivot[cat]?.[m] ?? 0), 0)
-    })
+    EXPENSE_CATS.forEach(cat => { totals[cat] = months.reduce((a, m) => a + (pivot[cat]?.[m] ?? 0), 0) })
     return totals
   }, [pivot, months])
 
-  const grandTotal = months.reduce((a, m) => a + (colTotals[m] ?? 0), 0)
+  const grandTotal  = months.reduce((a, m) => a + (colTotals[m] ?? 0), 0)
+  const activeCats  = EXPENSE_CATS.filter(cat => rowTotals[cat] > 0)
+  const peakMonth   = months.reduce((best, m) => (colTotals[m] ?? 0) > (colTotals[best] ?? 0) ? m : best, months[0])
 
-  // Only show categories that have any data
-  const activeCats = EXPENSE_CATS.filter(cat => rowTotals[cat] > 0)
+  // ─── Analytics: Monthly totals for forecasting & anomaly detection ────────
+  const monthlyTotals = useMemo(() => {
+    return Array.from({ length: 12 }, (_, i) => {
+      const m = `${viewYear}-${String(i + 1).padStart(2, '0')}`
+      return transactions
+        .filter((t: any) => t.txn_date?.slice(0, 7) === m && t.txn_type === 'expense')
+        .reduce((a: number, t: any) => {
+          if (view === 'uae' && t.currency !== 'AED') return a
+          if (view === 'india' && t.currency !== 'INR') return a
+          return a + (view === 'consolidated' ? Number(t.amount) * (t.currency === 'AED' ? FX : 1) : Number(t.amount))
+        }, 0)
+    })
+  }, [transactions, view, FX, viewYear])
+
+  const validMonthTotals = monthlyTotals.filter(v => v > 0)
+  const avgMonthlySpend = validMonthTotals.length > 0
+    ? Math.round(validMonthTotals.reduce((a, v) => a + v, 0) / validMonthTotals.length)
+    : 0
+  const forecastValues = linearForecast(validMonthTotals.slice(-6), 3)
+  const stdDev = validMonthTotals.length > 1
+    ? Math.round(Math.sqrt(validMonthTotals.reduce((a, v) => a + (v - avgMonthlySpend) ** 2, 0) / validMonthTotals.length))
+    : 0
+  const zs = zScores(monthlyTotals.length > 0 ? monthlyTotals : [0])
+  const anomalyMonths = MONTH_NAMES
+    .map((label: string, i: number) => ({ label, z: zs[i] ?? 0, value: monthlyTotals[i] ?? 0 }))
+    .filter(({ z, value }: { z: number; value: number }) => Math.abs(z) > 1.8 && value > 0)
+
+  // Bar chart data — all 12 months
+  const barData = months.map(m => ({
+    month: MONTH_NAMES[Number(m.slice(5)) - 1],
+    value: Math.round(colTotals[m] ?? 0),
+    inRange: m >= fromMonth && m <= toMonth,
+  }))
 
   function handleExport() {
-    const header = ['Category', ...months.map(m => `${MONTH_NAMES[Number(m.slice(5)) - 1]} ${m.slice(0, 4)}`), 'Total']
+    const header = ['Category', ...months.map(m => `${MONTH_NAMES[Number(m.slice(5))-1]} ${m.slice(0,4)}`), 'Total']
     const dataRows = activeCats.map(cat => [
       cat,
       ...months.map(m => Math.round(pivot[cat]?.[m] ?? 0).toString()),
@@ -113,8 +168,6 @@ export default function ExpensesReportClient({ transactions }: { transactions: a
     csvExport([header, ...dataRows, totalRow])
   }
 
-  const maxVal = Math.max(...Object.values(colTotals).filter(v => v > 0), 1)
-
   return (
     <div className="space-y-5 animate-fade-up">
       {/* Header */}
@@ -122,154 +175,282 @@ export default function ExpensesReportClient({ transactions }: { transactions: a
         <div>
           <h1 className="text-xl font-bold" style={{ color: 'var(--text)' }}>Expense Report</h1>
           <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
-            Monthly breakdown by category · {view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'}
+            Monthly breakdown · {view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Year picker */}
-          <div className="flex items-center rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)', background: 'var(--bg2)' }}>
-            <button onClick={() => setViewYear(y => y - 1)} className="px-2 py-1.5 hover:bg-gray-100" style={{ color: 'var(--text3)' }}>
+          <div className="flex items-center rounded-lg border overflow-hidden" style={{ borderColor:'var(--border)', background:'var(--bg2)' }}>
+            <button onClick={() => setViewYear(y => y - 1)} className="px-2 py-1.5 hover:bg-gray-100" style={{ color:'var(--text3)' }}>
               <ChevronLeft size={13} />
             </button>
-            <span className="px-3 text-[12px] font-bold" style={{ color: 'var(--text)' }}>{viewYear}</span>
-            <button onClick={() => setViewYear(y => y + 1)} className="px-2 py-1.5 hover:bg-gray-100" style={{ color: 'var(--text3)' }}>
+            <span className="px-3 text-[12px] font-bold" style={{ color:'var(--text)' }}>{viewYear}</span>
+            <button onClick={() => setViewYear(y => y + 1)} className="px-2 py-1.5 hover:bg-gray-100" style={{ color:'var(--text3)' }}>
               <ChevronRight size={13} />
             </button>
           </div>
           <button onClick={handleExport}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all"
-            style={{ borderColor: 'var(--border)', color: 'var(--sage)', background: 'var(--sage-bg)' }}>
+            style={{ borderColor:'var(--border)', color:'var(--sage)', background:'var(--sage-bg)' }}>
             <Download size={13} /> Export CSV
           </button>
         </div>
       </div>
 
-      {/* Monthly total sparkline */}
-      <div className="wl-card p-4">
-        <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>Monthly Spend — {viewYear}</div>
-        <div className="flex items-end gap-1 h-16">
-          {months.map(m => {
-            const val = colTotals[m] ?? 0
-            const pct = val > 0 ? Math.max(8, Math.round((val / maxVal) * 100)) : 2
-            const isSelected = m >= fromMonth && m <= toMonth
-            return (
-              <div key={m} className="flex-1 flex flex-col items-center gap-1">
-                <div className="w-full rounded-t-sm transition-all"
-                  style={{ height: `${pct}%`, background: isSelected ? 'var(--expense)' : 'var(--border)', minHeight: 2 }} />
-                <span className="text-[9px]" style={{ color: 'var(--text3)' }}>
-                  {MONTH_NAMES[Number(m.slice(5)) - 1]}
-                </span>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-
-      {/* Summary KPI strip */}
+      {/* KPI strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="wl-card p-3 text-center">
-          <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Annual Total</div>
-          <div className="text-[16px] font-bold font-mono mt-1" style={{ color: 'var(--expense)' }}>
-            {sym}{Math.round(grandTotal).toLocaleString('en-IN')}
+        {[
+          { label: 'Annual Total',       val: `${sym}${Math.round(grandTotal).toLocaleString('en-IN')}`,          color: 'var(--expense)' },
+          { label: 'Monthly Avg',        val: `${sym}${Math.round(grandTotal/12).toLocaleString('en-IN')}`,       color: 'var(--text)' },
+          { label: 'Peak Month',         val: peakMonth ? MONTH_NAMES[Number(peakMonth.slice(5))-1] : '—',        color: 'var(--gold)' },
+          { label: 'Active Categories',  val: String(activeCats.length),                                          color: 'var(--blue)' },
+        ].map(k => (
+          <div key={k.label} className="wl-card p-3 text-center">
+            <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color:'var(--text3)' }}>{k.label}</div>
+            <div className="text-[16px] font-bold font-mono" style={{ color: k.color }}>{k.val}</div>
           </div>
-        </div>
-        <div className="wl-card p-3 text-center">
-          <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Monthly Avg</div>
-          <div className="text-[16px] font-bold font-mono mt-1" style={{ color: 'var(--text)' }}>
-            {sym}{Math.round(grandTotal / 12).toLocaleString('en-IN')}
-          </div>
-        </div>
-        <div className="wl-card p-3 text-center">
-          <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Peak Month</div>
-          <div className="text-[16px] font-bold font-mono mt-1" style={{ color: 'var(--text)' }}>
-            {months.reduce((best, m) => (colTotals[m] ?? 0) > (colTotals[best] ?? 0) ? m : best, months[0])
-              ? MONTH_NAMES[Number(months.reduce((best, m) => (colTotals[m] ?? 0) > (colTotals[best] ?? 0) ? m : best, months[0]).slice(5)) - 1]
-              : '—'}
-          </div>
-        </div>
-        <div className="wl-card p-3 text-center">
-          <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Active Categories</div>
-          <div className="text-[16px] font-bold font-mono mt-1" style={{ color: 'var(--text)' }}>{activeCats.length}</div>
-        </div>
+        ))}
       </div>
 
-      {/* Pivot Table */}
+      {/* Anomaly Detection Banner */}
+      {anomalyMonths.length > 0 && (
+        <div className="wl-card p-4 space-y-2">
+          <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--gold)' }}>
+            ⚠ Spending Intelligence
+          </div>
+          {anomalyMonths.map(({ label, z, value }: { label: string; z: number; value: number }) => (
+            <div key={label} className="flex items-center gap-3 rounded-lg px-3 py-2"
+              style={{
+                background: z > 0 ? 'rgba(244,63,94,0.06)' : 'rgba(16,185,129,0.06)',
+                border: `1px solid ${z > 0 ? 'rgba(244,63,94,0.3)' : 'rgba(16,185,129,0.3)'}`,
+              }}>
+              <span className="text-[13px]">{z > 0 ? '⚠' : '✓'}</span>
+              <span className="text-[12px] font-medium" style={{ color: 'var(--text)' }}>
+                {label}: {sym}{Math.round(value).toLocaleString('en-IN')} —{' '}
+                {z > 0
+                  ? `${Math.round(Math.abs(z) * 100 / 1.8)}% above your usual spending — unusual spike`
+                  : 'Lower than usual — great discipline!'}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Monthly bar chart — recharts */}
+      <div className="wl-card p-4">
+        <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color:'var(--text3)' }}>
+          Monthly Spend — {viewYear} <span className="font-normal">(highlighted = selected date range)</span>
+        </div>
+        <ResponsiveContainer width="100%" height={180}>
+          <BarChart data={barData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+            <XAxis dataKey="month" tick={{ fill:'var(--text3)', fontSize:10 }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fill:'var(--text3)', fontSize:10 }} axisLine={false} tickLine={false}
+              tickFormatter={v => v >= 100000 ? `${(v/100000).toFixed(0)}L` : v >= 1000 ? `${(v/1000).toFixed(0)}K` : String(v)} />
+            <Tooltip
+              contentStyle={{ background:'#fff', border:'1px solid var(--border)', borderRadius:8, fontSize:11 }}
+              formatter={(v:any) => [`${sym}${Number(v).toLocaleString('en-IN')}`, 'Expenses']}
+              labelStyle={{ color:'var(--text)' }} />
+            <Bar dataKey="value" radius={[4,4,0,0]}>
+              {barData.map((d, i) => (
+                <Cell key={i} fill={d.inRange ? 'var(--expense)' : 'var(--border2, #D1D5DB)'} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Spending Forecast — Next 3 Months */}
+      {forecastValues.length > 0 && avgMonthlySpend > 0 && (
+        <div className="wl-card p-4">
+          <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>
+            Spending Forecast · Next 3 Months
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            {forecastValues.map((val, i) => {
+              const d = new Date(); d.setMonth(d.getMonth() + i + 1)
+              const label = d.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' })
+              const isHigher = val > avgMonthlySpend
+              return (
+                <div key={i} className="rounded-xl p-3 text-center"
+                  style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+                  <div className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>
+                    {label} (est)
+                  </div>
+                  <div className="text-[20px] font-bold font-mono" style={{ color: isHigher ? 'var(--rose)' : 'var(--income)' }}>
+                    {sym}{val.toLocaleString('en-IN')}
+                  </div>
+                  <div className="text-[10px] mt-1" style={{ color: 'var(--text3)' }}>
+                    ±{sym}{stdDev.toLocaleString('en-IN')}
+                  </div>
+                  <div className="text-[10px] mt-0.5 font-semibold" style={{ color: isHigher ? 'var(--rose)' : 'var(--income)' }}>
+                    {isHigher ? '▲' : '▼'} vs avg
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div className="text-[10px] mt-2" style={{ color: 'var(--text3)' }}>
+            Based on {validMonthTotals.length}-month linear trend · Avg: {sym}{avgMonthlySpend.toLocaleString('en-IN')}/month
+          </div>
+        </div>
+      )}
+
+      {/* Day-of-Week Spending Heatmap */}
+      {(() => {
+        const daySpend = Array(7).fill(0)
+        const inRangeCheck = (txnDate: string) => {
+          const m = txnDate?.slice(0, 7) ?? ''
+          return m >= fromMonth && m <= toMonth
+        }
+        transactions
+          .filter((t: any) => t.txn_type === 'expense' && inRangeCheck(t.txn_date))
+          .forEach((t: any) => {
+            const day = new Date(t.txn_date).getDay()
+            let amt = 0
+            if (view === 'uae' && t.currency !== 'AED') amt = 0
+            else if (view === 'india' && t.currency !== 'INR') amt = 0
+            else if (view === 'consolidated') amt = Number(t.amount) * (t.currency === 'AED' ? FX : 1)
+            else amt = Number(t.amount)
+            daySpend[day] += amt
+          })
+        const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+        const maxSpend = Math.max(...daySpend, 1)
+        const peakDay = DAY_LABELS[daySpend.indexOf(Math.max(...daySpend))]
+        if (maxSpend === 1) return null
+        return (
+          <div className="wl-card p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>
+                Spending by Day of Week
+              </div>
+              <div className="text-[11px]" style={{ color: 'var(--text3)' }}>
+                Peak: <span className="font-semibold" style={{ color: 'var(--expense)' }}>{peakDay}</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-7 gap-1">
+              {DAY_LABELS.map((day, i) => {
+                const pct = daySpend[i] / maxSpend
+                return (
+                  <div key={day} className="flex flex-col items-center gap-1">
+                    <div className="text-[9px] font-semibold" style={{ color: 'var(--text3)' }}>{day}</div>
+                    <div className="w-full rounded-lg relative overflow-hidden" style={{ height: 60, background: 'var(--bg2)' }}>
+                      <div className="absolute bottom-0 w-full rounded-lg transition-all"
+                        style={{
+                          height: `${pct * 100}%`,
+                          background: pct > 0.7 ? 'var(--rose)' : pct > 0.4 ? 'var(--gold)' : 'var(--sage)',
+                          opacity: 0.8,
+                        }} />
+                    </div>
+                    <div className="text-[9px] font-mono text-center" style={{ color: 'var(--text3)' }}>
+                      {daySpend[i] > 0 ? `${sym}${Math.round(daySpend[i] / 1000)}K` : '—'}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Pivot table — ALL categories always shown */}
       <div className="wl-card overflow-hidden">
-        {activeCats.length === 0 ? (
-          <div className="text-center py-16 text-[13px]" style={{ color: 'var(--text3)' }}>
+        {yearTxns.length === 0 ? (
+          <div className="text-center py-16 text-[13px]" style={{ color:'var(--text3)' }}>
             No expense data for {viewYear}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-[11px] border-collapse">
               <thead>
-                <tr style={{ background: 'var(--bg2)', borderBottom: '2px solid var(--border)' }}>
-                  <th className="sticky left-0 px-4 py-3 text-left text-[10px] uppercase tracking-wider font-bold min-w-[120px]"
-                    style={{ background: 'var(--bg2)', color: 'var(--text3)', borderRight: '1px solid var(--border)' }}>
+                <tr style={{ background:'var(--bg2)', borderBottom:'2px solid var(--border)' }}>
+                  <th className="sticky left-0 px-4 py-3 text-left text-[10px] uppercase tracking-wider font-bold min-w-[130px]"
+                    style={{ background:'var(--bg2)', color:'var(--text3)', borderRight:'1px solid var(--border)' }}>
                     Category
                   </th>
-                  {months.map(m => (
-                    <th key={m} className="px-3 py-3 text-right text-[10px] uppercase tracking-wider font-bold min-w-[70px]"
-                      style={{ color: 'var(--text3)', background: m >= fromMonth && m <= toMonth ? 'var(--rose-bg)' : 'var(--bg2)' }}>
-                      {MONTH_NAMES[Number(m.slice(5)) - 1]}
+                  {months.map((m, mi) => (
+                    <th key={m} className="px-3 py-3 text-right text-[10px] uppercase tracking-wider font-bold min-w-[68px]"
+                      style={{ color:'var(--text3)', background: m >= fromMonth && m <= toMonth ? 'var(--rose-bg)' : 'var(--bg2)' }}>
+                      {MONTH_NAMES[Number(m.slice(5))-1]}
+                      {mi > 0 && <div className="text-[8px] font-normal opacity-60">Δ MoM</div>}
                     </th>
                   ))}
                   <th className="px-4 py-3 text-right text-[10px] uppercase tracking-wider font-bold"
-                    style={{ color: 'var(--expense)', background: 'var(--bg2)', borderLeft: '2px solid var(--border)' }}>
+                    style={{ color:'var(--expense)', background:'var(--bg2)', borderLeft:'2px solid var(--border)' }}>
                     Total
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {activeCats.map((cat, ci) => {
+                {EXPENSE_CATS.map((cat, ci) => {
                   const color = CAT_COLORS[cat] ?? '#6B7280'
+                  const total = rowTotals[cat] ?? 0
                   return (
-                    <tr key={cat} style={{ borderBottom: '1px solid var(--border)' }}
+                    <tr key={cat} style={{ borderBottom:'1px solid var(--border)', opacity: total === 0 ? 0.4 : 1 }}
                       className="hover:bg-stone-50 transition-colors">
-                      <td className="sticky left-0 px-4 py-2.5 font-semibold"
-                        style={{ background: ci % 2 === 0 ? '#fff' : 'var(--bg2)', borderRight: '1px solid var(--border)' }}>
+                      <td className="sticky left-0 px-4 py-2.5 font-semibold min-w-[130px]"
+                        style={{ background: ci % 2 === 0 ? '#fff' : 'var(--bg2)', borderRight:'1px solid var(--border)' }}>
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: color }} />
-                          <span style={{ color: 'var(--text)' }}>{cat}</span>
+                          <span style={{ color:'var(--text)' }}>{cat}</span>
                         </div>
                       </td>
-                      {months.map(m => {
-                        const val = pivot[cat]?.[m] ?? 0
-                        const inSel = m >= fromMonth && m <= toMonth
+                      {months.map((m, mi) => {
+                        const val    = pivot[cat]?.[m] ?? 0
+                        const inSel  = m >= fromMonth && m <= toMonth
+                        const prevM  = mi > 0 ? months[mi - 1] : null
+                        const prevVal = prevM ? (pivot[cat]?.[prevM] ?? 0) : 0
+                        const delta  = prevM ? momChange(val, prevVal) : null
                         return (
                           <td key={m} className="px-3 py-2.5 text-right font-mono"
-                            style={{ color: val > 0 ? 'var(--text)' : 'var(--text3)',
+                            style={{
+                              color: val > 0 ? 'var(--text)' : 'var(--text3)',
                               background: inSel ? `${color}08` : 'transparent',
-                              fontWeight: val > 0 ? 600 : 400 }}>
-                            {val > 0 ? `${sym}${fmt(val)}` : '—'}
+                              fontWeight: val > 0 ? 600 : 400,
+                            }}>
+                            <div>{val > 0 ? `${sym}${fmt(val)}` : '—'}</div>
+                            {mi > 0 && val > 0 && delta !== null && (
+                              <div className="text-[9px] font-normal"
+                                style={{ color: delta > 0 ? 'var(--rose)' : '#10B981' }}>
+                                {delta > 0 ? `▲ +${delta}%` : `▼ ${delta}%`}
+                              </div>
+                            )}
                           </td>
                         )
                       })}
                       <td className="px-4 py-2.5 text-right font-mono font-bold"
-                        style={{ color: 'var(--expense)', borderLeft: '2px solid var(--border)' }}>
-                        {sym}{Math.round(rowTotals[cat]).toLocaleString('en-IN')}
+                        style={{ color: total > 0 ? 'var(--expense)' : 'var(--text3)', borderLeft:'2px solid var(--border)' }}>
+                        {total > 0 ? `${sym}${Math.round(total).toLocaleString('en-IN')}` : '—'}
                       </td>
                     </tr>
                   )
                 })}
               </tbody>
               <tfoot>
-                <tr style={{ borderTop: '2px solid var(--border)', background: 'var(--bg2)' }}>
+                <tr style={{ borderTop:'2px solid var(--border)', background:'var(--bg2)' }}>
                   <td className="sticky left-0 px-4 py-3 font-bold text-[11px] uppercase tracking-wider"
-                    style={{ background: 'var(--bg2)', color: 'var(--text)', borderRight: '1px solid var(--border)' }}>
+                    style={{ background:'var(--bg2)', color:'var(--text)', borderRight:'1px solid var(--border)' }}>
                     Monthly Total
                   </td>
-                  {months.map(m => {
+                  {months.map((m, mi) => {
                     const val = colTotals[m] ?? 0
+                    const prevM = mi > 0 ? months[mi - 1] : null
+                    const prevVal = prevM ? (colTotals[prevM] ?? 0) : 0
+                    const delta = prevM ? momChange(val, prevVal) : null
                     return (
                       <td key={m} className="px-3 py-3 text-right font-mono font-bold"
-                        style={{ color: 'var(--expense)', background: m >= fromMonth && m <= toMonth ? 'var(--rose-bg)' : 'var(--bg2)' }}>
-                        {val > 0 ? `${sym}${fmt(val)}` : '—'}
+                        style={{ color:'var(--expense)', background: m >= fromMonth && m <= toMonth ? 'var(--rose-bg)' : 'var(--bg2)' }}>
+                        <div>{val > 0 ? `${sym}${fmt(val)}` : '—'}</div>
+                        {mi > 0 && val > 0 && delta !== null && (
+                          <div className="text-[9px] font-normal"
+                            style={{ color: delta > 0 ? 'var(--rose)' : '#10B981' }}>
+                            {delta > 0 ? `▲ +${delta}%` : `▼ ${delta}%`}
+                          </div>
+                        )}
                       </td>
                     )
                   })}
                   <td className="px-4 py-3 text-right font-mono font-bold text-[13px]"
-                    style={{ color: 'var(--expense)', borderLeft: '2px solid var(--border)' }}>
+                    style={{ color:'var(--expense)', borderLeft:'2px solid var(--border)' }}>
                     {sym}{Math.round(grandTotal).toLocaleString('en-IN')}
                   </td>
                 </tr>
@@ -279,24 +460,22 @@ export default function ExpensesReportClient({ transactions }: { transactions: a
         )}
       </div>
 
-      {/* Category share bar */}
+      {/* Category share */}
       {activeCats.length > 0 && (
         <div className="wl-card p-4">
-          <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>Category Share</div>
+          <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color:'var(--text3)' }}>Category Share — {viewYear}</div>
           <div className="space-y-2">
-            {activeCats.sort((a,b) => rowTotals[b] - rowTotals[a]).map(cat => {
-              const pct = grandTotal > 0 ? (rowTotals[cat] / grandTotal) * 100 : 0
+            {activeCats.sort((a, b) => rowTotals[b] - rowTotals[a]).map(cat => {
+              const pct   = grandTotal > 0 ? (rowTotals[cat] / grandTotal) * 100 : 0
               const color = CAT_COLORS[cat] ?? '#6B7280'
               return (
                 <div key={cat} className="flex items-center gap-3">
-                  <div className="text-[11px] font-medium w-24 flex-shrink-0" style={{ color: 'var(--text2)' }}>{cat}</div>
-                  <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}>
-                    <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+                  <div className="text-[11px] font-medium w-28 flex-shrink-0 truncate" style={{ color:'var(--text2)' }}>{cat}</div>
+                  <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background:'var(--bg2)' }}>
+                    <div className="h-full rounded-full transition-all" style={{ width:`${pct}%`, background: color }} />
                   </div>
-                  <div className="text-[11px] font-mono font-semibold w-12 text-right" style={{ color }}>
-                    {pct.toFixed(1)}%
-                  </div>
-                  <div className="text-[11px] font-mono w-20 text-right" style={{ color: 'var(--text)' }}>
+                  <div className="text-[11px] font-mono font-semibold w-12 text-right" style={{ color }}>{pct.toFixed(1)}%</div>
+                  <div className="text-[11px] font-mono w-20 text-right" style={{ color:'var(--text)' }}>
                     {sym}{Math.round(rowTotals[cat]).toLocaleString('en-IN')}
                   </div>
                 </div>

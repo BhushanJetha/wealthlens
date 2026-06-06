@@ -11,8 +11,7 @@ import FilterBar from './FilterBar'
 import HolderFilter from './HolderFilter'
 import Link from 'next/link'
 
-const FX = 22.80
-function toINR(amt: number, cur: string) { return cur === 'AED' ? amt * FX : amt }
+function toINR(amt: number, cur: string, fx: number) { return cur === 'AED' ? amt * fx : amt }
 
 const LOAN_SORT_OPTS = [
   { value: 'outstanding_desc', label: 'Outstanding ↓' },
@@ -28,7 +27,7 @@ interface Props {
 }
 
 export default function LoanCategoryClient({ loans, title, loanType }: Props) {
-  const { view } = useViewStore()
+  const { view, fxRate: FX } = useViewStore()
   const router   = useRouter()
   const supabase = createClient()
 
@@ -62,7 +61,7 @@ export default function LoanCategoryClient({ loans, title, loanType }: Props) {
     })
   }, [base, search, sort])
 
-  const conv = (amt: number, cur: string) => view === 'consolidated' ? toINR(amt, cur) : amt
+  const conv = (amt: number, cur: string) => view === 'consolidated' ? toINR(amt, cur, FX) : amt
   const sym  = view === 'uae' ? 'AED ' : '₹'
 
   const totalOutstanding = filtered.reduce((a,l) => a + conv(Number(l.outstanding_amt), l.currency), 0)

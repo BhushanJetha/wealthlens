@@ -3,6 +3,28 @@ import { useMemo, useState } from 'react'
 import { useViewStore } from '@/store/viewStore'
 import { Download, ChevronLeft, ChevronRight } from 'lucide-react'
 
+// ─── Analytics Utilities ────────────────────────────────────────────────────
+
+function linearForecast(values: number[], steps = 3): number[] {
+  const n = values.length
+  if (n < 2) return Array(steps).fill(values[0] ?? 0)
+  const xMean = (n - 1) / 2
+  const yMean = values.reduce((a, v) => a + v, 0) / n
+  const denom = values.reduce((a, _, i) => a + (i - xMean) ** 2, 0)
+  const slope = denom === 0 ? 0 : values.reduce((a, v, i) => a + (i - xMean) * (v - yMean), 0) / denom
+  const intercept = yMean - slope * xMean
+  return Array.from({ length: steps }, (_, k) => Math.max(0, Math.round(intercept + slope * (n + k))))
+}
+
+function stabilityScore(values: number[]): number {
+  const mean = values.reduce((a, v) => a + v, 0) / values.length
+  if (mean === 0) return 0
+  const std = Math.sqrt(values.reduce((a, v) => a + (v - mean) ** 2, 0) / values.length)
+  return Math.round(Math.max(0, Math.min(100, (1 - std / mean) * 100)))
+}
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
 const INCOME_CATS = ['Salary','Dividend','Rental','Gift','Bonus','Tax Refund','Interest','Freelance','Other']
 const CAT_COLORS: Record<string,string> = {
   Salary:      '#16A34A',
@@ -46,8 +68,7 @@ function csvExport(rows: string[][]): void {
 }
 
 export default function IncomeReportClient({ transactions }: { transactions: any[] }) {
-  const { view, fromMonth, toMonth } = useViewStore()
-  const FX = 22.80
+  const { view, fromMonth, toMonth, fxRate: FX } = useViewStore()
 
   const toDisplay = (amt: number, cur: string) =>
     view === 'consolidated' ? (cur === 'AED' ? amt * FX : amt) : amt
@@ -99,6 +120,30 @@ export default function IncomeReportClient({ transactions }: { transactions: any
 
   const grandTotal = months.reduce((a, m) => a + (colTotals[m] ?? 0), 0)
   const activeCats = INCOME_CATS.filter(cat => rowTotals[cat] > 0)
+
+  // ─── Analytics: Income Stability, Forecast, Remittance ───────────────────
+  const monthlyIncomeTotals = useMemo(() => {
+    return Array.from({ length: 12 }, (_, i) => {
+      const m = `${viewYear}-${String(i + 1).padStart(2, '0')}`
+      return transactions
+        .filter((t: any) => t.txn_date?.slice(0, 7) === m && t.txn_type === 'income')
+        .reduce((a: number, t: any) => {
+          if (view === 'uae' && t.currency !== 'AED') return a
+          if (view === 'india' && t.currency !== 'INR') return a
+          return a + (view === 'consolidated' ? Number(t.amount) * (t.currency === 'AED' ? FX : 1) : Number(t.amount))
+        }, 0)
+    })
+  }, [transactions, view, FX, viewYear])
+
+  const validIncomeTotals = monthlyIncomeTotals.filter(v => v > 0)
+  const incomeStabilityScore = validIncomeTotals.length > 0 ? stabilityScore(validIncomeTotals) : 0
+  const incomeForecast = linearForecast(validIncomeTotals.slice(-6), 3)
+  const avgMonthlyIncome = validIncomeTotals.length > 0
+    ? Math.round(validIncomeTotals.reduce((a, v) => a + v, 0) / validIncomeTotals.length)
+    : 0
+  const incomeStdDev = validIncomeTotals.length > 1
+    ? Math.round(Math.sqrt(validIncomeTotals.reduce((a, v) => a + (v - avgMonthlyIncome) ** 2, 0) / validIncomeTotals.length))
+    : 0
 
   function handleExport() {
     const header = ['Source', ...months.map(m => `${MONTH_NAMES[Number(m.slice(5)) - 1]} ${m.slice(0, 4)}`), 'Total']
@@ -184,11 +229,100 @@ export default function IncomeReportClient({ transactions }: { transactions: any
               : '—'}
           </div>
         </div>
-        <div className="wl-card p-3 text-center">
-          <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Income Sources</div>
-          <div className="text-[16px] font-bold font-mono mt-1" style={{ color: 'var(--text)' }}>{activeCats.length}</div>
+        {/* Income Stability Score — new KPI */}
+        <div className="wl-card p-4">
+          <div className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>
+            Income Stability
+          </div>
+          <div className="text-[24px] font-bold font-mono" style={{
+            color: incomeStabilityScore >= 70 ? 'var(--income)' : incomeStabilityScore >= 40 ? 'var(--gold)' : 'var(--rose)'
+          }}>
+            {incomeStabilityScore}/100
+          </div>
+          <div className="text-[10px] mt-1" style={{ color: 'var(--text3)' }}>
+            {incomeStabilityScore >= 70 ? 'Highly Predictable' : incomeStabilityScore >= 40 ? 'Moderate Variation' : 'High Variation'}
+          </div>
         </div>
       </div>
+
+      {/* Income Forecast Panel */}
+      {incomeForecast.length > 0 && avgMonthlyIncome > 0 && (
+        <div className="wl-card p-4">
+          <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>
+            Income Forecast · Next 3 Months
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            {incomeForecast.map((val, i) => {
+              const d = new Date(); d.setMonth(d.getMonth() + i + 1)
+              const label = d.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' })
+              return (
+                <div key={i} className="rounded-xl p-3 text-center"
+                  style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+                  <div className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>
+                    {label} (est)
+                  </div>
+                  <div className="text-[20px] font-bold font-mono" style={{ color: 'var(--income)' }}>
+                    {sym}{val.toLocaleString('en-IN')}
+                  </div>
+                  <div className="text-[10px] mt-1" style={{ color: 'var(--text3)' }}>
+                    ±{sym}{incomeStdDev.toLocaleString('en-IN')}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div className="text-[10px] mt-2" style={{ color: 'var(--text3)' }}>
+            Based on {validIncomeTotals.length}-month trend · Avg: {sym}{avgMonthlyIncome.toLocaleString('en-IN')}/month
+          </div>
+        </div>
+      )}
+
+      {/* Remittance Efficiency Card — NRI-specific, UAE/consolidated only */}
+      {(view === 'uae' || view === 'consolidated') && (() => {
+        const inRangeCheck = (txnDate: string) => {
+          const m = txnDate?.slice(0, 7) ?? ''
+          return m >= fromMonth && m <= toMonth
+        }
+        const aedTransfers = transactions.filter((t: any) =>
+          t.txn_type === 'transfer' && t.currency === 'AED' && inRangeCheck(t.txn_date))
+        const totalAED = aedTransfers.reduce((a: number, t: any) => a + Number(t.amount), 0)
+        if (totalAED === 0) return null
+        const inrEquivalentAtLive = Math.round(totalAED * FX)
+
+        return (
+          <div className="wl-card p-4" style={{ borderTop: '3px solid #0EA5E9' }}>
+            <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#0EA5E9' }}>
+              Remittance Analysis (UAE → India)
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <div className="text-[10px]" style={{ color: 'var(--text3)' }}>Total Transferred</div>
+                <div className="text-[18px] font-bold font-mono mt-0.5" style={{ color: 'var(--gold)' }}>
+                  AED {Math.round(totalAED).toLocaleString('en-IN')}
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px]" style={{ color: 'var(--text3)' }}>INR Equivalent (live rate)</div>
+                <div className="text-[18px] font-bold font-mono mt-0.5" style={{ color: 'var(--income)' }}>
+                  ₹{inrEquivalentAtLive.toLocaleString('en-IN')}
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px]" style={{ color: 'var(--text3)' }}>Live Rate</div>
+                <div className="text-[18px] font-bold font-mono mt-0.5" style={{ color: 'var(--text)' }}>
+                  ₹{FX.toFixed(2)} / AED
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px]" style={{ color: 'var(--text3)' }}>Transfers Count</div>
+                <div className="text-[18px] font-bold font-mono mt-0.5" style={{ color: 'var(--text)' }}>
+                  {aedTransfers.length}
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Pivot Table */}
       <div className="wl-card overflow-hidden">
@@ -205,10 +339,11 @@ export default function IncomeReportClient({ transactions }: { transactions: any
                     style={{ background: 'var(--bg2)', color: 'var(--text3)', borderRight: '1px solid var(--border)' }}>
                     Source
                   </th>
-                  {months.map(m => (
+                  {months.map((m, mi) => (
                     <th key={m} className="px-3 py-3 text-right text-[10px] uppercase tracking-wider font-bold min-w-[70px]"
                       style={{ color: 'var(--text3)', background: m >= fromMonth && m <= toMonth ? 'var(--income-bg)' : 'var(--bg2)' }}>
                       {MONTH_NAMES[Number(m.slice(5)) - 1]}
+                      {mi > 0 && <div className="text-[8px] font-normal opacity-60">Δ MoM</div>}
                     </th>
                   ))}
                   <th className="px-4 py-3 text-right text-[10px] uppercase tracking-wider font-bold"
@@ -230,15 +365,28 @@ export default function IncomeReportClient({ transactions }: { transactions: any
                           <span style={{ color: 'var(--text)' }}>{cat}</span>
                         </div>
                       </td>
-                      {months.map(m => {
+                      {months.map((m, mi) => {
                         const val = pivot[cat]?.[m] ?? 0
                         const inSel = m >= fromMonth && m <= toMonth
+                        const prevM = mi > 0 ? months[mi - 1] : null
+                        const prevVal = prevM ? (pivot[cat]?.[prevM] ?? 0) : 0
+                        const delta = prevM && prevVal > 0
+                          ? Math.round((val - prevVal) / prevVal * 100)
+                          : null
                         return (
                           <td key={m} className="px-3 py-2.5 text-right font-mono"
-                            style={{ color: val > 0 ? 'var(--income)' : 'var(--text3)',
+                            style={{
+                              color: val > 0 ? 'var(--income)' : 'var(--text3)',
                               background: inSel ? `${color}08` : 'transparent',
-                              fontWeight: val > 0 ? 600 : 400 }}>
-                            {val > 0 ? `${sym}${fmt(val)}` : '—'}
+                              fontWeight: val > 0 ? 600 : 400,
+                            }}>
+                            <div>{val > 0 ? `${sym}${fmt(val)}` : '—'}</div>
+                            {mi > 0 && val > 0 && delta !== null && (
+                              <div className="text-[9px] font-normal"
+                                style={{ color: delta > 0 ? 'var(--income)' : 'var(--rose)' }}>
+                                {delta > 0 ? `▲ +${delta}%` : `▼ ${delta}%`}
+                              </div>
+                            )}
                           </td>
                         )
                       })}
@@ -256,12 +404,23 @@ export default function IncomeReportClient({ transactions }: { transactions: any
                     style={{ background: 'var(--bg2)', color: 'var(--text)', borderRight: '1px solid var(--border)' }}>
                     Monthly Total
                   </td>
-                  {months.map(m => {
+                  {months.map((m, mi) => {
                     const val = colTotals[m] ?? 0
+                    const prevM = mi > 0 ? months[mi - 1] : null
+                    const prevVal = prevM ? (colTotals[prevM] ?? 0) : 0
+                    const delta = prevM && prevVal > 0
+                      ? Math.round((val - prevVal) / prevVal * 100)
+                      : null
                     return (
                       <td key={m} className="px-3 py-3 text-right font-mono font-bold"
                         style={{ color: 'var(--income)', background: m >= fromMonth && m <= toMonth ? 'var(--income-bg)' : 'var(--bg2)' }}>
-                        {val > 0 ? `${sym}${fmt(val)}` : '—'}
+                        <div>{val > 0 ? `${sym}${fmt(val)}` : '—'}</div>
+                        {mi > 0 && val > 0 && delta !== null && (
+                          <div className="text-[9px] font-normal"
+                            style={{ color: delta > 0 ? 'var(--income)' : 'var(--rose)' }}>
+                            {delta > 0 ? `▲ +${delta}%` : `▼ ${delta}%`}
+                          </div>
+                        )}
                       </td>
                     )
                   })}

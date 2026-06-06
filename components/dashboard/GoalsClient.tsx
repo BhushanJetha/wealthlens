@@ -11,7 +11,6 @@ import {
 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 
-const FX = 22.80
 
 const CAT_ICONS: Record<string, string> = {
   equity: '📈', mutual_fund: '💹', fixed_income: '🏦', gold: '🥇',
@@ -76,7 +75,7 @@ const BADGES = [
 ]
 
 export default function GoalsClient({ goals, goalInvestments, allInvestments }: Props) {
-  const { view } = useViewStore()
+  const { view, fxRate: FX } = useViewStore()
   const router = useRouter()
   const supabase = createClient()
   const [showAdd, setShowAdd] = useState(false)

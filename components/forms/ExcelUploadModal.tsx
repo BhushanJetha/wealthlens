@@ -19,6 +19,12 @@ const TEMPLATES: Record<InvType, string[]> = {
   etf:                ['etf_name','symbol','exchange','units','avg_buy_price','etf_type','invested_amount','purchase_date','currency'],
 }
 
+const TABLE_MAP: Record<InvType, string> = {
+  stock: 'stocks', mutual_fund: 'mutual_funds', fixed_deposit: 'fixed_deposits',
+  recurring_deposit: 'recurring_deposits', nps: 'nps_accounts', lic: 'lic_policies',
+  gold: 'gold_investments', bond: 'bond_investments', etf: 'etf_investments',
+}
+
 interface Props { onClose: () => void; investmentType: InvType }
 
 export function ExcelUploadModal({ onClose, investmentType }: Props) {
@@ -77,10 +83,9 @@ export function ExcelUploadModal({ onClose, investmentType }: Props) {
   async function saveAll() {
     setStatus('saving')
     const { data: { user } } = await supabase.auth.getUser()
-    const table = investmentType === 'stock' ? 'stocks' : investmentType === 'mutual_fund' ? 'mutual_funds'
-      : investmentType === 'fixed_deposit' ? 'fixed_deposits' : investmentType === 'recurring_deposit' ? 'recurring_deposits'
-      : investmentType === 'nps' ? 'nps_accounts' : 'lic_policies'
-    await supabase.from(table).insert(parsed.map(p => ({ ...p, user_id: user!.id })))
+    const table = TABLE_MAP[investmentType]
+    const { error } = await supabase.from(table).insert(parsed.map(p => ({ ...p, user_id: user!.id })))
+    if (error) { setErrorMsg(error.message); setStatus('error'); return }
     setStatus('done')
     router.refresh()
     setTimeout(onClose, 1500)

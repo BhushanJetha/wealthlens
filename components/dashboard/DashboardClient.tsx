@@ -12,9 +12,8 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 
-const FX = 22.80
-function toINR(amount: number, currency: string) {
-  return currency === 'AED' ? amount * FX : amount
+function toINR(amount: number, currency: string, fx: number) {
+  return currency === 'AED' ? amount * fx : amount
 }
 function fmt(n: number, sym: string) {
   if (Math.abs(n) >= 10000000) return `${sym}${(n / 10000000).toFixed(2)}Cr`
@@ -27,7 +26,7 @@ const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct
 
 export default function DashboardClient({ transactions, loans, accounts, stocks, mutualFunds, fixedDeposits, insurance, goals, budgets,
   recurringDeposits = [], npsAccounts = [], licPolicies = [], goldInvestments = [], bondInvestments = [], etfInvestments = [] }: any) {
-  const { view, fromMonth, toMonth } = useViewStore()
+  const { view, fromMonth, toMonth, fxRate: FX } = useViewStore()
 
   const inRange = (txn_date: string) => {
     const m = txn_date?.slice(0, 7) ?? ''
@@ -49,19 +48,19 @@ export default function DashboardClient({ transactions, loans, accounts, stocks,
 
     const sym = view === 'uae' ? 'AED ' : '₹'
 
-    const stockVal  = filteredStocks.reduce((a: number, s: any) => a + (view === 'consolidated' ? toINR(s.quantity*(s.current_price??s.avg_buy_price),s.currency) : s.quantity*(s.current_price??s.avg_buy_price)), 0)
+    const stockVal  = filteredStocks.reduce((a: number, s: any) => a + (view === 'consolidated' ? toINR(s.quantity*(s.current_price??s.avg_buy_price),s.currency,FX) : s.quantity*(s.current_price??s.avg_buy_price)), 0)
     const mfVal     = filteredMF.reduce((a: number, m: any) => a + m.units*(m.current_nav??m.avg_nav), 0)
-    const fdVal     = filteredFD.reduce((a: number, f: any) => a + (view === 'consolidated' ? toINR(Number(f.principal),f.currency) : Number(f.principal)), 0)
+    const fdVal     = filteredFD.reduce((a: number, f: any) => a + (view === 'consolidated' ? toINR(Number(f.principal),f.currency,FX) : Number(f.principal)), 0)
     const totalAssets = stockVal + mfVal + fdVal
 
-    const loanLiab = filteredLoans.reduce((a: number, l: any) => a + (view === 'consolidated' ? toINR(Number(l.outstanding_amt),l.currency) : Number(l.outstanding_amt)), 0)
-    const cardLiab = filteredCards.reduce((a: number, c: any) => a + (view === 'consolidated' ? toINR(Number(c.outstanding_bal??0),c.currency) : Number(c.outstanding_bal??0)), 0)
+    const loanLiab = filteredLoans.reduce((a: number, l: any) => a + (view === 'consolidated' ? toINR(Number(l.outstanding_amt),l.currency,FX) : Number(l.outstanding_amt)), 0)
+    const cardLiab = filteredCards.reduce((a: number, c: any) => a + (view === 'consolidated' ? toINR(Number(c.outstanding_bal??0),c.currency,FX) : Number(c.outstanding_bal??0)), 0)
     const totalLiab = loanLiab + cardLiab
     const netWorth  = totalAssets - totalLiab
 
     const txRange = filterByView(transactions.filter((t: any) => inRange(t.txn_date)))
-    const monthlyIncome  = txRange.filter((t:any)=>t.txn_type==='income').reduce((a:number,t:any)=>a+(view==='consolidated'?toINR(Number(t.amount),t.currency):Number(t.amount)),0)
-    const monthlyExpense = txRange.filter((t:any)=>t.txn_type==='expense').reduce((a:number,t:any)=>a+(view==='consolidated'?toINR(Number(t.amount),t.currency):Number(t.amount)),0)
+    const monthlyIncome  = txRange.filter((t:any)=>t.txn_type==='income').reduce((a:number,t:any)=>a+(view==='consolidated'?toINR(Number(t.amount),t.currency,FX):Number(t.amount)),0)
+    const monthlyExpense = txRange.filter((t:any)=>t.txn_type==='expense').reduce((a:number,t:any)=>a+(view==='consolidated'?toINR(Number(t.amount),t.currency,FX):Number(t.amount)),0)
     const savingsRate    = monthlyIncome > 0 ? Math.round((monthlyIncome - monthlyExpense) / monthlyIncome * 100) : 0
 
     const totalLimit = filteredCards.reduce((a:number,c:any)=>a+Number(c.credit_limit??0),0)
@@ -69,7 +68,7 @@ export default function DashboardClient({ transactions, loans, accounts, stocks,
     const utilPct    = totalLimit > 0 ? Math.round(totalBal/totalLimit*100) : 0
 
     // Full equity (all investment types) for D/E widget — view-filtered
-    const convV = (amt: number, cur: string) => view === 'consolidated' ? toINR(amt, cur) : amt
+    const convV = (amt: number, cur: string) => view === 'consolidated' ? toINR(amt, cur, FX) : amt
     const rdVal    = filterByView(recurringDeposits ?? []).reduce((a: number, r: any) => a + convV(Number(r.monthly_amount) * r.tenure_months, r.currency ?? 'INR'), 0)
     const npsVal   = filterByView(npsAccounts ?? []).reduce((a: number, n: any) => a + Number(n.corpus_amount ?? 0), 0)
     const licPaid  = filterByView(licPolicies ?? []).reduce((a: number, l: any) => a + Number(l.total_paid ?? 0), 0)

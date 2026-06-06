@@ -106,6 +106,7 @@ export default function AddGoalModal({ onClose, editData, allInvestments }: Prop
       description:   form.description || null,
       target_amount: Number(form.target_amount),
       currency:      form.currency,
+      country:       form.currency === 'AED' ? 'UAE' : 'India',  // goals table has NOT NULL country
       target_date:   form.target_date,
       category:      form.category,
       color:         form.color,
@@ -136,12 +137,14 @@ export default function AddGoalModal({ onClose, editData, allInvestments }: Prop
       return
     }
 
-    // Smart auto-link investments
+    // Smart auto-link investments — only the same country/currency as the goal
+    // (an India/INR goal must not pull in UAE/AED investments, and vice-versa)
     if (allInvestments && form.target_date) {
       const ml = getMonthsLeft(form.target_date)
       const links: any[] = []
       ALL_INV_TYPES.forEach(type => {
         ;(allInvestments[type] ?? []).forEach((rec: any) => {
+          if ((rec.currency ?? 'INR') !== form.currency) return
           if (shouldAutoLink(type, rec, form.category, ml)) {
             links.push({ goal_id: newGoal.id, user_id: user!.id, investment_type: type, investment_id: rec.id, allocation_pct: 100 })
           }

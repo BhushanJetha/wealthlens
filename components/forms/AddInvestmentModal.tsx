@@ -86,6 +86,7 @@ export default function AddInvestmentModal({ onClose, defaultType = 'stock', edi
     if (type === 'mutual_fund') payload = { ...payload,
       fund_name: form.fund_name || form.name, fund_type: form.fund_type,
       units: Number(form.units), avg_nav: Number(form.avg_nav), invested_amount: Number(form.invested_amount),
+      ...(isEdit ? {} : { source: 'manual' }),
     }
     if (type === 'fixed_deposit') payload = { ...payload,
       name: form.name, bank_name: form.bank_name, principal: Number(form.principal),
@@ -136,10 +137,21 @@ export default function AddInvestmentModal({ onClose, defaultType = 'stock', edi
       invested_amount: Number(form.invested_amount || 0), purchase_date: form.purchase_date,
     }
 
+    // Write; if a column doesn't exist yet (e.g. migration not run), strip it & retry
+    const stripRetry = async (run: (p: any) => any, init: any) => {
+      let p = init
+      for (let t = 0; t < 4; t++) {
+        const { error } = await run(p)
+        if (!error) return
+        const col = error.message?.match(/'([a-zA-Z_]+)' column/)?.[1] ?? error.message?.match(/column "?([a-zA-Z_]+)"?/i)?.[1]
+        if (col && (error.code === 'PGRST204' || /column/i.test(error.message))) { const c = { ...p }; delete c[col]; p = c; continue }
+        return
+      }
+    }
     if (isEdit && editData?.id) {
-      await supabase.from(table).update(payload).eq('id', editData.id)
+      await stripRetry(p => supabase.from(table).update(p).eq('id', editData.id), payload)
     } else {
-      await supabase.from(table).insert({ ...payload, user_id: user!.id })
+      await stripRetry(p => supabase.from(table).insert(p), { ...payload, user_id: user!.id })
     }
 
     router.refresh()

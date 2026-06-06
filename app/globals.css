@@ -119,3 +119,22 @@ body {
 
 /* Page-level instant transition */
 main > * { will-change: opacity; }
+
+/* Popup animations */
+@keyframes fadeInScaleUp {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);   }
+}
+@keyframes fadeInOverlay {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.wl-popup-overlay { animation: fadeInOverlay 0.18s ease; }
+.wl-popup-panel   { animation: fadeInScaleUp 0.2s cubic-bezier(0.16,1,0.3,1); }
+
+/* Summary chip hover lift */
+.wl-summary-chip {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  cursor: pointer;
+}
+.wl-summary-chip:hover { transform: translateY(-3px); }

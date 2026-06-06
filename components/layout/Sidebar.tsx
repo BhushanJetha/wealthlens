@@ -4,25 +4,36 @@ import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import {
   LayoutDashboard, Receipt, TrendingUp, Building2,
-  CreditCard, Shield, Target, Upload, LogOut, Settings,
+  CreditCard, Shield, Target, LogOut, Settings,
   ChevronDown, BarChart2, RefreshCw, Landmark, Briefcase,
   FileText, Activity, Gem, Car, Home, User, CircleDollarSign,
-  ArrowDownCircle, ArrowUpCircle, PieChart, HeartPulse, Flag
+  ArrowDownCircle, ArrowUpCircle, PieChart, HeartPulse, Flag,
+  ArrowLeftRight, GraduationCap, PiggyBank
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
-const INV_SUBS = [
-  { href: '/dashboard/investments',                    icon: BarChart2,        label: 'Overview'            },
-  { href: '/dashboard/investments/mutual-funds',       icon: TrendingUp,       label: 'Mutual Funds'        },
-  { href: '/dashboard/investments/stocks',             icon: Activity,         label: 'Stocks'              },
-  { href: '/dashboard/investments/etf',                icon: BarChart2,        label: 'ETF'                 },
-  { href: '/dashboard/investments/fixed-deposits',     icon: Landmark,         label: 'Fixed Deposits'      },
-  { href: '/dashboard/investments/recurring-deposits', icon: RefreshCw,        label: 'Recurring Deposits'  },
-  { href: '/dashboard/investments/gold',               icon: Gem,              label: 'Gold'                },
-  { href: '/dashboard/investments/bonds',              icon: CircleDollarSign, label: 'Bonds'               },
-  { href: '/dashboard/investments/nps',                icon: Briefcase,        label: 'NPS'                 },
-  { href: '/dashboard/investments/lic',                icon: FileText,         label: 'LIC'                 },
+// Grouped per the WealthLens asset model: Market-Linked / Fixed-Income / Alternative
+const INV_GROUPS: { label: string; items: { href: string; icon: any; label: string }[] }[] = [
+  { label: '', items: [
+    { href: '/dashboard/investments', icon: BarChart2, label: 'Overview' },
+  ] },
+  { label: 'Market-Linked', items: [
+    { href: '/dashboard/investments/mutual-funds', icon: TrendingUp, label: 'Mutual Funds' },
+    { href: '/dashboard/stocks',                   icon: Activity,   label: 'Stocks' },
+    { href: '/dashboard/investments/etf',          icon: BarChart2,  label: 'ETF' },
+  ] },
+  { label: 'Fixed-Income', items: [
+    { href: '/dashboard/investments/fixed-deposits',     icon: Landmark,  label: 'Fixed Deposits' },
+    { href: '/dashboard/investments/recurring-deposits', icon: RefreshCw, label: 'Recurring Deposits' },
+    { href: '/dashboard/investments/ppf-epf',            icon: PiggyBank, label: 'PPF / EPF' },
+  ] },
+  { label: 'Alternative / Long-Term', items: [
+    { href: '/dashboard/investments/gold',  icon: Gem,              label: 'Gold' },
+    { href: '/dashboard/investments/bonds', icon: CircleDollarSign, label: 'Bonds / SGB' },
+    { href: '/dashboard/investments/nps',   icon: Briefcase,        label: 'NPS' },
+    { href: '/dashboard/investments/lic',   icon: FileText,         label: 'LIC' },
+  ] },
 ]
 
 const LOAN_SUBS = [
@@ -40,6 +51,7 @@ const TXN_SUBS = [
   { href: '/dashboard/income/report',   icon: PieChart,        label: 'Income Report'   },
   { href: '/dashboard/expenses',        icon: ArrowDownCircle, label: 'Expenses'        },
   { href: '/dashboard/expenses/report', icon: PieChart,        label: 'Expense Report'  },
+  { href: '/dashboard/transfers',       icon: ArrowLeftRight,  label: 'Transfers'       },
 ]
 
 const MAIN_NAV = [
@@ -48,23 +60,24 @@ const MAIN_NAV = [
   { href: '/dashboard/investments',icon: TrendingUp,      label: 'Investments',      sub: 'inv'  },
   { href: '/dashboard/loans',      icon: Building2,       label: 'Loans',            sub: 'loan' },
   { href: '/dashboard/cards',      icon: CreditCard,      label: 'Credit Cards'      },
+  { href: '/dashboard/accounts',   icon: Landmark,        label: 'Bank Accounts'     },
   { href: '/dashboard/budgets',    icon: Target,          label: 'Budgets'           },
 ]
 
 const OTHER_NAV = [
-  { href: '/dashboard/goals',            icon: Flag,       label: 'Goals'              },
-  { href: '/dashboard/financial-health', icon: HeartPulse, label: 'Financial Health'   },
-  { href: '/dashboard/insurance',        icon: Shield,     label: 'Insurance'          },
-  { href: '/dashboard/ingest',           icon: Upload,     label: 'Upload Statements'  },
+  { href: '/dashboard/goals',            icon: Flag,           label: 'Goals'              },
+  { href: '/dashboard/financial-health', icon: HeartPulse,     label: 'Financial Health'   },
+  { href: '/dashboard/insurance',        icon: Shield,         label: 'Insurance'          },
+  { href: '/dashboard/learn',            icon: GraduationCap,  label: 'Learn'              },
 ]
 
 export default function Sidebar() {
   const pathname = usePathname()
   const router   = useRouter()
   const supabase = createClient()
-  const isInvActive  = pathname.startsWith('/dashboard/investments')
+  const isInvActive  = pathname.startsWith('/dashboard/investments') || pathname.startsWith('/dashboard/stocks')
   const isLoanActive = pathname.startsWith('/dashboard/loans')
-  const isTxnActive  = pathname.startsWith('/dashboard/income') || pathname.startsWith('/dashboard/expenses') || pathname.startsWith('/dashboard/expenses/report') || pathname.startsWith('/dashboard/income/report')
+  const isTxnActive  = pathname.startsWith('/dashboard/income') || pathname.startsWith('/dashboard/expenses') || pathname.startsWith('/dashboard/expenses/report') || pathname.startsWith('/dashboard/income/report') || pathname.startsWith('/dashboard/transfers')
   const [invOpen,  setInvOpen]  = useState(isInvActive)
   const [loanOpen, setLoanOpen] = useState(isLoanActive)
   const [txnOpen,  setTxnOpen]  = useState(isTxnActive)
@@ -174,7 +187,14 @@ export default function Sidebar() {
                   <ExpandItem label={item.label} icon={item.icon} active={isInvActive} open={invOpen} onToggle={() => setInvOpen(p => !p)} />
                   {invOpen && (
                     <div className="space-y-0.5 py-0.5">
-                      {INV_SUBS.map(sub => <SubItem key={sub.href} {...sub} />)}
+                      {INV_GROUPS.map(g => (
+                        <div key={g.label || 'top'}>
+                          {g.label && (
+                            <div className="pl-9 pr-3 pt-2 pb-0.5 text-[9px] font-semibold uppercase tracking-wider" style={{ color: '#C7CDD4' }}>{g.label}</div>
+                          )}
+                          {g.items.map(sub => <SubItem key={sub.href} {...sub} />)}
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>

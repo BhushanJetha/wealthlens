@@ -55,7 +55,7 @@ export default function RecurringDepositsClient({ data }: { data: any[] }) {
 
   const totalMonthly   = filtered.reduce((a, r) => a + Number(r.monthly_amount), 0)
   const totalCommitted = filtered.reduce((a, r) => a + Number(r.monthly_amount) * r.tenure_months, 0)
-  const totalPaid      = filtered.reduce((a, r) => a + Number(r.monthly_amount) * (r.months_paid ?? 0), 0)
+  const totalPaid      = filtered.reduce((a, r) => a + (r.current_amount != null ? Number(r.current_amount) : Number(r.monthly_amount) * (r.months_paid ?? 0)), 0)
 
   async function deleteItem(id: string) {
     if (!confirm('Delete this RD entry?')) return

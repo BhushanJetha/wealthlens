@@ -9,6 +9,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth/login')
 
+  // Guarantee profile row exists — handles cases where the DB trigger
+  // failed silently on signup (e.g. after a full data reset)
+  await supabase.from('profiles').upsert({
+    id:         user.id,
+    email:      user.email ?? '',
+    full_name:  user.user_metadata?.full_name  ?? null,
+    avatar_url: user.user_metadata?.avatar_url ?? null,
+  }, { onConflict: 'id', ignoreDuplicates: true })
+
   const { data: profile } = await supabase
     .from('profiles')
     .select('*')

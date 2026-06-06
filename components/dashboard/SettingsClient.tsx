@@ -2,20 +2,17 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { User, Lock, Bell, Trash2, Plus, Save, Loader2, CheckCircle, Shield, CreditCard, Building2 } from 'lucide-react'
-import AddAccountModal from '@/components/forms/AddAccountModal'
+import { User, Lock, Bell, Save, Loader2, CheckCircle, Shield } from 'lucide-react'
 
-type Tab = 'profile' | 'accounts' | 'security' | 'preferences'
+type Tab = 'profile' | 'security' | 'preferences'
 
-export default function SettingsClient({ profile, accounts, userId }: any) {
+export default function SettingsClient({ profile, userId }: any) {
   const [tab, setTab] = useState<Tab>('profile')
   const [fullName, setFullName] = useState(profile?.full_name ?? '')
   const [fxRate, setFxRate] = useState(String(profile?.aed_to_inr ?? '22.80'))
   const [defaultView, setDefaultView] = useState(profile?.default_view ?? 'consolidated')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [showAddAccount, setShowAddAccount] = useState(false)
-  const [accType, setAccType] = useState<'credit_card' | 'savings'>('savings')
   const supabase = createClient()
   const router = useRouter()
 
@@ -27,15 +24,8 @@ export default function SettingsClient({ profile, accounts, userId }: any) {
     router.refresh()
   }
 
-  async function deleteAccount(id: string) {
-    if (!confirm('Remove this account? Existing transactions will be preserved.')) return
-    await supabase.from('accounts').update({ is_active: false }).eq('id', id)
-    router.refresh()
-  }
-
   const tabs: Array<{ key: Tab; label: string; icon: any }> = [
     { key: 'profile',     label: 'Profile',     icon: User },
-    { key: 'accounts',    label: 'Accounts',    icon: CreditCard },
     { key: 'security',    label: 'Security',    icon: Lock },
     { key: 'preferences', label: 'Preferences', icon: Bell },
   ]
@@ -99,66 +89,6 @@ export default function SettingsClient({ profile, accounts, userId }: any) {
               : saved ? <><CheckCircle size={14} />Saved!</>
               : <><Save size={14} />Save Changes</>}
           </button>
-        </div>
-      )}
-
-      {/* Accounts Tab */}
-      {tab === 'accounts' && (
-        <div className="space-y-3">
-          <div className="flex gap-2">
-            <button onClick={() => { setAccType('savings'); setShowAddAccount(true) }}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg text-white text-[12px] font-bold"
-              style={{ background: 'var(--sage)' }}>
-              <Plus size={13} /> Add Bank Account
-            </button>
-            <button onClick={() => { setAccType('credit_card'); setShowAddAccount(true) }}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] font-bold"
-              style={{ background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text2)' }}>
-              <CreditCard size={13} /> Add Credit Card
-            </button>
-          </div>
-
-          {accounts.length === 0 ? (
-            <div className="wl-card py-12 text-center text-[13px]"
-              style={{ borderStyle: 'dashed', color: 'var(--text3)' }}>
-              No accounts yet. Add your bank accounts and credit cards above.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {accounts.map((acc: any) => (
-                <div key={acc.id} className="wl-card p-4 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-lg flex items-center justify-center"
-                      style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-                      {acc.account_type === 'credit_card'
-                        ? <CreditCard size={15} style={{ color: 'var(--blue)' }} />
-                        : <Building2 size={15} style={{ color: 'var(--sage)' }} />}
-                    </div>
-                    <div>
-                      <div className="text-[13px] font-bold" style={{ color: 'var(--text)' }}>{acc.name}</div>
-                      <div className="text-[11px]" style={{ color: 'var(--text3)' }}>{acc.bank_name} · {acc.currency} · {acc.country}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {acc.last_four && <span className="text-[11px] font-mono" style={{ color: 'var(--text3)' }}>••••{acc.last_four}</span>}
-                    <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold capitalize"
-                      style={acc.account_type === 'credit_card'
-                        ? { background: 'var(--blue-bg)', color: 'var(--blue)' }
-                        : { background: 'var(--sage-bg)', color: 'var(--sage)' }}>
-                      {acc.account_type.replace('_', ' ')}
-                    </span>
-                    <button onClick={() => deleteAccount(acc.id)}
-                      className="transition-colors" style={{ color: 'var(--text3)' }}
-                      onMouseEnter={e => (e.currentTarget.style.color = 'var(--rose)')}
-                      onMouseLeave={e => (e.currentTarget.style.color = 'var(--text3)')}>
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {showAddAccount && <AddAccountModal onClose={() => { setShowAddAccount(false); router.refresh() }} type={accType} />}
         </div>
       )}
 

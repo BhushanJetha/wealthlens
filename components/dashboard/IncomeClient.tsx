@@ -1,86 +1,82 @@
 'use client'
 import { useState, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import { useViewStore } from '@/store/viewStore'
 import MetricCard from '@/components/dashboard/MetricCard'
 import AddTransactionModal from '@/components/forms/AddTransactionModal'
-import BankStatementUploadModal from '@/components/forms/BankStatementUploadModal'
-import BillImageUploadModal from '@/components/forms/BillImageUploadModal'
-import TransactionVoiceModal from '@/components/forms/TransactionVoiceModal'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
-import { Search, Upload, Image, Mic, PenLine, BarChart2 } from 'lucide-react'
+
+import Pagination from '@/components/dashboard/Pagination'
+import { Search, PenLine, BarChart2, Plus, Pencil, Trash2, X, Check } from 'lucide-react'
 import Link from 'next/link'
 
 const INCOME_CATS = [
-  'All', 'Salary', 'Dividend', 'Rental', 'Gift', 'Bonus', 'Tax Refund', 'Interest', 'Freelance', 'Other'
+  'All', 'Salary', 'Dividend', 'Rental', 'Gift', 'Bonus', 'Tax Refund', 'Interest', 'Freelance', 'NRI Transfer', 'Other'
 ]
 
 const CAT_COLORS: Record<string,string> = {
-  Salary:      '#16A34A',
-  Dividend:    '#2563EB',
-  Rental:      '#7C3AED',
-  Gift:        '#E11D48',
-  Bonus:       '#D97706',
-  'Tax Refund':'#059669',
-  Interest:    '#0284C7',
-  Freelance:   '#EA580C',
-  Other:       '#6B7280',
+  Salary:         '#16A34A',
+  Dividend:       '#2563EB',
+  Rental:         '#7C3AED',
+  Gift:           '#E11D48',
+  Bonus:          '#D97706',
+  'Tax Refund':   '#059669',
+  Interest:       '#0284C7',
+  Freelance:      '#EA580C',
+  'NRI Transfer': '#0EA5E9',
+  Other:          '#6B7280',
 }
+type Modal = 'none' | 'manual'
 
-const FX = 22.80
-type Modal = 'none' | 'manual' | 'statement' | 'receipt' | 'voice'
-
-export default function IncomeClient({ transactions, accounts }: { transactions: any[]; accounts: any[] }) {
-  const { view, fromMonth, toMonth } = useViewStore()
+export default function IncomeClient({ transactions, accounts, transfers = [] }: { transactions: any[]; accounts: any[]; transfers?: any[] }) {
+  const { view, fromMonth, toMonth, fxRate: FX } = useViewStore()
   const [search, setSearch] = useState('')
   const [cat, setCat]       = useState('All')
   const [accFilter, setAccFilter] = useState('All')
   const [activeModal, setActiveModal] = useState<Modal>('none')
+  const [page,        setPage]        = useState(1)
+  const [pageSize,    setPageSize]    = useState(20)
+  const [editTxn,     setEditTxn]     = useState<any | null>(null)
+  const [editFields,  setEditFields]  = useState<any>({})
+  const [editSaving,  setEditSaving]  = useState(false)
+  const [deletingId,  setDeletingId]  = useState<string | null>(null)
+  const router = useRouter()
+
+  function openEdit(t: any) {
+    setEditTxn(t)
+    setEditFields({ txn_date: t.txn_date, merchant: t.merchant, category: t.category, amount: t.amount, txn_type: t.txn_type ?? 'income' })
+  }
+  async function saveEdit() {
+    if (!editTxn) return
+    setEditSaving(true)
+    await fetch('/api/transactions', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: editTxn.id, ...editFields, amount: Math.abs(Number(editFields.amount)) }),
+    })
+    setEditSaving(false); setEditTxn(null); router.refresh()
+  }
+  async function deleteTxn(id: string) {
+    if (!confirm('Delete this income entry?')) return
+    setDeletingId(id)
+    await fetch(`/api/transactions?id=${id}`, { method: 'DELETE' })
+    setDeletingId(null); router.refresh()
+  }
 
   const sym = view === 'uae' ? 'AED ' : '₹'
   const toDisplay = (amt: number, cur: string) => view === 'consolidated' ? amt * (cur === 'AED' ? FX : 1) : amt
   const inRange = (d: string) => { const m = d?.slice(0,7) ?? ''; return m >= fromMonth && m <= toMonth }
 
-  const filtered = useMemo(() => transactions.filter(t => {
+  const filtered = useMemo(() => { setPage(1); return transactions.filter(t => {
     if (view === 'uae'   && t.currency !== 'AED') return false
     if (view === 'india' && t.currency !== 'INR') return false
     if (cat !== 'All'   && t.category !== cat)    return false
     if (accFilter !== 'All' && t.account_id !== accFilter) return false
     if (search && !t.merchant?.toLowerCase().includes(search.toLowerCase())) return false
     return true
-  }), [transactions, view, cat, accFilter, search])
+  }) }, [transactions, view, cat, accFilter, search])
 
   const filteredForMonth = filtered.filter(t => inRange(t.txn_date))
   const total = filtered.reduce((a, t) => a + toDisplay(Number(t.amount), t.currency), 0)
   const rangeTotal = filteredForMonth.reduce((a, t) => a + toDisplay(Number(t.amount), t.currency), 0)
-
-  const catData = useMemo(() => {
-    const cats: Record<string,number> = {}
-    filteredForMonth.forEach(t => { cats[t.category] = (cats[t.category]??0) + toDisplay(Number(t.amount), t.currency) })
-    return Object.entries(cats).map(([name, value]) => ({ name, value: Math.round(value) })).sort((a,b)=>b.value-a.value)
-  }, [filtered, view, fromMonth, toMonth])
-
-  const monthlyData = useMemo(() => {
-    const months: Record<string,number> = {}
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(); d.setMonth(d.getMonth()-i)
-      months[d.toISOString().slice(0,7)] = 0
-    }
-    filtered.forEach(t => {
-      const m = t.txn_date?.slice(0,7)
-      if (m && months[m] !== undefined) months[m] += toDisplay(Number(t.amount), t.currency)
-    })
-    const labels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-    return Object.entries(months).map(([m, v]) => ({ month: labels[Number(m.slice(5))-1], value: Math.round(v) }))
-  }, [filtered, view])
-
-  const PIE_COLORS = Object.values(CAT_COLORS)
-
-  const addButtons = [
-    { key: 'statement' as Modal, label: 'Bank Statement', icon: Upload,  color: 'var(--blue)',    bg: 'var(--blue-bg)' },
-    { key: 'receipt'   as Modal, label: 'Upload Receipt', icon: Image,   color: 'var(--gold)',    bg: 'var(--sage-bg)' },
-    { key: 'voice'     as Modal, label: 'Voice Entry',    icon: Mic,     color: 'var(--income)',  bg: 'var(--income-bg)' },
-    { key: 'manual'    as Modal, label: 'Manual Entry',   icon: PenLine, color: 'var(--sage)',    bg: 'var(--sage-bg)' },
-  ]
 
   const rangeLabel = fromMonth === toMonth
     ? new Date(fromMonth + '-01').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
@@ -95,21 +91,17 @@ export default function IncomeClient({ transactions, accounts }: { transactions:
             {view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'} · {rangeLabel}
           </p>
         </div>
-        {/* Actions */}
-        <div className="flex gap-2 flex-wrap justify-end items-center">
+        <div className="flex items-center gap-2">
           <Link href="/dashboard/income/report"
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-semibold border transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all"
             style={{ background: 'var(--bg2)', borderColor: 'var(--border)', color: 'var(--text3)' }}>
-            <BarChart2 size={13} /> Annual Report
+            <BarChart2 size={12} /> Annual Report
           </Link>
-          {addButtons.map(({ key, label, icon: Icon, color, bg }) => (
-            <button key={key} onClick={() => setActiveModal(key)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-semibold border transition-all"
-              style={{ background: bg, borderColor: color + '40', color }}>
-              <Icon size={13} />
-              {label}
-            </button>
-          ))}
+          <button onClick={() => setActiveModal('manual')}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-bold text-white shadow-sm hover:opacity-90 transition-all"
+            style={{ background: 'var(--income)' }}>
+            <Plus size={14} /> Add Income
+          </button>
         </div>
       </div>
 
@@ -118,54 +110,6 @@ export default function IncomeClient({ transactions, accounts }: { transactions:
         <MetricCard label="Total Filtered"   value={`${sym}${Math.round(total).toLocaleString('en-IN')}`}              accent="sage" />
         <MetricCard label="Transactions"     value={`${filteredForMonth.length}`}                                       accent="blue" />
         <MetricCard label="Avg per Entry"    value={`${sym}${filteredForMonth.length > 0 ? Math.round(rangeTotal/filteredForMonth.length).toLocaleString('en-IN') : 0}`} accent="gold" />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* By source donut */}
-        <div className="wl-card p-4">
-          <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color:'var(--text3)' }}>By Source · {rangeLabel}</div>
-          {catData.length > 0 ? (
-            <>
-              <ResponsiveContainer width="100%" height={180}>
-                <PieChart>
-                  <Pie data={catData} dataKey="value" cx="50%" cy="50%" innerRadius={48} outerRadius={78} paddingAngle={2}>
-                    {catData.map((_,i) => <Cell key={i} fill={PIE_COLORS[i%PIE_COLORS.length]} />)}
-                  </Pie>
-                  <Tooltip contentStyle={{ background:'#fff', border:'1px solid var(--border)', borderRadius:8, fontSize:11 }}
-                    formatter={(v:any) => [`${sym}${Number(v).toLocaleString('en-IN')}`, '']} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="space-y-1.5 mt-1">
-                {catData.slice(0,5).map((d,i) => (
-                  <div key={i} className="flex items-center justify-between text-[11px]">
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-sm" style={{ background: PIE_COLORS[i%PIE_COLORS.length] }} />
-                      <span style={{ color:'var(--text2)' }}>{d.name}</span>
-                    </div>
-                    <span className="font-mono font-semibold" style={{ color:'var(--income)' }}>{sym}{d.value.toLocaleString('en-IN')}</span>
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : <div className="text-center py-12 text-[13px]" style={{ color:'var(--text3)' }}>No income for {rangeLabel}</div>}
-        </div>
-
-        {/* 6-month trend */}
-        <div className="lg:col-span-2 wl-card p-4">
-          <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color:'var(--text3)' }}>Month-over-Month Income</div>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={monthlyData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-              <XAxis dataKey="month" tick={{ fill:'var(--text3)', fontSize:10 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill:'var(--text3)', fontSize:10 }} axisLine={false} tickLine={false}
-                tickFormatter={v => v >= 100000 ? `${(v/100000).toFixed(0)}L` : v >= 1000 ? `${(v/1000).toFixed(0)}K` : String(v)} />
-              <Tooltip contentStyle={{ background:'#fff', border:'1px solid var(--border)', borderRadius:8, fontSize:11 }}
-                formatter={(v:any) => [`${sym}${Number(v).toLocaleString('en-IN')}`, 'Income']}
-                labelStyle={{ color:'var(--text)' }} />
-              <Bar dataKey="value" fill="var(--income)" radius={[4,4,0,0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
       </div>
 
       {/* Income source breakdown */}
@@ -216,24 +160,25 @@ export default function IncomeClient({ transactions, accounts }: { transactions:
         </select>
       </div>
 
-      {/* Table */}
+      {/* Table with pagination */}
       <div className="wl-card overflow-hidden">
-        {filteredForMonth.length === 0
-          ? <div className="text-center py-16 text-[13px]" style={{ color:'var(--text3)' }}>
-              No income for {rangeLabel}. Add an entry using the buttons above.
-            </div>
-          : (
+        {filteredForMonth.length === 0 ? (
+          <div className="text-center py-16 text-[13px]" style={{ color:'var(--text3)' }}>
+            No income for {rangeLabel}. Add an entry using the buttons above.
+          </div>
+        ) : (
+          <>
             <div className="overflow-x-auto">
               <table className="w-full text-[12px]">
                 <thead>
                   <tr style={{ borderBottom:'1px solid var(--border)', background:'var(--bg2)' }}>
-                    {['Date','Source','Category','Account','Amount','Entry'].map(h => (
+                    {['Date','Source','Category','Account','Amount','Entry','Actions'].map(h => (
                       <th key={h} className="px-4 py-3 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color:'var(--text3)' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredForMonth.slice(0, 100).map((t, i) => {
+                  {filteredForMonth.slice((page-1)*pageSize, page*pageSize).map((t, i) => {
                     const c = CAT_COLORS[t.category] ?? '#16A34A'
                     return (
                       <tr key={i} style={{ borderBottom:'1px solid var(--border)' }} className="hover:bg-stone-50 transition-colors">
@@ -260,21 +205,158 @@ export default function IncomeClient({ transactions, accounts }: { transactions:
                               : 'Manual'}
                           </span>
                         </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1.5">
+                            <button onClick={() => openEdit(t)} title="Edit"
+                              className="p-1 rounded hover:bg-blue-50 transition-colors" style={{ color: 'var(--blue)' }}>
+                              <Pencil size={12} />
+                            </button>
+                            <button onClick={() => deleteTxn(t.id)} title="Delete" disabled={deletingId === t.id}
+                              className="p-1 rounded hover:bg-red-50 transition-colors disabled:opacity-40" style={{ color: 'var(--rose)' }}>
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     )
                   })}
                 </tbody>
               </table>
             </div>
-          )
-        }
+            <Pagination
+              total={filteredForMonth.length}
+              page={page}
+              pageSize={pageSize}
+              onPage={setPage}
+              onPageSize={s => { setPageSize(s); setPage(1) }}
+            />
+          </>
+        )}
       </div>
 
-      {/* Modals */}
-      {activeModal === 'manual'    && <AddTransactionModal onClose={() => setActiveModal('none')} />}
-      {activeModal === 'statement' && <BankStatementUploadModal onClose={() => setActiveModal('none')} />}
-      {activeModal === 'receipt'   && <BillImageUploadModal onClose={() => setActiveModal('none')} defaultType="income" />}
-      {activeModal === 'voice'     && <TransactionVoiceModal onClose={() => setActiveModal('none')} defaultType="income" />}
+      {/* UAE → India Remittances (NRI view) */}
+      {(() => {
+        const remittances = transfers.filter(t => inRange(t.txn_date))
+        if (remittances.length === 0 || view === 'uae') return null
+        const totalINR = remittances.reduce((a, t) =>
+          a + (t.currency === 'AED' ? Number(t.amount) * FX : Number(t.amount)), 0)
+        const totalAED = remittances
+          .filter(t => t.currency === 'AED')
+          .reduce((a, t) => a + Number(t.amount), 0)
+        return (
+          <div className="wl-card overflow-hidden">
+            <div className="px-4 py-3 border-b flex items-center justify-between"
+              style={{ borderColor: 'var(--border)', background: '#EFF6FF' }}>
+              <div>
+                <div className="text-[13px] font-bold flex items-center gap-1.5" style={{ color: '#1D4ED8' }}>
+                  ✈️ UAE → India Remittances
+                </div>
+                <div className="text-[10px] mt-0.5" style={{ color: '#6B86C5' }}>
+                  International transfers sent to India · {rangeLabel}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-[14px] font-black font-mono" style={{ color: '#1D4ED8' }}>
+                  ₹{Math.round(totalINR).toLocaleString('en-IN')}
+                </div>
+                {totalAED > 0 && (
+                  <div className="text-[10px] font-mono" style={{ color: '#6B86C5' }}>
+                    AED {totalAED.toLocaleString('en-IN')} sent
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg2)' }}>
+                    {['Date','Label','Amount','INR Equiv','Recipient'].map(h => (
+                      <th key={h} className="px-4 py-2.5 text-left text-[9px] uppercase tracking-wider font-bold"
+                        style={{ color: 'var(--text3)' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {remittances.map((t, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}
+                      className="hover:bg-blue-50 transition-colors">
+                      <td className="px-4 py-2.5 font-mono text-[10px]" style={{ color: 'var(--text3)' }}>{t.txn_date}</td>
+                      <td className="px-4 py-2.5 font-semibold" style={{ color: 'var(--text)' }}>{t.merchant}</td>
+                      <td className="px-4 py-2.5 font-mono font-bold" style={{ color: '#2563EB' }}>
+                        {t.currency === 'AED'
+                          ? `AED ${Number(t.amount).toLocaleString('en-IN')}`
+                          : `₹${Number(t.amount).toLocaleString('en-IN')}`}
+                      </td>
+                      <td className="px-4 py-2.5 font-mono font-semibold" style={{ color: 'var(--income)' }}>
+                        {t.currency === 'AED'
+                          ? `₹${Math.round(Number(t.amount) * FX).toLocaleString('en-IN')}`
+                          : '—'}
+                      </td>
+                      <td className="px-4 py-2.5 text-[10px]" style={{ color: 'var(--text3)' }}>
+                        {t.description || '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )
+      })()}
+
+      {activeModal === 'manual' && <AddTransactionModal onClose={() => setActiveModal('none')} />}
+
+      {/* Edit income modal */}
+      {editTxn && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="rounded-2xl w-full max-w-md" style={{ background:'#fff', border:'1px solid var(--border)', boxShadow:'0 8px 40px rgba(0,0,0,0.15)' }}>
+            <div className="flex justify-between items-center px-5 py-4 border-b" style={{ borderColor:'var(--border)' }}>
+              <div className="text-[14px] font-bold" style={{ color:'var(--text)' }}>Edit Income</div>
+              <button onClick={() => setEditTxn(null)} style={{ color:'var(--text3)' }}><X size={16} /></button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color:'var(--text3)' }}>Date</label>
+                  <input type="date" value={editFields.txn_date}
+                    onChange={e => setEditFields((f: any) => ({ ...f, txn_date: e.target.value }))}
+                    className="wl-input w-full text-[12px]" style={{ background:'var(--bg2)', border:'1px solid var(--border)', color:'var(--text)' }} />
+                </div>
+                <div>
+                  <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color:'var(--text3)' }}>Amount</label>
+                  <input type="number" value={editFields.amount} min="0" step="0.01"
+                    onChange={e => setEditFields((f: any) => ({ ...f, amount: e.target.value }))}
+                    className="wl-input w-full text-[12px]" style={{ background:'var(--bg2)', border:'1px solid var(--border)', color:'var(--text)' }} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color:'var(--text3)' }}>Source</label>
+                <input type="text" value={editFields.merchant}
+                  onChange={e => setEditFields((f: any) => ({ ...f, merchant: e.target.value }))}
+                  className="wl-input w-full text-[12px]" style={{ background:'var(--bg2)', border:'1px solid var(--border)', color:'var(--text)' }} />
+              </div>
+              <div>
+                <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color:'var(--text3)' }}>Category</label>
+                <select value={editFields.category}
+                  onChange={e => setEditFields((f: any) => ({ ...f, category: e.target.value }))}
+                  className="wl-input w-full text-[12px]" style={{ background:'var(--bg2)', border:'1px solid var(--border)', color:'var(--text)' }}>
+                  {INCOME_CATS.slice(1).map(c => <option key={c}>{c}</option>)}
+                </select>
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button onClick={() => setEditTxn(null)}
+                  className="flex-1 py-2.5 rounded-lg border text-[12px] font-semibold"
+                  style={{ borderColor:'var(--border)', color:'var(--text3)', background:'var(--bg2)' }}>Cancel</button>
+                <button onClick={saveEdit} disabled={editSaving}
+                  className="flex-1 py-2.5 rounded-lg text-white text-[12px] font-bold flex items-center justify-center gap-2 disabled:opacity-40"
+                  style={{ background:'var(--income)' }}>
+                  {editSaving ? 'Saving…' : <><Check size={13}/> Save Changes</>}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

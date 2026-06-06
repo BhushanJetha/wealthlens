@@ -10,21 +10,20 @@ import {
   TrendingUp, TrendingDown, Plus, ChevronRight,
   AlertTriangle, CheckCircle2, Zap, Target, Shield,
   Wallet, Activity, HeartPulse, LayoutGrid, BarChart2,
-  Flag, Link as LinkIcon, Unlink, Users,
+  Flag, Link as LinkIcon, Unlink, Users, GraduationCap,
 } from 'lucide-react'
 import AddInvestmentModal from '@/components/forms/AddInvestmentModal'
 import ManageFamilyModal from '@/components/forms/ManageFamilyModal'
 import { useHolderStore } from '@/store/holderStore'
 import Link from 'next/link'
 
-const FX = 22.80
 const COLORS = ['#3D7A58','#3B7DD8','#D4920A','#C96A3A','#7C5CBF','#2E7D52','#B45309','#0891B2','#6D28D9']
 const TYPE_COLORS: Record<string, string> = {
   mf: '#3D7A58', stocks: '#3B7DD8', etf: '#7C5CBF', fd: '#C96A3A',
   rd: '#D4920A', gold: '#B45309', bonds: '#0891B2', nps: '#059669', lic: '#6D28D9',
 }
 
-function toINR(amt: number, cur: string) { return cur === 'AED' ? amt * FX : amt }
+function toINR(amt: number, cur: string, fx: number) { return cur === 'AED' ? amt * fx : amt }
 
 function fmtV(n: number, sym: string) {
   const abs = Math.abs(n)
@@ -93,7 +92,7 @@ export default function InvestmentsClient({
   goldInvestments = [], bondInvestments = [], etfInvestments = [], transactions = [],
   goalInvestments = [], goals = [], familyMembers = [],
 }: any) {
-  const { view } = useViewStore()
+  const { view, fxRate: FX } = useViewStore()
   const { selectedHolder, setSelectedHolder } = useHolderStore()
   const [showAdd, setShowAdd] = useState(false)
   const [showManageFamily, setShowManageFamily] = useState(false)
@@ -105,7 +104,7 @@ export default function InvestmentsClient({
     : view === 'india' ? arr.filter(x => x.currency === 'INR' || x.country === 'India')
     : arr
 
-  const conv = (amt: number, cur: string) => view === 'consolidated' ? toINR(amt, cur) : amt
+  const conv = (amt: number, cur: string) => view === 'consolidated' ? toINR(amt, cur, FX) : amt
   const filterH = (arr: any[]) => !selectedHolder ? arr : arr.filter((x: any) => (x.holder_name ?? 'Self') === selectedHolder)
 
   const fSt   = filterH(filter(stocks ?? []))
@@ -269,7 +268,7 @@ export default function InvestmentsClient({
     if (txns.length === 0) return null
     const filterT = (t: any) =>
       view === 'uae' ? t.currency === 'AED' : view === 'india' ? t.currency === 'INR' : true
-    const convT = (t: any) => view === 'consolidated' ? toINR(Number(t.amount), t.currency) : Number(t.amount)
+    const convT = (t: any) => view === 'consolidated' ? toINR(Number(t.amount), t.currency, FX) : Number(t.amount)
 
     const incomeTxns  = txns.filter((t: any) => t.txn_type === 'income' && filterT(t))
     const expenseTxns = txns.filter((t: any) => t.txn_type === 'expense' && filterT(t))
@@ -507,11 +506,18 @@ export default function InvestmentsClient({
             )}
           </p>
         </div>
-        <button onClick={() => setShowAdd(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-[12px] font-bold"
-          style={{ background: 'var(--sage)' }}>
-          <Plus size={14} /> Add Investment
-        </button>
+        <div className="flex items-center gap-2">
+          <Link href="/dashboard/learn"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold border"
+            style={{ borderColor: 'var(--sage)', color: 'var(--sage)', background: 'var(--sage-bg)' }}>
+            <GraduationCap size={14} /> Learn
+          </Link>
+          <button onClick={() => setShowAdd(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-[12px] font-bold"
+            style={{ background: 'var(--sage)' }}>
+            <Plus size={14} /> Add Investment
+          </button>
+        </div>
       </div>
 
       {/* KPI Strip */}
