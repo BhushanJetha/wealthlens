@@ -163,6 +163,8 @@ const CITY_SUFFIX = /(abu\s*dhabi|abudhabi|al\s+ain|al\s+rahaa?|dubai|sharjah|aj
 
 function cleanMerchant(raw: string): string {
   let s = raw
+    // strip leading transaction/posting date(s): 27/02/2026, 27-02-26, 27 Feb 2026 …
+    .replace(/^[\s|*#-]*((?:\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}|\d{1,2}\s+[A-Za-z]{3,9}\.?\s+\d{2,4})[\s,|]*)+/i, '')
     .replace(/\b\d{8,}\b/g, '')     // strip reference numbers (8+ digits)
     .replace(CITY_SUFFIX, '')        // strip trailing city name
     .replace(CITY_SUFFIX, '')        // second pass (handles double city suffix)

@@ -216,7 +216,8 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto">
+            {/* Desktop table */}
+            <div className="overflow-x-auto hidden md:block">
               <table className="w-full text-[12px]">
                 <thead>
                   <tr style={{ borderBottom:'1px solid var(--border)', background:'var(--bg2)' }}>
@@ -270,6 +271,33 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
                   })}
                 </tbody>
               </table>
+            </div>
+
+            {/* Mobile card list */}
+            <div className="md:hidden divide-y" style={{ borderColor:'var(--border)' }}>
+              {filteredForMonth.slice((page-1)*pageSize, page*pageSize).map((t, i) => {
+                const c = CAT_COLORS[t.category] ?? '#16A34A'
+                const account = accounts.find((a:any) => a.id === t.account_id)?.name ?? null
+                return (
+                  <div key={i} className="flex items-start gap-3 px-3 py-3 active:bg-stone-50">
+                    <div className="flex-1 min-w-0" onClick={() => openEdit(t)}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-[13px] truncate" style={{ color:'var(--text)' }}>{t.merchant}</span>
+                        <span className="font-bold font-mono text-[13px] flex-shrink-0" style={{ color:'var(--income)' }}>+{t.currency === 'AED' ? 'AED ' : '₹'}{Number(t.amount).toLocaleString('en-IN')}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ background:c+'18', color:c }}>{t.category}</span>
+                        <span className="text-[10px] font-mono" style={{ color:'var(--text3)' }}>{t.txn_date}</span>
+                        {account && <span className="text-[10px] truncate" style={{ color:'var(--text3)' }}>· {account}</span>}
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1.5 flex-shrink-0">
+                      <button onClick={() => openEdit(t)} className="p-1.5 rounded-lg" style={{ color:'var(--blue)', background:'var(--bg2)' }} aria-label="Edit"><Pencil size={13} /></button>
+                      <button onClick={() => deleteTxn(t.id)} disabled={deletingId === t.id} className="p-1.5 rounded-lg disabled:opacity-40" style={{ color:'var(--rose)', background:'var(--bg2)' }} aria-label="Delete"><Trash2 size={13} /></button>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
             <Pagination
               total={filteredForMonth.length}

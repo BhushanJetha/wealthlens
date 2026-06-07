@@ -2,7 +2,8 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { User, Lock, Bell, Save, Loader2, CheckCircle, Shield } from 'lucide-react'
+import { User, Lock, Bell, Save, Loader2, CheckCircle, Shield, Trash2 } from 'lucide-react'
+import { removeDuplicateTransactions } from '@/lib/dedupeTransactions'
 
 type Tab = 'profile' | 'security' | 'preferences'
 
@@ -13,8 +14,19 @@ export default function SettingsClient({ profile, userId }: any) {
   const [defaultView, setDefaultView] = useState(profile?.default_view ?? 'consolidated')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [deduping, setDeduping] = useState(false)
+  const [dedupeMsg, setDedupeMsg] = useState<string | null>(null)
   const supabase = createClient()
   const router = useRouter()
+
+  async function runDedupe() {
+    if (!confirm('Scan for duplicate transactions (same date, amount & merchant) and remove the extra copies? One copy of each is kept — this cannot be undone.')) return
+    setDeduping(true); setDedupeMsg(null)
+    const removed = await removeDuplicateTransactions(supabase, userId)
+    setDeduping(false)
+    setDedupeMsg(removed > 0 ? `Removed ${removed} duplicate ${removed === 1 ? 'entry' : 'entries'}.` : 'No duplicates found.')
+    if (removed > 0) router.refresh()
+  }
 
   async function saveProfile() {
     setSaving(true); setSaved(false)
@@ -188,6 +200,23 @@ export default function SettingsClient({ profile, userId }: any) {
           </button>
         </div>
       )}
+
+      {/* Data management — always visible */}
+      <div className="wl-card p-5 space-y-3">
+        <div className="text-[12px] font-bold" style={{ color: 'var(--text2)' }}>Data Management</div>
+        <p className="text-[11px]" style={{ color: 'var(--text3)' }}>
+          Re-importing a statement can occasionally create duplicate entries. This finds transactions
+          with the same date, amount and merchant and removes the extra copies, keeping one of each.
+        </p>
+        <div className="flex items-center gap-3 flex-wrap">
+          <button onClick={runDedupe} disabled={deduping}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-[12px] font-semibold border disabled:opacity-50"
+            style={{ borderColor: 'var(--rose)', color: 'var(--rose)', background: 'var(--rose-bg)' }}>
+            {deduping ? <><Loader2 size={14} className="animate-spin" />Scanning…</> : <><Trash2 size={14} />Remove duplicate transactions</>}
+          </button>
+          {dedupeMsg && <span className="text-[12px] font-semibold" style={{ color: 'var(--income)' }}>{dedupeMsg}</span>}
+        </div>
+      </div>
     </div>
   )
 }

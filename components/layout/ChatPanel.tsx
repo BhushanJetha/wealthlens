@@ -62,7 +62,7 @@ export default function ChatPanel({ userId }: { userId: string }) {
       </button>
 
       {/* Panel */}
-      <div className={`fixed right-0 top-0 bottom-0 w-[340px] bg-[#162032] border-l border-white/7 flex flex-col z-40 transition-transform duration-300 ${open ? 'translate-x-0' : 'translate-x-full'}`}>
+      <div className={`fixed right-0 top-0 bottom-0 w-full sm:w-[340px] bg-[#162032] border-l border-white/7 flex flex-col z-40 transition-transform duration-300 ${open ? 'translate-x-0' : 'translate-x-full'}`}>
         {/* Header */}
         <div className="p-4 border-b border-white/7 flex items-center justify-between">
           <div className="flex items-center gap-2">

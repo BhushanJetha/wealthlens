@@ -423,7 +423,7 @@ export default function TransfersClient({ transactions }: { transactions: Txn[] 
       </div>
 
       {/* ── Pipeline columns ─────────────────────────────────────────────────── */}
-      <div className="flex gap-3 items-start">
+      <div className="flex gap-3 items-start overflow-x-auto pb-2">
 
         {/* Column 1: UAE Outgoing */}
         <PipelineColumn

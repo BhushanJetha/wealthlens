@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { useUiStore } from '@/store/uiStore'
 
 // Grouped per the WealthLens asset model: Market-Linked / Fixed-Income / Alternative
 const INV_GROUPS: { label: string; items: { href: string; icon: any; label: string }[] }[] = [
@@ -75,6 +76,7 @@ export default function Sidebar() {
   const pathname = usePathname()
   const router   = useRouter()
   const supabase = createClient()
+  const { sidebarOpen, setSidebarOpen } = useUiStore()
   const isInvActive  = pathname.startsWith('/dashboard/investments') || pathname.startsWith('/dashboard/stocks')
   const isLoanActive = pathname.startsWith('/dashboard/loans')
   const isTxnActive  = pathname.startsWith('/dashboard/income') || pathname.startsWith('/dashboard/expenses') || pathname.startsWith('/dashboard/expenses/report') || pathname.startsWith('/dashboard/income/report') || pathname.startsWith('/dashboard/transfers')
@@ -89,7 +91,7 @@ export default function Sidebar() {
 
   function NavItem({ href, icon: Icon, label, active }: { href: string; icon: any; label: string; active: boolean }) {
     return (
-      <Link href={href}
+      <Link href={href} onClick={() => setSidebarOpen(false)}
         className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all mx-2"
         style={active ? {
           background: 'var(--sage-bg)',
@@ -126,7 +128,7 @@ export default function Sidebar() {
   function SubItem({ href, icon: Icon, label }: { href: string; icon: any; label: string }) {
     const active = pathname === href
     return (
-      <Link href={href}
+      <Link href={href} onClick={() => setSidebarOpen(false)}
         className="flex items-center gap-2.5 pl-9 pr-3 py-2 rounded-xl text-[12px] font-medium transition-all mx-2"
         style={active ? {
           background: 'var(--sage-bg)',
@@ -151,7 +153,14 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="w-[230px] min-w-[230px] flex flex-col overflow-y-auto"
+    <>
+    {/* Mobile backdrop */}
+    {sidebarOpen && (
+      <div className="md:hidden fixed inset-0 z-40" style={{ background: 'rgba(0,0,0,0.45)' }}
+        onClick={() => setSidebarOpen(false)} />
+    )}
+    <aside
+      className={`fixed md:static inset-y-0 left-0 z-50 w-[230px] min-w-[230px] flex flex-col overflow-y-auto transform transition-transform duration-200 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}
       style={{ background: '#fff', borderRight: '1px solid var(--border)' }}>
 
       {/* Logo */}
@@ -246,5 +255,6 @@ export default function Sidebar() {
         <div className="text-[9px]" style={{ color: '#D1D5DB' }}>Personal Finance OS for UAE & India</div>
       </div>
     </aside>
+    </>
   )
 }

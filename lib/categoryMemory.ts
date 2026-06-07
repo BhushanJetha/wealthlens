@@ -4,7 +4,15 @@
 // apart) it remembers the category they most often chose, then auto-applies it to
 // matching merchants in a freshly-parsed statement.
 
-const norm = (s: unknown) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 28)
+// Normalise a merchant for matching: drop any embedded date tokens (so a stray
+// "27/02/2026 POS Calicut" matches a clean "POS Calicut"), then keep alphanumerics.
+export const normMerchant = (s: unknown) => String(s ?? '')
+  .toLowerCase()
+  .replace(/\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}/g, ' ')   // 27/02/2026, 27-02-26 …
+  .replace(/\d{1,2}\s+[a-z]{3,9}\.?\s+\d{2,4}/g, ' ')      // 27 Feb 2026 …
+  .replace(/[^a-z0-9]/g, '')
+  .slice(0, 28)
+const norm = normMerchant
 const dirOf = (txnType: string) => (txnType === 'income' ? 'in' : 'out')
 
 export interface CategoryMemory {

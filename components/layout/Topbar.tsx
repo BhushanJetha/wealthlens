@@ -1,9 +1,10 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
 import { useViewStore } from '@/store/viewStore'
-import { ArrowLeftRight, User, ChevronLeft, ChevronRight, Calendar, X, Upload } from 'lucide-react'
+import { ArrowLeftRight, User, ChevronLeft, ChevronRight, Calendar, X, Upload, Menu } from 'lucide-react'
 import NotificationsPanel from './NotificationsPanel'
 import BankStatementUploadModal from '@/components/forms/BankStatementUploadModal'
+import { useUiStore } from '@/store/uiStore'
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const MONTH_NAMES_LONG = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -164,6 +165,7 @@ function MonthRangePicker({ from, to, onApply, onClose }: {
 
 export default function Topbar({ user }: { user: any }) {
   const { view, setView, fromMonth, toMonth, setDateRange, fxRate, setFxRate } = useViewStore()
+  const { setSidebarOpen } = useUiStore()
   const [pickerOpen,  setPickerOpen]  = useState(false)
   const [showUpload,  setShowUpload]  = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -205,8 +207,15 @@ export default function Topbar({ user }: { user: any }) {
 
   return (
     <>
-    <header className="px-5 py-3 flex items-center gap-3 flex-wrap min-h-[52px]"
+    <header className="px-3 sm:px-5 py-3 flex items-center gap-2 sm:gap-3 flex-wrap min-h-[52px]"
       style={{ background: 'var(--card)', borderBottom: '1px solid var(--border)' }}>
+
+      {/* Mobile menu toggle */}
+      <button onClick={() => setSidebarOpen(true)}
+        className="md:hidden p-1.5 rounded-lg flex-shrink-0" style={{ color: 'var(--text2)', background: 'var(--bg2)' }}
+        aria-label="Open menu">
+        <Menu size={18} />
+      </button>
 
       {/* Month Range Picker trigger */}
       <div ref={wrapRef} className="relative flex items-center">
@@ -269,7 +278,7 @@ export default function Topbar({ user }: { user: any }) {
         ))}
       </div>
 
-      <div className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px]"
+      <div className="hidden sm:flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px]"
         style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
         <ArrowLeftRight size={11} style={{ color: 'var(--text3)' }} />
         <span style={{ color: 'var(--text3)' }}>1 AED =</span>
@@ -277,21 +286,21 @@ export default function Topbar({ user }: { user: any }) {
         <span className="text-[9px] px-1 py-0.5 rounded font-semibold" style={{ background: '#D1FAE5', color: '#065F46' }}>Live</span>
       </div>
 
-      <div className="ml-auto flex items-center gap-3">
+      <div className="ml-auto flex items-center gap-2 sm:gap-3">
         {/* Universal Import Statement button — updates all sections */}
         <button
           onClick={() => setShowUpload(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all"
+          className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all"
           style={{ background: 'var(--sage-bg)', borderColor: 'var(--sage)', color: 'var(--sage)' }}
           title="Import bank statement — updates expenses, income, loans & fixed deposits">
-          <Upload size={12} /> Import Statement
+          <Upload size={12} /> <span className="hidden sm:inline">Import Statement</span>
         </button>
         <NotificationsPanel />
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: 'var(--sage-bg)' }}>
+          <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: 'var(--sage-bg)' }}>
             <User size={13} style={{ color: 'var(--sage)' }} />
           </div>
-          <span className="text-[12px] font-medium" style={{ color: 'var(--text2)' }}>
+          <span className="hidden sm:inline text-[12px] font-medium" style={{ color: 'var(--text2)' }}>
             {user?.full_name?.split(' ')[0] ?? 'User'}
           </span>
         </div>

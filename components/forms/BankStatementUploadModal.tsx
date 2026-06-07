@@ -154,13 +154,13 @@ export default function BankStatementUploadModal({ onClose }: Props) {
           .gte('txn_date', dates[0])
           .lte('txn_date', dates[dates.length - 1])
 
+        // Match on date + amount only — robust to merchant-name differences
+        // (e.g. a leading date that used to be kept), re-categorisation and edits.
         const existingKeys = new Set(
-          (existing ?? []).map(e =>
-            `${e.txn_date}|${String(e.merchant).toLowerCase().trim()}|${Number(e.amount)}`
-          )
+          (existing ?? []).map(e => `${e.txn_date}|${Math.round(Number(e.amount) * 100)}`)
         )
         txns = rawTxns.map(t => {
-          const isDuplicate = existingKeys.has(`${t.date}|${t.merchant.toLowerCase().trim()}|${t.amount}`)
+          const isDuplicate = existingKeys.has(`${t.date}|${Math.round(Number(t.amount) * 100)}`)
           if (isDuplicate) dupCount++
           return { ...t, isDuplicate, selected: !isDuplicate }
         })
@@ -271,12 +271,10 @@ export default function BankStatementUploadModal({ onClose }: Props) {
         .lte('txn_date', dates[dates.length - 1])
 
       const existingKeys = new Set(
-        (existing ?? []).map(e =>
-          `${e.txn_date}|${String(e.merchant).toLowerCase().trim()}|${Number(e.amount)}`
-        )
+        (existing ?? []).map(e => `${e.txn_date}|${Math.round(Number(e.amount) * 100)}`)
       )
       const deduped = selected.filter(t =>
-        !existingKeys.has(`${t.date}|${t.merchant.toLowerCase().trim()}|${t.amount}`)
+        !existingKeys.has(`${t.date}|${Math.round(Number(t.amount) * 100)}`)
       )
 
       if (deduped.length > 0) {

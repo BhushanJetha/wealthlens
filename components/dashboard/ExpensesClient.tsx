@@ -423,7 +423,8 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto">
+            {/* Desktop table */}
+            <div className="overflow-x-auto hidden md:block">
               <table className="w-full text-[12px]">
                 <thead>
                   <tr style={{ borderBottom:'1px solid var(--border)', background:'var(--bg2)' }}>
@@ -509,6 +510,48 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
                 </tbody>
               </table>
             </div>
+
+            {/* Mobile card list */}
+            <div className="md:hidden divide-y" style={{ borderColor:'var(--border)' }}>
+              {paged.map((t, i) => {
+                const isTransfer = t.txn_type === 'transfer'
+                const isLoan     = t.txn_type === 'loan'
+                const catColor   = isTransfer
+                  ? (t.category === 'Family Transfer' ? '#0EA5E9' : TRANSFER_SUBTYPE_COLORS[t.sub_category] ?? '#3B7DD8')
+                  : (CAT_COLORS[t.category] ?? '#6B7280')
+                const bs = !isTransfer && !isLoan && t.category !== 'Credit Card Payment' ? getBudgetStatus(t.category) : null
+                const amtColor = bs ? budgetColor(bs.pct)
+                  : t.category === 'Credit Card Payment' ? '#9333EA'
+                  : isLoan ? (CAT_COLORS[t.category] ?? '#F59E0B')
+                  : isTransfer ? catColor : 'var(--expense)'
+                const lSym  = t.currency === 'AED' ? 'AED ' : '₹'
+                const inrEq = isTransfer && t.currency === 'AED' && liveRate
+                  ? `≈ ₹${Math.round(Number(t.amount)*liveRate).toLocaleString('en-IN')}` : null
+                const label = isTransfer ? (t.category === 'Family Transfer' ? 'Family Transfer' : t.sub_category || t.category || 'Transfer') : t.category
+                const account = accounts.find((a:any) => a.id === t.account_id)?.name ?? null
+                return (
+                  <div key={i} className="flex items-start gap-3 px-3 py-3 active:bg-stone-50">
+                    <div className="flex-1 min-w-0" onClick={() => openEdit(t)}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-[13px] truncate" style={{ color:'var(--text)' }}>{t.merchant}</span>
+                        <span className="font-bold font-mono text-[13px] flex-shrink-0" style={{ color:amtColor }}>{lSym}{Number(t.amount).toLocaleString('en-IN')}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ background:catColor+'18', color:catColor }}>{label}</span>
+                        {bs && bs.pct >= 75 && <AlertTriangle size={10} style={{ color: bs.pct >= 100 ? 'var(--rose)' : 'var(--gold)' }} />}
+                        <span className="text-[10px] font-mono" style={{ color:'var(--text3)' }}>{t.txn_date}</span>
+                        {account && <span className="text-[10px] truncate" style={{ color:'var(--text3)' }}>· {account}</span>}
+                      </div>
+                      {inrEq && <div className="text-[10px] font-mono mt-0.5" style={{ color:'var(--text3)' }}>{inrEq}</div>}
+                    </div>
+                    <div className="flex flex-col gap-1.5 flex-shrink-0">
+                      <button onClick={() => openEdit(t)} className="p-1.5 rounded-lg" style={{ color:'var(--blue)', background:'var(--bg2)' }} aria-label="Edit"><Pencil size={13} /></button>
+                      <button onClick={() => deleteTxn(t.id)} disabled={deletingId === t.id} className="p-1.5 rounded-lg disabled:opacity-40" style={{ color:'var(--rose)', background:'var(--bg2)' }} aria-label="Delete"><Trash2 size={13} /></button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
             <Pagination total={filteredForMonth.length} page={page} pageSize={pageSize}
               onPage={setPage} onPageSize={s => { setPageSize(s); setPage(1) }} />
           </>
@@ -557,32 +600,32 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
                   <select value={editFields.category}
                     onChange={e => {
                       const cat = e.target.value
-                      const autoType = (cat === 'Transfer' || cat === 'Family Transfer') ? 'transfer'
-                        : (cat === 'Loan on Card' || cat === 'EMI/Loan') ? 'loan'
-                        : cat === 'Salary' ? 'income'
-                        : editFields.txn_type === 'transfer' || editFields.txn_type === 'loan' ? 'expense'
+                      const autoType =
+                        ['Transfer','Family Transfer','International Transfer','NRE Received','NRE to NRO','NRO to Family','Self Transfer','Loan Received'].includes(cat) ? 'transfer'
+                        : ['Loan on Card','EMI/Loan'].includes(cat) ? 'loan'
+                        : ['Salary','Interest','Dividend','Rental','Bonus','Tax Refund','Freelance','Gift','NRI Transfer'].includes(cat) ? 'income'
+                        : ['Food','Shopping','Utilities','Transport','Health','Entertainment','Travel','Education','Subscription'].includes(cat) ? 'expense'
                         : editFields.txn_type
                       setEditFields((f: any) => ({ ...f, category: cat, txn_type: autoType }))
                     }}
                     className="wl-input w-full text-[12px]" style={{ background:'var(--bg2)', border:'1px solid var(--border)', color:'var(--text)' }}>
                     <optgroup label="Spending">
-                      {['Food','Shopping','Utilities','Transport','Health','Entertainment','Travel','Education','Subscription','Other'].map(c => <option key={c}>{c}</option>)}
+                      {['Food','Shopping','Utilities','Transport','Health','Entertainment','Travel','Education','Subscription'].map(c => <option key={c}>{c}</option>)}
                     </optgroup>
-                    <optgroup label="Transfers (Type → Transfer)">
-                      <option>Transfer</option>
-                      <option>Family Transfer</option>
+                    <optgroup label="Income">
+                      {['Salary','Interest','Dividend','Rental','Bonus','Tax Refund','Freelance','Gift','NRI Transfer'].map(c => <option key={c}>{c}</option>)}
                     </optgroup>
-                    <optgroup label="Payments (Type → Expense)">
+                    <optgroup label="Transfers">
+                      {['Transfer','International Transfer','NRE Received','NRE to NRO','NRO to Family','Self Transfer','Family Transfer','Loan Received'].map(c => <option key={c}>{c}</option>)}
+                    </optgroup>
+                    <optgroup label="Payments">
                       <option>Credit Card Payment</option>
                     </optgroup>
-                    <optgroup label="Loans (Type → Loan)">
-                      <option>Loan on Card</option>
-                      <option>EMI/Loan</option>
+                    <optgroup label="Loans">
+                      {['Loan on Card','EMI/Loan'].map(c => <option key={c}>{c}</option>)}
                     </optgroup>
                     <optgroup label="Other">
-                      <option>Investment</option>
-                      <option>Salary</option>
-                      <option>Refund</option>
+                      {['Investment','Refund','Other'].map(c => <option key={c}>{c}</option>)}
                     </optgroup>
                   </select>
                 </div>
