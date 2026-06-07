@@ -1,12 +1,15 @@
 'use client'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useViewStore } from '@/store/viewStore'
 import MetricCard from '@/components/dashboard/MetricCard'
 import AddTransactionModal from '@/components/forms/AddTransactionModal'
+import BankStatementUploadModal from '@/components/forms/BankStatementUploadModal'
+import BillImageUploadModal from '@/components/forms/BillImageUploadModal'
+import TransactionVoiceModal from '@/components/forms/TransactionVoiceModal'
 
 import Pagination from '@/components/dashboard/Pagination'
-import { Search, PenLine, BarChart2, Plus, Pencil, Trash2, X, Check } from 'lucide-react'
+import { Search, PenLine, BarChart2, Plus, Pencil, Trash2, X, Check, Upload, Image, Mic, ChevronDown } from 'lucide-react'
 import Link from 'next/link'
 
 const INCOME_CATS = [
@@ -25,7 +28,7 @@ const CAT_COLORS: Record<string,string> = {
   'NRI Transfer': '#0EA5E9',
   Other:          '#6B7280',
 }
-type Modal = 'none' | 'manual'
+type Modal = 'none' | 'manual' | 'statement' | 'bill' | 'voice'
 
 export default function IncomeClient({ transactions, accounts, transfers = [] }: { transactions: any[]; accounts: any[]; transfers?: any[] }) {
   const { view, fromMonth, toMonth, fxRate: FX } = useViewStore()
@@ -39,7 +42,24 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
   const [editFields,  setEditFields]  = useState<any>({})
   const [editSaving,  setEditSaving]  = useState(false)
   const [deletingId,  setDeletingId]  = useState<string | null>(null)
+  const [showAddMenu, setShowAddMenu] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setShowAddMenu(false)
+    }
+    if (showAddMenu) document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [showAddMenu])
+
+  const addButtons: { key: Modal; label: string; desc: string; icon: React.ElementType; color: string }[] = [
+    { key: 'statement', label: 'Bank Statement',  desc: 'Parse a bank statement PDF for credits', icon: Upload,  color: '#059669' },
+    { key: 'bill',      label: 'Receipt / Image',  desc: 'Scan a salary slip or receipt photo',    icon: Image,   color: '#D97706' },
+    { key: 'voice',     label: 'Voice Entry',      desc: 'Speak your income aloud',                 icon: Mic,     color: '#7C3AED' },
+    { key: 'manual',    label: 'Manual Entry',     desc: 'Type in an income entry manually',        icon: PenLine, color: '#16A34A' },
+  ]
 
   function openEdit(t: any) {
     setEditTxn(t)
@@ -97,11 +117,39 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
             style={{ background: 'var(--bg2)', borderColor: 'var(--border)', color: 'var(--text3)' }}>
             <BarChart2 size={12} /> Annual Report
           </Link>
-          <button onClick={() => setActiveModal('manual')}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-bold text-white shadow-sm hover:opacity-90 transition-all"
-            style={{ background: 'var(--income)' }}>
-            <Plus size={14} /> Add Income
-          </button>
+          <div className="relative" ref={menuRef}>
+            <button onClick={() => setShowAddMenu(v => !v)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-bold text-white shadow-sm hover:opacity-90 transition-all"
+              style={{ background: 'var(--income)' }}>
+              <Plus size={14} /> Add Income
+              <ChevronDown size={13} style={{ transition: 'transform 0.2s', transform: showAddMenu ? 'rotate(180deg)' : 'rotate(0deg)' }} />
+            </button>
+            {showAddMenu && (
+              <div className="absolute right-0 top-full mt-2 w-72 rounded-2xl z-50 overflow-hidden"
+                style={{ background: '#fff', border: '1px solid var(--border)', boxShadow: '0 8px 40px rgba(0,0,0,0.15)' }}>
+                <div className="px-4 py-2.5 border-b text-[10px] uppercase tracking-wider font-bold"
+                  style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>
+                  How would you like to add?
+                </div>
+                {addButtons.map(({ key, label, desc, icon: Icon, color }) => (
+                  <button key={key}
+                    onClick={() => { setActiveModal(key); setShowAddMenu(false) }}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors border-b last:border-b-0"
+                    style={{ borderColor: 'var(--border)' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = '#F9FAFB')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: color + '15', color }}>
+                      <Icon size={17} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[12px] font-semibold" style={{ color: 'var(--text)' }}>{label}</div>
+                      <div className="text-[10px] leading-snug mt-0.5" style={{ color: 'var(--text3)' }}>{desc}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -304,7 +352,10 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
         )
       })()}
 
-      {activeModal === 'manual' && <AddTransactionModal onClose={() => setActiveModal('none')} />}
+      {activeModal === 'manual'    && <AddTransactionModal onClose={() => setActiveModal('none')} />}
+      {activeModal === 'statement' && <BankStatementUploadModal onClose={() => setActiveModal('none')} />}
+      {activeModal === 'bill'      && <BillImageUploadModal onClose={() => setActiveModal('none')} defaultType="income" />}
+      {activeModal === 'voice'     && <TransactionVoiceModal onClose={() => setActiveModal('none')} defaultType="income" />}
 
       {/* Edit income modal */}
       {editTxn && (

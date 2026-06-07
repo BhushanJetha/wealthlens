@@ -189,22 +189,30 @@ export default function IncomeReportClient({ transactions }: { transactions: any
       {/* Sparkline bar */}
       <div className="wl-card p-4">
         <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>Monthly Income — {viewYear}</div>
-        <div className="flex items-end gap-1 h-16">
-          {months.map(m => {
-            const val = colTotals[m] ?? 0
-            const pct = val > 0 ? Math.max(8, Math.round((val / maxVal) * 100)) : 2
-            const isSelected = m >= fromMonth && m <= toMonth
-            return (
-              <div key={m} className="flex-1 flex flex-col items-center gap-1">
-                <div className="w-full rounded-t-sm transition-all"
-                  style={{ height: `${pct}%`, background: isSelected ? 'var(--income)' : 'var(--border)', minHeight: 2 }} />
-                <span className="text-[9px]" style={{ color: 'var(--text3)' }}>
-                  {MONTH_NAMES[Number(m.slice(5)) - 1]}
-                </span>
-              </div>
-            )
-          })}
-        </div>
+        {grandTotal === 0 ? (
+          <div className="text-[12px] text-center py-8" style={{ color: 'var(--text3)' }}>
+            No {view === 'uae' ? 'AED' : view === 'india' ? 'INR' : ''} income recorded for {viewYear}.
+            Try switching the view (UAE / India / Consolidated) at the top, or pick another year.
+          </div>
+        ) : (
+          <div className="flex gap-1" style={{ height: 84 }}>
+            {months.map(m => {
+              const val = colTotals[m] ?? 0
+              const pct = val > 0 ? Math.max(6, Math.round((val / maxVal) * 100)) : 0
+              const isSelected = m >= fromMonth && m <= toMonth
+              return (
+                <div key={m} className="flex-1 flex flex-col items-center justify-end"
+                  title={`${MONTH_NAMES[Number(m.slice(5)) - 1]}: ${sym}${Math.round(val).toLocaleString('en-IN')}`}>
+                  <div className="w-full flex items-end" style={{ height: 60 }}>
+                    <div className="w-full rounded-t-sm transition-all"
+                      style={{ height: `${pct}%`, minHeight: val > 0 ? 4 : 1, background: val === 0 ? 'var(--border)' : isSelected ? 'var(--income)' : 'var(--sage)' }} />
+                  </div>
+                  <span className="text-[9px] mt-1" style={{ color: 'var(--text3)' }}>{MONTH_NAMES[Number(m.slice(5)) - 1]}</span>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* KPI strip */}

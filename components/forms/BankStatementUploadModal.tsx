@@ -2,6 +2,7 @@
 import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { buildCategoryMemory } from '@/lib/categoryMemory'
 import { useViewStore } from '@/store/viewStore'
 import {
   X, Upload, Loader2, CheckCircle2, AlertCircle,
@@ -22,6 +23,7 @@ interface ParsedTxn {
   category:    string
   selected:    boolean
   isDuplicate?: boolean
+  autoCat?:    boolean
 }
 
 interface ParsedFD {
@@ -131,16 +133,23 @@ export default function BankStatementUploadModal({ onClose }: Props) {
         ...t, amount: Number(t.amount), selected: true,
       }))
 
+      const { data: { user } } = await supabase.auth.getUser()
+
+      // Smart categorization — reuse the category you previously chose for the same merchant
+      if (user) {
+        const mem = await buildCategoryMemory(supabase, user.id)
+        if (mem.has) rawTxns.forEach(t => { if (mem.apply(t)) t.autoCat = true })
+      }
+
       // Duplicate detection
       let txns = rawTxns
       let dupCount = 0
-      if (rawTxns.length > 0) {
+      if (rawTxns.length > 0 && user) {
         const dates   = rawTxns.map(t => t.date).sort()
-        const { data: { user } } = await supabase.auth.getUser()
         const { data: existing } = await supabase
           .from('transactions')
           .select('txn_date, merchant, amount')
-          .eq('user_id', user!.id)
+          .eq('user_id', user.id)
           .eq('currency', data.currency)
           .gte('txn_date', dates[0])
           .lte('txn_date', dates[dates.length - 1])
@@ -627,6 +636,11 @@ export default function BankStatementUploadModal({ onClose }: Props) {
                                 <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold flex-shrink-0"
                                   style={{ background: '#FEF3C7', color: '#92400E' }}>dup</span>
                               )}
+                              {t.autoCat && !t.isDuplicate && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold flex-shrink-0"
+                                  title="Auto-categorized from your past entries"
+                                  style={{ background: 'var(--sage-bg)', color: 'var(--sage)' }}>auto</span>
+                              )}
                             </div>
                             {t.description && t.description !== t.merchant && (
                               <div className="truncate text-[10px]" style={{ color: 'var(--text3)' }}>{t.description}</div>
@@ -642,12 +656,16 @@ export default function BankStatementUploadModal({ onClose }: Props) {
                                 updateTxn(i, 'category', cat)
                                 if (['Transfer','Family Transfer','Loan Received','International Transfer','NRE Received','NRE to NRO','NRO to Family','Self Transfer'].includes(cat)) updateTxn(i, 'txn_type', 'transfer')
                                 else if (cat === 'Loan on Card' || cat === 'EMI/Loan') updateTxn(i, 'txn_type', 'loan')
-                                else if (cat === 'Salary') updateTxn(i, 'txn_type', 'income')
+                                else if (['Salary','Interest','Dividend','Rental','Bonus','Tax Refund','Freelance','Gift','NRI Transfer'].includes(cat)) updateTxn(i, 'txn_type', 'income')
+                                else if (['Food','Shopping','Utilities','Transport','Health','Entertainment','Travel','Education','Subscription'].includes(cat)) updateTxn(i, 'txn_type', 'expense')
                               }}
                               className="text-[10px] px-1.5 py-1 rounded border w-full"
                               style={{ borderColor: 'var(--border)', background: 'var(--bg2)', color: 'var(--text)' }}>
                               <optgroup label="Spending">
-                                {['Food','Shopping','Utilities','Transport','Health','Entertainment','Travel','Education','Subscription','Other'].map(c => <option key={c}>{c}</option>)}
+                                {['Food','Shopping','Utilities','Transport','Health','Entertainment','Travel','Education','Subscription'].map(c => <option key={c}>{c}</option>)}
+                              </optgroup>
+                              <optgroup label="Income">
+                                {['Salary','Interest','Dividend','Rental','Bonus','Tax Refund','Freelance','Gift','NRI Transfer'].map(c => <option key={c}>{c}</option>)}
                               </optgroup>
                               <optgroup label="Transfers">
                                 <option>Transfer</option>
@@ -667,7 +685,7 @@ export default function BankStatementUploadModal({ onClose }: Props) {
                                 <option>Loan Received</option>
                               </optgroup>
                               <optgroup label="Other">
-                                {['Investment','Salary','Refund'].map(c => <option key={c}>{c}</option>)}
+                                {['Investment','Refund','Other'].map(c => <option key={c}>{c}</option>)}
                               </optgroup>
                             </select>
                           </td>

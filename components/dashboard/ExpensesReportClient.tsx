@@ -29,15 +29,20 @@ function momChange(curr: number, prev: number): number | null {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const EXPENSE_CATS = [
-  'Food','Shopping','Utilities','Transport','Health','Entertainment',
-  'Travel','Education','Subscription','EMI/Loan','Investment','Transfer','Other',
-]
 const CAT_COLORS: Record<string,string> = {
   Food:'#D97706', Shopping:'#2563EB', Utilities:'#7C3AED', Transport:'#16A34A',
   Health:'#059669', Entertainment:'#E11D48', Travel:'#EA580C', Education:'#0284C7',
   Subscription:'#EC4899', 'EMI/Loan':'#9333EA', Investment:'#0EA5E9',
   Transfer:'#3B7DD8', Other:'#6B7280',
+  // Transfers / payments / loans (so they show by name, not lumped into "Other")
+  'Credit Card Payment':'#9333EA', 'International Transfer':'#0EA5E9', 'NRE Received':'#0284C7',
+  'NRE to NRO':'#7C5CBF', 'NRO to Family':'#3D7A58', 'Self Transfer':'#0891B2',
+  'Family Transfer':'#0EA5E9', 'Loan on Card':'#F59E0B', 'Loan Received':'#F97316', Refund:'#10B981',
+}
+// A palette to colour any category we don't have an explicit colour for
+const FALLBACK_PALETTE = ['#6366F1','#DB2777','#0D9488','#CA8A04','#C2640A','#475569','#B45309','#7C3AED']
+function colorOf(cat: string, idx: number): string {
+  return CAT_COLORS[cat] ?? FALLBACK_PALETTE[idx % FALLBACK_PALETTE.length]
 }
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -94,33 +99,37 @@ export default function ExpensesReportClient({ transactions }: { transactions: a
     return true
   }), [transactions, viewYear, view])
 
-  // Build pivot: category → month → total
+  // Build pivot: category → month → total. Uses each txn's REAL category
+  // (only truly blank categories fall back to "Other") so Credit Card Payment,
+  // International Transfer, etc. show by name instead of being lumped together.
   const pivot = useMemo(() => {
     const map: Record<string, Record<string, number>> = {}
-    EXPENSE_CATS.forEach(cat => { map[cat] = {} })
     yearTxns.forEach(t => {
-      const m   = t.txn_date?.slice(0, 7)
+      const m = t.txn_date?.slice(0, 7)
       if (!m) return
-      const cat = EXPENSE_CATS.includes(t.category) ? t.category : 'Other'
+      const cat = (t.category && String(t.category).trim()) || 'Other'
+      if (!map[cat]) map[cat] = {}
       map[cat][m] = (map[cat][m] ?? 0) + toDisplay(Number(t.amount), t.currency)
     })
     return map
   }, [yearTxns, view])
 
+  const cats = useMemo(() => Object.keys(pivot), [pivot])
+
   const colTotals = useMemo(() => {
     const totals: Record<string, number> = {}
-    months.forEach(m => { totals[m] = EXPENSE_CATS.reduce((a, cat) => a + (pivot[cat]?.[m] ?? 0), 0) })
+    months.forEach(m => { totals[m] = cats.reduce((a, cat) => a + (pivot[cat]?.[m] ?? 0), 0) })
     return totals
-  }, [pivot, months])
+  }, [pivot, months, cats])
 
   const rowTotals = useMemo(() => {
     const totals: Record<string, number> = {}
-    EXPENSE_CATS.forEach(cat => { totals[cat] = months.reduce((a, m) => a + (pivot[cat]?.[m] ?? 0), 0) })
+    cats.forEach(cat => { totals[cat] = months.reduce((a, m) => a + (pivot[cat]?.[m] ?? 0), 0) })
     return totals
-  }, [pivot, months])
+  }, [pivot, months, cats])
 
   const grandTotal  = months.reduce((a, m) => a + (colTotals[m] ?? 0), 0)
-  const activeCats  = EXPENSE_CATS.filter(cat => rowTotals[cat] > 0)
+  const activeCats  = cats.filter(cat => rowTotals[cat] > 0).sort((a, b) => rowTotals[b] - rowTotals[a])
   const peakMonth   = months.reduce((best, m) => (colTotals[m] ?? 0) > (colTotals[best] ?? 0) ? m : best, months[0])
 
   // ─── Analytics: Monthly totals for forecasting & anomaly detection ────────
@@ -381,8 +390,8 @@ export default function ExpensesReportClient({ transactions }: { transactions: a
                 </tr>
               </thead>
               <tbody>
-                {EXPENSE_CATS.map((cat, ci) => {
-                  const color = CAT_COLORS[cat] ?? '#6B7280'
+                {activeCats.map((cat, ci) => {
+                  const color = colorOf(cat, ci)
                   const total = rowTotals[cat] ?? 0
                   return (
                     <tr key={cat} style={{ borderBottom:'1px solid var(--border)', opacity: total === 0 ? 0.4 : 1 }}
@@ -465,9 +474,9 @@ export default function ExpensesReportClient({ transactions }: { transactions: a
         <div className="wl-card p-4">
           <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color:'var(--text3)' }}>Category Share — {viewYear}</div>
           <div className="space-y-2">
-            {activeCats.sort((a, b) => rowTotals[b] - rowTotals[a]).map(cat => {
+            {activeCats.map((cat, ci) => {
               const pct   = grandTotal > 0 ? (rowTotals[cat] / grandTotal) * 100 : 0
-              const color = CAT_COLORS[cat] ?? '#6B7280'
+              const color = colorOf(cat, ci)
               return (
                 <div key={cat} className="flex items-center gap-3">
                   <div className="text-[11px] font-medium w-28 flex-shrink-0 truncate" style={{ color:'var(--text2)' }}>{cat}</div>

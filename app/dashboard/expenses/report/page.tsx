@@ -9,7 +9,7 @@ export default async function ExpensesReportPage() {
     .from('transactions')
     .select('*')
     .eq('user_id', user!.id)
-    .in('txn_type', ['expense', 'transfer'])
+    .in('txn_type', ['expense', 'transfer', 'loan'])
     .order('txn_date', { ascending: true })
 
   return <ExpensesReportClient transactions={data ?? []} />

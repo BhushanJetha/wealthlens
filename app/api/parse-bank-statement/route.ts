@@ -142,6 +142,20 @@ function categorize(text: string): string {
   return 'Other'
 }
 
+// Map a credit/income narration to the right income source category.
+// Returns 'Other' when no specific income signal is found.
+function incomeCategoryOf(text: string): string {
+  const t = text.toLowerCase()
+  if (/dividend|\bidcw\b/.test(t)) return 'Dividend'
+  if (/tax\s*refund|i-?t\s*refund|income\s*tax\s*refund|itr\s*refund|gst\s*refund|refund\s*of\s*tax|tds\s*refund/.test(t)) return 'Tax Refund'
+  if (/\brent(al)?\b|lease\s*(income|rent)|tenant/.test(t)) return 'Rental'
+  if (/\bbonus\b|incentive|performance\s*pay/.test(t)) return 'Bonus'
+  if (/interest|int\.?\s*(cr|pd|paid|credit|applied)|\bprofit\b|fd\s*interest|savings?\s*interest|deposit\s*interest/.test(t)) return 'Interest'
+  if (/freelance|consult(ing|ancy)?|professional\s*fee|prof\.?\s*fee|contract\s*payment|honorar/.test(t)) return 'Freelance'
+  if (/\bgift\b/.test(t)) return 'Gift'
+  return 'Other'
+}
+
 const CITY_SUFFIX = /(abu\s*dhabi|abudhabi|al\s+ain|dubai|sharjah|ajman|fujairah|mumbai|delhi|bangalore|bengaluru|chennai|hyderabad|pune|kolkata)\s*$/i
 
 function cleanMerchant(raw: string): string {
@@ -558,17 +572,20 @@ function buildTxn(date: string, cleaned: string, merchant: string, amount: numbe
   let txn_type: string
   let category: string
   if (isCr) {
-    if (/salary|sal\b|payroll|stipend|wage\s*protection|\bwps\b/i.test(cleaned + ' ' + line)) {
-      txn_type = 'income'; category = 'Salary'
-    } else if (REFUND_PAT.test(cleaned) || REFUND_PAT.test(line)) {
-      txn_type = 'income'; category = 'Refund'
-    } else if (/profit|interest\s*cr|interest\s*applied|interest\s*credit|saving\s*space\s*profit/i.test(cleaned + ' ' + line)) {
-      txn_type = 'income'; category = 'Investment'
-    } else if (/\bloc\s+and\s+dac\b|loc\s+transit|dac\s+transit|line\s+of\s+credit/i.test(cleaned + ' ' + line)) {
+    const hay = cleaned + ' ' + line
+    if (/\bloc\s+and\s+dac\b|loc\s+transit|dac\s+transit|line\s+of\s+credit/i.test(hay)) {
       // Credit from LOC/DAC = loan disbursement (draw-down on line of credit, money received)
       txn_type = 'transfer'; category = 'Loan Received'
+    } else if (/salary|sal\b|payroll|stipend|wage\s*protection|\bwps\b/i.test(hay)) {
+      txn_type = 'income'; category = 'Salary'
     } else {
-      txn_type = 'income'; category = categorize(cleaned)
+      // Specific income source first (Interest/Dividend/Rental/Bonus/Tax Refund/Freelance/Gift),
+      // then merchant refund/cashback, else generic Other income
+      txn_type = 'income'
+      const incCat = incomeCategoryOf(hay)
+      category = incCat !== 'Other'
+        ? incCat
+        : (REFUND_PAT.test(cleaned) || REFUND_PAT.test(line)) ? 'Refund' : 'Other'
     }
   } else {
     category = categorize(cleaned)

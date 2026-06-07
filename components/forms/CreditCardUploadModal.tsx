@@ -2,6 +2,7 @@
 import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { buildCategoryMemory } from '@/lib/categoryMemory'
 import { useViewStore } from '@/store/viewStore'
 import {
   X, Upload, Loader2, CheckCircle2, AlertCircle,
@@ -22,6 +23,7 @@ interface ParsedTxn {
   category: string
   selected: boolean
   isDuplicate?: boolean
+  autoCat?: boolean
 }
 
 interface ParseResult {
@@ -121,32 +123,37 @@ export default function CreditCardUploadModal({ onClose }: Props) {
         selected: true,
       }))
 
+      const { data: { user } } = await supabase.auth.getUser()
+
+      // Smart categorization — reuse the category you previously chose for the same merchant
+      if (user) {
+        const mem = await buildCategoryMemory(supabase, user.id)
+        if (mem.has) rawTxns.forEach(t => { if (mem.apply(t)) t.autoCat = true })
+      }
+
       // Check for duplicates against existing transactions in the same date range
       let txns = rawTxns
       let dupCount = 0
-      if (rawTxns.length > 0) {
+      if (rawTxns.length > 0 && user) {
         const dates   = rawTxns.map(t => t.date).sort()
         const minDate = dates[0]
         const maxDate = dates[dates.length - 1]
-        const { data: { user } } = await supabase.auth.getUser()
         const { data: existing } = await supabase
           .from('transactions')
           .select('txn_date, merchant, amount')
-          .eq('user_id', user!.id)
+          .eq('user_id', user.id)
           .eq('currency', data.currency)
           .gte('txn_date', minDate)
           .lte('txn_date', maxDate)
 
+        // Match on date + amount only — robust to merchant renames, re-categorisation,
+        // and charges first saved via a different parser (so all already-imported rows
+        // are detected, not just the ones whose merchant text matches exactly).
         const existingKeys = new Set(
-          (existing ?? []).map(e =>
-            `${e.txn_date}|${String(e.merchant).toLowerCase().trim()}|${Number(e.amount)}`
-          )
+          (existing ?? []).map(e => `${e.txn_date}|${Math.round(Number(e.amount) * 100)}`)
         )
-
         txns = rawTxns.map(t => {
-          const isDuplicate = existingKeys.has(
-            `${t.date}|${t.merchant.toLowerCase().trim()}|${t.amount}`
-          )
+          const isDuplicate = existingKeys.has(`${t.date}|${Math.round(Number(t.amount) * 100)}`)
           if (isDuplicate) dupCount++
           return { ...t, isDuplicate, selected: !isDuplicate }
         })
@@ -191,13 +198,10 @@ export default function CreditCardUploadModal({ onClose }: Props) {
       .lte('txn_date', maxDate)
 
     const existingKeys = new Set(
-      (existing ?? []).map(e =>
-        `${e.txn_date}|${String(e.merchant).toLowerCase().trim()}|${Number(e.amount)}`
-      )
+      (existing ?? []).map(e => `${e.txn_date}|${Math.round(Number(e.amount) * 100)}`)
     )
-
     const deduped = selected.filter(t =>
-      !existingKeys.has(`${t.date}|${t.merchant.toLowerCase().trim()}|${t.amount}`)
+      !existingKeys.has(`${t.date}|${Math.round(Number(t.amount) * 100)}`)
     )
 
     if (deduped.length === 0) {
@@ -572,6 +576,11 @@ export default function CreditCardUploadModal({ onClose }: Props) {
                                   style={{ background: '#FEF3C7', color: '#92400E' }}>
                                   duplicate
                                 </span>
+                              )}
+                              {t.autoCat && !t.isDuplicate && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold flex-shrink-0"
+                                  title="Auto-categorized from your past entries"
+                                  style={{ background: 'var(--sage-bg)', color: 'var(--sage)' }}>auto</span>
                               )}
                             </div>
                             {t.description && t.description !== t.merchant && (
