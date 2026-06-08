@@ -138,3 +138,10 @@ main > * { will-change: opacity; }
   cursor: pointer;
 }
 .wl-summary-chip:hover { transform: translateY(-3px); }
+
+/* Print: hide app chrome so reports export cleanly to PDF */
+@media print {
+  aside, header, .no-print { display: none !important; }
+  main { overflow: visible !important; padding: 0 !important; }
+  .wl-card { break-inside: avoid; box-shadow: none !important; border: 1px solid #e5e7eb !important; }
+}
