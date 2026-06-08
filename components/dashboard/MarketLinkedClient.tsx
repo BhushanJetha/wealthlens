@@ -45,8 +45,11 @@ export default function MarketLinkedClient({ funds, stocks, etfs }: { funds: any
 
   const sym = view === 'uae' ? 'AED ' : '₹'
   const money = (n: number) => `${sym}${Math.round(n).toLocaleString('en-IN')}`
-  const conv = (amt: number, cur: string) => (view === 'consolidated' ? (cur === 'AED' ? amt * FX : amt) : amt)
-  const inView = (cur: string) => !((view === 'uae' && cur !== 'AED') || (view === 'india' && cur !== 'INR'))
+  // Combined portfolio: show ALL holdings, just convert to the view's display currency.
+  const conv = (amt: number, cur: string) =>
+    view === 'uae'
+      ? (cur === 'AED' ? amt : amt / (FX || 1))   // display everything in AED
+      : (cur === 'AED' ? amt * FX : amt)            // display everything in INR
 
   // ── Normalise all three into a common Holding shape ──────────────────────
   const holdings = useMemo<Holding[]>(() => {
@@ -54,7 +57,6 @@ export default function MarketLinkedClient({ funds, stocks, etfs }: { funds: any
 
     for (const f of funds) {
       const cur = f.currency || 'INR'
-      if (!inView(cur)) continue
       const invested = Number(f.invested_amount) || (Number(f.units) * Number(f.avg_nav)) || 0
       const units = Number(f.units) || 0
       const nav = Number(f.current_nav) || 0
@@ -70,7 +72,6 @@ export default function MarketLinkedClient({ funds, stocks, etfs }: { funds: any
 
     for (const s of stocks) {
       const cur = s.currency || 'INR'
-      if (!inView(cur)) continue
       const qty = Number(s.quantity) || 0
       const buy = Number(s.avg_buy_price) || 0
       const px = Number(s.current_price) || buy
@@ -86,7 +87,6 @@ export default function MarketLinkedClient({ funds, stocks, etfs }: { funds: any
 
     for (const e of etfs) {
       const cur = e.currency || 'INR'
-      if (!inView(cur)) continue
       const invested = Number(e.invested_amount) || (Number(e.units) * Number(e.avg_buy_price)) || 0
       const cv = Number(e.current_value) || (Number(e.units) * (Number(e.current_price) || Number(e.avg_buy_price))) || invested
       out.push({
@@ -135,9 +135,9 @@ export default function MarketLinkedClient({ funds, stocks, etfs }: { funds: any
         <Header view={view} />
         <div className="wl-card p-12 text-center">
           <Layers size={28} className="mx-auto mb-3" style={{ color: 'var(--text3)' }} />
-          <div className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>No market-linked holdings in this view</div>
+          <div className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>No market-linked holdings yet</div>
           <p className="text-[12px] mt-1" style={{ color: 'var(--text3)' }}>
-            Add Mutual Funds, Stocks or ETFs — or switch the view (UAE / India / Consolidated) at the top.
+            Add Mutual Funds, Stocks or ETFs to see your combined portfolio here.
           </p>
           <div className="flex gap-2 justify-center mt-4 flex-wrap">
             <Link href="/dashboard/investments/mutual-funds" className="px-3 py-1.5 rounded-lg text-[12px] font-semibold border" style={{ borderColor: 'var(--border)', color: 'var(--text2)', background: 'var(--bg2)' }}>Mutual Funds</Link>
