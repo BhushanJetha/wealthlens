@@ -20,9 +20,10 @@ const INV_GROUPS: { label: string; items: { href: string; icon: any; label: stri
     { href: '/dashboard/investments', icon: BarChart2, label: 'Overview' },
   ] },
   { label: 'Market-Linked', items: [
-    { href: '/dashboard/investments/mutual-funds', icon: TrendingUp, label: 'Mutual Funds' },
-    { href: '/dashboard/stocks',                   icon: Activity,   label: 'Stocks' },
-    { href: '/dashboard/investments/etf',          icon: BarChart2,  label: 'ETF' },
+    { href: '/dashboard/investments/market-linked', icon: PieChart,   label: 'Dashboard' },
+    { href: '/dashboard/investments/mutual-funds',  icon: TrendingUp, label: 'Mutual Funds' },
+    { href: '/dashboard/stocks',                    icon: Activity,   label: 'Stocks' },
+    { href: '/dashboard/investments/etf',           icon: BarChart2,  label: 'ETF' },
   ] },
   { label: 'Fixed-Income', items: [
     { href: '/dashboard/investments/fixed-deposits',     icon: Landmark,  label: 'Fixed Deposits' },
