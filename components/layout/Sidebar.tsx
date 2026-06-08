@@ -48,6 +48,7 @@ const LOAN_SUBS = [
 ]
 
 const TXN_SUBS = [
+  { href: '/dashboard/reports',         icon: FileText,        label: 'Money Report'    },
   { href: '/dashboard/income',          icon: ArrowUpCircle,   label: 'Income'          },
   { href: '/dashboard/income/report',   icon: PieChart,        label: 'Income Report'   },
   { href: '/dashboard/expenses',        icon: ArrowDownCircle, label: 'Expenses'        },
@@ -79,7 +80,7 @@ export default function Sidebar() {
   const { sidebarOpen, setSidebarOpen } = useUiStore()
   const isInvActive  = pathname.startsWith('/dashboard/investments') || pathname.startsWith('/dashboard/stocks')
   const isLoanActive = pathname.startsWith('/dashboard/loans')
-  const isTxnActive  = pathname.startsWith('/dashboard/income') || pathname.startsWith('/dashboard/expenses') || pathname.startsWith('/dashboard/expenses/report') || pathname.startsWith('/dashboard/income/report') || pathname.startsWith('/dashboard/transfers')
+  const isTxnActive  = pathname.startsWith('/dashboard/income') || pathname.startsWith('/dashboard/expenses') || pathname.startsWith('/dashboard/expenses/report') || pathname.startsWith('/dashboard/income/report') || pathname.startsWith('/dashboard/transfers') || pathname.startsWith('/dashboard/reports')
   const [invOpen,  setInvOpen]  = useState(isInvActive)
   const [loanOpen, setLoanOpen] = useState(isLoanActive)
   const [txnOpen,  setTxnOpen]  = useState(isTxnActive)
