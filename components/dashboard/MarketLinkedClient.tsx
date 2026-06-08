@@ -6,6 +6,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import {
   TrendingUp, TrendingDown, Wallet, Layers, Activity, BarChart2,
   ArrowUpRight, ArrowDownRight, Trophy, AlertTriangle, Repeat, GraduationCap,
+  Lightbulb, CheckCircle2,
 } from 'lucide-react'
 
 type Holding = {
@@ -45,11 +46,10 @@ export default function MarketLinkedClient({ funds, stocks, etfs }: { funds: any
 
   const sym = view === 'uae' ? 'AED ' : '₹'
   const money = (n: number) => `${sym}${Math.round(n).toLocaleString('en-IN')}`
-  // Combined portfolio: show ALL holdings, just convert to the view's display currency.
-  const conv = (amt: number, cur: string) =>
-    view === 'uae'
-      ? (cur === 'AED' ? amt : amt / (FX || 1))   // display everything in AED
-      : (cur === 'AED' ? amt * FX : amt)            // display everything in INR
+  // Respect the view: UAE shows AED holdings, India shows INR, Consolidated shows
+  // everything converted to INR.
+  const conv = (amt: number, cur: string) => (view === 'consolidated' ? (cur === 'AED' ? amt * FX : amt) : amt)
+  const inView = (cur: string) => !((view === 'uae' && cur !== 'AED') || (view === 'india' && cur !== 'INR'))
 
   // ── Normalise all three into a common Holding shape ──────────────────────
   const holdings = useMemo<Holding[]>(() => {
@@ -57,6 +57,7 @@ export default function MarketLinkedClient({ funds, stocks, etfs }: { funds: any
 
     for (const f of funds) {
       const cur = f.currency || 'INR'
+      if (!inView(cur)) continue
       const invested = Number(f.invested_amount) || (Number(f.units) * Number(f.avg_nav)) || 0
       const units = Number(f.units) || 0
       const nav = Number(f.current_nav) || 0
@@ -72,6 +73,7 @@ export default function MarketLinkedClient({ funds, stocks, etfs }: { funds: any
 
     for (const s of stocks) {
       const cur = s.currency || 'INR'
+      if (!inView(cur)) continue
       const qty = Number(s.quantity) || 0
       const buy = Number(s.avg_buy_price) || 0
       const px = Number(s.current_price) || buy
@@ -87,6 +89,7 @@ export default function MarketLinkedClient({ funds, stocks, etfs }: { funds: any
 
     for (const e of etfs) {
       const cur = e.currency || 'INR'
+      if (!inView(cur)) continue
       const invested = Number(e.invested_amount) || (Number(e.units) * Number(e.avg_buy_price)) || 0
       const cv = Number(e.current_value) || (Number(e.units) * (Number(e.current_price) || Number(e.avg_buy_price))) || invested
       out.push({
@@ -127,6 +130,35 @@ export default function MarketLinkedClient({ funds, stocks, etfs }: { funds: any
   const best  = withReturns.length ? [...withReturns].sort((a, b) => ret(b) - ret(a))[0] : null
   const worst = withReturns.length ? [...withReturns].sort((a, b) => ret(a) - ret(b))[0] : null
 
+  // ── Actionable insights ──────────────────────────────────────────────────
+  const equityCur = holdings.filter(h => h.assetClass === 'Equity').reduce((a, h) => a + h.current, 0)
+  const equityPct = totalCurrent > 0 ? (equityCur / totalCurrent) * 100 : 0
+  const topHold   = [...holdings].sort((a, b) => b.current - a.current)[0]
+  const topPct    = totalCurrent > 0 && topHold ? (topHold.current / totalCurrent) * 100 : 0
+  const stale     = holdings.filter(h => h.invested > 0 && Math.abs(h.current - h.invested) < 0.5)
+  const downBig   = withReturns.filter(h => ret(h) <= -10)
+  const upBig     = withReturns.filter(h => ret(h) >= 30)
+
+  const insights = useMemo(() => {
+    const out: { tone: 'warn' | 'good' | 'info'; title: string; detail: string }[] = []
+    if (totalInvested > 0) {
+      if (totalGain >= 0) out.push({ tone: 'good', title: `Portfolio up ${gainPct.toFixed(1)}%`, detail: `Gained ${money(totalGain)} on ${money(totalInvested)} invested.` })
+      else out.push({ tone: 'warn', title: `Portfolio down ${Math.abs(gainPct).toFixed(1)}%`, detail: `${money(Math.abs(totalGain))} below cost — review weak holdings rather than reacting to short-term dips.` })
+    }
+    if (topHold && topPct >= 30) out.push({ tone: 'warn', title: 'Concentration risk', detail: `${topHold.name} is ${topPct.toFixed(0)}% of this portfolio — consider trimming or diversifying.` })
+    if (totalCurrent > 0 && equityPct >= 85) out.push({ tone: 'warn', title: 'Heavily equity-weighted', detail: `Equity is ${equityPct.toFixed(0)}% of your mix — some debt/hybrid would cushion volatility.` })
+    else if (totalCurrent > 0 && equityPct > 0 && equityPct <= 40) out.push({ tone: 'info', title: 'Conservative mix', detail: `Only ${equityPct.toFixed(0)}% in equity — you may be under-allocated for long-term growth.` })
+    if (downBig.length > 0) { const w = [...downBig].sort((a, b) => ret(a) - ret(b))[0]; out.push({ tone: 'warn', title: `${downBig.length} holding${downBig.length > 1 ? 's' : ''} down over 10%`, detail: `Worst: ${w.name} (${ret(w).toFixed(0)}%). Check if your reason to hold still applies.` }) }
+    if (upBig.length > 0) { const b = [...upBig].sort((a, b) => ret(b) - ret(a))[0]; out.push({ tone: 'info', title: 'Profit-booking opportunity', detail: `${b.name} is up ${ret(b).toFixed(0)}% — consider rebalancing or booking partial gains.` }) }
+    if (stale.length > 0) out.push({ tone: 'warn', title: `${stale.length} holding${stale.length > 1 ? 's' : ''} missing live price`, detail: `Returns may be understated — refresh NAV/prices on the Mutual Funds / Stocks pages.` })
+    if (monthlySip > 0) out.push({ tone: 'good', title: 'SIP on track', detail: `Auto-investing ${money(monthlySip)}/month — great for rupee-cost averaging.` })
+    else if (holdings.some(h => h.kind === 'Mutual Fund')) out.push({ tone: 'info', title: 'No active SIP', detail: `A monthly SIP averages your buy price and builds discipline.` })
+    const kinds = Array.from(new Set(holdings.map(h => h.kind)))
+    if (kinds.length === 1 && holdings.length >= 3) out.push({ tone: 'info', title: 'Single instrument type', detail: `Everything is in ${kinds[0]}s — spreading across MF / stocks / ETF lowers risk.` })
+    const order = { warn: 0, good: 1, info: 2 } as const
+    return out.sort((a, b) => order[a.tone] - order[b.tone]).slice(0, 6)
+  }, [holdings, totalCurrent, totalInvested, totalGain, gainPct, equityPct, topPct, monthlySip])
+
   const pieData = byInstrument.map(([name, value]) => ({ name, value: Math.round(value), color: INSTRUMENT_COLORS[name] ?? '#6B7280' }))
 
   if (holdings.length === 0) {
@@ -135,9 +167,11 @@ export default function MarketLinkedClient({ funds, stocks, etfs }: { funds: any
         <Header view={view} />
         <div className="wl-card p-12 text-center">
           <Layers size={28} className="mx-auto mb-3" style={{ color: 'var(--text3)' }} />
-          <div className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>No market-linked holdings yet</div>
+          <div className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>No market-linked holdings in this view</div>
           <p className="text-[12px] mt-1" style={{ color: 'var(--text3)' }}>
-            Add Mutual Funds, Stocks or ETFs to see your combined portfolio here.
+            {view === 'uae'
+              ? 'No UAE (AED) market-linked holdings. Switch to India or Consolidated at the top, or add holdings below.'
+              : 'Add Mutual Funds, Stocks or ETFs to see your combined portfolio here.'}
           </p>
           <div className="flex gap-2 justify-center mt-4 flex-wrap">
             <Link href="/dashboard/investments/mutual-funds" className="px-3 py-1.5 rounded-lg text-[12px] font-semibold border" style={{ borderColor: 'var(--border)', color: 'var(--text2)', background: 'var(--bg2)' }}>Mutual Funds</Link>
@@ -164,6 +198,32 @@ export default function MarketLinkedClient({ funds, stocks, etfs }: { funds: any
         <Kpi label="Holdings" value={String(holdings.length)} icon={Layers} color="var(--blue)"
           sub={`${gainers} up · ${losers} down${monthlySip > 0 ? ` · SIP ${money(monthlySip)}/mo` : ''}`} />
       </div>
+
+      {/* Actionable insights */}
+      {insights.length > 0 && (
+        <div className="wl-card p-4">
+          <div className="text-[11px] font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5" style={{ color: 'var(--text3)' }}>
+            <Lightbulb size={12} style={{ color: 'var(--gold)' }} /> Insights &amp; Actions
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {insights.map((ins, i) => {
+              const c = ins.tone === 'warn' ? 'var(--rose)' : ins.tone === 'good' ? 'var(--income)' : 'var(--blue)'
+              const Icon = ins.tone === 'warn' ? AlertTriangle : ins.tone === 'good' ? CheckCircle2 : Lightbulb
+              return (
+                <div key={i} className="flex gap-2.5 rounded-xl p-2.5" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: c + '18' }}>
+                    <Icon size={14} style={{ color: c }} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[12px] font-semibold" style={{ color: 'var(--text)' }}>{ins.title}</div>
+                    <div className="text-[11px] leading-snug mt-0.5" style={{ color: 'var(--text3)' }}>{ins.detail}</div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Allocation */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
