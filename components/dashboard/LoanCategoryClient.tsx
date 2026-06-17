@@ -173,6 +173,10 @@ export default function LoanCategoryClient({ loans, title, loanType }: Props) {
                   <div className="flex items-center gap-1.5 shrink-0">
                     <span className="text-[12px] font-bold px-2.5 py-1 rounded-lg"
                       style={{ background: 'var(--gold-bg)', color: 'var(--gold)' }}>{paidPct}% paid</span>
+                    <Link href={`/dashboard/loans/detail/${loan.id}`}
+                      className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg"
+                      style={{ background: 'var(--blue-bg)', color: 'var(--blue)' }}
+                      title="Open loan details, amortization & funding">Details</Link>
                     <button onClick={() => setEditLoan(loan)}
                       className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
                       style={{ background: 'var(--blue-bg)', color: 'var(--blue)' }}

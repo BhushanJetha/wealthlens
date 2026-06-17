@@ -104,7 +104,8 @@ export async function POST(req: Request) {
     let bank_name: string | null = null
     for (const [re, nm] of LENDERS) if (re.test(T)) { bank_name = nm; break }
 
-    const sanctioned_amt = amt(T, new RegExp('(?:sanction(?:ed)?\\s*(?:loan\\s*)?amount|loan\\s*amount|disbursed\\s*amount|amount\\s*disbursed|sanction(?:ed)?\\s*limit|finance\\s*amount)\\s*[:\\-]?\\s*' + AMT, 'i'))
+    const sanctioned_amt = amt(T, new RegExp('(?:loan\\s*amount\\s*sanctioned|sanction(?:ed)?\\s*(?:loan\\s*)?amount|loan\\s*amount|sanction(?:ed)?\\s*limit|finance\\s*amount)\\s*[:\\-]?\\s*' + AMT, 'i'))
+    const disbursed_amt = amt(T, new RegExp('(?:loan\\s*amount\\s*disbursed|amount\\s*disbursed|disbursed\\s*amount|total\\s*disbursed|disbursal\\s*amount|disbursement\\s*amount)\\s*[:\\-]?\\s*' + AMT, 'i'))
     const outstanding_amt = amt(T, new RegExp('(?:principal\\s*outstanding|outstanding\\s*(?:principal|balance|amount)|balance\\s*outstanding|current\\s*(?:outstanding|balance)|closing\\s*balance|o/?s\\s*principal|loan\\s*outstanding|outstanding)\\s*[:\\-]?\\s*' + AMT, 'i'))
     const emi_amount = amt(T, new RegExp('(?:emi\\s*amount|monthly\\s*(?:installment|instalment|payment|emi)|installment\\s*amount|instalment\\s*amount|equated\\s*monthly|\\bemi\\b)\\s*[:\\-]?\\s*' + AMT, 'i'))
 
@@ -122,10 +123,21 @@ export async function POST(req: Request) {
       if (tenure_months === null) { m = T.match(/(?:total\s*)?(?:no\.?\s*of\s*)?(?:installments|instalments|emis)\s*[:\-]?\s*(\d{1,3})/i); if (m) tenure_months = parseInt(m[1]) }
     }
 
+    // Balance tenor (remaining term) — used to derive months_paid if needed
+    let balance_tenor: number | null = null
+    {
+      let m = T.match(/(?:balance|remaining|residual)\s*ten(?:ure|or)\s*[:\-]?\s*(\d{1,3})\s*(?:month|months|mos|mths)?/i)
+      if (m) balance_tenor = parseInt(m[1])
+      if (balance_tenor === null) { m = T.match(/(?:balance|remaining|residual)\s*ten(?:ure|or)\s*[:\-]?\s*(\d{1,2})\s*(?:year|years|yrs?)/i); if (m) balance_tenor = parseInt(m[1]) * 12 }
+    }
+
     let months_paid: number | null = null
     {
       const m = T.match(/(?:emis?\s*paid|installments?\s*paid|instalments?\s*paid|paid\s*(?:installments?|instalments?|emis?)|no\.?\s*of\s*emis?\s*paid)\s*[:\-]?\s*(\d{1,3})/i)
       if (m) months_paid = parseInt(m[1])
+    }
+    if (months_paid === null && tenure_months != null && balance_tenor != null) {
+      months_paid = Math.max(0, tenure_months - balance_tenor)
     }
 
     const loan_start_date = findDate(T, /(?:disbursement\s*date|date\s*of\s*disbursement|loan\s*start\s*date|sanction\s*date|first\s*(?:emi|installment|instalment)\s*date)\s*[:\-]?\s*([0-9A-Za-z\/\-. ]{6,14})/i)
@@ -140,11 +152,11 @@ export async function POST(req: Request) {
     const typeLabel: Record<string, string> = { home_loan: 'Home Loan', car_loan: 'Car Loan', bike_loan: 'Bike Loan', gold_loan: 'Gold Loan', loan_on_card: 'Loan on Card', personal_loan: 'Personal Loan', other_loan: 'Loan' }
     const name = `${typeLabel[loan_type]}${bank_name ? ' – ' + bank_name : ''}`
 
-    const out: Record<string, any> = { name, bank_name, loan_type, sanctioned_amt, outstanding_amt, emi_amount, interest_rate, tenure_months, months_paid, loan_start_date, next_emi_date, currency, property_address }
+    const out: Record<string, any> = { name, bank_name, loan_type, sanctioned_amt, disbursed_amt, outstanding_amt, emi_amount, interest_rate, tenure_months, months_paid, loan_start_date, next_emi_date, currency, property_address }
     const cleaned: Record<string, any> = {}
     for (const [k, v] of Object.entries(out)) if (v !== null && v !== undefined && v !== '') cleaned[k] = v
 
-    const gotFigures = sanctioned_amt || outstanding_amt || emi_amount || interest_rate
+    const gotFigures = sanctioned_amt || disbursed_amt || outstanding_amt || emi_amount || interest_rate
     if (!gotFigures) {
       return NextResponse.json({
         data: cleaned,

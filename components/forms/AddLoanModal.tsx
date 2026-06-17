@@ -128,12 +128,13 @@ export function AddLoanModal({ onClose, defaultLoanType = 'home_loan', initialDa
 
   async function save() {
     setSaving(true)
-    const payload = {
+    const payload: Record<string, any> = {
       name:             form.name,
       bank_name:        form.bank_name,
       property_address: form.property_address ?? null,
       loan_type:        form.loan_type || 'home_loan',
       sanctioned_amt:   Number(form.sanctioned_amt  || 0),
+      disbursed_amt:    form.disbursed_amt ? Number(form.disbursed_amt) : null,
       outstanding_amt:  Number(form.outstanding_amt || 0),
       emi_amount:       Number(form.emi_amount      || 0),
       interest_rate:    Number(form.interest_rate   || 0),
@@ -144,13 +145,22 @@ export function AddLoanModal({ onClose, defaultLoanType = 'home_loan', initialDa
       country:          form.currency === 'AED' ? 'UAE' : 'India',
       next_emi_date:    form.next_emi_date || null,
       holder_name:      form.holder_name || 'Self',
+      property_cost:    form.property_cost ? Number(form.property_cost) : null,
     }
-    if (isEdit) {
-      await supabase.from('home_loans').update(payload).eq('id', loanId!)
-    } else {
+
+    // Resilient write: if migration 019 (disbursed_amt / property_cost) isn't
+    // applied yet, strip those columns and retry so saving still works.
+    async function write(p: Record<string, any>) {
+      if (isEdit) return supabase.from('home_loans').update(p).eq('id', loanId!)
       const { data: { user } } = await supabase.auth.getUser()
-      await supabase.from('home_loans').insert({ ...payload, is_active: true, user_id: user!.id })
+      return supabase.from('home_loans').insert({ ...p, is_active: true, user_id: user!.id })
     }
+    let res = await write(payload)
+    if (res.error && /column|schema cache|disbursed_amt|property_cost/i.test(res.error.message || '')) {
+      const { disbursed_amt, property_cost, ...base } = payload
+      res = await write(base)
+    }
+
     router.refresh()
     setSaving(false)
     onClose()
