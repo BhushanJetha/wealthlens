@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { amortize } from '@/lib/amortization'
+import Pagination from '@/components/dashboard/Pagination'
 import {
   ChevronLeft, Building2, Plus, Trash2, Loader2, Pencil, Check, X,
   TrendingDown, Coins, Home, Wallet, CalendarClock, Upload,
@@ -23,7 +24,10 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
   const [saving, setSaving] = useState(false)
   const [editCost, setEditCost] = useState(false)
   const [costVal, setCostVal] = useState(String(loan.property_cost ?? ''))
-  const [showAllSched, setShowAllSched] = useState(false)
+  const [emiPage, setEmiPage] = useState(1)
+  const [emiSize, setEmiSize] = useState(10)
+  const [schedPage, setSchedPage] = useState(1)
+  const [schedSize, setSchedSize] = useState(12)
   const [importing, setImporting] = useState(false)
   const [importMsg, setImportMsg] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -139,7 +143,10 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
   const breakup: [string, any][] = loan.cost_breakup && typeof loan.cost_breakup === 'object'
     ? Object.entries(loan.cost_breakup) : []
 
-  const schedule = showAllSched ? amort.schedule : amort.schedule.slice(0, 12)
+  const schedP = Math.min(schedPage, Math.max(1, Math.ceil(amort.schedule.length / schedSize)))
+  const schedule = amort.schedule.slice((schedP - 1) * schedSize, schedP * schedSize)
+  const emiP = Math.min(emiPage, Math.max(1, Math.ceil(emiPays.length / emiSize)))
+  const emiPaged = emiPays.slice((emiP - 1) * emiSize, emiP * emiSize)
 
   return (
     <div className="space-y-5 animate-fade-up">
@@ -248,7 +255,7 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
                 </tr>
               </thead>
               <tbody>
-                {emiPays.map(t => (
+                {emiPaged.map(t => (
                   <tr key={t.id} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td className="px-3 py-2" style={{ color: 'var(--text2)' }}>{t.note ?? 'EMI'}</td>
                     <td className="px-3 py-2 font-mono" style={{ color: 'var(--text3)' }}>{t.txn_date}</td>
@@ -259,6 +266,9 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
               </tbody>
             </table>
           </div>
+          {emiPays.length > emiSize && (
+            <Pagination total={emiPays.length} page={emiP} pageSize={emiSize} onPage={setEmiPage} onPageSize={s => { setEmiSize(s); setEmiPage(1) }} />
+          )}
         </div>
       )}
 
@@ -362,10 +372,8 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
               </tbody>
             </table>
           </div>
-          {amort.schedule.length > 12 && (
-            <button onClick={() => setShowAllSched(s => !s)} className="w-full py-2.5 text-[11px] font-semibold border-t" style={{ borderColor: 'var(--border)', color: 'var(--sage)' }}>
-              {showAllSched ? 'Show less' : `Show all ${amort.schedule.length} months`}
-            </button>
+          {amort.schedule.length > schedSize && (
+            <Pagination total={amort.schedule.length} page={schedP} pageSize={schedSize} onPage={setSchedPage} onPageSize={s => { setSchedSize(s); setSchedPage(1) }} pageSizeOptions={[12, 24, 60]} />
           )}
         </div>
       )}
@@ -452,30 +460,39 @@ function Empty({ text }: { text: string }) {
   return <p className="text-[11px] py-2" style={{ color: 'var(--text3)' }}>{text}</p>
 }
 function TxnTable({ items, money, onDel, detailLabel }: { items: any[]; money: (n: number) => string; onDel: (id: string) => void; detailLabel?: string }) {
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+  const p = Math.min(page, Math.max(1, Math.ceil(items.length / pageSize)))
+  const paged = items.slice((p - 1) * pageSize, p * pageSize)
   return (
-    <div className="overflow-x-auto rounded-xl border" style={{ borderColor: 'var(--border)' }}>
-      <table className="w-full text-[12px]">
-        <thead>
-          <tr style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
-            <th className="px-3 py-2 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--text3)' }}>Date</th>
-            <th className="px-3 py-2 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--text3)' }}>{detailLabel ?? 'Details'}</th>
-            <th className="px-3 py-2 text-right text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--text3)' }}>Amount</th>
-            <th className="px-3 py-2 w-8"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map(t => (
-            <tr key={t.id} style={{ borderBottom: '1px solid var(--border)' }} className="hover:bg-stone-50 transition-colors">
-              <td className="px-3 py-2 font-mono whitespace-nowrap" style={{ color: 'var(--text3)' }}>{t.txn_date}</td>
-              <td className="px-3 py-2 truncate" style={{ color: 'var(--text2)', maxWidth: 220 }}>{t.note || '—'}</td>
-              <td className="px-3 py-2 text-right font-mono font-semibold whitespace-nowrap" style={{ color: 'var(--text)' }}>{money(t.amount)}</td>
-              <td className="px-3 py-2 text-right">
-                <button onClick={() => onDel(t.id)} className="p-1 rounded" style={{ color: 'var(--rose)' }} title="Delete"><Trash2 size={12} /></button>
-              </td>
+    <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+      <div className="overflow-x-auto">
+        <table className="w-full text-[12px]">
+          <thead>
+            <tr style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
+              <th className="px-3 py-2 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--text3)' }}>Date</th>
+              <th className="px-3 py-2 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--text3)' }}>{detailLabel ?? 'Details'}</th>
+              <th className="px-3 py-2 text-right text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--text3)' }}>Amount</th>
+              <th className="px-3 py-2 w-8"></th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {paged.map(t => (
+              <tr key={t.id} style={{ borderBottom: '1px solid var(--border)' }} className="hover:bg-stone-50 transition-colors">
+                <td className="px-3 py-2 font-mono whitespace-nowrap" style={{ color: 'var(--text3)' }}>{t.txn_date}</td>
+                <td className="px-3 py-2 truncate" style={{ color: 'var(--text2)', maxWidth: 220 }}>{t.note || '—'}</td>
+                <td className="px-3 py-2 text-right font-mono font-semibold whitespace-nowrap" style={{ color: 'var(--text)' }}>{money(t.amount)}</td>
+                <td className="px-3 py-2 text-right">
+                  <button onClick={() => onDel(t.id)} className="p-1 rounded" style={{ color: 'var(--rose)' }} title="Delete"><Trash2 size={12} /></button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {items.length > pageSize && (
+        <Pagination total={items.length} page={p} pageSize={pageSize} onPage={setPage} onPageSize={s => { setPageSize(s); setPage(1) }} />
+      )}
     </div>
   )
 }
