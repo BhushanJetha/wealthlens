@@ -174,6 +174,7 @@ export function AddLoanModal({ onClose, defaultLoanType = 'home_loan', initialDa
       const rows = [
         ...(pendingTxns.disbursements ?? []).map((d: any) => ({ user_id: user.id, loan_id: newId, kind: 'disbursement', txn_date: d.txn_date, amount: d.amount, note: d.note ?? null })),
         ...(pendingTxns.prepayments   ?? []).map((d: any) => ({ user_id: user.id, loan_id: newId, kind: 'prepayment',   txn_date: d.txn_date, amount: d.amount, note: d.note ?? null })),
+        ...(pendingTxns.emis          ?? []).map((d: any) => ({ user_id: user.id, loan_id: newId, kind: 'emi',          txn_date: d.txn_date, amount: d.amount, note: d.note ?? null })),
       ]
       if (rows.length) { try { await supabase.from('loan_transactions').insert(rows) } catch {} }
     }

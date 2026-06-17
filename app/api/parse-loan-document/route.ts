@@ -101,26 +101,44 @@ export async function POST(req: Request) {
 
     // ── Transaction tables: disbursements, prepayments, EMIs paid ──────────
     const ORDINAL = '(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|\\d{1,2}(?:st|nd|rd|th))'
+    const amountsOf = (line: string) => Array.from(line.matchAll(/([\d,]{3,}\.\d{2})/g)).map(m => parseFloat(m[1].replace(/,/g, '')))
     const disbursements: { txn_date: string; amount: number; note: string }[] = []
     const prepayments:   { txn_date: string; amount: number; note: string }[] = []
+    const emis:          { txn_date: string; amount: number; note: string }[] = []
     let emisReceived = 0, emisDue = 0
+    let ledgerBalance: number | null = null, ledgerBalDate = ''
+    let lastEmiDate = ''
     for (const line of T.split('\n')) {
       const L = line.trim()
       if (!L) continue
-      const rec = L.match(/payment\s+received\s+emi\s+no[:\s]*?(\d+)/i)
-      if (rec) emisReceived = Math.max(emisReceived, parseInt(rec[1]))
+      const d = firstDateISO(L)
+      const nums = amountsOf(L)
+      // Running balance: last number on a dated ledger row → current outstanding
+      if (d && nums.length >= 2 && /(installment|receipt|disbursement|presentation|emi)/i.test(L)) {
+        if (d >= ledgerBalDate) { ledgerBalDate = d; ledgerBalance = nums[nums.length - 1] }
+      }
       const due = L.match(/installment\s+(\d+)\s+due/i)
       if (due) emisDue = Math.max(emisDue, parseInt(due[1]))
+      const rec = L.match(/payment\s+received\s+emi\s+no[:\s]*?(\d+)/i)
+      if (rec) {
+        emisReceived = Math.max(emisReceived, parseInt(rec[1]))
+        const a = nums.length >= 2 ? nums[nums.length - 2] : nums[0]   // credit col, not balance
+        if (d && a) { emis.push({ txn_date: d, amount: a, note: `EMI ${rec[1]}` }); if (d > lastEmiDate) lastEmiDate = d }
+        continue
+      }
       if (new RegExp(ORDINAL + '\\s+disbursement', 'i').test(L)) {
-        const d = firstDateISO(L), a = lastAmt(L)
+        const a = lastAmt(L)
         if (d && a) disbursements.push({ txn_date: d, amount: a, note: noteOf(L) })
       } else if (/prepayment/i.test(L)) {
-        const d = firstDateISO(L), a = lastAmt(L)
+        const a = lastAmt(L)
         if (d && a) prepayments.push({ txn_date: d, amount: a, note: noteOf(L) || 'Prepayment' })
       }
     }
     const sumDisbursed = disbursements.reduce((s, d) => s + d.amount, 0)
     const emisPaidFromTable = emisReceived || (emisDue > 0 ? emisDue - 1 : 0)
+    // Next EMI ≈ one month after the last received EMI
+    let nextEmiFromLedger: string | null = null
+    if (lastEmiDate) { const dd = new Date(lastEmiDate); dd.setMonth(dd.getMonth() + 1); nextEmiFromLedger = dd.toISOString().slice(0, 10) }
 
     const loan_type =
       /home\s*loan|housing\s*loan|mortgage/i.test(T) ? 'home_loan' :
@@ -130,17 +148,24 @@ export async function POST(req: Request) {
       /loan\s*on\s*card|flexi\s*loan|card\s*loan/i.test(T) ? 'loan_on_card' :
       /personal\s*loan/i.test(T) ? 'personal_loan' : 'other_loan'
 
+    // Word-bounded so transaction reference codes (e.g. "HDFCR5…", "SBINR1…")
+    // don't get mistaken for the lender. Prefer the document letterhead.
     const LENDERS: [RegExp, string][] = [
-      [/hdfc/i, 'HDFC Bank'], [/icici/i, 'ICICI Bank'], [/state bank|\bsbi\b/i, 'State Bank of India'],
-      [/axis/i, 'Axis Bank'], [/kotak/i, 'Kotak Mahindra Bank'], [/bajaj/i, 'Bajaj Finserv'],
-      [/tata capital/i, 'Tata Capital'], [/lic housing|lichfl/i, 'LIC Housing Finance'],
+      [/state bank of india|\bsbi\b(?!\w)/i, 'State Bank of India'],
+      [/\bhdfc\b/i, 'HDFC Bank'], [/\bicici\b/i, 'ICICI Bank'],
+      [/\baxis\s+bank\b|\baxis\b(?!\w)/i, 'Axis Bank'], [/\bkotak\b/i, 'Kotak Mahindra Bank'],
+      [/\bbajaj\b/i, 'Bajaj Finserv'], [/tata capital/i, 'Tata Capital'],
+      [/lic housing|\blichfl\b/i, 'LIC Housing Finance'],
       [/emirates nbd|\benbd\b/i, 'Emirates NBD'], [/\badcb\b/i, 'ADCB'], [/\bfab\b|first abu dhabi/i, 'First Abu Dhabi Bank'],
-      [/mashreq/i, 'Mashreq Bank'], [/dubai islamic|\bdib\b/i, 'Dubai Islamic Bank'],
-      [/yes bank/i, 'Yes Bank'], [/idfc/i, 'IDFC First Bank'], [/indusind/i, 'IndusInd Bank'],
-      [/punjab national|\bpnb\b/i, 'Punjab National Bank'], [/canara/i, 'Canara Bank'], [/bank of baroda|\bbob\b/i, 'Bank of Baroda'],
+      [/\bmashreq\b/i, 'Mashreq Bank'], [/dubai islamic|\bdib\b/i, 'Dubai Islamic Bank'],
+      [/yes bank/i, 'Yes Bank'], [/\bidfc\b/i, 'IDFC First Bank'], [/\bindusind\b/i, 'IndusInd Bank'],
+      [/punjab national|\bpnb\b/i, 'Punjab National Bank'], [/\bcanara\b/i, 'Canara Bank'], [/bank of baroda/i, 'Bank of Baroda'],
     ]
     let bank_name: string | null = null
-    for (const [re, nm] of LENDERS) if (re.test(T)) { bank_name = nm; break }
+    // Look at the first ~600 chars (letterhead/header) first, then the whole doc.
+    const header = T.slice(0, 600)
+    for (const [re, nm] of LENDERS) if (re.test(header)) { bank_name = nm; break }
+    if (!bank_name) for (const [re, nm] of LENDERS) if (re.test(T)) { bank_name = nm; break }
 
     const sanctioned_amt = amt(T, new RegExp('(?:loan\\s*amount\\s*sanctioned|sanction(?:ed)?\\s*(?:loan\\s*)?amount|loan\\s*amount|sanction(?:ed)?\\s*limit|finance\\s*amount)\\s*[:\\-]?\\s*' + AMT, 'i'))
     const disbursed_amt = amt(T, new RegExp('(?:loan\\s*amount\\s*disbursed|amount\\s*disbursed|disbursed\\s*amount|total\\s*disbursed|disbursal\\s*amount|disbursement\\s*amount)\\s*[:\\-]?\\s*' + AMT, 'i'))
@@ -193,15 +218,16 @@ export async function POST(req: Request) {
     const out: Record<string, any> = {
       name, bank_name, loan_type, sanctioned_amt,
       disbursed_amt: sumDisbursed > 0 ? sumDisbursed : disbursed_amt,
-      outstanding_amt, emi_amount, interest_rate, tenure_months,
+      outstanding_amt: ledgerBalance ?? outstanding_amt,
+      emi_amount, interest_rate, tenure_months,
       months_paid: emisPaidFromTable || months_paid,
-      loan_start_date, next_emi_date, currency, property_address,
+      loan_start_date, next_emi_date: next_emi_date || nextEmiFromLedger, currency, property_address,
     }
     const cleaned: Record<string, any> = {}
     for (const [k, v] of Object.entries(out)) if (v !== null && v !== undefined && v !== '') cleaned[k] = v
 
-    const transactions = { disbursements, prepayments }
-    const gotFigures = sanctioned_amt || disbursed_amt || outstanding_amt || emi_amount || interest_rate || disbursements.length
+    const transactions = { disbursements, prepayments, emis }
+    const gotFigures = sanctioned_amt || disbursed_amt || outstanding_amt || emi_amount || interest_rate || disbursements.length || emis.length
 
     if (!gotFigures) {
       return NextResponse.json({

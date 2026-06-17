@@ -44,6 +44,7 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
       const incoming = [
         ...(tx.disbursements ?? []).map((d: any) => ({ kind: 'disbursement', ...d })),
         ...(tx.prepayments ?? []).map((d: any) => ({ kind: 'prepayment', ...d })),
+        ...(tx.emis ?? []).map((d: any) => ({ kind: 'emi', ...d })),
       ].filter((r: any) => !seen.has(`${r.kind}|${r.txn_date}|${Math.round(Number(r.amount))}`))
       const rows = incoming.map((r: any) => ({ user_id: user!.id, loan_id: loan.id, kind: r.kind, txn_date: r.txn_date, amount: r.amount, note: r.note ?? null }))
       if (rows.length) await supabase.from('loan_transactions').insert(rows)
@@ -68,6 +69,8 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
   const contributions = useMemo(() => txns.filter(t => t.kind === 'own_contribution'), [txns])
   const prepays       = useMemo(() => txns.filter(t => t.kind === 'prepayment'), [txns])
   const totalPrepay   = prepays.reduce((a, t) => a + Number(t.amount), 0)
+  const emiPays       = useMemo(() => [...txns.filter(t => t.kind === 'emi')].sort((a, b) => a.txn_date < b.txn_date ? 1 : -1), [txns])
+  const totalEmiPaid  = emiPays.reduce((a, t) => a + Number(t.amount), 0)
   const totalDisbursedTxn = disbursements.reduce((a, t) => a + Number(t.amount), 0)
   const totalOwn = contributions.reduce((a, t) => a + Number(t.amount), 0)
 
@@ -85,7 +88,8 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
     startDate: loan.loan_start_date || undefined,
   }), [loan, effectiveDisbursed])
 
-  const paidPct = amort.emisTotal > 0 ? Math.round((amort.emisPaid / amort.emisTotal) * 100) : 0
+  const emisPaidCount = Math.max(emiPays.length, amort.emisPaid)
+  const paidPct = amort.emisTotal > 0 ? Math.round((emisPaidCount / amort.emisTotal) * 100) : 0
   const princBarPaid = amort.principal > 0 ? (amort.principalPaid / amort.principal) * 100 : 0
   const intTotal = amort.interestPaid + amort.totalInterest
   const intBarPaid = intTotal > 0 ? (amort.interestPaid / intTotal) * 100 : 0
@@ -95,6 +99,11 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
   const fundLoanPct = propertyCost > 0 ? (effectiveDisbursed / propertyCost) * 100 : 0
   const fundOwnPct  = propertyCost > 0 ? (totalOwn / propertyCost) * 100 : 0
   const fundGap     = Math.max(0, propertyCost - effectiveDisbursed - totalOwn)
+  const fundedTotal = effectiveDisbursed + totalOwn
+  const loanShare   = fundedTotal > 0 ? Math.round((effectiveDisbursed / fundedTotal) * 100) : 0
+  const ownShare    = fundedTotal > 0 ? 100 - loanShare : 0
+  const barLoan     = propertyCost > 0 ? Math.min(100, fundLoanPct) : loanShare
+  const barOwn      = propertyCost > 0 ? Math.min(100, fundOwnPct) : ownShare
 
   async function saveTxn() {
     const amt = Number(form.amount)
@@ -150,7 +159,9 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
             {importing ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Import statement
           </button>
           <input ref={fileRef} type="file" accept=".pdf,application/pdf" className="hidden" onChange={importStatement} />
-          <span className="text-[12px] font-bold px-3 py-1.5 rounded-lg" style={{ background: 'var(--gold-bg)', color: 'var(--gold)' }}>{paidPct}% repaid</span>
+          <span className="text-[12px] font-bold px-3 py-1.5 rounded-lg" style={{ background: 'var(--gold-bg)', color: 'var(--gold)' }}>
+            {emisPaidCount}{amort.emisTotal > 0 ? ` / ${amort.emisTotal}` : ''} EMIs paid
+          </span>
         </div>
       </div>
       {importMsg && <div className="text-[11px]" style={{ color: 'var(--text2)' }}>{importMsg}</div>}
@@ -219,6 +230,35 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
         {adding === 'prepayment' && <AddRow form={form} setForm={setForm} onSave={saveTxn} onCancel={() => setAdding('none')} saving={saving} sym={sym} />}
       </Section>
 
+      {/* EMIs paid */}
+      {emiPays.length > 0 && (
+        <div className="wl-card overflow-hidden">
+          <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
+            <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>EMIs Paid · {emiPays.length}</div>
+            <div className="text-[12px] font-bold font-mono" style={{ color: 'var(--text)' }}>Total paid {money(totalEmiPaid)}</div>
+          </div>
+          <div className="overflow-x-auto" style={{ maxHeight: 320 }}>
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
+                  {['EMI', 'Date', 'Amount', ''].map(h => <th key={h} className="px-3 py-2 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--text3)' }}>{h}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {emiPays.map(t => (
+                  <tr key={t.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td className="px-3 py-2" style={{ color: 'var(--text2)' }}>{t.note ?? 'EMI'}</td>
+                    <td className="px-3 py-2 font-mono" style={{ color: 'var(--text3)' }}>{t.txn_date}</td>
+                    <td className="px-3 py-2 font-mono font-semibold" style={{ color: 'var(--income)' }}>{money(t.amount)}</td>
+                    <td className="px-3 py-2 text-right"><button onClick={() => delTxn(t.id)} style={{ color: 'var(--rose)' }}><Trash2 size={12} /></button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Home loan funding */}
       {isHome && (
         <div className="wl-card p-4">
@@ -240,26 +280,27 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
               <button onClick={saveCost} className="p-1.5 rounded-lg" style={{ background: 'var(--income-bg)', color: 'var(--income)' }}><Check size={14} /></button>
               <button onClick={() => setEditCost(false)} className="p-1.5 rounded-lg" style={{ background: 'var(--bg2)', color: 'var(--text3)' }}><X size={14} /></button>
             </div>
-          ) : propertyCost > 0 ? (
+          ) : (
             <>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
-                <Mini label="Property Cost" value={money(propertyCost)} color="var(--text)" />
-                <Mini label="Loan Funded" value={`${money(effectiveDisbursed)} · ${Math.round(fundLoanPct)}%`} color="var(--blue)" />
-                <Mini label="Own Contribution" value={`${money(totalOwn)} · ${Math.round(fundOwnPct)}%`} color="var(--income)" />
-                <Mini label="Yet to Fund" value={money(fundGap)} color={fundGap > 0 ? 'var(--gold)' : 'var(--text3)'} />
+                {propertyCost > 0 && <Mini label="Property Cost" value={money(propertyCost)} color="var(--text)" />}
+                <Mini label="Loan Funded" value={propertyCost > 0 ? `${money(effectiveDisbursed)} · ${Math.round(fundLoanPct)}%` : `${money(effectiveDisbursed)} · ${loanShare}%`} color="var(--blue)" />
+                <Mini label="Own Contribution" value={propertyCost > 0 ? `${money(totalOwn)} · ${Math.round(fundOwnPct)}%` : `${money(totalOwn)} · ${ownShare}%`} color="var(--income)" />
+                {propertyCost > 0
+                  ? <Mini label="Yet to Fund" value={money(fundGap)} color={fundGap > 0 ? 'var(--gold)' : 'var(--text3)'} />
+                  : <Mini label="Total Funded" value={money(fundedTotal)} color="var(--text)" />}
               </div>
               <div className="h-3 rounded-full overflow-hidden flex" style={{ background: 'var(--bg2)' }}>
-                <div style={{ width: `${Math.min(100, fundLoanPct)}%`, background: 'var(--blue)' }} />
-                <div style={{ width: `${Math.min(100, fundOwnPct)}%`, background: 'var(--income)' }} />
+                <div style={{ width: `${barLoan}%`, background: 'var(--blue)' }} />
+                <div style={{ width: `${barOwn}%`, background: 'var(--income)' }} />
               </div>
               <div className="flex gap-4 mt-1.5 text-[10px]" style={{ color: 'var(--text3)' }}>
-                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: 'var(--blue)' }} /> Loan</span>
-                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: 'var(--income)' }} /> Own funds</span>
-                {fundGap > 0 && <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }} /> Unfunded</span>}
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: 'var(--blue)' }} /> Loan ({propertyCost > 0 ? Math.round(fundLoanPct) : loanShare}%)</span>
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: 'var(--income)' }} /> Own funds ({propertyCost > 0 ? Math.round(fundOwnPct) : ownShare}%)</span>
+                {propertyCost > 0 && fundGap > 0 && <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }} /> Unfunded</span>}
               </div>
+              {propertyCost === 0 && <p className="text-[10px] mt-2" style={{ color: 'var(--text3)' }}>Set the property cost (pencil above) to also see how much is still unfunded.</p>}
             </>
-          ) : (
-            <Empty text="Set the total property cost to see how much is funded by the loan vs your own contribution." />
           )}
 
           {breakup.length > 0 && (

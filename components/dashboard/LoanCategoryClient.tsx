@@ -13,6 +13,14 @@ import Link from 'next/link'
 
 function toINR(amt: number, cur: string, fx: number) { return cur === 'AED' ? amt * fx : amt }
 
+// % of principal actually repaid — based on disbursed (not sanctioned), so a
+// partly-disbursed under-construction loan doesn't show inflated "paid".
+function paidPctOf(l: any): number {
+  const base = Number(l.disbursed_amt) || Number(l.sanctioned_amt) || 0
+  const repaid = Math.max(0, base - Number(l.outstanding_amt || 0))
+  return base > 0 ? Math.round((repaid / base) * 100) : 0
+}
+
 const LOAN_SORT_OPTS = [
   { value: 'outstanding_desc', label: 'Outstanding ↓' },
   { value: 'emi_desc',         label: 'EMI ↓' },
@@ -51,8 +59,7 @@ export default function LoanCategoryClient({ loans, title, loanType }: Props) {
   const filtered = useMemo(() => {
     let arr = [...base]
     if (search) arr = arr.filter(l => `${l.name} ${l.bank_name ?? ''}`.toLowerCase().includes(search.toLowerCase()))
-    const paidPct = (l: any) => Number(l.sanctioned_amt) > 0
-      ? (Number(l.sanctioned_amt) - Number(l.outstanding_amt)) / Number(l.sanctioned_amt) * 100 : 0
+    const paidPct = paidPctOf
     return arr.sort((a, b) => {
       if (sort === 'outstanding_desc') return Number(b.outstanding_amt) - Number(a.outstanding_amt)
       if (sort === 'emi_desc')         return Number(b.emi_amount) - Number(a.emi_amount)
@@ -153,8 +160,8 @@ export default function LoanCategoryClient({ loans, title, loanType }: Props) {
 
           {filtered.map((loan: any, i: number) => {
             const lSym = loan.currency === 'AED' ? 'AED ' : '₹'
-            const paidPct = Math.round((Number(loan.sanctioned_amt) - Number(loan.outstanding_amt)) / Number(loan.sanctioned_amt) * 100)
-            const monthsRem = loan.tenure_months - (loan.months_paid ?? 0)
+            const paidPct = paidPctOf(loan)
+            const monthsRem = Number(loan.tenure_months) > 0 ? Math.max(0, Number(loan.tenure_months) - (loan.months_paid ?? 0)) : null
             const extra = extraPayments[loan.id] ?? 0
             const interestSaved = calcInterestSaved(loan, extra)
             const monthsSaved = extra > 0 ? Math.round(interestSaved / Number(loan.emi_amount) * 1.5) : 0
@@ -206,7 +213,7 @@ export default function LoanCategoryClient({ loans, title, loanType }: Props) {
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {[
                     { label: 'EMI',              val: `${lSym}${Number(loan.emi_amount).toLocaleString('en-IN')}` },
-                    { label: 'Months Remaining', val: `${monthsRem} mo` },
+                    { label: 'Months Remaining', val: monthsRem != null ? `${monthsRem} mo` : '—' },
                     { label: 'Months Paid',      val: `${loan.months_paid ?? 0}` },
                     { label: 'Next EMI',         val: loan.next_emi_date ?? '—' },
                   ].map(item => (
