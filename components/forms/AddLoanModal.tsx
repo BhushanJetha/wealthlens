@@ -98,7 +98,7 @@ export function AddLoanModal({ onClose, defaultLoanType = 'home_loan', initialDa
     const file = e.target.files?.[0]
     if (!file) return
     setParseState('parsing')
-    setParseMsg('Reading document with AI…')
+    setParseMsg('Reading loan document…')
     try {
       const fd = new FormData()
       fd.append('file', file)
@@ -261,7 +261,7 @@ export function AddLoanModal({ onClose, defaultLoanType = 'home_loan', initialDa
               </div>
             )}
 
-            <input ref={fileRef} type="file" accept=".pdf,image/*" className="hidden" onChange={handleFile} />
+            <input ref={fileRef} type="file" accept=".pdf,application/pdf" className="hidden" onChange={handleFile} />
           </div>}
 
           {/* Divider */}
