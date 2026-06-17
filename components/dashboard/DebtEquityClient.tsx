@@ -2,7 +2,20 @@
 import { useMemo } from 'react'
 import Link from 'next/link'
 import { useViewStore } from '@/store/viewStore'
-import { Scale, TrendingUp, TrendingDown, PiggyBank, ArrowLeft, Lightbulb, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, Legend } from 'recharts'
+import { Scale, TrendingUp, TrendingDown, PiggyBank, ArrowLeft, Lightbulb, AlertTriangle, CheckCircle2, LineChart as LineChartIcon } from 'lucide-react'
+
+// Blended expected annual return assumptions per asset bucket (%)
+const EXP_RETURN: Record<string, number> = {
+  'Mutual Funds': 11, Stocks: 12, ETF: 11, NPS: 9, Gold: 7, Bonds: 7.5,
+  'Fixed Deposits': 7, 'Recurring Deposits': 6.5, 'PPF / EPF': 7.5, LIC: 5,
+}
+function fmtK(n: number): string {
+  if (Math.abs(n) >= 1e7) return `${(n / 1e7).toFixed(2)}Cr`
+  if (Math.abs(n) >= 1e5) return `${(n / 1e5).toFixed(1)}L`
+  if (Math.abs(n) >= 1e3) return `${(n / 1e3).toFixed(0)}K`
+  return String(Math.round(n))
+}
 
 function monthsElapsed(start?: string): number {
   if (!start) return 0
@@ -55,6 +68,29 @@ export default function DebtEquityClient(props: {
       totalDebt: debt.reduce((a, r) => a + r.val, 0),
     }
   }, [props, view, FX])
+
+  // ── Future projection: equity grows with SIPs, debt amortises with EMIs ──
+  const projection = useMemo(() => {
+    const blended = totalEquity > 0 ? equityRows.reduce((a, r) => a + r.val * (EXP_RETURN[r.cat] ?? 8), 0) / totalEquity : 8
+    const monthlyInvest =
+      S(props.funds.filter((f: any) => f.has_sip && f.sip_amount), (f: any) => Number(f.sip_amount)) +
+      S(props.rds, (r: any) => Number(r.monthly_amount)) +
+      S(props.ppf, (p: any) => Number(p.annual_contribution) / 12)
+    const monthlyEMI = S(props.loans, (l: any) => Number(l.emi_amount))
+    const r = blended / 1200
+    let eq = totalEquity
+    const loanBals = props.loans.map((l: any) => ({ bal: conv(Number(l.outstanding_amt) || 0, l.currency || 'INR'), lr: (Number(l.interest_rate) || 0) / 1200, emi: conv(Number(l.emi_amount) || 0, l.currency || 'INR') }))
+    const series: { year: number; Investments: number; Debt: number; 'Net Worth': number }[] = []
+    for (let m = 0; m <= 120; m++) {
+      if (m % 12 === 0) {
+        const debt = loanBals.reduce((a, x) => a + Math.max(0, x.bal), 0)
+        series.push({ year: m / 12, Investments: Math.round(eq), Debt: Math.round(debt), 'Net Worth': Math.round(eq - debt) })
+      }
+      eq = eq * (1 + r) + monthlyInvest
+      loanBals.forEach(x => { if (x.bal > 0) { x.bal = x.bal * (1 + x.lr) - x.emi; if (x.bal < 0) x.bal = 0 } })
+    }
+    return { blended, monthlyInvest, monthlyEMI, series }
+  }, [props, totalEquity, equityRows, view, FX])
 
   const netWorth = totalEquity - totalDebt
   const debtPct  = totalEquity + totalDebt > 0 ? Math.round((totalDebt / (totalEquity + totalDebt)) * 100) : 0
@@ -146,6 +182,49 @@ export default function DebtEquityClient(props: {
         <Bar rows={equityRows} total={totalEquity} label="Investments breakdown" accent="var(--income)" />
         <Bar rows={debtRows.map(d => ({ ...d, color: 'var(--rose)' }))} total={totalDebt} label="Debt breakdown" accent="var(--rose)" />
       </div>
+
+      {/* Future outlook */}
+      {(totalEquity > 0 || totalDebt > 0) && projection.series.length > 0 && (
+        <div className="wl-card p-4">
+          <div className="text-[11px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1.5" style={{ color: 'var(--text3)' }}>
+            <LineChartIcon size={12} /> Future Outlook
+          </div>
+          <p className="text-[11px] mb-3" style={{ color: 'var(--text3)' }}>
+            Investing <b style={{ color: 'var(--text2)' }}>{money(projection.monthlyInvest)}/mo</b> at ~{projection.blended.toFixed(1)}% blended return · paying <b style={{ color: 'var(--text2)' }}>{money(projection.monthlyEMI)}/mo</b> in EMIs — assuming both continue.
+          </p>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+            {([['Now', 0], ['In 1 year', 1], ['In 5 years', 5], ['In 10 years', 10]] as const).map(([label, yr]) => {
+              const p = projection.series[yr]
+              if (!p) return null
+              return (
+                <div key={label} className="rounded-xl p-3" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+                  <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--text3)' }}>{label}</div>
+                  <div className="text-[11px] flex justify-between"><span style={{ color: 'var(--text3)' }}>Invest.</span><span className="font-mono font-semibold" style={{ color: 'var(--income)' }}>{money(p.Investments)}</span></div>
+                  <div className="text-[11px] flex justify-between"><span style={{ color: 'var(--text3)' }}>Debt</span><span className="font-mono font-semibold" style={{ color: 'var(--rose)' }}>{money(p.Debt)}</span></div>
+                  <div className="text-[12px] flex justify-between mt-1 pt-1 border-t" style={{ borderColor: 'var(--border)' }}><span className="font-semibold" style={{ color: 'var(--text2)' }}>Net</span><span className="font-mono font-bold" style={{ color: p['Net Worth'] >= 0 ? 'var(--income)' : 'var(--rose)' }}>{money(p['Net Worth'])}</span></div>
+                </div>
+              )
+            })}
+          </div>
+          <div style={{ width: '100%', height: 240 }}>
+            <ResponsiveContainer>
+              <LineChart data={projection.series} margin={{ top: 4, right: 8, left: -6, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                <XAxis dataKey="year" tick={{ fontSize: 10, fill: 'var(--text3)' }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}y`} />
+                <YAxis tick={{ fontSize: 10, fill: 'var(--text3)' }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtK(Number(v))} />
+                <Tooltip formatter={(v: any) => money(Number(v))} labelFormatter={(l) => `Year ${l}`} contentStyle={{ fontSize: 11, borderRadius: 10, border: '1px solid var(--border)' }} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Line type="monotone" dataKey="Investments" stroke="var(--income)" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="Debt" stroke="var(--rose)" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="Net Worth" stroke="var(--blue)" strokeWidth={2} strokeDasharray="4 3" dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <p className="text-[10px] mt-2" style={{ color: 'var(--text3)' }}>
+            Estimate only. Investments compound at a blended rate from your asset mix; loans amortise at their current EMI &amp; rate (future top-up disbursements not modelled). Actual returns vary with the market.
+          </p>
+        </div>
+      )}
 
       {/* Insights */}
       <div className="wl-card p-4">
