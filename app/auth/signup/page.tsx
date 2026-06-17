@@ -31,12 +31,15 @@ export default function SignupPage() {
     if (password !== confirm) { setError('Passwords do not match'); return }
     if (passStrength < 4) { setError('Please meet all password requirements'); return }
     setLoading(true)
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email, password,
       options: { data: { full_name: fullName }, emailRedirectTo: `${window.location.origin}/api/auth/callback` },
     })
     setLoading(false)
     if (error) { setError(error.message); return }
+    // When email confirmation is disabled, signUp returns an active session —
+    // send the user straight into the app instead of "check your email".
+    if (data.session) { window.location.href = '/dashboard'; return }
     setSuccess(true)
   }
 
