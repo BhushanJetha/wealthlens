@@ -105,6 +105,11 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
   const barLoan     = propertyCost > 0 ? Math.min(100, fundLoanPct) : loanShare
   const barOwn      = propertyCost > 0 ? Math.min(100, fundOwnPct) : ownShare
 
+  function openAdd(kind: 'disbursement' | 'own_contribution' | 'prepayment') {
+    setForm({ date: todayISO(), amount: '', note: '' })
+    setAdding(kind)
+  }
+
   async function saveTxn() {
     const amt = Number(form.amount)
     if (!amt || amt <= 0) return
@@ -213,21 +218,19 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
       </div>
 
       {/* Disbursements */}
-      <Section title="Disbursements" total={money(effectiveDisbursed)} onAdd={() => { setAdding('disbursement'); setForm({ date: todayISO(), amount: '', note: '' }) }} icon={Coins}>
+      <Section title="Disbursements" total={money(effectiveDisbursed)} onAdd={() => openAdd('disbursement')} icon={Coins}>
         {disbursements.length === 0 ? (
           <Empty text={loan.disbursed_amt ? `${money(loan.disbursed_amt)} disbursed (no itemised entries). Add disbursements to track partial/staged payouts.` : 'No disbursement entries yet — add when the bank releases funds (supports multiple/staged disbursals).'} />
         ) : (
-          <Rows items={disbursements} money={money} onDel={delTxn} />
+          <TxnTable items={disbursements} money={money} onDel={delTxn} detailLabel="Particulars" />
         )}
-        {adding === 'disbursement' && <AddRow form={form} setForm={setForm} onSave={saveTxn} onCancel={() => setAdding('none')} saving={saving} sym={sym} />}
       </Section>
 
       {/* Prepayments */}
-      <Section title="Prepayments" total={money(totalPrepay)} onAdd={() => { setAdding('prepayment'); setForm({ date: todayISO(), amount: '', note: '' }) }} icon={Coins}>
+      <Section title="Prepayments" total={money(totalPrepay)} onAdd={() => openAdd('prepayment')} icon={Coins}>
         {prepays.length === 0
           ? <Empty text="Part-prepayments you've made (lump-sum payments that reduce principal). Import a statement or add them here." />
-          : <Rows items={prepays} money={money} onDel={delTxn} />}
-        {adding === 'prepayment' && <AddRow form={form} setForm={setForm} onSave={saveTxn} onCancel={() => setAdding('none')} saving={saving} sym={sym} />}
+          : <TxnTable items={prepays} money={money} onDel={delTxn} detailLabel="Particulars" />}
       </Section>
 
       {/* EMIs paid */}
@@ -320,13 +323,12 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
               <div className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: 'var(--text3)' }}>
                 <Wallet size={11} /> Own Contributions ({money(totalOwn)})
               </div>
-              <button onClick={() => { setAdding('own_contribution'); setForm({ date: todayISO(), amount: '', note: '' }) }}
+              <button onClick={() => openAdd('own_contribution')}
                 className="text-[11px] flex items-center gap-1 font-semibold" style={{ color: 'var(--sage)' }}><Plus size={12} /> Add</button>
             </div>
             {contributions.length === 0
               ? <Empty text="Down-payments you've made from your own funds — add each (multiple entries supported)." />
-              : <Rows items={contributions} money={money} onDel={delTxn} />}
-            {adding === 'own_contribution' && <AddRow form={form} setForm={setForm} onSave={saveTxn} onCancel={() => setAdding('none')} saving={saving} sym={sym} />}
+              : <TxnTable items={contributions} money={money} onDel={delTxn} detailLabel="Note" />}
           </div>
         </div>
       )}
@@ -365,6 +367,49 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
               {showAllSched ? 'Show less' : `Show all ${amort.schedule.length} months`}
             </button>
           )}
+        </div>
+      )}
+
+      {/* Add entry modal */}
+      {adding !== 'none' && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => !saving && setAdding('none')}>
+          <div className="rounded-2xl w-full max-w-md" onClick={e => e.stopPropagation()}
+            style={{ background: '#fff', border: '1px solid var(--border)', boxShadow: '0 8px 40px rgba(0,0,0,0.15)' }}>
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
+              <div className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>
+                Add {adding === 'disbursement' ? 'Disbursement' : adding === 'own_contribution' ? 'Own Contribution' : 'Prepayment'}
+              </div>
+              <button onClick={() => setAdding('none')} style={{ color: 'var(--text3)' }}><X size={16} /></button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: 'var(--text3)' }}>Date</label>
+                  <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })}
+                    className="wl-input w-full text-[12px]" style={{ background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                </div>
+                <div>
+                  <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: 'var(--text3)' }}>Amount ({sym.trim()})</label>
+                  <input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} autoFocus min="0" step="0.01"
+                    className="wl-input w-full text-[12px]" style={{ background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: 'var(--text3)' }}>Note (optional)</label>
+                <input type="text" value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} placeholder="e.g. NEFT ref, builder demand 3"
+                  className="wl-input w-full text-[12px]" style={{ background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button onClick={() => setAdding('none')} className="flex-1 py-2.5 rounded-lg border text-[12px] font-semibold"
+                  style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>Cancel</button>
+                <button onClick={saveTxn} disabled={saving || !form.amount}
+                  className="flex-1 py-2.5 rounded-lg text-white text-[12px] font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                  style={{ background: 'var(--sage)' }}>
+                  {saving ? <><Loader2 size={13} className="animate-spin" />Saving…</> : <><Check size={13} />Save</>}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -406,32 +451,31 @@ function Section({ title, total, onAdd, icon: Icon, children }: { title: string;
 function Empty({ text }: { text: string }) {
   return <p className="text-[11px] py-2" style={{ color: 'var(--text3)' }}>{text}</p>
 }
-function Rows({ items, money, onDel }: { items: any[]; money: (n: number) => string; onDel: (id: string) => void }) {
+function TxnTable({ items, money, onDel, detailLabel }: { items: any[]; money: (n: number) => string; onDel: (id: string) => void; detailLabel?: string }) {
   return (
-    <div className="space-y-1.5">
-      {items.map(t => (
-        <div key={t.id} className="flex items-center justify-between gap-2 text-[12px]">
-          <div className="min-w-0">
-            <span className="font-mono" style={{ color: 'var(--text)' }}>{money(t.amount)}</span>
-            <span className="ml-2 text-[10px]" style={{ color: 'var(--text3)' }}>{t.txn_date}{t.note ? ` · ${t.note}` : ''}</span>
-          </div>
-          <button onClick={() => onDel(t.id)} className="p-1 rounded" style={{ color: 'var(--rose)' }}><Trash2 size={12} /></button>
-        </div>
-      ))}
-    </div>
-  )
-}
-function AddRow({ form, setForm, onSave, onCancel, saving, sym }: { form: any; setForm: (f: any) => void; onSave: () => void; onCancel: () => void; saving: boolean; sym: string }) {
-  const inp = { background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }
-  return (
-    <div className="flex items-center gap-2 mt-2 flex-wrap">
-      <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} className="wl-input text-[11px] w-36" style={inp} />
-      <input type="number" placeholder={`Amount (${sym.trim()})`} value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} className="wl-input text-[11px] w-32" style={inp} />
-      <input type="text" placeholder="Note (optional)" value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} className="wl-input text-[11px] flex-1 min-w-[120px]" style={inp} />
-      <button onClick={onSave} disabled={saving} className="px-3 py-1.5 rounded-lg text-white text-[11px] font-bold flex items-center gap-1 disabled:opacity-50" style={{ background: 'var(--sage)' }}>
-        {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Save
-      </button>
-      <button onClick={onCancel} className="px-2 py-1.5 rounded-lg text-[11px]" style={{ background: 'var(--bg2)', color: 'var(--text3)' }}>Cancel</button>
+    <div className="overflow-x-auto rounded-xl border" style={{ borderColor: 'var(--border)' }}>
+      <table className="w-full text-[12px]">
+        <thead>
+          <tr style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
+            <th className="px-3 py-2 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--text3)' }}>Date</th>
+            <th className="px-3 py-2 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--text3)' }}>{detailLabel ?? 'Details'}</th>
+            <th className="px-3 py-2 text-right text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--text3)' }}>Amount</th>
+            <th className="px-3 py-2 w-8"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map(t => (
+            <tr key={t.id} style={{ borderBottom: '1px solid var(--border)' }} className="hover:bg-stone-50 transition-colors">
+              <td className="px-3 py-2 font-mono whitespace-nowrap" style={{ color: 'var(--text3)' }}>{t.txn_date}</td>
+              <td className="px-3 py-2 truncate" style={{ color: 'var(--text2)', maxWidth: 220 }}>{t.note || '—'}</td>
+              <td className="px-3 py-2 text-right font-mono font-semibold whitespace-nowrap" style={{ color: 'var(--text)' }}>{money(t.amount)}</td>
+              <td className="px-3 py-2 text-right">
+                <button onClick={() => onDel(t.id)} className="p-1 rounded" style={{ color: 'var(--rose)' }} title="Delete"><Trash2 size={12} /></button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }

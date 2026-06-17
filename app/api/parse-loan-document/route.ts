@@ -174,7 +174,10 @@ export async function POST(req: Request) {
 
     let interest_rate: number | null = null
     {
-      const m = T.match(/(?:rate of interest|interest rate|\broi\b|\brate\b)\s*[:\-]?\s*([\d.]+)\s*%?/i) || T.match(/([\d.]+)\s*%\s*(?:p\.?\s*a\.?|per annum)/i)
+      // handles "Effective Rate of Interest (Floating)  7.95%" — skip any text/parens before the %
+      const m = T.match(/rate of interest[^\d%]{0,24}?([\d.]+)\s*%/i)
+             || T.match(/(?:rate of interest|interest rate|\broi\b|\brate\b)\s*[:\-]?\s*([\d.]+)\s*%?/i)
+             || T.match(/([\d.]+)\s*%\s*(?:p\.?\s*a\.?|per annum)/i)
       if (m) { const r = parseFloat(m[1]); if (r > 0 && r < 100) interest_rate = r }
     }
 
@@ -186,10 +189,10 @@ export async function POST(req: Request) {
       if (tenure_months === null) { m = T.match(/(?:total\s*)?(?:no\.?\s*of\s*)?(?:installments|instalments|emis)\s*[:\-]?\s*(\d{1,3})/i); if (m) tenure_months = parseInt(m[1]) }
     }
 
-    // Balance tenor (remaining term) — used to derive months_paid if needed
+    // Balance tenor (remaining term). Handles "Balance Tenor (in months)  338".
     let balance_tenor: number | null = null
     {
-      let m = T.match(/(?:balance|remaining|residual)\s*ten(?:ure|or)\s*[:\-]?\s*(\d{1,3})\s*(?:month|months|mos|mths)?/i)
+      let m = T.match(/(?:balance|remaining|residual)\s*ten(?:ure|or)\s*(?:\(\s*in\s*months?\s*\))?\s*[:\-]?\s*(\d{1,4})\s*(?:month|months|mos|mths)?/i)
       if (m) balance_tenor = parseInt(m[1])
       if (balance_tenor === null) { m = T.match(/(?:balance|remaining|residual)\s*ten(?:ure|or)\s*[:\-]?\s*(\d{1,2})\s*(?:year|years|yrs?)/i); if (m) balance_tenor = parseInt(m[1]) * 12 }
     }
@@ -199,8 +202,13 @@ export async function POST(req: Request) {
       const m = T.match(/(?:emis?\s*paid|installments?\s*paid|instalments?\s*paid|paid\s*(?:installments?|instalments?|emis?)|no\.?\s*of\s*emis?\s*paid)\s*[:\-]?\s*(\d{1,3})/i)
       if (m) months_paid = parseInt(m[1])
     }
+    if (months_paid === null) months_paid = emisPaidFromTable || null
     if (months_paid === null && tenure_months != null && balance_tenor != null) {
       months_paid = Math.max(0, tenure_months - balance_tenor)
+    }
+    // Statement usually gives the *balance* tenor; total tenure = balance + paid.
+    if ((tenure_months === null || tenure_months === 0) && balance_tenor != null) {
+      tenure_months = balance_tenor + (months_paid ?? 0)
     }
 
     const loan_start_date = findDate(T, /(?:disbursement\s*date|date\s*of\s*disbursement|loan\s*start\s*date|sanction\s*date|first\s*(?:emi|installment|instalment)\s*date)\s*[:\-]?\s*([0-9A-Za-z\/\-. ]{6,14})/i)
