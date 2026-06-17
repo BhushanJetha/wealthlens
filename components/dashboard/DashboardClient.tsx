@@ -263,7 +263,7 @@ export default function DashboardClient({ transactions, loans, accounts, stocks,
                 <span><span style={{ color: '#EF4444' }}>▼</span> Debt <span className="font-mono font-bold" style={{ color: 'var(--text)' }}>{fmt(totalLiab, sym)}</span></span>
               </div>
             </div>
-            <Link href="/dashboard/financial-health"
+            <Link href="/dashboard/debt-equity"
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-semibold flex-shrink-0"
               style={{ background: zoneColor, color: '#fff' }}>
               Full Analysis <ArrowRight size={11} />

@@ -161,6 +161,8 @@ export default function LoanCategoryClient({ loans, title, loanType }: Props) {
           {filtered.map((loan: any, i: number) => {
             const lSym = loan.currency === 'AED' ? 'AED ' : '₹'
             const paidPct = paidPctOf(loan)
+            const loanBase = Number(loan.disbursed_amt) || Number(loan.sanctioned_amt) || 0
+            const repaid   = Math.max(0, loanBase - Number(loan.outstanding_amt || 0))
             const monthsRem = Number(loan.tenure_months) > 0 ? Math.max(0, Number(loan.tenure_months) - (loan.months_paid ?? 0)) : null
             const extra = extraPayments[loan.id] ?? 0
             const interestSaved = calcInterestSaved(loan, extra)
@@ -204,9 +206,9 @@ export default function LoanCategoryClient({ loans, title, loanType }: Props) {
                     <div className="h-full rounded-full" style={{ width: `${paidPct}%`, background: 'linear-gradient(90deg,var(--sage),var(--blue))' }} />
                   </div>
                   <div className="flex justify-between text-[10px] mt-1" style={{ color: 'var(--text3)' }}>
-                    <span>{lSym}0</span>
+                    <span>Repaid: {lSym}{Math.round(repaid).toLocaleString('en-IN')}</span>
                     <span>Outstanding: {lSym}{Number(loan.outstanding_amt).toLocaleString('en-IN')}</span>
-                    <span>{lSym}{Number(loan.sanctioned_amt).toLocaleString('en-IN')}</span>
+                    <span>{loan.disbursed_amt ? 'Disbursed' : 'Sanctioned'}: {lSym}{Math.round(loanBase).toLocaleString('en-IN')}</span>
                   </div>
                 </div>
 

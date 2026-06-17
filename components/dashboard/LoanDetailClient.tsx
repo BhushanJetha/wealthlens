@@ -60,6 +60,10 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
       if (j.data?.months_paid)     upd.months_paid     = Number(j.data.months_paid)
       if (j.data?.outstanding_amt) upd.outstanding_amt = Number(j.data.outstanding_amt)
       if (j.data?.emi_amount)      upd.emi_amount      = Number(j.data.emi_amount)
+      if (j.data?.tenure_months)   upd.tenure_months   = Number(j.data.tenure_months)
+      if (j.data?.interest_rate)   upd.interest_rate   = Number(j.data.interest_rate)
+      if (j.data?.sanctioned_amt)  upd.sanctioned_amt  = Number(j.data.sanctioned_amt)
+      if (j.data?.next_emi_date)   upd.next_emi_date   = j.data.next_emi_date
       if (Object.keys(upd).length) { try { await supabase.from('home_loans').update(upd).eq('id', loan.id) } catch {} }
 
       setImportMsg(rows.length ? `Imported ${rows.length} new transaction${rows.length !== 1 ? 's' : ''}.` : 'No new transactions found (already up to date).')
@@ -109,6 +113,19 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
   const ownShare    = fundedTotal > 0 ? 100 - loanShare : 0
   const barLoan     = propertyCost > 0 ? Math.min(100, fundLoanPct) : loanShare
   const barOwn      = propertyCost > 0 ? Math.min(100, fundOwnPct) : ownShare
+
+  // ── Insights ──────────────────────────────────────────────────────────────
+  const lifeInterest = amort.interestPaid + amort.totalInterest
+  const interestPctOfPrincipal = amort.principal > 0 ? Math.round((lifeInterest / amort.principal) * 100) : 0
+  const payoffDate = (() => { const d = new Date(); d.setMonth(d.getMonth() + amort.balanceTenor); return d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) })()
+  const ltv = propertyCost > 0 ? Math.round((effectiveDisbursed / propertyCost) * 100) : null
+  const disbursedPct = Number(loan.sanctioned_amt) > 0 ? Math.round((effectiveDisbursed / Number(loan.sanctioned_amt)) * 100) : null
+  const undisbursed = Math.max(0, (Number(loan.sanctioned_amt) || 0) - effectiveDisbursed)
+  const insightNotes: string[] = []
+  if (disbursedPct != null && disbursedPct < 98) insightNotes.push(`Under construction: ${disbursedPct}% of the sanctioned amount disbursed (${money(undisbursed)} still to be released). Your EMI will rise as more is drawn.`)
+  if (interestPctOfPrincipal >= 40) insightNotes.push(`Over the full term you'll pay ${money(lifeInterest)} interest — about ${interestPctOfPrincipal}% of the principal. Even small prepayments cut this sharply.`)
+  if (amort.balanceTenor > 0) insightNotes.push(`At the current EMI this loan is on track to close around ${payoffDate} (${amort.balanceTenor} EMIs left).`)
+  if (totalPrepay > 0) insightNotes.push(`You've prepaid ${money(totalPrepay)} so far — that directly reduces principal and total interest.`)
 
   function openAdd(kind: 'disbursement' | 'own_contribution' | 'prepayment') {
     setEditingId(null)
@@ -238,6 +255,30 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
         <p className="text-[10px] mt-3" style={{ color: 'var(--text3)' }}>
           Paid so far: <b>{money(amort.principalPaid + amort.interestPaid)}</b> · est. interest still to pay: <b>{money(amort.totalInterest)}</b>
         </p>
+      </div>
+
+      {/* Key insights */}
+      <div className="wl-card p-4">
+        <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>Key Insights</div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+          <Mini label="Est. Payoff" value={amort.balanceTenor > 0 ? payoffDate : '—'} color="var(--text)" />
+          <Mini label="Interest (full term)" value={money(lifeInterest)} color="var(--rose)" />
+          <Mini label="Interest of Principal" value={`${interestPctOfPrincipal}%`} color="var(--gold)" />
+          {ltv != null
+            ? <Mini label="Loan-to-Value" value={`${ltv}%`} color="var(--blue)" />
+            : disbursedPct != null
+              ? <Mini label="Disbursed" value={`${disbursedPct}% of sanction`} color="var(--blue)" />
+              : <Mini label="Monthly EMI" value={money(Number(loan.emi_amount) || amort.emi)} color="var(--text)" />}
+        </div>
+        {insightNotes.length > 0 && (
+          <ul className="space-y-1.5">
+            {insightNotes.map((n, i) => (
+              <li key={i} className="text-[11px] flex gap-2" style={{ color: 'var(--text2)' }}>
+                <span style={{ color: 'var(--sage)' }}>•</span><span>{n}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       {/* Disbursements */}
