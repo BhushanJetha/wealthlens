@@ -20,6 +20,7 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
   const isHome = loan.loan_type === 'home_loan'
 
   const [adding, setAdding] = useState<'none' | 'disbursement' | 'own_contribution' | 'prepayment'>('none')
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState({ date: todayISO(), amount: '', note: '' })
   const [saving, setSaving] = useState(false)
   const [editCost, setEditCost] = useState(false)
@@ -110,8 +111,17 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
   const barOwn      = propertyCost > 0 ? Math.min(100, fundOwnPct) : ownShare
 
   function openAdd(kind: 'disbursement' | 'own_contribution' | 'prepayment') {
+    setEditingId(null)
     setForm({ date: todayISO(), amount: '', note: '' })
     setAdding(kind)
+  }
+  function openEdit(t: any) {
+    setEditingId(t.id)
+    setForm({ date: t.txn_date, amount: String(t.amount), note: t.note ?? '' })
+    setAdding(t.kind)
+  }
+  function closeModal() {
+    setAdding('none'); setEditingId(null); setForm({ date: todayISO(), amount: '', note: '' })
   }
 
   async function saveTxn() {
@@ -119,15 +129,20 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
     if (!amt || amt <= 0) return
     setSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('loan_transactions').insert({
-      user_id: user!.id, loan_id: loan.id, kind: adding,
-      txn_date: form.date, amount: amt, note: form.note || null,
-    })
-    if (adding === 'disbursement') {
-      await supabase.from('home_loans').update({ disbursed_amt: totalDisbursedTxn + amt }).eq('id', loan.id)
+    if (editingId) {
+      await supabase.from('loan_transactions').update({ txn_date: form.date, amount: amt, note: form.note || null }).eq('id', editingId)
+    } else {
+      await supabase.from('loan_transactions').insert({
+        user_id: user!.id, loan_id: loan.id, kind: adding,
+        txn_date: form.date, amount: amt, note: form.note || null,
+      })
     }
-    setSaving(false); setAdding('none'); setForm({ date: todayISO(), amount: '', note: '' })
-    router.refresh()
+    // keep disbursed_amt roughly in sync when disbursements change
+    if (adding === 'disbursement') {
+      const others = disbursements.filter(d => d.id !== editingId).reduce((s, d) => s + Number(d.amount), 0)
+      await supabase.from('home_loans').update({ disbursed_amt: others + amt }).eq('id', loan.id)
+    }
+    setSaving(false); closeModal(); router.refresh()
   }
 
   async function delTxn(id: string) {
@@ -230,7 +245,7 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
         {disbursements.length === 0 ? (
           <Empty text={loan.disbursed_amt ? `${money(loan.disbursed_amt)} disbursed (no itemised entries). Add disbursements to track partial/staged payouts.` : 'No disbursement entries yet — add when the bank releases funds (supports multiple/staged disbursals).'} />
         ) : (
-          <TxnTable items={disbursements} money={money} onDel={delTxn} detailLabel="Particulars" />
+          <TxnTable items={disbursements} money={money} onDel={delTxn} onEdit={openEdit} detailLabel="Particulars" />
         )}
       </Panel>
 
@@ -238,7 +253,7 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
       <Panel title="Prepayments" total={money(totalPrepay)} count={prepays.length} onAdd={() => openAdd('prepayment')} icon={Coins}>
         {prepays.length === 0
           ? <Empty text="Part-prepayments you've made (lump-sum payments that reduce principal). Import a statement or add them here." />
-          : <TxnTable items={prepays} money={money} onDel={delTxn} detailLabel="Particulars" />}
+          : <TxnTable items={prepays} money={money} onDel={delTxn} onEdit={openEdit} detailLabel="Particulars" />}
       </Panel>
 
       {/* EMIs paid */}
@@ -332,7 +347,7 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
             </div>
             {contributions.length === 0
               ? <Empty text="Down-payments you've made from your own funds — add each (multiple entries supported)." />
-              : <TxnTable items={contributions} money={money} onDel={delTxn} detailLabel="Note" />}
+              : <TxnTable items={contributions} money={money} onDel={delTxn} onEdit={openEdit} detailLabel="Note" />}
           </div>
         </Panel>
       )}
@@ -371,14 +386,14 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
 
       {/* Add entry modal */}
       {adding !== 'none' && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => !saving && setAdding('none')}>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => !saving && closeModal()}>
           <div className="rounded-2xl w-full max-w-md" onClick={e => e.stopPropagation()}
             style={{ background: '#fff', border: '1px solid var(--border)', boxShadow: '0 8px 40px rgba(0,0,0,0.15)' }}>
             <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
               <div className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>
-                Add {adding === 'disbursement' ? 'Disbursement' : adding === 'own_contribution' ? 'Own Contribution' : 'Prepayment'}
+                {editingId ? 'Edit' : 'Add'} {adding === 'disbursement' ? 'Disbursement' : adding === 'own_contribution' ? 'Own Contribution' : 'Prepayment'}
               </div>
-              <button onClick={() => setAdding('none')} style={{ color: 'var(--text3)' }}><X size={16} /></button>
+              <button onClick={closeModal} style={{ color: 'var(--text3)' }}><X size={16} /></button>
             </div>
             <div className="p-5 space-y-3">
               <div className="grid grid-cols-2 gap-3">
@@ -399,7 +414,7 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
                   className="wl-input w-full text-[12px]" style={{ background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} />
               </div>
               <div className="flex gap-3 pt-1">
-                <button onClick={() => setAdding('none')} className="flex-1 py-2.5 rounded-lg border text-[12px] font-semibold"
+                <button onClick={closeModal} className="flex-1 py-2.5 rounded-lg border text-[12px] font-semibold"
                   style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>Cancel</button>
                 <button onClick={saveTxn} disabled={saving || !form.amount}
                   className="flex-1 py-2.5 rounded-lg text-white text-[12px] font-bold flex items-center justify-center gap-2 disabled:opacity-50"
@@ -462,7 +477,7 @@ function Panel({ title, total, count, onAdd, addLabel, icon: Icon, defaultOpen, 
 function Empty({ text }: { text: string }) {
   return <p className="text-[11px] py-2" style={{ color: 'var(--text3)' }}>{text}</p>
 }
-function TxnTable({ items, money, onDel, detailLabel }: { items: any[]; money: (n: number) => string; onDel: (id: string) => void; detailLabel?: string }) {
+function TxnTable({ items, money, onDel, onEdit, detailLabel }: { items: any[]; money: (n: number) => string; onDel: (id: string) => void; onEdit?: (t: any) => void; detailLabel?: string }) {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const p = Math.min(page, Math.max(1, Math.ceil(items.length / pageSize)))
@@ -476,7 +491,7 @@ function TxnTable({ items, money, onDel, detailLabel }: { items: any[]; money: (
               <th className="px-3 py-2 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--text3)' }}>Date</th>
               <th className="px-3 py-2 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--text3)' }}>{detailLabel ?? 'Details'}</th>
               <th className="px-3 py-2 text-right text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--text3)' }}>Amount</th>
-              <th className="px-3 py-2 w-8"></th>
+              <th className="px-3 py-2" style={{ width: onEdit ? 64 : 32 }}></th>
             </tr>
           </thead>
           <tbody>
@@ -485,7 +500,8 @@ function TxnTable({ items, money, onDel, detailLabel }: { items: any[]; money: (
                 <td className="px-3 py-2 font-mono whitespace-nowrap" style={{ color: 'var(--text3)' }}>{t.txn_date}</td>
                 <td className="px-3 py-2 truncate" style={{ color: 'var(--text2)', maxWidth: 220 }}>{t.note || '—'}</td>
                 <td className="px-3 py-2 text-right font-mono font-semibold whitespace-nowrap" style={{ color: 'var(--text)' }}>{money(t.amount)}</td>
-                <td className="px-3 py-2 text-right">
+                <td className="px-3 py-2 text-right whitespace-nowrap">
+                  {onEdit && <button onClick={() => onEdit(t)} className="p-1 rounded mr-1" style={{ color: 'var(--blue)' }} title="Edit"><Pencil size={12} /></button>}
                   <button onClick={() => onDel(t.id)} className="p-1 rounded" style={{ color: 'var(--rose)' }} title="Delete"><Trash2 size={12} /></button>
                 </td>
               </tr>
