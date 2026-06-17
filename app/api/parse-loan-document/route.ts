@@ -40,6 +40,21 @@ function amt(text: string, re: RegExp): number | null {
   return isNaN(n) || n <= 0 ? null : n
 }
 
+// last money-looking token on a line (e.g. the Amount column)
+function lastAmt(line: string): number | null {
+  const ms = Array.from(line.matchAll(/([\d,]{3,}\.\d{2})/g))
+  if (!ms.length) return null
+  const n = parseFloat(ms[ms.length - 1][1].replace(/,/g, ''))
+  return n > 0 ? n : null
+}
+function firstDateISO(line: string): string | null {
+  const m = line.match(/(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4})/)
+  return m ? toISO(m[1]) : null
+}
+function noteOf(line: string): string {
+  return line.replace(/\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}/g, '').replace(/[\d,]{3,}\.\d{2}/g, '').replace(/\s+/g, ' ').trim().slice(0, 80)
+}
+
 const MON: Record<string, string> = { jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06', jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12' }
 function toISO(raw: string): string | null {
   const s = raw.trim()
@@ -83,6 +98,29 @@ export async function POST(req: Request) {
     T = T.replace(/ /g, ' ')
 
     const currency = /\b(aed|dhs|dirham|درهم)\b/i.test(T) ? 'AED' : 'INR'
+
+    // ── Transaction tables: disbursements, prepayments, EMIs paid ──────────
+    const ORDINAL = '(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|\\d{1,2}(?:st|nd|rd|th))'
+    const disbursements: { txn_date: string; amount: number; note: string }[] = []
+    const prepayments:   { txn_date: string; amount: number; note: string }[] = []
+    let emisReceived = 0, emisDue = 0
+    for (const line of T.split('\n')) {
+      const L = line.trim()
+      if (!L) continue
+      const rec = L.match(/payment\s+received\s+emi\s+no[:\s]*?(\d+)/i)
+      if (rec) emisReceived = Math.max(emisReceived, parseInt(rec[1]))
+      const due = L.match(/installment\s+(\d+)\s+due/i)
+      if (due) emisDue = Math.max(emisDue, parseInt(due[1]))
+      if (new RegExp(ORDINAL + '\\s+disbursement', 'i').test(L)) {
+        const d = firstDateISO(L), a = lastAmt(L)
+        if (d && a) disbursements.push({ txn_date: d, amount: a, note: noteOf(L) })
+      } else if (/prepayment/i.test(L)) {
+        const d = firstDateISO(L), a = lastAmt(L)
+        if (d && a) prepayments.push({ txn_date: d, amount: a, note: noteOf(L) || 'Prepayment' })
+      }
+    }
+    const sumDisbursed = disbursements.reduce((s, d) => s + d.amount, 0)
+    const emisPaidFromTable = emisReceived || (emisDue > 0 ? emisDue - 1 : 0)
 
     const loan_type =
       /home\s*loan|housing\s*loan|mortgage/i.test(T) ? 'home_loan' :
@@ -152,19 +190,28 @@ export async function POST(req: Request) {
     const typeLabel: Record<string, string> = { home_loan: 'Home Loan', car_loan: 'Car Loan', bike_loan: 'Bike Loan', gold_loan: 'Gold Loan', loan_on_card: 'Loan on Card', personal_loan: 'Personal Loan', other_loan: 'Loan' }
     const name = `${typeLabel[loan_type]}${bank_name ? ' – ' + bank_name : ''}`
 
-    const out: Record<string, any> = { name, bank_name, loan_type, sanctioned_amt, disbursed_amt, outstanding_amt, emi_amount, interest_rate, tenure_months, months_paid, loan_start_date, next_emi_date, currency, property_address }
+    const out: Record<string, any> = {
+      name, bank_name, loan_type, sanctioned_amt,
+      disbursed_amt: sumDisbursed > 0 ? sumDisbursed : disbursed_amt,
+      outstanding_amt, emi_amount, interest_rate, tenure_months,
+      months_paid: emisPaidFromTable || months_paid,
+      loan_start_date, next_emi_date, currency, property_address,
+    }
     const cleaned: Record<string, any> = {}
     for (const [k, v] of Object.entries(out)) if (v !== null && v !== undefined && v !== '') cleaned[k] = v
 
-    const gotFigures = sanctioned_amt || disbursed_amt || outstanding_amt || emi_amount || interest_rate
+    const transactions = { disbursements, prepayments }
+    const gotFigures = sanctioned_amt || disbursed_amt || outstanding_amt || emi_amount || interest_rate || disbursements.length
+
     if (!gotFigures) {
       return NextResponse.json({
         data: cleaned,
+        transactions,
         warning: 'Could not confidently read the loan figures — please verify and fill in the rest manually.',
         _rawPreview: T.slice(0, 1200),
       })
     }
-    return NextResponse.json({ data: cleaned })
+    return NextResponse.json({ data: cleaned, transactions })
   } catch (err: any) {
     console.error('parse-loan-document error:', err)
     return NextResponse.json({ error: 'Failed to parse document', details: err.message }, { status: 500 })

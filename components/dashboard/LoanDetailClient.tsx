@@ -1,12 +1,12 @@
 'use client'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { amortize } from '@/lib/amortization'
 import {
   ChevronLeft, Building2, Plus, Trash2, Loader2, Pencil, Check, X,
-  TrendingDown, Coins, Home, Wallet, CalendarClock,
+  TrendingDown, Coins, Home, Wallet, CalendarClock, Upload,
 } from 'lucide-react'
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
@@ -18,15 +18,56 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
   const money = (n: number) => `${sym}${Math.round(Number(n) || 0).toLocaleString('en-IN')}`
   const isHome = loan.loan_type === 'home_loan'
 
-  const [adding, setAdding] = useState<'none' | 'disbursement' | 'own_contribution'>('none')
+  const [adding, setAdding] = useState<'none' | 'disbursement' | 'own_contribution' | 'prepayment'>('none')
   const [form, setForm] = useState({ date: todayISO(), amount: '', note: '' })
   const [saving, setSaving] = useState(false)
   const [editCost, setEditCost] = useState(false)
   const [costVal, setCostVal] = useState(String(loan.property_cost ?? ''))
   const [showAllSched, setShowAllSched] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [importMsg, setImportMsg] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  async function importStatement(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (fileRef.current) fileRef.current.value = ''
+    if (!file) return
+    setImporting(true); setImportMsg(null)
+    try {
+      const fd = new FormData(); fd.append('file', file)
+      const res = await fetch('/api/parse-loan-document', { method: 'POST', body: fd })
+      const j = await res.json()
+      if (!res.ok) throw new Error(j.error || 'Could not read the statement')
+      const { data: { user } } = await supabase.auth.getUser()
+      const seen = new Set(txns.map((t: any) => `${t.kind}|${t.txn_date}|${Math.round(Number(t.amount))}`))
+      const tx = j.transactions || {}
+      const incoming = [
+        ...(tx.disbursements ?? []).map((d: any) => ({ kind: 'disbursement', ...d })),
+        ...(tx.prepayments ?? []).map((d: any) => ({ kind: 'prepayment', ...d })),
+      ].filter((r: any) => !seen.has(`${r.kind}|${r.txn_date}|${Math.round(Number(r.amount))}`))
+      const rows = incoming.map((r: any) => ({ user_id: user!.id, loan_id: loan.id, kind: r.kind, txn_date: r.txn_date, amount: r.amount, note: r.note ?? null }))
+      if (rows.length) await supabase.from('loan_transactions').insert(rows)
+
+      const upd: Record<string, any> = {}
+      const totalDisb = [...disbursements, ...rows.filter(r => r.kind === 'disbursement')].reduce((s, t: any) => s + Number(t.amount), 0)
+      if (totalDisb > 0) upd.disbursed_amt = totalDisb
+      if (j.data?.months_paid)     upd.months_paid     = Number(j.data.months_paid)
+      if (j.data?.outstanding_amt) upd.outstanding_amt = Number(j.data.outstanding_amt)
+      if (j.data?.emi_amount)      upd.emi_amount      = Number(j.data.emi_amount)
+      if (Object.keys(upd).length) { try { await supabase.from('home_loans').update(upd).eq('id', loan.id) } catch {} }
+
+      setImportMsg(rows.length ? `Imported ${rows.length} new transaction${rows.length !== 1 ? 's' : ''}.` : 'No new transactions found (already up to date).')
+      router.refresh()
+    } catch (err: any) {
+      setImportMsg(err.message || 'Could not import the statement.')
+    }
+    setImporting(false)
+  }
 
   const disbursements = useMemo(() => txns.filter(t => t.kind === 'disbursement'), [txns])
   const contributions = useMemo(() => txns.filter(t => t.kind === 'own_contribution'), [txns])
+  const prepays       = useMemo(() => txns.filter(t => t.kind === 'prepayment'), [txns])
+  const totalPrepay   = prepays.reduce((a, t) => a + Number(t.amount), 0)
   const totalDisbursedTxn = disbursements.reduce((a, t) => a + Number(t.amount), 0)
   const totalOwn = contributions.reduce((a, t) => a + Number(t.amount), 0)
 
@@ -101,8 +142,18 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
             {loan.bank_name} · {loan.interest_rate}% p.a. · {loan.tenure_months} mo tenure
           </p>
         </div>
-        <span className="text-[12px] font-bold px-3 py-1.5 rounded-lg" style={{ background: 'var(--gold-bg)', color: 'var(--gold)' }}>{paidPct}% repaid</span>
+        <div className="flex items-center gap-2">
+          <button onClick={() => fileRef.current?.click()} disabled={importing}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border disabled:opacity-60"
+            style={{ background: 'var(--sage-bg)', borderColor: 'var(--sage)', color: 'var(--sage)' }}
+            title="Import disbursements, prepayments & EMIs from a loan statement PDF">
+            {importing ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Import statement
+          </button>
+          <input ref={fileRef} type="file" accept=".pdf,application/pdf" className="hidden" onChange={importStatement} />
+          <span className="text-[12px] font-bold px-3 py-1.5 rounded-lg" style={{ background: 'var(--gold-bg)', color: 'var(--gold)' }}>{paidPct}% repaid</span>
+        </div>
       </div>
+      {importMsg && <div className="text-[11px]" style={{ color: 'var(--text2)' }}>{importMsg}</div>}
 
       {/* Summary */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -158,6 +209,14 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
           <Rows items={disbursements} money={money} onDel={delTxn} />
         )}
         {adding === 'disbursement' && <AddRow form={form} setForm={setForm} onSave={saveTxn} onCancel={() => setAdding('none')} saving={saving} sym={sym} />}
+      </Section>
+
+      {/* Prepayments */}
+      <Section title="Prepayments" total={money(totalPrepay)} onAdd={() => { setAdding('prepayment'); setForm({ date: todayISO(), amount: '', note: '' }) }} icon={Coins}>
+        {prepays.length === 0
+          ? <Empty text="Part-prepayments you've made (lump-sum payments that reduce principal). Import a statement or add them here." />
+          : <Rows items={prepays} money={money} onDel={delTxn} />}
+        {adding === 'prepayment' && <AddRow form={form} setForm={setForm} onSave={saveTxn} onCancel={() => setAdding('none')} saving={saving} sym={sym} />}
       </Section>
 
       {/* Home loan funding */}

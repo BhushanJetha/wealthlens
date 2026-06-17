@@ -82,6 +82,7 @@ export function AddLoanModal({ onClose, defaultLoanType = 'home_loan', initialDa
   const [parseMsg,   setParseMsg]   = useState('')
   const [mounted,    setMounted]    = useState(false)
   const [members,    setMembers]    = useState<{ name: string }[]>([])
+  const [pendingTxns, setPendingTxns] = useState<any>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const supabase = createClient()
   const router   = useRouter()
@@ -107,7 +108,7 @@ export function AddLoanModal({ onClose, defaultLoanType = 'home_loan', initialDa
         const j = await res.json().catch(() => ({}))
         throw new Error(j.details || j.error || 'Parse failed')
       }
-      const { data } = await res.json()
+      const { data, transactions } = await res.json()
       // Merge extracted values into form (skip nulls)
       setForm(prev => {
         const merged = { ...prev }
@@ -116,8 +117,13 @@ export function AddLoanModal({ onClose, defaultLoanType = 'home_loan', initialDa
         }
         return merged
       })
+      const nDisb = transactions?.disbursements?.length ?? 0
+      const nPre  = transactions?.prepayments?.length ?? 0
+      setPendingTxns(transactions ?? null)
       setParseState('done')
-      setParseMsg('Fields auto-filled from document — review and adjust before saving.')
+      setParseMsg(
+        `Fields auto-filled from document${nDisb || nPre ? ` — ${nDisb} disbursement${nDisb !== 1 ? 's' : ''}${nPre ? ` & ${nPre} prepayment${nPre !== 1 ? 's' : ''}` : ''} will be saved with the loan` : ''} — review and adjust before saving.`
+      )
     } catch (err: any) {
       setParseState('error')
       setParseMsg(err.message ?? 'Could not read document. Fill in manually.')
@@ -148,17 +154,28 @@ export function AddLoanModal({ onClose, defaultLoanType = 'home_loan', initialDa
       property_cost:    form.property_cost ? Number(form.property_cost) : null,
     }
 
+    const { data: { user } } = await supabase.auth.getUser()
+
     // Resilient write: if migration 019 (disbursed_amt / property_cost) isn't
     // applied yet, strip those columns and retry so saving still works.
     async function write(p: Record<string, any>) {
-      if (isEdit) return supabase.from('home_loans').update(p).eq('id', loanId!)
-      const { data: { user } } = await supabase.auth.getUser()
-      return supabase.from('home_loans').insert({ ...p, is_active: true, user_id: user!.id })
+      if (isEdit) return supabase.from('home_loans').update(p).eq('id', loanId!).select('id').single()
+      return supabase.from('home_loans').insert({ ...p, is_active: true, user_id: user!.id }).select('id').single()
     }
     let res = await write(payload)
     if (res.error && /column|schema cache|disbursed_amt|property_cost/i.test(res.error.message || '')) {
       const { disbursed_amt, property_cost, ...base } = payload
       res = await write(base)
+    }
+
+    // Persist parsed disbursement/prepayment rows against the (new) loan
+    const newId = (res.data as any)?.id ?? loanId
+    if (newId && user && pendingTxns) {
+      const rows = [
+        ...(pendingTxns.disbursements ?? []).map((d: any) => ({ user_id: user.id, loan_id: newId, kind: 'disbursement', txn_date: d.txn_date, amount: d.amount, note: d.note ?? null })),
+        ...(pendingTxns.prepayments   ?? []).map((d: any) => ({ user_id: user.id, loan_id: newId, kind: 'prepayment',   txn_date: d.txn_date, amount: d.amount, note: d.note ?? null })),
+      ]
+      if (rows.length) { try { await supabase.from('loan_transactions').insert(rows) } catch {} }
     }
 
     router.refresh()
