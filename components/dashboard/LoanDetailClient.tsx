@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { amortize } from '@/lib/amortization'
 import Pagination from '@/components/dashboard/Pagination'
 import {
-  ChevronLeft, Building2, Plus, Trash2, Loader2, Pencil, Check, X,
+  ChevronLeft, ChevronDown, Building2, Plus, Trash2, Loader2, Pencil, Check, X,
   TrendingDown, Coins, Home, Wallet, CalendarClock, Upload,
 } from 'lucide-react'
 
@@ -195,10 +195,11 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
         <div className="text-[11px] font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5" style={{ color: 'var(--text3)' }}>
           <TrendingDown size={12} /> Repayment Breakdown
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
           <Mini label="Principal Paid"   value={money(amort.principalPaid)} color="var(--income)" />
           <Mini label="Interest Paid"    value={money(amort.interestPaid)}  color="var(--rose)" />
           <Mini label="Remaining Principal" value={money(amort.remaining)}  color="var(--text2)" />
+          {isHome && <Mini label="Own Contribution" value={money(totalOwn)} color="var(--blue)" />}
         </div>
 
         <div className="space-y-3">
@@ -225,28 +226,24 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
       </div>
 
       {/* Disbursements */}
-      <Section title="Disbursements" total={money(effectiveDisbursed)} onAdd={() => openAdd('disbursement')} icon={Coins}>
+      <Panel title="Disbursements" total={money(effectiveDisbursed)} count={disbursements.length} onAdd={() => openAdd('disbursement')} icon={Coins}>
         {disbursements.length === 0 ? (
           <Empty text={loan.disbursed_amt ? `${money(loan.disbursed_amt)} disbursed (no itemised entries). Add disbursements to track partial/staged payouts.` : 'No disbursement entries yet — add when the bank releases funds (supports multiple/staged disbursals).'} />
         ) : (
           <TxnTable items={disbursements} money={money} onDel={delTxn} detailLabel="Particulars" />
         )}
-      </Section>
+      </Panel>
 
       {/* Prepayments */}
-      <Section title="Prepayments" total={money(totalPrepay)} onAdd={() => openAdd('prepayment')} icon={Coins}>
+      <Panel title="Prepayments" total={money(totalPrepay)} count={prepays.length} onAdd={() => openAdd('prepayment')} icon={Coins}>
         {prepays.length === 0
           ? <Empty text="Part-prepayments you've made (lump-sum payments that reduce principal). Import a statement or add them here." />
           : <TxnTable items={prepays} money={money} onDel={delTxn} detailLabel="Particulars" />}
-      </Section>
+      </Panel>
 
       {/* EMIs paid */}
       {emiPays.length > 0 && (
-        <div className="wl-card overflow-hidden">
-          <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
-            <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>EMIs Paid · {emiPays.length}</div>
-            <div className="text-[12px] font-bold font-mono" style={{ color: 'var(--text)' }}>Total paid {money(totalEmiPaid)}</div>
-          </div>
+        <Panel title="EMIs Paid" count={emiPays.length} total={`Total ${money(totalEmiPaid)}`} icon={CalendarClock} padded={false}>
           <div className="overflow-x-auto" style={{ maxHeight: 320 }}>
             <table className="w-full text-[12px]">
               <thead>
@@ -269,16 +266,13 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
           {emiPays.length > emiSize && (
             <Pagination total={emiPays.length} page={emiP} pageSize={emiSize} onPage={setEmiPage} onPageSize={s => { setEmiSize(s); setEmiPage(1) }} />
           )}
-        </div>
+        </Panel>
       )}
 
       {/* Home loan funding */}
       {isHome && (
-        <div className="wl-card p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: 'var(--text3)' }}>
-              <Home size={12} /> Property Funding
-            </div>
+        <Panel title="Property Funding" icon={Home}>
+          <div className="flex items-center justify-end mb-3">
             {!editCost && (
               <button onClick={() => { setEditCost(true); setCostVal(String(loan.property_cost ?? '')) }}
                 className="text-[11px] flex items-center gap-1" style={{ color: 'var(--sage)' }}><Pencil size={11} /> Property cost</button>
@@ -340,15 +334,12 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
               ? <Empty text="Down-payments you've made from your own funds — add each (multiple entries supported)." />
               : <TxnTable items={contributions} money={money} onDel={delTxn} detailLabel="Note" />}
           </div>
-        </div>
+        </Panel>
       )}
 
       {/* Amortization schedule */}
       {amort.schedule.length > 0 && (
-        <div className="wl-card overflow-hidden">
-          <div className="px-4 py-3 border-b text-[11px] font-bold uppercase tracking-wider" style={{ borderColor: 'var(--border)', color: 'var(--text3)' }}>
-            Amortization Schedule — remaining {amort.balanceTenor} EMIs
-          </div>
+        <Panel title={`Amortization Schedule — remaining ${amort.balanceTenor} EMIs`} padded={false}>
           <div className="overflow-x-auto">
             <table className="w-full text-[12px]">
               <thead>
@@ -375,7 +366,7 @@ export default function LoanDetailClient({ loan, txns }: { loan: any; txns: any[
           {amort.schedule.length > schedSize && (
             <Pagination total={amort.schedule.length} page={schedP} pageSize={schedSize} onPage={setSchedPage} onPageSize={s => { setSchedSize(s); setSchedPage(1) }} pageSizeOptions={[12, 24, 60]} />
           )}
-        </div>
+        </Panel>
       )}
 
       {/* Add entry modal */}
@@ -443,16 +434,28 @@ function Mini({ label, value, color }: { label: string; value: string; color: st
     </div>
   )
 }
-function Section({ title, total, onAdd, icon: Icon, children }: { title: string; total?: string; onAdd?: () => void; icon?: any; children: React.ReactNode }) {
+function Panel({ title, total, count, onAdd, addLabel, icon: Icon, defaultOpen, padded = true, children }: { title: string; total?: string; count?: number; onAdd?: () => void; addLabel?: string; icon?: any; defaultOpen?: boolean; padded?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(!!defaultOpen)
   return (
-    <div className="wl-card p-4">
-      <div className="flex items-center justify-between mb-3">
-        <div className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: 'var(--text3)' }}>
-          {Icon && <Icon size={12} />}{title}{total ? ` · ${total}` : ''}
+    <div className="wl-card overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 cursor-pointer select-none" onClick={() => setOpen(o => !o)}>
+        <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>
+          {Icon && <Icon size={12} />}{title}{count != null ? ` · ${count}` : ''}{total ? ` · ${total}` : ''}
         </div>
-        {onAdd && <button onClick={onAdd} className="text-[11px] flex items-center gap-1 font-semibold" style={{ color: 'var(--sage)' }}><Plus size={12} /> Add</button>}
+        <div className="flex items-center gap-2">
+          {open && onAdd && (
+            <button onClick={e => { e.stopPropagation(); onAdd() }} className="text-[11px] flex items-center gap-1 font-semibold" style={{ color: 'var(--sage)' }}>
+              <Plus size={12} /> {addLabel || 'Add'}
+            </button>
+          )}
+          <ChevronDown size={15} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .2s', color: 'var(--text3)' }} />
+        </div>
       </div>
-      {children}
+      {open && (
+        padded
+          ? <div className="px-4 pb-4">{children}</div>
+          : <div className="border-t" style={{ borderColor: 'var(--border)' }}>{children}</div>
+      )}
     </div>
   )
 }
