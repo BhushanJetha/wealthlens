@@ -20,5 +20,13 @@ export default async function LoanDetailPage({ params }: { params: { id: string 
     txns = data ?? []
   } catch { txns = [] }
 
-  return <LoanDetailClient loan={loan} txns={txns} />
+  let plan: any[] = []
+  try {
+    const { data } = await supabase
+      .from('loan_payment_plan').select('*')
+      .eq('loan_id', params.id).order('slab_no', { ascending: true })
+    plan = data ?? []
+  } catch { plan = [] }
+
+  return <LoanDetailClient loan={loan} txns={txns} plan={plan} />
 }

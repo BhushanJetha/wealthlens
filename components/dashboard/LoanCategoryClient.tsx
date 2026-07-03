@@ -1,5 +1,5 @@
 'use client'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useViewStore } from '@/store/viewStore'
@@ -46,7 +46,24 @@ export default function LoanCategoryClient({ loans, title, loanType }: Props) {
   const [extraPayments, setExtraPayments] = useState<Record<string,number>>({})
   const [search,    setSearch]    = useState('')
   const [sort,      setSort]      = useState('outstanding_desc')
+  const [agg, setAgg] = useState<Record<string, { own: number; disb: number }>>({})
   const { selectedHolder } = useHolderStore()
+
+  // Per-loan own-contribution / disbursement totals (from loan_transactions)
+  useEffect(() => {
+    const ids = loans.map(l => l.id).filter(Boolean)
+    if (!ids.length) return
+    ;(async () => {
+      const { data } = await supabase.from('loan_transactions').select('loan_id, kind, amount').in('loan_id', ids)
+      const m: Record<string, { own: number; disb: number }> = {}
+      ;(data ?? []).forEach((t: any) => {
+        ;(m[t.loan_id] ||= { own: 0, disb: 0 })
+        if (t.kind === 'own_contribution') m[t.loan_id].own += Number(t.amount) || 0
+        if (t.kind === 'disbursement') m[t.loan_id].disb += Number(t.amount) || 0
+      })
+      setAgg(m)
+    })()
+  }, [loans]) // eslint-disable-line
 
   const base = useMemo(() => {
     let arr = view === 'uae'   ? loans.filter(l => l.currency === 'AED')
@@ -164,6 +181,12 @@ export default function LoanCategoryClient({ loans, title, loanType }: Props) {
             const loanBase = Number(loan.disbursed_amt) || Number(loan.sanctioned_amt) || 0
             const repaid   = Math.max(0, loanBase - Number(loan.outstanding_amt || 0))
             const monthsRem = Number(loan.tenure_months) > 0 ? Math.max(0, Number(loan.tenure_months) - (loan.months_paid ?? 0)) : null
+            const money = (n: number) => `${lSym}${Math.round(Number(n) || 0).toLocaleString('en-IN')}`
+            const ag = agg[loan.id] ?? { own: 0, disb: 0 }
+            const disbTo = ag.disb > 0 ? ag.disb : (Number(loan.disbursed_amt) || 0)
+            const propVal = Number(loan.property_cost) || 0
+            const outToBuilder = propVal > 0 ? Math.max(0, propVal - (disbTo + ag.own)) : 0
+            const isHomeLoan = loan.loan_type === 'home_loan'
             const extra = extraPayments[loan.id] ?? 0
             const interestSaved = calcInterestSaved(loan, extra)
             const monthsSaved = extra > 0 ? Math.round(interestSaved / Number(loan.emi_amount) * 1.5) : 0
@@ -214,10 +237,16 @@ export default function LoanCategoryClient({ loans, title, loanType }: Props) {
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {[
-                    { label: 'EMI',              val: `${lSym}${Number(loan.emi_amount).toLocaleString('en-IN')}` },
-                    { label: 'Months Remaining', val: monthsRem != null ? `${monthsRem} mo` : '—' },
-                    { label: 'Months Paid',      val: `${loan.months_paid ?? 0}` },
-                    { label: 'Next EMI',         val: loan.next_emi_date ?? '—' },
+                    ...(isHomeLoan ? [{ label: 'Property Value', val: propVal > 0 ? money(propVal) : '—' }] : []),
+                    { label: 'Sanctioned',   val: money(loan.sanctioned_amt) },
+                    { label: 'Disbursed',    val: money(disbTo) },
+                    { label: 'Outstanding',  val: money(loan.outstanding_amt) },
+                    ...(isHomeLoan ? [
+                      { label: 'To Builder',   val: propVal > 0 ? money(outToBuilder) : '—' },
+                      { label: 'Own Contrib.', val: money(ag.own) },
+                    ] : []),
+                    { label: 'Current EMI',  val: money(loan.emi_amount) },
+                    { label: 'EMIs Paid / Left', val: `${loan.months_paid ?? 0} / ${monthsRem ?? '—'}` },
                   ].map(item => (
                     <div key={item.label} className="rounded-xl p-3" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
                       <div className="text-[9px] uppercase tracking-wider font-bold mb-1" style={{ color: 'var(--text3)' }}>{item.label}</div>

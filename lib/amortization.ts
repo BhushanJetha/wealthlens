@@ -24,6 +24,27 @@ export interface AmortResult {
   schedule: AmortRow[]    // forward schedule from the current outstanding
 }
 
+// Simulate paying down `outstanding` at `emi`/month (annualRate) with optional
+// extra payments: `extraMonthly` added every month and/or `extraAnnual` added
+// once every 12 months. Returns months to close and total interest paid.
+export function simulatePayoff(outstanding: number, annualRate: number, emi: number, extraMonthly = 0, extraAnnual = 0): { months: number; interest: number } {
+  let bal = Math.max(0, outstanding)
+  const r = (Number(annualRate) || 0) / 1200
+  let months = 0, interest = 0
+  if (emi <= 0 || bal <= 0) return { months: 0, interest: 0 }
+  while (bal > 0.5 && months < 1200) {
+    const i = bal * r
+    let princ = emi - i + extraMonthly
+    if (months > 0 && months % 12 === 0) princ += extraAnnual   // yearly lump
+    if (princ <= 0) return { months: Infinity, interest: Infinity } // never closes
+    princ = Math.min(princ, bal)
+    interest += i
+    bal -= princ
+    months++
+  }
+  return { months, interest: Math.round(interest) }
+}
+
 function emiFor(p: number, rMonthly: number, n: number): number {
   if (n <= 0) return 0
   if (rMonthly <= 0) return p / n
