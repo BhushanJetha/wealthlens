@@ -2,7 +2,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useViewStore } from '@/store/viewStore'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, BarChart2, BookOpen, CreditCard, TrendingUp, LayoutGrid, Sparkles, Lock, Unlock } from 'lucide-react'
+import { Plus, BarChart2, BookOpen, CreditCard, TrendingUp, LayoutGrid, Sparkles, Lock, Unlock, Pencil, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 
 const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -62,6 +62,8 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
   const [budgets,        setBudgets]        = useState(initBudgets)
   const [showBudgetForm, setShowBudgetForm] = useState(false)
   const [newBudget,      setNewBudget]      = useState({ category: 'Food', monthly_cap: '' })
+  const [editingId,      setEditingId]      = useState<string | null>(null)
+  const [budgetError,    setBudgetError]    = useState('')
   const [saving,         setSaving]         = useState(false)
   const [smartLoading,   setSmartLoading]   = useState(false)
   const [smartPreview,   setSmartPreview]   = useState<Record<string,number> | null>(null)
@@ -302,26 +304,50 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
     }
   }
 
+  function editBudget(b: any) {
+    setEditingId(b.id)
+    setNewBudget({ category: b.category, monthly_cap: String(b.monthly_cap) })
+    setBudgetError('')
+    setShowBudgetForm(true)
+  }
+
+  async function deleteBudget(b: any) {
+    const { error } = await supabase.from('budgets').delete().eq('id', b.id)
+    if (error) { setBudgetError(error.message); return }
+    setBudgets((prev: any[]) => prev.filter((x: any) => x.id !== b.id))
+    if (editingId === b.id) { setShowBudgetForm(false); setEditingId(null) }
+  }
+
   async function saveBudget() {
-    setSaving(true)
+    const cap = Number(newBudget.monthly_cap)
+    if (!newBudget.category || !(cap > 0)) { setBudgetError('Pick a category and enter a cap above 0'); return }
+    setSaving(true); setBudgetError('')
     const { data: { user } } = await supabase.auth.getUser()
-    const { data } = await supabase.from('budgets').upsert({
+    const full: any = {
       user_id:     user!.id,
       category:    newBudget.category,
-      monthly_cap: Number(newBudget.monthly_cap),
+      monthly_cap: cap,
       currency:    view === 'uae' ? 'AED' : 'INR',
       month_year:  thisMonth,
       is_manual:   true,
-    }, { onConflict: 'user_id,category,month_year' }).select().single()
-    if (data) {
-      setBudgets((prev: any[]) => {
-        const idx = prev.findIndex((b: any) => b.category === data.category)
-        return idx >= 0 ? prev.map((b: any, i: number) => i === idx ? data : b) : [...prev, data]
-      })
     }
-    setShowBudgetForm(false)
-    setNewBudget({ category: 'Food', monthly_cap: '' })
+    // Resilient write: retry without newer columns if the DB is missing them.
+    let { data, error } = await supabase.from('budgets')
+      .upsert(full, { onConflict: 'user_id,category,month_year' }).select().single()
+    if (error && /is_manual|column/i.test(error.message)) {
+      const { is_manual, ...base } = full
+      ;({ data, error } = await supabase.from('budgets')
+        .upsert(base, { onConflict: 'user_id,category,month_year' }).select().single())
+    }
     setSaving(false)
+    if (error || !data) { setBudgetError(error?.message ?? 'Could not save budget'); return }
+    setBudgets((prev: any[]) => {
+      const idx = prev.findIndex((b: any) => b.category === data.category)
+      return idx >= 0 ? prev.map((b: any, i: number) => i === idx ? data : b) : [...prev, data]
+    })
+    setShowBudgetForm(false)
+    setEditingId(null)
+    setNewBudget({ category: 'Food', monthly_cap: '' })
   }
 
   const monthName = new Date().toLocaleString('default', { month: 'short' })
@@ -429,7 +455,10 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
               <Sparkles size={12} /> Smart Budget
             </button>
             <button
-              onClick={() => setShowBudgetForm(!showBudgetForm)}
+              onClick={() => {
+                if (showBudgetForm) { setShowBudgetForm(false); setEditingId(null) }
+                else { setEditingId(null); setNewBudget({ category: 'Food', monthly_cap: '' }); setBudgetError(''); setShowBudgetForm(true) }
+              }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold text-white"
               style={{ background: 'var(--sage)' }}>
               <Plus size={12} /> Set Budget
@@ -487,33 +516,48 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
         )}
 
         {showBudgetForm && (
-          <div className="wl-card p-4 mb-3 flex flex-wrap gap-3 items-end" style={{ borderColor: 'var(--sage)' }}>
-            <div className="min-w-[140px]">
-              <Lbl>Category</Lbl>
-              <select
-                value={newBudget.category}
-                onChange={e => setNewBudget(p => ({ ...p, category: e.target.value }))}
-                className="wl-input" style={{ background: 'var(--bg2)' }}>
-                {CATS.map(c => <option key={c}>{c}</option>)}
-              </select>
+          <div className="wl-card p-4 mb-3" style={{ borderColor: 'var(--sage)' }}>
+            <div className="text-[11px] font-bold mb-2" style={{ color: 'var(--text)' }}>
+              {editingId ? `Edit budget — ${newBudget.category}` : 'Set a new budget'}
             </div>
-            <div className="min-w-[150px]">
-              <Lbl>Monthly Cap (₹)</Lbl>
-              <input
-                value={newBudget.monthly_cap}
-                onChange={e => setNewBudget(p => ({ ...p, monthly_cap: e.target.value }))}
-                type="number" placeholder="30000"
-                className="wl-input" style={{ background: 'var(--bg2)' }}
-                onFocus={e => (e.target.style.borderColor = 'var(--sage)')}
-                onBlur={e => (e.target.style.borderColor = 'var(--border)')} />
+            <div className="flex flex-wrap gap-3 items-end">
+              <div className="min-w-[140px]">
+                <Lbl>Category</Lbl>
+                <select
+                  value={newBudget.category}
+                  disabled={!!editingId}
+                  onChange={e => setNewBudget(p => ({ ...p, category: e.target.value }))}
+                  className="wl-input" style={{ background: 'var(--bg2)', opacity: editingId ? 0.6 : 1 }}>
+                  {CATS.map(c => <option key={c}>{c}</option>)}
+                </select>
+              </div>
+              <div className="min-w-[150px]">
+                <Lbl>Monthly Cap ({sym.trim()})</Lbl>
+                <input
+                  value={newBudget.monthly_cap}
+                  onChange={e => setNewBudget(p => ({ ...p, monthly_cap: e.target.value }))}
+                  type="number" placeholder="30000"
+                  className="wl-input" style={{ background: 'var(--bg2)' }}
+                  onFocus={e => (e.target.style.borderColor = 'var(--sage)')}
+                  onBlur={e => (e.target.style.borderColor = 'var(--border)')} />
+              </div>
+              <button
+                onClick={saveBudget}
+                disabled={saving || !newBudget.monthly_cap}
+                className="px-4 py-2 rounded-lg text-white text-[12px] font-bold disabled:opacity-50"
+                style={{ background: 'var(--sage)' }}>
+                {saving ? 'Saving…' : editingId ? 'Update' : 'Save'}
+              </button>
+              <button
+                onClick={() => { setShowBudgetForm(false); setEditingId(null); setBudgetError('') }}
+                className="px-3 py-2 rounded-lg text-[12px] font-semibold"
+                style={{ border: '1px solid var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>
+                Cancel
+              </button>
             </div>
-            <button
-              onClick={saveBudget}
-              disabled={saving || !newBudget.monthly_cap}
-              className="px-4 py-2 rounded-lg text-white text-[12px] font-bold disabled:opacity-50"
-              style={{ background: 'var(--sage)' }}>
-              {saving ? 'Saving…' : 'Save'}
-            </button>
+            {budgetError && (
+              <div className="mt-2 text-[11px]" style={{ color: 'var(--rose)' }}>{budgetError}</div>
+            )}
           </div>
         )}
 
@@ -542,11 +586,23 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span className="text-[13px] font-bold font-mono" style={{ color }}>{pct}%</span>
+                      <button title="Edit budget" onClick={() => editBudget(b)}
+                        className="p-1 rounded transition-colors" style={{ color: 'var(--text3)' }}
+                        onMouseEnter={e => (e.currentTarget.style.color = 'var(--sage)')}
+                        onMouseLeave={e => (e.currentTarget.style.color = 'var(--text3)')}>
+                        <Pencil size={12}/>
+                      </button>
                       <button title={b.is_manual ? 'Unlock — allow Smart Budget to update' : 'Lock — protect from Smart Budget changes'}
                         onClick={() => toggleManual(b)}
                         className="p-1 rounded transition-colors"
                         style={{ color: b.is_manual ? '#1D4ED8' : 'var(--text3)' }}>
                         {b.is_manual ? <Lock size={12}/> : <Unlock size={12}/>}
+                      </button>
+                      <button title="Delete budget" onClick={() => deleteBudget(b)}
+                        className="p-1 rounded transition-colors" style={{ color: 'var(--text3)' }}
+                        onMouseEnter={e => (e.currentTarget.style.color = 'var(--rose)')}
+                        onMouseLeave={e => (e.currentTarget.style.color = 'var(--text3)')}>
+                        <Trash2 size={12}/>
                       </button>
                     </div>
                   </div>
