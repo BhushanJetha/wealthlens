@@ -47,6 +47,7 @@ const MOVEMENT_CATS = new Set([
   'NRE Received', 'Received from NRE', 'Received from UAE', 'NRI Transfer',
   'NRE to NRO', 'NRO to NRE', 'Self Transfer', 'Internal Transfer', 'Transfer',
   'International Transfer', 'Loan Received', 'Loan Taken', 'Loan Disbursement',
+  'ATM Withdrawal',
 ])
 const isMovement = (cat: string) => MOVEMENT_CATS.has(cat)
 

@@ -20,9 +20,10 @@ const CAT_COLORS: Record<string,string> = {
 }
 
 const TRANSFER_SUBTYPES = [
-  { value: 'International', label: 'UAE → India',     desc: 'Send money from UAE to India',        color: '#3B7DD8' },
-  { value: 'Internal',      label: 'NRE → NRO',       desc: 'Move funds between NRE & NRO accounts', color: '#7C5CBF' },
-  { value: 'Family',        label: 'Family Transfer',  desc: 'Monthly allowance to spouse or parents', color: '#3D7A58' },
+  { value: 'International',   label: 'UAE → India',     desc: 'Send money from UAE to India',          color: '#3B7DD8' },
+  { value: 'Internal',       label: 'NRE → NRO',       desc: 'Move funds between NRE & NRO accounts',  color: '#7C5CBF' },
+  { value: 'Family',         label: 'Family Transfer',  desc: 'Monthly allowance to spouse or parents', color: '#3D7A58' },
+  { value: 'ATM Withdrawal', label: 'ATM Cash',         desc: 'Bank → Cash wallet (cash withdrawn)',    color: '#0891B2' },
 ]
 
 const Lbl = ({ children }: { children: React.ReactNode }) => (
@@ -34,14 +35,14 @@ const inputStyle = { background: 'var(--bg2)', border: '1px solid var(--border)'
 export default function AddTransactionModal({ onClose, onAdded, defaults }: {
   onClose: () => void
   onAdded?: () => void
-  defaults?: Partial<{ txn_type: string; account_id: string; category: string; currency: string }>
+  defaults?: Partial<{ txn_type: string; account_id: string; category: string; currency: string; sub_category: string; merchant: string }>
 }) {
   const [form, setForm] = useState({
     txn_date:     new Date().toISOString().slice(0, 10),
-    merchant:     '',
+    merchant:     defaults?.merchant ?? '',
     description:  '',
     category:     defaults?.category ?? (defaults?.txn_type === 'income' ? 'Salary' : 'Food'),
-    sub_category: '',
+    sub_category: defaults?.sub_category ?? '',
     amount:       '',
     currency:     defaults?.currency ?? 'INR',
     txn_type:     defaults?.txn_type ?? 'expense',
@@ -95,14 +96,20 @@ export default function AddTransactionModal({ onClose, onAdded, defaults }: {
 
   function setTransferSubtype(sub: string) {
     const autoMerchant =
-      sub === 'International' ? 'Transfer to India' :
-      sub === 'Internal'      ? 'NRE to NRO'       :
+      sub === 'International'   ? 'Transfer to India' :
+      sub === 'Internal'        ? 'NRE to NRO'        :
+      sub === 'ATM Withdrawal'  ? 'ATM Withdrawal'    :
       'Family Transfer'
+    const isAtm = sub === 'ATM Withdrawal'
     setForm(p => ({
       ...p,
       sub_category: sub,
-      currency: sub === 'International' ? 'AED' : p.currency,
-      merchant: p.merchant || autoMerchant,
+      // ATM cash is its own category (money movement, not spend); it lands in
+      // the Cash wallet so cash-in-hand is topped up.
+      category:   isAtm ? 'ATM Withdrawal' : 'Transfer',
+      account_id: isAtm ? '__cash__' : (p.account_id === '__cash__' ? '' : p.account_id),
+      currency:   sub === 'International' ? 'AED' : p.currency,
+      merchant:   p.merchant || autoMerchant,
     }))
     if (sub === 'International' && liveRate === null) fetchLiveRate()
   }
@@ -204,7 +211,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults }: {
           {isTransfer && (
             <div>
               <Lbl>Transfer Type</Lbl>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 {TRANSFER_SUBTYPES.map(sub => (
                   <button key={sub.value} onClick={() => setTransferSubtype(sub.value)}
                     className="p-2 rounded-xl border text-center transition-all"
@@ -216,6 +223,12 @@ export default function AddTransactionModal({ onClose, onAdded, defaults }: {
                   </button>
                 ))}
               </div>
+              {form.sub_category === 'ATM Withdrawal' && (
+                <div className="mt-2 text-[10px] rounded-lg px-2.5 py-1.5"
+                  style={{ background: '#ECFEFF', border: '1px solid #0891B240', color: '#0E7490' }}>
+                  💵 Records cash added to your <strong>Cash wallet</strong> — not an expense. Log your cash spends separately from the Cash wallet.
+                </div>
+              )}
             </div>
           )}
 
@@ -292,9 +305,10 @@ export default function AddTransactionModal({ onClose, onAdded, defaults }: {
           {/* Transfer: To recipient */}
           {isTransfer ? (
             <div>
-              <Lbl>To (Recipient / Account)</Lbl>
+              <Lbl>{form.sub_category === 'ATM Withdrawal' ? 'Withdrawn from (bank, optional)' : 'To (Recipient / Account)'}</Lbl>
               <input type="text" value={form.description} onChange={f('description')}
                 placeholder={
+                  form.sub_category === 'ATM Withdrawal' ? 'e.g. HDFC Savings •••4521' :
                   form.sub_category === 'International' ? 'e.g. HDFC Savings •••4521' :
                   form.sub_category === 'Internal'      ? 'e.g. NRO Account, HDFC' :
                   'e.g. Wife - personal expenses'
@@ -324,8 +338,8 @@ export default function AddTransactionModal({ onClose, onAdded, defaults }: {
             </div>
           )}
 
-          {/* Account / payment source */}
-          {(!isTransfer || accounts.length > 0) && (
+          {/* Account / payment source (ATM lands in the Cash wallet, so no picker) */}
+          {(!isTransfer || accounts.length > 0) && form.sub_category !== 'ATM Withdrawal' && (
             <div>
               <Lbl>{isTransfer ? 'From Account' : 'Paid From (optional)'}</Lbl>
               <select value={form.account_id} onChange={f('account_id')}
