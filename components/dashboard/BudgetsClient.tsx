@@ -81,6 +81,15 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
     return amt
   }
 
+  // Budgets are stored per-currency. Only count the ones matching the active
+  // view (converted in Consolidated) so caps align with the spend/income shown.
+  function inViewCur(cur: string): boolean {
+    if (view === 'consolidated') return true
+    return view === 'uae' ? cur === 'AED' : cur === 'INR'
+  }
+  const budgetCapOf = (b: any): number => display(Number(b.monthly_cap) || 0, b.currency || 'INR')
+  const viewBudgets = budgets.filter((b: any) => inViewCur(b.currency || 'INR'))
+
   // Current-month spend per category
   const spendMap: Record<string, number> = {}
   transactions
@@ -90,7 +99,7 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
     })
 
   // Top-level KPI values
-  const totalBudgetCap  = Math.round(budgets.reduce((a: number, b: any) => a + Number(b.monthly_cap), 0))
+  const totalBudgetCap  = Math.round(viewBudgets.reduce((a: number, b: any) => a + budgetCapOf(b), 0))
   const thisMonthSpend  = Math.round(Object.values(spendMap).reduce((a: number, v) => a + (v as number), 0))
   const thisMonthIncome = Math.round(
     incomeTransactions
@@ -100,15 +109,15 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
   const budgetUsedPct  = totalBudgetCap > 0 ? Math.round(thisMonthSpend / totalBudgetCap * 100) : 0
   const savedThisMonth = thisMonthIncome > 0 ? thisMonthIncome - thisMonthSpend : null
 
-  // Budget cap lookup for matrix
+  // Budget cap lookup for matrix (view-consistent)
   const budgetCapMap: Record<string, number> = {}
-  budgets.forEach((b: any) => { budgetCapMap[b.category] = Number(b.monthly_cap) })
+  viewBudgets.forEach((b: any) => { budgetCapMap[b.category] = budgetCapOf(b) })
 
   // Category × Month spending matrix
   const { catMonthMatrix, matrixCats } = useMemo(() => {
     const matrix: Record<string, Record<string, number>> = {}
     const catTotals: Record<string, number> = {}
-    const hasBudget = new Set(budgets.map((b: any) => b.category as string))
+    const hasBudget = new Set(viewBudgets.map((b: any) => b.category as string))
 
     transactions.filter((t: any) => t.txn_type === 'expense').forEach((t: any) => {
       const m = t.txn_date?.slice(0, 7)
@@ -135,7 +144,7 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
 
   // 12-month comparison data
   const monthlyData = useMemo(() => {
-    const bCap = budgets.reduce((a: number, b: any) => a + Number(b.monthly_cap), 0)
+    const bCap = viewBudgets.reduce((a: number, b: any) => a + budgetCapOf(b), 0)
     return Array.from({ length: 12 }, (_, i) => {
       const m = `${thisYear}-${String(i + 1).padStart(2, '0')}`
       const spend = transactions
@@ -182,7 +191,22 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
   }, [transactions, view, thisMonth])
 
   const subTotal    = subscriptions.reduce((a, s) => a + s.total, 0)
-  const overBudget  = budgets.filter((b: any) => (spendMap[b.category] ?? 0) > Number(b.monthly_cap)).length
+  const overBudget  = viewBudgets.filter((b: any) => (spendMap[b.category] ?? 0) > budgetCapOf(b)).length
+
+  // ── Income → Budget allocation (this month) ──
+  const allocRows = viewBudgets
+    .map((b: any) => {
+      const cap = Math.round(budgetCapOf(b))
+      return {
+        id: b.id, category: b.category, cap,
+        spent: Math.round(spendMap[b.category] ?? 0),
+        pctInc: thisMonthIncome > 0 ? Math.round(cap / thisMonthIncome * 100) : 0,
+      }
+    })
+    .sort((a: any, b: any) => b.cap - a.cap)
+  const allocTotal   = allocRows.reduce((a: number, r: any) => a + r.cap, 0)
+  const allocPctInc  = thisMonthIncome > 0 ? Math.round(allocTotal / thisMonthIncome * 100) : 0
+  const unallocated  = thisMonthIncome > 0 ? thisMonthIncome - allocTotal : null
 
   // ── Smart Budget: average of the 3 most recent months WITH data + 10% buffer ──
   // Anchored on the user's latest spending (in the active view) rather than a
@@ -377,7 +401,7 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
           <div className="text-[16px] font-black font-mono" style={{ color: 'var(--text)' }}>
             {totalBudgetCap > 0 ? `${sym}${totalBudgetCap.toLocaleString('en-IN')}` : 'Not set'}
           </div>
-          <div className="text-[9px] mt-0.5" style={{ color: 'var(--text3)' }}>{budgets.length} categories budgeted</div>
+          <div className="text-[9px] mt-0.5" style={{ color: 'var(--text3)' }}>{viewBudgets.length} categories budgeted</div>
         </div>
 
         <div className="wl-card p-3.5" style={{ background: 'var(--income-bg)' }}>
@@ -561,15 +585,15 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
           </div>
         )}
 
-        {budgets.length === 0 ? (
+        {viewBudgets.length === 0 ? (
           <div className="wl-card py-10 text-center text-[13px]" style={{ borderStyle: 'dashed', color: 'var(--text3)' }}>
-            No budgets set. Click &ldquo;Set Budget&rdquo; to add spending caps per category.
+            No budgets set for {view === 'uae' ? 'AED' : view === 'india' ? 'INR' : 'this view'}. Click &ldquo;Set Budget&rdquo; to add spending caps per category.
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {budgets.map((b: any, i: number) => {
+            {viewBudgets.map((b: any, i: number) => {
               const spent  = Math.round(spendMap[b.category] ?? 0)
-              const cap    = Number(b.monthly_cap)
+              const cap    = Math.round(budgetCapOf(b))
               const pct    = cap > 0 ? Math.min(Math.round(spent / cap * 100), 110) : 0
               const color  = pctColor(pct)
               const catCol = CAT_COLORS[b.category] ?? '#6B7280'
@@ -622,6 +646,107 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
                 </div>
               )
             })}
+          </div>
+        )}
+      </div>
+
+      {/* ─── Income → Budget Allocation ─── */}
+      <div>
+        <div className="text-[13px] font-bold flex items-center gap-2 mb-3" style={{ color: 'var(--text)' }}>
+          <LayoutGrid size={15} style={{ color: 'var(--income)' }} />
+          Monthly Income → Budget Allocation — {monthName}
+        </div>
+        {allocRows.length === 0 ? (
+          <div className="wl-card py-8 text-center text-[12px]" style={{ borderStyle: 'dashed', color: 'var(--text3)' }}>
+            Set some budgets to see how your income is allocated across categories.
+          </div>
+        ) : (
+          <div className="wl-card overflow-hidden">
+            {/* Income banner */}
+            <div className="flex items-center justify-between px-4 py-3 flex-wrap gap-2"
+              style={{ background: 'var(--income-bg)', borderBottom: '1px solid var(--border)' }}>
+              <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>
+                {monthName} Income
+              </div>
+              <div className="text-[16px] font-black font-mono" style={{ color: 'var(--income)' }}>
+                {thisMonthIncome > 0 ? `${sym}${thisMonthIncome.toLocaleString('en-IN')}` : 'Not recorded'}
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[12px]">
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg2)' }}>
+                    {['Category','Budget / mo','% of income','Spent so far','Remaining'].map((h, hi) => (
+                      <th key={h} className={`px-4 py-2.5 text-[9px] uppercase tracking-wider font-bold ${hi === 0 ? 'text-left' : 'text-right'}`}
+                        style={{ color: 'var(--text3)' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {allocRows.map((r: any) => {
+                    const remaining = r.cap - r.spent
+                    return (
+                      <tr key={r.id} className="hover:bg-stone-50 transition-colors"
+                        style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td className="px-4 py-2.5 font-semibold" style={{ color: 'var(--text)' }}>
+                          <div className="flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: CAT_COLORS[r.category] ?? '#6B7280' }} />
+                            {r.category}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold" style={{ color: 'var(--text)' }}>
+                          {sym}{r.cap.toLocaleString('en-IN')}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono" style={{ color: 'var(--text3)' }}>
+                          {thisMonthIncome > 0 ? `${r.pctInc}%` : '—'}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono" style={{ color: r.spent > r.cap ? 'var(--rose)' : 'var(--text2, var(--text))' }}>
+                          {sym}{r.spent.toLocaleString('en-IN')}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono font-semibold"
+                          style={{ color: remaining < 0 ? 'var(--rose)' : 'var(--income)' }}>
+                          {remaining < 0 ? '-' : ''}{sym}{Math.abs(remaining).toLocaleString('en-IN')}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr style={{ borderTop: '2px solid var(--border)', background: 'var(--bg2)' }}>
+                    <td className="px-4 py-2.5 font-black" style={{ color: 'var(--text)' }}>Total Budgeted</td>
+                    <td className="px-4 py-2.5 text-right font-mono font-black" style={{ color: 'var(--text)' }}>
+                      {sym}{allocTotal.toLocaleString('en-IN')}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono font-bold" style={{ color: allocPctInc > 100 ? 'var(--rose)' : 'var(--text)' }}>
+                      {thisMonthIncome > 0 ? `${allocPctInc}%` : '—'}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono font-bold" style={{ color: 'var(--rose)' }}>
+                      {sym}{thisMonthSpend.toLocaleString('en-IN')}
+                    </td>
+                    <td className="px-4 py-2.5" />
+                  </tr>
+                  {unallocated !== null && (
+                    <tr style={{ background: unallocated >= 0 ? 'var(--income-bg)' : 'var(--rose-bg)' }}>
+                      <td className="px-4 py-2.5 font-bold" style={{ color: unallocated >= 0 ? 'var(--income)' : 'var(--rose)' }}>
+                        {unallocated >= 0 ? 'Unbudgeted / Expected Savings' : 'Over-allocated vs income'}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono font-black" style={{ color: unallocated >= 0 ? 'var(--income)' : 'var(--rose)' }}>
+                        {unallocated < 0 ? '-' : ''}{sym}{Math.abs(unallocated).toLocaleString('en-IN')}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono" style={{ color: 'var(--text3)' }}>
+                        {Math.max(0, 100 - allocPctInc)}%
+                      </td>
+                      <td className="px-4 py-2.5" colSpan={2} />
+                    </tr>
+                  )}
+                </tfoot>
+              </table>
+            </div>
+            <div className="px-4 py-2.5 border-t text-[10px]" style={{ borderColor: 'var(--border)', color: 'var(--text3)' }}>
+              {thisMonthIncome > 0
+                ? `You've budgeted ${allocPctInc}% of ${monthName} income across ${allocRows.length} categories · ${unallocated !== null && unallocated >= 0 ? `${sym}${unallocated.toLocaleString('en-IN')} left to save/allocate` : 'budgets exceed income — trim caps'}`
+                : `Record this month's income to see how much of it each budget uses.`}
+            </div>
           </div>
         )}
       </div>
