@@ -13,20 +13,22 @@ import { Search, PenLine, BarChart2, Plus, Pencil, Trash2, X, Check, Upload, Ima
 import Link from 'next/link'
 
 const INCOME_CATS = [
-  'All', 'Salary', 'Dividend', 'Rental', 'Gift', 'Bonus', 'Tax Refund', 'Interest', 'Freelance', 'NRI Transfer', 'Other'
+  'All', 'Salary', 'NRE Received', 'Dividend', 'Interest', 'FD/RD Maturity', 'Rental', 'Gift', 'Bonus', 'Tax Refund', 'Freelance', 'NRI Transfer', 'Other'
 ]
 
 const CAT_COLORS: Record<string,string> = {
-  Salary:         '#16A34A',
-  Dividend:       '#2563EB',
-  Rental:         '#7C3AED',
-  Gift:           '#E11D48',
-  Bonus:          '#D97706',
-  'Tax Refund':   '#059669',
-  Interest:       '#0284C7',
-  Freelance:      '#EA580C',
-  'NRI Transfer': '#0EA5E9',
-  Other:          '#6B7280',
+  Salary:          '#16A34A',
+  'NRE Received':  '#0284C7',
+  Dividend:        '#2563EB',
+  Interest:        '#0369A1',
+  'FD/RD Maturity':'#0891B2',
+  Rental:          '#7C3AED',
+  Gift:            '#E11D48',
+  Bonus:           '#D97706',
+  'Tax Refund':    '#059669',
+  Freelance:       '#EA580C',
+  'NRI Transfer':  '#0EA5E9',
+  Other:           '#6B7280',
 }
 type Modal = 'none' | 'manual' | 'statement' | 'bill' | 'voice'
 

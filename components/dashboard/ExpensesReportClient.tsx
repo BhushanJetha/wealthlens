@@ -40,6 +40,16 @@ const CAT_COLORS: Record<string,string> = {
   'NRE to NRO':'#7C5CBF', 'NRO to Family':'#3D7A58', 'Self Transfer':'#0891B2',
   'Family Transfer':'#0EA5E9', 'Loan on Card':'#F59E0B', 'Loan Received':'#F97316', Refund:'#10B981',
 }
+// Money-movement categories — transfers between the user's own accounts and
+// money received (NRE credits, remittances, loan inflows). These are NOT
+// spending, so they're pulled out of the expense totals and shown separately.
+const MOVEMENT_CATS = new Set([
+  'NRE Received', 'Received from NRE', 'Received from UAE', 'NRI Transfer',
+  'NRE to NRO', 'NRO to NRE', 'Self Transfer', 'Internal Transfer', 'Transfer',
+  'International Transfer', 'Loan Received', 'Loan Taken', 'Loan Disbursement',
+])
+const isMovement = (cat: string) => MOVEMENT_CATS.has(cat)
+
 // A palette to colour any category we don't have an explicit colour for
 const FALLBACK_PALETTE = ['#6366F1','#DB2777','#0D9488','#CA8A04','#C2640A','#475569','#B45309','#7C3AED']
 function colorOf(cat: string, idx: number): string {
@@ -121,12 +131,23 @@ export default function ExpensesReportClient({ transactions }: { transactions: a
   }, [yearTxns, view])
 
   const cats = useMemo(() => Object.keys(pivot), [pivot])
+  // Split real spending from money movement (transfers / receipts)
+  const expenseCatsAll  = useMemo(() => cats.filter(c => !isMovement(c)), [cats])
+  const movementCatsAll = useMemo(() => cats.filter(c =>  isMovement(c)), [cats])
 
+  // Expense monthly totals (excludes transfers/receipts)
   const colTotals = useMemo(() => {
     const totals: Record<string, number> = {}
-    months.forEach(m => { totals[m] = cats.reduce((a, cat) => a + (pivot[cat]?.[m] ?? 0), 0) })
+    months.forEach(m => { totals[m] = expenseCatsAll.reduce((a, cat) => a + (pivot[cat]?.[m] ?? 0), 0) })
     return totals
-  }, [pivot, months, cats])
+  }, [pivot, months, expenseCatsAll])
+
+  // Movement monthly totals (separate table)
+  const movColTotals = useMemo(() => {
+    const totals: Record<string, number> = {}
+    months.forEach(m => { totals[m] = movementCatsAll.reduce((a, cat) => a + (pivot[cat]?.[m] ?? 0), 0) })
+    return totals
+  }, [pivot, months, movementCatsAll])
 
   const rowTotals = useMemo(() => {
     const totals: Record<string, number> = {}
@@ -134,9 +155,11 @@ export default function ExpensesReportClient({ transactions }: { transactions: a
     return totals
   }, [pivot, months, cats])
 
-  const grandTotal  = months.reduce((a, m) => a + (colTotals[m] ?? 0), 0)
-  const activeCats  = cats.filter(cat => rowTotals[cat] > 0).sort((a, b) => rowTotals[b] - rowTotals[a])
-  const peakMonth   = months.reduce((best, m) => (colTotals[m] ?? 0) > (colTotals[best] ?? 0) ? m : best, months[0])
+  const grandTotal    = months.reduce((a, m) => a + (colTotals[m] ?? 0), 0)
+  const movGrandTotal = months.reduce((a, m) => a + (movColTotals[m] ?? 0), 0)
+  const activeCats    = expenseCatsAll.filter(cat => rowTotals[cat] > 0).sort((a, b) => rowTotals[b] - rowTotals[a])
+  const activeMovementCats = movementCatsAll.filter(cat => rowTotals[cat] > 0).sort((a, b) => rowTotals[b] - rowTotals[a])
+  const peakMonth     = months.reduce((best, m) => (colTotals[m] ?? 0) > (colTotals[best] ?? 0) ? m : best, months[0])
 
   // ─── Analytics: Monthly totals for forecasting & anomaly detection ────────
   const monthlyTotals = useMemo(() => {
@@ -190,7 +213,7 @@ export default function ExpensesReportClient({ transactions }: { transactions: a
         <div>
           <h1 className="text-xl font-bold" style={{ color: 'var(--text)' }}>Expense Report</h1>
           <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
-            Monthly breakdown · {view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'}
+            Monthly breakdown · {view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'} · transfers &amp; money received shown separately
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -369,7 +392,7 @@ export default function ExpensesReportClient({ transactions }: { transactions: a
 
       {/* Pivot table — ALL categories always shown */}
       <div className="wl-card overflow-hidden">
-        {yearTxns.length === 0 ? (
+        {activeCats.length === 0 ? (
           <div className="text-center py-16 text-[13px]" style={{ color:'var(--text3)' }}>
             No expense data for {viewYear}
           </div>
@@ -480,6 +503,98 @@ export default function ExpensesReportClient({ transactions }: { transactions: a
           </div>
         )}
       </div>
+
+      {/* Money Movement — transfers & receipts, NOT counted as expenses */}
+      {activeMovementCats.length > 0 && (
+        <div className="wl-card overflow-hidden">
+          <div className="px-4 py-3 flex items-center justify-between flex-wrap gap-2"
+            style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
+            <div>
+              <div className="text-[12px] font-bold" style={{ color: 'var(--text)' }}>
+                Transfers &amp; Money Received — not expenses
+              </div>
+              <div className="text-[10px] mt-0.5" style={{ color: 'var(--text3)' }}>
+                NRE credits, inter-account & remittance movement · excluded from the expense totals above
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-[9px] uppercase tracking-wider font-bold" style={{ color: 'var(--text3)' }}>Total moved</div>
+              <div className="text-[15px] font-black font-mono" style={{ color: 'var(--blue)' }}>
+                {sym}{Math.round(movGrandTotal).toLocaleString('en-IN')}
+              </div>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px] border-collapse">
+              <thead>
+                <tr style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
+                  <th className="sticky left-0 px-4 py-2.5 text-left text-[10px] uppercase tracking-wider font-bold min-w-[130px]"
+                    style={{ background: 'var(--bg2)', color: 'var(--text3)', borderRight: '1px solid var(--border)' }}>Category</th>
+                  {months.map(m => (
+                    <th key={m} className="px-3 py-2.5 text-right text-[10px] uppercase tracking-wider font-bold min-w-[68px]"
+                      style={{ color: 'var(--text3)', background: m >= fromMonth && m <= toMonth ? 'var(--blue-bg, #EFF6FF)' : 'var(--bg2)' }}>
+                      {MONTH_NAMES[Number(m.slice(5)) - 1]}
+                    </th>
+                  ))}
+                  <th className="px-4 py-2.5 text-right text-[10px] uppercase tracking-wider font-bold"
+                    style={{ color: 'var(--blue)', background: 'var(--bg2)', borderLeft: '2px solid var(--border)' }}>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activeMovementCats.map((cat, ci) => {
+                  const color = colorOf(cat, ci)
+                  const total = rowTotals[cat] ?? 0
+                  return (
+                    <tr key={cat} style={{ borderBottom: '1px solid var(--border)' }} className="hover:bg-stone-50 transition-colors">
+                      <td className="sticky left-0 px-4 py-2.5 font-semibold min-w-[130px]"
+                        style={{ background: ci % 2 === 0 ? '#fff' : 'var(--bg2)', borderRight: '1px solid var(--border)' }}>
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: color }} />
+                          <span style={{ color: 'var(--text)' }}>{cat}</span>
+                        </div>
+                      </td>
+                      {months.map(m => {
+                        const val = pivot[cat]?.[m] ?? 0
+                        return (
+                          <td key={m} className="px-3 py-2.5 text-right font-mono"
+                            style={{ color: val > 0 ? 'var(--text)' : 'var(--text3)', fontWeight: val > 0 ? 600 : 400 }}>
+                            {val > 0
+                              ? <button onClick={() => setDrill({ title: cat, subtitle: mLabel(m), items: yearTxns.filter((t: any) => catOf(t) === cat && t.txn_date?.slice(0, 7) === m) })} className="hover:underline" style={{ color: 'inherit' }}>{sym}{fmt(val)}</button>
+                              : '—'}
+                          </td>
+                        )
+                      })}
+                      <td className="px-4 py-2.5 text-right font-mono font-bold"
+                        style={{ color: 'var(--blue)', borderLeft: '2px solid var(--border)' }}>
+                        {sym}{Math.round(total).toLocaleString('en-IN')}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+              <tfoot>
+                <tr style={{ borderTop: '2px solid var(--border)', background: 'var(--bg2)' }}>
+                  <td className="sticky left-0 px-4 py-2.5 font-bold text-[11px] uppercase tracking-wider"
+                    style={{ background: 'var(--bg2)', color: 'var(--text)', borderRight: '1px solid var(--border)' }}>Monthly Total</td>
+                  {months.map(m => {
+                    const val = movColTotals[m] ?? 0
+                    return (
+                      <td key={m} className="px-3 py-2.5 text-right font-mono font-bold"
+                        style={{ color: 'var(--blue)', background: m >= fromMonth && m <= toMonth ? 'var(--blue-bg, #EFF6FF)' : 'var(--bg2)' }}>
+                        {val > 0 ? `${sym}${fmt(val)}` : '—'}
+                      </td>
+                    )
+                  })}
+                  <td className="px-4 py-2.5 text-right font-mono font-bold text-[13px]"
+                    style={{ color: 'var(--blue)', borderLeft: '2px solid var(--border)' }}>
+                    {sym}{Math.round(movGrandTotal).toLocaleString('en-IN')}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Category share */}
       {activeCats.length > 0 && (
