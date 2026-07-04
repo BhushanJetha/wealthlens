@@ -83,11 +83,12 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
     setIsDup(false)
     setEditTxn(txn)
     setEditFields({
-      txn_date:  txn.txn_date,
-      merchant:  txn.merchant,
-      category:  txn.category,
-      amount:    txn.amount,
-      txn_type:  txn.txn_type,
+      txn_date:    txn.txn_date,
+      merchant:    txn.merchant,
+      category:    txn.category,
+      amount:      txn.amount,
+      txn_type:    txn.txn_type,
+      description: txn.description ?? '',
     })
   }
 
@@ -95,13 +96,14 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
     setIsDup(true)
     setEditTxn(txn)
     setEditFields({
-      txn_date:   txn.txn_date,
-      merchant:   txn.merchant,
-      category:   txn.category,
-      amount:     txn.amount,
-      txn_type:   txn.txn_type,
-      currency:   txn.currency,
-      account_id: txn.account_id ?? null,
+      txn_date:    txn.txn_date,
+      merchant:    txn.merchant,
+      category:    txn.category,
+      amount:      txn.amount,
+      txn_type:    txn.txn_type,
+      description: txn.description ?? '',
+      currency:    txn.currency,
+      account_id:  txn.account_id ?? null,
     })
   }
 
@@ -118,6 +120,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
           txn_date: editFields.txn_date, merchant: editFields.merchant, category: editFields.category,
           amount: Math.abs(Number(editFields.amount)), currency: editFields.currency,
           account_id: editFields.account_id ?? null, txn_type: editFields.txn_type,
+          description: editFields.description || null,
         }),
       })
     } else {
@@ -628,6 +631,13 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
                 <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color:'var(--text3)' }}>Merchant</label>
                 <input type="text" value={editFields.merchant}
                   onChange={e => setEditFields((f: any) => ({ ...f, merchant: e.target.value }))}
+                  className="wl-input w-full text-[12px]" style={{ background:'var(--bg2)', border:'1px solid var(--border)', color:'var(--text)' }} />
+              </div>
+              <div>
+                <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color:'var(--text3)' }}>Note (optional)</label>
+                <input type="text" value={editFields.description ?? ''}
+                  onChange={e => setEditFields((f: any) => ({ ...f, description: e.target.value }))}
+                  placeholder="Add a note / description"
                   className="wl-input w-full text-[12px]" style={{ background:'var(--bg2)', border:'1px solid var(--border)', color:'var(--text)' }} />
               </div>
               <div className="grid grid-cols-2 gap-3">

@@ -65,12 +65,12 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
   function openEdit(t: any) {
     setIsDup(false)
     setEditTxn(t)
-    setEditFields({ txn_date: t.txn_date, merchant: t.merchant, category: t.category, amount: t.amount, txn_type: t.txn_type ?? 'income' })
+    setEditFields({ txn_date: t.txn_date, merchant: t.merchant, category: t.category, amount: t.amount, txn_type: t.txn_type ?? 'income', description: t.description ?? '' })
   }
   function openDuplicate(t: any) {
     setIsDup(true)
     setEditTxn(t)
-    setEditFields({ txn_date: t.txn_date, merchant: t.merchant, category: t.category, amount: t.amount, txn_type: t.txn_type ?? 'income', currency: t.currency, account_id: t.account_id ?? null })
+    setEditFields({ txn_date: t.txn_date, merchant: t.merchant, category: t.category, amount: t.amount, txn_type: t.txn_type ?? 'income', description: t.description ?? '', currency: t.currency, account_id: t.account_id ?? null })
   }
   function closeEdit() { setEditTxn(null); setIsDup(false) }
   async function saveEdit() {
@@ -83,6 +83,7 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
           txn_date: editFields.txn_date, merchant: editFields.merchant, category: editFields.category,
           amount: Math.abs(Number(editFields.amount)), currency: editFields.currency,
           account_id: editFields.account_id ?? null, txn_type: editFields.txn_type,
+          description: editFields.description || null,
         }),
       })
     } else {
@@ -436,6 +437,13 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
                 <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color:'var(--text3)' }}>Source</label>
                 <input type="text" value={editFields.merchant}
                   onChange={e => setEditFields((f: any) => ({ ...f, merchant: e.target.value }))}
+                  className="wl-input w-full text-[12px]" style={{ background:'var(--bg2)', border:'1px solid var(--border)', color:'var(--text)' }} />
+              </div>
+              <div>
+                <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color:'var(--text3)' }}>Note (optional)</label>
+                <input type="text" value={editFields.description ?? ''}
+                  onChange={e => setEditFields((f: any) => ({ ...f, description: e.target.value }))}
+                  placeholder="Add a note / description"
                   className="wl-input w-full text-[12px]" style={{ background:'var(--bg2)', border:'1px solid var(--border)', color:'var(--text)' }} />
               </div>
               <div>
