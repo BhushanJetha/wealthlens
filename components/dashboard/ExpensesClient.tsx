@@ -11,7 +11,7 @@ import BillImageUploadModal from '@/components/forms/BillImageUploadModal'
 import TransactionVoiceModal from '@/components/forms/TransactionVoiceModal'
 import CreditCardUploadModal from '@/components/forms/CreditCardUploadModal'
 
-import { Search, Upload, Image, Mic, PenLine, BarChart2, ArrowRight, AlertTriangle, X, CreditCard, Pencil, Trash2, Check, BookOpen, ChevronDown, Plus } from 'lucide-react'
+import { Search, Upload, Image, Mic, PenLine, BarChart2, ArrowRight, AlertTriangle, X, CreditCard, Pencil, Trash2, Check, BookOpen, ChevronDown, Plus, Copy } from 'lucide-react'
 import Link from 'next/link'
 
 const EXPENSE_CATS = ['All','Food','Shopping','Utilities','Transport','Health','Entertainment','Travel','Education','Subscription','Credit Card Payment','Loan on Card','EMI/Loan','Family Transfer','Transfer','Refund','Other']
@@ -48,6 +48,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
   const [editTxn,      setEditTxn]      = useState<any | null>(null)
   const [editFields,   setEditFields]   = useState<any>({})
   const [editSaving,   setEditSaving]   = useState(false)
+  const [isDup,        setIsDup]        = useState(false)
   const [openPanel,    setOpenPanel]    = useState<string | null>(null)
   const [deletingId,   setDeletingId]   = useState<string | null>(null)
   const [showAddMenu,  setShowAddMenu]  = useState(false)
@@ -79,6 +80,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
   }, [])
 
   function openEdit(txn: any) {
+    setIsDup(false)
     setEditTxn(txn)
     setEditFields({
       txn_date:  txn.txn_date,
@@ -89,16 +91,44 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
     })
   }
 
+  function openDuplicate(txn: any) {
+    setIsDup(true)
+    setEditTxn(txn)
+    setEditFields({
+      txn_date:   txn.txn_date,
+      merchant:   txn.merchant,
+      category:   txn.category,
+      amount:     txn.amount,
+      txn_type:   txn.txn_type,
+      currency:   txn.currency,
+      account_id: txn.account_id ?? null,
+    })
+  }
+
+  function closeEdit() { setEditTxn(null); setIsDup(false) }
+
   async function saveEdit() {
     if (!editTxn) return
     setEditSaving(true)
-    await fetch('/api/transactions', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: editTxn.id, ...editFields, amount: Math.abs(Number(editFields.amount)) }),
-    })
+    if (isDup) {
+      await fetch('/api/transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          txn_date: editFields.txn_date, merchant: editFields.merchant, category: editFields.category,
+          amount: Math.abs(Number(editFields.amount)), currency: editFields.currency,
+          account_id: editFields.account_id ?? null, txn_type: editFields.txn_type,
+        }),
+      })
+    } else {
+      await fetch('/api/transactions', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editTxn.id, ...editFields, amount: Math.abs(Number(editFields.amount)) }),
+      })
+    }
     setEditSaving(false)
-    setEditTxn(null)
+    closeEdit()
     router.refresh()
   }
 
@@ -491,6 +521,11 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1.5">
+                            <button onClick={() => openDuplicate(t)} title="Duplicate"
+                              className="p-1 rounded hover:bg-stone-100 transition-colors"
+                              style={{ color: 'var(--text3)' }}>
+                              <Copy size={12} />
+                            </button>
                             <button onClick={() => openEdit(t)} title="Edit"
                               className="p-1 rounded hover:bg-blue-50 transition-colors"
                               style={{ color: 'var(--blue)' }}>
@@ -546,6 +581,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
                     </div>
                     <div className="flex flex-col gap-1.5 flex-shrink-0">
                       <button onClick={() => openEdit(t)} className="p-1.5 rounded-lg" style={{ color:'var(--blue)', background:'var(--bg2)' }} aria-label="Edit"><Pencil size={13} /></button>
+                      <button onClick={() => openDuplicate(t)} className="p-1.5 rounded-lg" style={{ color:'var(--text3)', background:'var(--bg2)' }} aria-label="Duplicate"><Copy size={13} /></button>
                       <button onClick={() => deleteTxn(t.id)} disabled={deletingId === t.id} className="p-1.5 rounded-lg disabled:opacity-40" style={{ color:'var(--rose)', background:'var(--bg2)' }} aria-label="Delete"><Trash2 size={13} /></button>
                     </div>
                   </div>
@@ -570,8 +606,8 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
           <div className="rounded-2xl w-full max-w-md"
             style={{ background:'#fff', border:'1px solid var(--border)', boxShadow:'0 8px 40px rgba(0,0,0,0.15)' }}>
             <div className="flex justify-between items-center px-5 py-4 border-b" style={{ borderColor:'var(--border)' }}>
-              <div className="text-[14px] font-bold" style={{ color:'var(--text)' }}>Edit Transaction</div>
-              <button onClick={() => setEditTxn(null)} style={{ color:'var(--text3)' }}><X size={16} /></button>
+              <div className="text-[14px] font-bold" style={{ color:'var(--text)' }}>{isDup ? 'Duplicate Transaction' : 'Edit Transaction'}</div>
+              <button onClick={closeEdit} style={{ color:'var(--text3)' }}><X size={16} /></button>
             </div>
             <div className="p-5 space-y-3">
               <div className="grid grid-cols-2 gap-3">
@@ -645,7 +681,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
                 </div>
               </div>
               <div className="flex gap-3 pt-1">
-                <button onClick={() => setEditTxn(null)}
+                <button onClick={closeEdit}
                   className="flex-1 py-2.5 rounded-lg border text-[12px] font-semibold"
                   style={{ borderColor:'var(--border)', color:'var(--text3)', background:'var(--bg2)' }}>
                   Cancel
@@ -653,7 +689,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
                 <button onClick={saveEdit} disabled={editSaving}
                   className="flex-1 py-2.5 rounded-lg text-white text-[12px] font-bold flex items-center justify-center gap-2 disabled:opacity-40"
                   style={{ background:'var(--blue)' }}>
-                  {editSaving ? <><span className="animate-spin">⏳</span> Saving…</> : <><Check size={13}/> Save Changes</>}
+                  {editSaving ? <><span className="animate-spin">⏳</span> Saving…</> : <><Check size={13}/> {isDup ? 'Add Copy' : 'Save Changes'}</>}
                 </button>
               </div>
             </div>
