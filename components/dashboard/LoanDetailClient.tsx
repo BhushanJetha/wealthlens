@@ -525,10 +525,19 @@ export default function LoanDetailClient({ loan, txns, plan = [] }: { loan: any;
             <div className="p-5 space-y-3">
               <div><label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: 'var(--text3)' }}>Milestone</label><input type="text" value={planForm.milestone} onChange={e => setPlanForm({ ...planForm, milestone: e.target.value })} autoFocus placeholder="e.g. On Booking, Plinth, 3rd Floor Slab" className="wl-input w-full text-[12px]" style={{ background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} /></div>
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: 'var(--text3)' }}>% of property</label><input type="number" value={planForm.percentage} onChange={e => setPlanForm({ ...planForm, percentage: e.target.value })} placeholder="10" className="wl-input w-full text-[12px]" style={{ background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} /></div>
-                <div><label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: 'var(--text3)' }}>Amount ({sym.trim()})</label><input type="number" value={planForm.amount} onChange={e => setPlanForm({ ...planForm, amount: e.target.value })} placeholder={propertyCost > 0 && planForm.percentage ? String(Math.round(propertyCost * Number(planForm.percentage) / 100)) : 'auto from %'} className="wl-input w-full text-[12px]" style={{ background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} /></div>
+                <div><label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: 'var(--text3)' }}>% of property</label><input type="number" value={planForm.percentage}
+                  onChange={e => {
+                    const pct = e.target.value
+                    // auto-fill amount from % of property value (still editable below)
+                    const amt = propertyCost > 0 && Number(pct) > 0 ? String(Math.round(propertyCost * Number(pct) / 100)) : planForm.amount
+                    setPlanForm({ ...planForm, percentage: pct, amount: amt })
+                  }}
+                  placeholder="10" className="wl-input w-full text-[12px]" style={{ background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} /></div>
+                <div><label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: 'var(--text3)' }}>Amount ({sym.trim()})</label><input type="number" value={planForm.amount} onChange={e => setPlanForm({ ...planForm, amount: e.target.value })} placeholder="auto from %" className="wl-input w-full text-[12px]" style={{ background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} /></div>
               </div>
-              {propertyCost > 0 && <p className="text-[10px]" style={{ color: 'var(--text3)' }}>Leave amount blank to auto-calc from % of {money(propertyCost)}.</p>}
+              {propertyCost > 0
+                ? <p className="text-[10px]" style={{ color: 'var(--text3)' }}>Amount auto-fills from % of {money(propertyCost)} — edit it if the builder's figure differs.</p>
+                : <p className="text-[10px]" style={{ color: 'var(--gold)' }}>Set the property value (Own Contribution tab → Property cost) to auto-calc amounts from %.</p>}
               <div className="flex gap-3 pt-1">
                 <button onClick={() => setPlanModal(null)} className="flex-1 py-2.5 rounded-lg border text-[12px] font-semibold" style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>Cancel</button>
                 <button onClick={savePlan} disabled={saving || !planForm.milestone} className="flex-1 py-2.5 rounded-lg text-white text-[12px] font-bold flex items-center justify-center gap-2 disabled:opacity-50" style={{ background: 'var(--sage)' }}>{saving ? <><Loader2 size={13} className="animate-spin" />Saving…</> : <><Check size={13} />Save</>}</button>
