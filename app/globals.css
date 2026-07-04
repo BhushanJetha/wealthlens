@@ -109,6 +109,22 @@ body {
 }
 .wl-input:focus { border-color: var(--sage); }
 
+/* Icon / prefix padding: .wl-input's own `padding` shorthand is declared after
+   Tailwind's utilities, so a bare `pl-8`/`pl-12` loses and the icon overlaps the
+   text. These two-class rules out-specify .wl-input so the padding wins app-wide. */
+.wl-input.pl-6  { padding-left: 1.5rem;  }
+.wl-input.pl-7  { padding-left: 1.75rem; }
+.wl-input.pl-8  { padding-left: 2rem;    }
+.wl-input.pl-9  { padding-left: 2.25rem; }
+.wl-input.pl-10 { padding-left: 2.5rem;  }
+.wl-input.pl-11 { padding-left: 2.75rem; }
+.wl-input.pl-12 { padding-left: 3rem;    }
+.wl-input.pr-6  { padding-right: 1.5rem;  }
+.wl-input.pr-7  { padding-right: 1.75rem; }
+.wl-input.pr-8  { padding-right: 2rem;    }
+.wl-input.pr-9  { padding-right: 2.25rem; }
+.wl-input.pr-10 { padding-right: 2.5rem;  }
+
 /* Progress bars */
 .prog-sage    { background: var(--sage); }
 .prog-gold    { background: var(--gold); }
