@@ -65,16 +65,22 @@ export default function MoneyReportClient({ transactions, budgets, accounts = []
   const amt = (t: any) => toDisplay(Number(t.amount) || 0, t.currency)
   const sum = (arr: any[]) => arr.reduce((a, t) => a + amt(t), 0)
 
+  // A "loan taken" (disbursement / borrowing) is money coming IN, not spending —
+  // keep it out of every outflow bucket and track it on its own.
+  const isLoanTaken = (t: any) => ['Loan Received', 'Loan Taken', 'Loan Disbursement', 'Disbursement'].includes(t.category)
+
   // ── Clean buckets (no mixing) ────────────────────────────────────────────
   const buckets = useMemo(() => {
-    const income      = rows.filter(t => t.txn_type === 'income')
-    const expenseRows = rows.filter(t => t.txn_type === 'expense')
+    const notBorrow = (t: any) => !isLoanTaken(t)
+    const income      = rows.filter(t => t.txn_type === 'income' && notBorrow(t))
+    const expenseRows = rows.filter(t => t.txn_type === 'expense' && notBorrow(t))
     const living      = expenseRows.filter(t => t.category !== 'Credit Card Payment' && t.category !== 'Investment')
     const ccPayments  = expenseRows.filter(t => t.category === 'Credit Card Payment')
-    const investments = rows.filter(t => t.category === 'Investment')
-    const loans       = rows.filter(t => t.txn_type === 'loan')
-    const transfers   = rows.filter(t => t.txn_type === 'transfer')
-    return { income, living, ccPayments, investments, loans, transfers }
+    const investments = rows.filter(t => t.category === 'Investment' && notBorrow(t))
+    const loans       = rows.filter(t => t.txn_type === 'loan' && notBorrow(t))
+    const transfers   = rows.filter(t => t.txn_type === 'transfer' && notBorrow(t))
+    const loanTaken   = rows.filter(isLoanTaken)
+    return { income, living, ccPayments, investments, loans, transfers, loanTaken }
   }, [rows])
 
   const totalIncome   = sum(buckets.income)
@@ -83,6 +89,7 @@ export default function MoneyReportClient({ transactions, budgets, accounts = []
   const totalInvest   = sum(buckets.investments)
   const totalCC       = sum(buckets.ccPayments)
   const totalTransfer = sum(buckets.transfers)
+  const totalLoanTaken = sum(buckets.loanTaken)
 
   const netSavings = totalIncome - totalLiving - totalLoans
   const savingsRate = totalIncome > 0 ? (netSavings / totalIncome) * 100 : 0
@@ -98,20 +105,22 @@ export default function MoneyReportClient({ transactions, budgets, accounts = []
 
   // ── Month-wise breakdown by bucket (income + expense types) ──────────────
   const MONTHLY_BUCKETS = useMemo(() => ([
-    { key: 'Income',          color: '#16A34A', rows: buckets.income,      isIncome: true },
-    { key: 'Living Expenses', color: '#E11D48', rows: buckets.living },
-    { key: 'Loans / EMI',     color: '#F97316', rows: buckets.loans },
-    { key: 'Investments',     color: '#0EA5E9', rows: buckets.investments },
-    { key: 'Card Payments',   color: '#9333EA', rows: buckets.ccPayments },
-    { key: 'Transfers',       color: '#3B7DD8', rows: buckets.transfers },
+    { key: 'Income',          color: '#16A34A', rows: buckets.income,      isIncome: true, exclude: false },
+    { key: 'Living Expenses', color: '#E11D48', rows: buckets.living,      isIncome: false, exclude: false },
+    { key: 'Loans / EMI',     color: '#F97316', rows: buckets.loans,       isIncome: false, exclude: false },
+    { key: 'Investments',     color: '#0EA5E9', rows: buckets.investments, isIncome: false, exclude: false },
+    { key: 'Card Payments',   color: '#9333EA', rows: buckets.ccPayments,  isIncome: false, exclude: false },
+    { key: 'Transfers',       color: '#3B7DD8', rows: buckets.transfers,   isIncome: false, exclude: false },
+    { key: 'Loans Taken',     color: '#6366F1', rows: buckets.loanTaken,   isIncome: false, exclude: true },
   ]), [buckets])
 
   const monthly = useMemo(() => MONTHLY_BUCKETS.map(b => {
     const vals = months.map(m => Math.round(sum(b.rows.filter((t: any) => t.txn_date?.slice(0, 7) === m))))
-    return { key: b.key, color: b.color, isIncome: !!b.isIncome, vals, total: vals.reduce((a, v) => a + v, 0) }
-  }), [MONTHLY_BUCKETS, months])
+    return { key: b.key, color: b.color, isIncome: b.isIncome, exclude: b.exclude, vals, total: vals.reduce((a, v) => a + v, 0) }
+  }).filter(b => b.total > 0 || !b.exclude), [MONTHLY_BUCKETS, months])
 
-  const outBuckets = monthly.filter(b => !b.isIncome)
+  // Only real spending buckets feed the chart's stack + "Total Outflow"
+  const outBuckets = monthly.filter(b => !b.isIncome && !b.exclude)
   const monthOutTotals = months.map((_, i) => outBuckets.reduce((a, b) => a + b.vals[i], 0))
   const grandOut = monthOutTotals.reduce((a, v) => a + v, 0)
   const breakdownChart = months.map((m, i) => {
@@ -352,6 +361,7 @@ export default function MoneyReportClient({ transactions, budgets, accounts = []
             <SideStat icon={LineChart}     label="Investments"        value={money(totalInvest)}   color="#0EA5E9" note="money you put to work" />
             <SideStat icon={CreditCard}    label="Card Payments"      value={money(totalCC)}       color="#9333EA" note="repays spending already counted" />
             <SideStat icon={ArrowLeftRight} label="Transfers"         value={money(totalTransfer)} color="#3B7DD8" note="moved between accounts" />
+            {totalLoanTaken > 0 && <SideStat icon={Building2} label="Loans Taken" value={money(totalLoanTaken)} color="#6366F1" note="borrowed — money in, not spending" />}
           </div>
         </div>
       </div>
@@ -451,8 +461,8 @@ export default function MoneyReportClient({ transactions, budgets, accounts = []
                     <td className="sticky left-0 px-3 py-2 font-semibold" style={{ background: '#fff' }}>
                       <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm" style={{ background: b.color }} /><span style={{ color: 'var(--text)' }}>{b.key}</span></span>
                     </td>
-                    {b.vals.map((v, i) => <td key={i} className="px-3 py-2 text-right font-mono" style={{ color: v > 0 ? (b.isIncome ? 'var(--income)' : 'var(--text2)') : 'var(--text3)' }}>{v > 0 ? money(v) : '—'}</td>)}
-                    <td className="px-3 py-2 text-right font-mono font-bold" style={{ color: b.isIncome ? 'var(--income)' : 'var(--text)', borderLeft: '2px solid var(--border)' }}>{money(b.total)}</td>
+                    {b.vals.map((v, i) => <td key={i} className="px-3 py-2 text-right font-mono" style={{ color: v > 0 ? (b.isIncome ? 'var(--income)' : b.exclude ? '#6366F1' : 'var(--text2)') : 'var(--text3)' }}>{v > 0 ? money(v) : '—'}</td>)}
+                    <td className="px-3 py-2 text-right font-mono font-bold" style={{ color: b.isIncome ? 'var(--income)' : b.exclude ? '#6366F1' : 'var(--text)', borderLeft: '2px solid var(--border)' }}>{money(b.total)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -465,7 +475,7 @@ export default function MoneyReportClient({ transactions, budgets, accounts = []
               </tfoot>
             </table>
           </div>
-          <p className="text-[10px] mt-2" style={{ color: 'var(--text3)' }}>Income is shown separately (line in the chart). "Total Outflow" sums Living + Loans/EMI + Investments + Card Payments + Transfers — Transfers &amp; Card Payments &amp; Investments are money movements, not spending.</p>
+          <p className="text-[10px] mt-2" style={{ color: 'var(--text3)' }}>Income is shown separately (line in the chart). <span style={{ color: '#6366F1' }}>Loans Taken</span> is money you borrowed (an inflow) — it is <b>not</b> part of Total Outflow. "Total Outflow" sums Living + Loans/EMI + Investments + Card Payments + Transfers.</p>
         </div>
       )}
 

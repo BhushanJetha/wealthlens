@@ -655,7 +655,7 @@ export default function BankStatementUploadModal({ onClose }: Props) {
                             <select value={t.category} onChange={e => {
                                 const cat = e.target.value
                                 updateTxn(i, 'category', cat)
-                                if (['Transfer','Family Transfer','Loan Received','International Transfer','NRE Received','NRE to NRO','NRO to Family','Self Transfer'].includes(cat)) updateTxn(i, 'txn_type', 'transfer')
+                                if (['Transfer','Family Transfer','Loan Received','Loan Taken','International Transfer','NRE Received','NRE to NRO','NRO to Family','Self Transfer'].includes(cat)) updateTxn(i, 'txn_type', 'transfer')
                                 else if (cat === 'Loan on Card' || cat === 'EMI/Loan') updateTxn(i, 'txn_type', 'loan')
                                 else if (['Salary','Interest','Dividend','Rental','Bonus','Tax Refund','Freelance','Gift','NRI Transfer'].includes(cat)) updateTxn(i, 'txn_type', 'income')
                                 else if (['Food','Shopping','Utilities','Transport','Health','Entertainment','Travel','Education','Subscription'].includes(cat)) updateTxn(i, 'txn_type', 'expense')
@@ -684,6 +684,7 @@ export default function BankStatementUploadModal({ onClose }: Props) {
                                 <option>Loan on Card</option>
                                 <option>EMI/Loan</option>
                                 <option>Loan Received</option>
+                                <option>Loan Taken</option>
                               </optgroup>
                               <optgroup label="Other">
                                 {['Investment','Refund','Other'].map(c => <option key={c}>{c}</option>)}

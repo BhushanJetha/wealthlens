@@ -601,7 +601,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
                     onChange={e => {
                       const cat = e.target.value
                       const autoType =
-                        ['Transfer','Family Transfer','International Transfer','NRE Received','NRE to NRO','NRO to Family','Self Transfer','Loan Received'].includes(cat) ? 'transfer'
+                        ['Transfer','Family Transfer','International Transfer','NRE Received','NRE to NRO','NRO to Family','Self Transfer','Loan Received','Loan Taken'].includes(cat) ? 'transfer'
                         : ['Loan on Card','EMI/Loan'].includes(cat) ? 'loan'
                         : ['Salary','Interest','Dividend','Rental','Bonus','Tax Refund','Freelance','Gift','NRI Transfer'].includes(cat) ? 'income'
                         : ['Food','Shopping','Utilities','Transport','Health','Entertainment','Travel','Education','Subscription'].includes(cat) ? 'expense'
@@ -622,7 +622,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
                       <option>Credit Card Payment</option>
                     </optgroup>
                     <optgroup label="Loans">
-                      {['Loan on Card','EMI/Loan'].map(c => <option key={c}>{c}</option>)}
+                      {['Loan on Card','EMI/Loan','Loan Taken'].map(c => <option key={c}>{c}</option>)}
                     </optgroup>
                     <optgroup label="Other">
                       {['Investment','Refund','Other'].map(c => <option key={c}>{c}</option>)}
