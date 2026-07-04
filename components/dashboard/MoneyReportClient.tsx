@@ -2,7 +2,7 @@
 import { useMemo } from 'react'
 import { useViewStore } from '@/store/viewStore'
 import { normMerchant } from '@/lib/categoryMemory'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
+import { BarChart, Bar, ComposedChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
 import {
   TrendingUp, TrendingDown, PiggyBank, Wallet, ArrowLeftRight,
   CreditCard, LineChart, AlertTriangle, CheckCircle2, Receipt,
@@ -95,6 +95,30 @@ export default function MoneyReportClient({ transactions, budgets, accounts = []
     const lon = sum(buckets.loans.filter(inM))
     return { month: MONTH_NAMES[Number(m.slice(5)) - 1] + (months.length > 12 ? ` '${m.slice(2,4)}` : ''), Income: Math.round(inc), Spending: Math.round(liv + lon), Saved: Math.round(inc - liv - lon) }
   }), [months, buckets])
+
+  // ── Month-wise breakdown by bucket (income + expense types) ──────────────
+  const MONTHLY_BUCKETS = useMemo(() => ([
+    { key: 'Income',          color: '#16A34A', rows: buckets.income,      isIncome: true },
+    { key: 'Living Expenses', color: '#E11D48', rows: buckets.living },
+    { key: 'Loans / EMI',     color: '#F97316', rows: buckets.loans },
+    { key: 'Investments',     color: '#0EA5E9', rows: buckets.investments },
+    { key: 'Card Payments',   color: '#9333EA', rows: buckets.ccPayments },
+    { key: 'Transfers',       color: '#3B7DD8', rows: buckets.transfers },
+  ]), [buckets])
+
+  const monthly = useMemo(() => MONTHLY_BUCKETS.map(b => {
+    const vals = months.map(m => Math.round(sum(b.rows.filter((t: any) => t.txn_date?.slice(0, 7) === m))))
+    return { key: b.key, color: b.color, isIncome: !!b.isIncome, vals, total: vals.reduce((a, v) => a + v, 0) }
+  }), [MONTHLY_BUCKETS, months])
+
+  const outBuckets = monthly.filter(b => !b.isIncome)
+  const monthOutTotals = months.map((_, i) => outBuckets.reduce((a, b) => a + b.vals[i], 0))
+  const grandOut = monthOutTotals.reduce((a, v) => a + v, 0)
+  const breakdownChart = months.map((m, i) => {
+    const o: Record<string, any> = { month: MONTH_NAMES[Number(m.slice(5)) - 1] + (months.length > 12 ? ` '${m.slice(2, 4)}` : '') }
+    monthly.forEach(b => { o[b.key] = b.vals[i] })
+    return o
+  })
 
   // ── Spending by category (living only) ───────────────────────────────────
   const spendByCat = useMemo(() => {
@@ -385,6 +409,63 @@ export default function MoneyReportClient({ transactions, budgets, accounts = []
               </BarChart>
             </ResponsiveContainer>
           </div>
+        </div>
+      )}
+
+      {/* Month-wise breakdown — table + stacked trend */}
+      {grandOut + monthly[0].total > 0 && (
+        <div className="wl-card p-4">
+          <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>Monthly Breakdown — {rangeLabel}</div>
+
+          {months.length > 1 && (
+            <div style={{ width: '100%', height: 260 }} className="mb-4">
+              <ResponsiveContainer>
+                <ComposedChart data={breakdownChart} margin={{ top: 4, right: 8, left: -10, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="month" tick={{ fontSize: 10, fill: 'var(--text3)' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: 'var(--text3)' }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtK(Number(v))} />
+                  <Tooltip formatter={(v: any) => money(Number(v))} contentStyle={{ fontSize: 11, borderRadius: 10, border: '1px solid var(--border)' }} />
+                  <Legend wrapperStyle={{ fontSize: 10 }} />
+                  {outBuckets.map(b => <Bar key={b.key} dataKey={b.key} stackId="out" fill={b.color} radius={[0, 0, 0, 0]} />)}
+                  <Line type="monotone" dataKey="Income" stroke="#16A34A" strokeWidth={2} dot={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px] border-collapse">
+              <thead>
+                <tr style={{ background: 'var(--bg2)', borderBottom: '2px solid var(--border)' }}>
+                  <th className="sticky left-0 px-3 py-2 text-left text-[10px] uppercase tracking-wider font-bold min-w-[120px]" style={{ background: 'var(--bg2)', color: 'var(--text3)' }}>Source</th>
+                  {months.map(m => (
+                    <th key={m} className="px-3 py-2 text-right text-[10px] uppercase tracking-wider font-bold min-w-[64px]"
+                      style={{ color: 'var(--text3)', background: m >= fromMonth && m <= toMonth ? 'var(--income-bg)' : 'var(--bg2)' }}>{MONTH_NAMES[Number(m.slice(5)) - 1]}</th>
+                  ))}
+                  <th className="px-3 py-2 text-right text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--text)', background: 'var(--bg2)', borderLeft: '2px solid var(--border)' }}>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {monthly.map(b => (
+                  <tr key={b.key} style={{ borderBottom: '1px solid var(--border)' }} className="hover:bg-stone-50 transition-colors">
+                    <td className="sticky left-0 px-3 py-2 font-semibold" style={{ background: '#fff' }}>
+                      <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm" style={{ background: b.color }} /><span style={{ color: 'var(--text)' }}>{b.key}</span></span>
+                    </td>
+                    {b.vals.map((v, i) => <td key={i} className="px-3 py-2 text-right font-mono" style={{ color: v > 0 ? (b.isIncome ? 'var(--income)' : 'var(--text2)') : 'var(--text3)' }}>{v > 0 ? money(v) : '—'}</td>)}
+                    <td className="px-3 py-2 text-right font-mono font-bold" style={{ color: b.isIncome ? 'var(--income)' : 'var(--text)', borderLeft: '2px solid var(--border)' }}>{money(b.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{ background: 'var(--bg2)', borderTop: '2px solid var(--border)' }}>
+                  <td className="sticky left-0 px-3 py-2 font-bold uppercase tracking-wider text-[10px]" style={{ background: 'var(--bg2)', color: 'var(--text)' }}>Total Outflow</td>
+                  {monthOutTotals.map((v, i) => <td key={i} className="px-3 py-2 text-right font-mono font-bold" style={{ color: 'var(--expense)' }}>{v > 0 ? money(v) : '—'}</td>)}
+                  <td className="px-3 py-2 text-right font-mono font-bold text-[12px]" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--border)' }}>{money(grandOut)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <p className="text-[10px] mt-2" style={{ color: 'var(--text3)' }}>Income is shown separately (line in the chart). "Total Outflow" sums Living + Loans/EMI + Investments + Card Payments + Transfers — Transfers &amp; Card Payments &amp; Investments are money movements, not spending.</p>
         </div>
       )}
 

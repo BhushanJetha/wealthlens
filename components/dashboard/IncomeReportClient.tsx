@@ -1,5 +1,5 @@
 'use client'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useViewStore } from '@/store/viewStore'
 import { Download, ChevronLeft, ChevronRight } from 'lucide-react'
 
@@ -76,6 +76,8 @@ export default function IncomeReportClient({ transactions }: { transactions: any
   const sym = view === 'uae' ? 'AED ' : '₹'
 
   const [viewYear, setViewYear] = useState(() => parseInt(fromMonth.slice(0, 4)))
+  // Follow the year picked in the top bar's calendar
+  useEffect(() => { setViewYear(parseInt(fromMonth.slice(0, 4))) }, [fromMonth])
 
   const yearFrom = `${viewYear}-01`
   const yearTo   = `${viewYear}-12`
