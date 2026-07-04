@@ -8,6 +8,11 @@ export default async function BudgetsPage() {
   const thisYear  = new Date().getFullYear()
   const yearStart = `${thisYear}-01-01`
   const yearEnd   = `${thisYear}-12-31`
+  // Fetch income back 6 months even if it crosses into last year, so the
+  // budget page can average the salary across recent months.
+  const d6 = new Date(); d6.setMonth(d6.getMonth() - 6)
+  const histStart   = d6.toISOString().slice(0, 10)
+  const incomeStart = histStart < yearStart ? histStart : yearStart
 
   const [budgetsRes, txnsRes, incomeRes] = await Promise.all([
     supabase.from('budgets').select('*').eq('user_id', user!.id).eq('month_year', thisMonth),
@@ -16,13 +21,17 @@ export default async function BudgetsPage() {
       .eq('user_id', user!.id)
       .in('txn_type', ['expense', 'transfer', 'loan'])
       .gte('txn_date', yearStart)
-      .lte('txn_date', yearEnd),
+      .lte('txn_date', yearEnd)
+      .order('txn_date', { ascending: true })
+      .limit(5000),
     supabase.from('transactions')
       .select('amount,currency,txn_date')
       .eq('user_id', user!.id)
       .eq('txn_type', 'income')
-      .gte('txn_date', yearStart)
-      .lte('txn_date', yearEnd),
+      .gte('txn_date', incomeStart)
+      .lte('txn_date', yearEnd)
+      .order('txn_date', { ascending: true })
+      .limit(5000),
   ])
 
   return (

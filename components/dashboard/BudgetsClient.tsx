@@ -7,15 +7,19 @@ import Link from 'next/link'
 
 const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
+// Planable categories. Excludes "Credit Card Payment" and "Loan on Card" — a CC
+// bill just settles spend already budgeted in other categories, so budgeting it
+// would double-count. EMI/Loan Payment IS budgetable (a real monthly outflow).
 const CATS = [
   'Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment',
-  'Travel','Education','Subscription','Investment','EMI/Loan','Transfer','Other',
+  'Travel','Education','Subscription','Investment','EMI/Loan','Family Transfer','Transfer','Other',
 ]
 
 const CAT_COLORS: Record<string, string> = {
   Food: '#D97706', Shopping: '#2563EB', Utilities: '#7C3AED', Transport: '#16A34A',
   Health: '#059669', Entertainment: '#E11D48', Travel: '#EA580C', Education: '#0284C7',
   Subscription: '#EC4899', Investment: '#8B5CF6', 'EMI/Loan': '#DC2626',
+  'Personal Care': '#DB2777', 'Family Transfer': '#0EA5E9',
   Transfer: '#3B7DD8', Other: '#6B7280',
 }
 
@@ -109,6 +113,29 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
   const budgetUsedPct  = totalBudgetCap > 0 ? Math.round(thisMonthSpend / totalBudgetCap * 100) : 0
   const savedThisMonth = thisMonthIncome > 0 ? thisMonthIncome - thisMonthSpend : null
 
+  // Average monthly income over the last 6 months that actually have income, so
+  // the budget plan uses a stable "salary" figure even if the current month's
+  // pay hasn't landed yet. Falls back to the current month if that's all we have.
+  const incByMonth: Record<string, number> = {}
+  {
+    const window: string[] = []
+    for (let i = 0; i < 6; i++) { const d = new Date(); d.setMonth(d.getMonth() - i); window.push(d.toISOString().slice(0, 7)) }
+    incomeTransactions.forEach((t: any) => {
+      const m = t.txn_date?.slice(0, 7)
+      if (!m || !window.includes(m)) return
+      incByMonth[m] = (incByMonth[m] ?? 0) + display(Number(t.amount), t.currency)
+    })
+  }
+  const incActiveMonths = Object.values(incByMonth).filter((v) => v > 0)
+  const avgMonthlyIncome = incActiveMonths.length
+    ? Math.round(incActiveMonths.reduce((a, v) => a + v, 0) / incActiveMonths.length)
+    : 0
+  // Basis for budget planning: prefer the 6-month average, fall back to this month.
+  const incomeBasis = avgMonthlyIncome > 0 ? avgMonthlyIncome : thisMonthIncome
+  const incomeBasisLabel = avgMonthlyIncome > 0
+    ? `Avg monthly income · last ${incActiveMonths.length} mo`
+    : `${new Date().toLocaleString('default', { month: 'short' })} income`
+
   // Budget cap lookup for matrix (view-consistent)
   const budgetCapMap: Record<string, number> = {}
   viewBudgets.forEach((b: any) => { budgetCapMap[b.category] = budgetCapOf(b) })
@@ -200,13 +227,13 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
       return {
         id: b.id, category: b.category, cap,
         spent: Math.round(spendMap[b.category] ?? 0),
-        pctInc: thisMonthIncome > 0 ? Math.round(cap / thisMonthIncome * 100) : 0,
+        pctInc: incomeBasis > 0 ? Math.round(cap / incomeBasis * 100) : 0,
       }
     })
     .sort((a: any, b: any) => b.cap - a.cap)
   const allocTotal   = allocRows.reduce((a: number, r: any) => a + r.cap, 0)
-  const allocPctInc  = thisMonthIncome > 0 ? Math.round(allocTotal / thisMonthIncome * 100) : 0
-  const unallocated  = thisMonthIncome > 0 ? thisMonthIncome - allocTotal : null
+  const allocPctInc  = incomeBasis > 0 ? Math.round(allocTotal / incomeBasis * 100) : 0
+  const unallocated  = incomeBasis > 0 ? incomeBasis - allocTotal : null
 
   // ── Smart Budget: average of the 3 most recent months WITH data + 10% buffer ──
   // Anchored on the user's latest spending (in the active view) rather than a
@@ -666,10 +693,10 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
             <div className="flex items-center justify-between px-4 py-3 flex-wrap gap-2"
               style={{ background: 'var(--income-bg)', borderBottom: '1px solid var(--border)' }}>
               <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>
-                {monthName} Income
+                {incomeBasisLabel}
               </div>
               <div className="text-[16px] font-black font-mono" style={{ color: 'var(--income)' }}>
-                {thisMonthIncome > 0 ? `${sym}${thisMonthIncome.toLocaleString('en-IN')}` : 'Not recorded'}
+                {incomeBasis > 0 ? `${sym}${incomeBasis.toLocaleString('en-IN')}` : 'Not recorded'}
               </div>
             </div>
             <div className="overflow-x-auto">
@@ -698,7 +725,7 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
                           {sym}{r.cap.toLocaleString('en-IN')}
                         </td>
                         <td className="px-4 py-2.5 text-right font-mono" style={{ color: 'var(--text3)' }}>
-                          {thisMonthIncome > 0 ? `${r.pctInc}%` : '—'}
+                          {incomeBasis > 0 ? `${r.pctInc}%` : '—'}
                         </td>
                         <td className="px-4 py-2.5 text-right font-mono" style={{ color: r.spent > r.cap ? 'var(--rose)' : 'var(--text2, var(--text))' }}>
                           {sym}{r.spent.toLocaleString('en-IN')}
@@ -718,7 +745,7 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
                       {sym}{allocTotal.toLocaleString('en-IN')}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono font-bold" style={{ color: allocPctInc > 100 ? 'var(--rose)' : 'var(--text)' }}>
-                      {thisMonthIncome > 0 ? `${allocPctInc}%` : '—'}
+                      {incomeBasis > 0 ? `${allocPctInc}%` : '—'}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono font-bold" style={{ color: 'var(--rose)' }}>
                       {sym}{thisMonthSpend.toLocaleString('en-IN')}
@@ -743,9 +770,9 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
               </table>
             </div>
             <div className="px-4 py-2.5 border-t text-[10px]" style={{ borderColor: 'var(--border)', color: 'var(--text3)' }}>
-              {thisMonthIncome > 0
-                ? `You've budgeted ${allocPctInc}% of ${monthName} income across ${allocRows.length} categories · ${unallocated !== null && unallocated >= 0 ? `${sym}${unallocated.toLocaleString('en-IN')} left to save/allocate` : 'budgets exceed income — trim caps'}`
-                : `Record this month's income to see how much of it each budget uses.`}
+              {incomeBasis > 0
+                ? `You've budgeted ${allocPctInc}% of your ${avgMonthlyIncome > 0 ? 'average' : 'monthly'} income across ${allocRows.length} categories · ${unallocated !== null && unallocated >= 0 ? `${sym}${unallocated.toLocaleString('en-IN')} left to save/allocate` : 'budgets exceed income — trim caps'}`
+                : `Record a few months of income to plan budgets against your average salary.`}
             </div>
           </div>
         )}
