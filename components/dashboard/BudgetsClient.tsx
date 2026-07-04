@@ -182,29 +182,38 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
   const subTotal    = subscriptions.reduce((a, s) => a + s.total, 0)
   const overBudget  = budgets.filter((b: any) => (spendMap[b.category] ?? 0) > Number(b.monthly_cap)).length
 
-  // ── Smart Budget: calculate 3-month average + 10% buffer ──────────
+  // ── Smart Budget: average of the 3 most recent months WITH data + 10% buffer ──
+  // Anchored on the user's latest spending (in the active view) rather than a
+  // fixed calendar window, so it still works when the data is in the current
+  // month or older than the last 3 calendar months.
   function calcSmartSuggestions(): Record<string,number> {
-    const now = new Date()
-    const months: string[] = []
-    for (let i = 1; i <= 3; i++) {
-      const d = new Date(now); d.setMonth(d.getMonth() - i)
-      months.push(d.toISOString().slice(0, 7))
-    }
-    const totals: Record<string, number[]> = {}
+    const nowM = new Date().toISOString().slice(0, 7)
+    // Group in-view expense spend by month → category
+    const byMonthCat: Record<string, Record<string, number>> = {}
     transactions.filter((t: any) => t.txn_type === 'expense').forEach((t: any) => {
       const m = t.txn_date?.slice(0, 7)
-      if (!m || !months.includes(m)) return
+      if (!m || m > nowM) return                 // ignore future-dated rows
       const amt = display(Number(t.amount), t.currency)
-      if (amt <= 0) return
+      if (amt <= 0) return                       // 0 = filtered out by view/currency
       const cat = t.category || 'Other'
-      if (!totals[cat]) totals[cat] = [0, 0, 0]
-      totals[cat][months.indexOf(m)] += amt
+      if (!byMonthCat[m]) byMonthCat[m] = {}
+      byMonthCat[m][cat] = (byMonthCat[m][cat] ?? 0) + amt
+    })
+    // The 3 most recent months that actually have spending
+    const months = Object.keys(byMonthCat).sort().reverse().slice(0, 3)
+    if (!months.length) return {}
+    // Average each category over the months it actually appears in
+    const agg: Record<string, { sum: number; n: number }> = {}
+    months.forEach(m => {
+      Object.entries(byMonthCat[m]).forEach(([cat, amt]) => {
+        if (!agg[cat]) agg[cat] = { sum: 0, n: 0 }
+        agg[cat].sum += amt
+        agg[cat].n++
+      })
     })
     const sug: Record<string, number> = {}
-    Object.entries(totals).forEach(([cat, vals]) => {
-      const filled = vals.filter(v => v > 0)
-      if (!filled.length) return
-      const avg = filled.reduce((a, v) => a + v, 0) / filled.length
+    Object.entries(agg).forEach(([cat, { sum, n }]) => {
+      const avg = sum / n
       sug[cat] = Math.ceil((avg * 1.1) / 100) * 100
     })
     return sug
@@ -445,7 +454,8 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
             </div>
             {Object.keys(smartPreview).length === 0 ? (
               <div className="text-[12px] py-4 text-center" style={{ color: 'var(--text3)' }}>
-                No spending data in the last 3 months to suggest budgets.
+                No expense transactions found for the <strong>{view === 'uae' ? 'UAE (AED)' : view === 'india' ? 'India (INR)' : 'Consolidated'}</strong> view yet.
+                {view !== 'consolidated' && <> Try switching the top view to match where your spending is (or use Consolidated).</>}
               </div>
             ) : (
               <>
