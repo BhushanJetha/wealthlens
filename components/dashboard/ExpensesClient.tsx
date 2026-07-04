@@ -14,11 +14,12 @@ import CreditCardUploadModal from '@/components/forms/CreditCardUploadModal'
 import { Search, Upload, Image, Mic, PenLine, BarChart2, ArrowRight, AlertTriangle, X, CreditCard, Pencil, Trash2, Check, BookOpen, ChevronDown, Plus, Copy } from 'lucide-react'
 import Link from 'next/link'
 
-const EXPENSE_CATS = ['All','Food','Shopping','Utilities','Transport','Health','Entertainment','Travel','Education','Subscription','Credit Card Payment','Loan on Card','EMI/Loan','Family Transfer','Transfer','Refund','Other']
+const EXPENSE_CATS = ['All','Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment','Travel','Education','Subscription','Credit Card Payment','Loan on Card','EMI/Loan','Family Transfer','Transfer','Refund','Other']
 const CAT_COLORS: Record<string,string> = {
   Food:'#D97706', Shopping:'#2563EB', Utilities:'#7C3AED', Transport:'#16A34A',
   Health:'#059669', Entertainment:'#E11D48', Travel:'#EA580C', Other:'#6B7280',
   Transfer:'#3B7DD8', Education:'#0284C7', Subscription:'#EC4899', Refund:'#10B981',
+  'Personal Care':'#DB2777',
   'Credit Card Payment':'#9333EA', 'Family Transfer':'#0EA5E9',
   'Loan on Card':'#F59E0B', 'EMI/Loan':'#F97316',
 }
@@ -650,13 +651,13 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
                         ['Transfer','Family Transfer','International Transfer','NRE Received','NRE to NRO','NRO to Family','Self Transfer','Loan Received','Loan Taken'].includes(cat) ? 'transfer'
                         : ['Loan on Card','EMI/Loan'].includes(cat) ? 'loan'
                         : ['Salary','Interest','Dividend','Rental','Bonus','Tax Refund','Freelance','Gift','NRI Transfer'].includes(cat) ? 'income'
-                        : ['Food','Shopping','Utilities','Transport','Health','Entertainment','Travel','Education','Subscription'].includes(cat) ? 'expense'
+                        : ['Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment','Travel','Education','Subscription'].includes(cat) ? 'expense'
                         : editFields.txn_type
                       setEditFields((f: any) => ({ ...f, category: cat, txn_type: autoType }))
                     }}
                     className="wl-input w-full text-[12px]" style={{ background:'var(--bg2)', border:'1px solid var(--border)', color:'var(--text)' }}>
                     <optgroup label="Spending">
-                      {['Food','Shopping','Utilities','Transport','Health','Entertainment','Travel','Education','Subscription'].map(c => <option key={c}>{c}</option>)}
+                      {['Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment','Travel','Education','Subscription'].map(c => <option key={c}>{c}</option>)}
                     </optgroup>
                     <optgroup label="Income">
                       {['Salary','Interest','Dividend','Rental','Bonus','Tax Refund','Freelance','Gift','NRI Transfer'].map(c => <option key={c}>{c}</option>)}

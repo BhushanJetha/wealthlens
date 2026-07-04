@@ -8,7 +8,7 @@ import Link from 'next/link'
 const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 const CATS = [
-  'Food','Shopping','Utilities','Transport','Health','Entertainment',
+  'Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment',
   'Travel','Education','Subscription','Investment','EMI/Loan','Transfer','Other',
 ]
 

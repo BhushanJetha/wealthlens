@@ -4,13 +4,13 @@ import { createClient } from '@/lib/supabase/client'
 import { X, Loader2, Plus, ArrowRight, RefreshCw } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
-const EXPENSE_CATS = ['Food','Shopping','Utilities','Transport','Health','Entertainment','Travel','Education','Subscription','Investment','EMI/Loan','Other']
+const EXPENSE_CATS = ['Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment','Travel','Education','Subscription','Investment','EMI/Loan','Other']
 const INCOME_CATS  = ['Salary','Dividend','Rental','Gift','Bonus','Tax Refund','Interest','Freelance','NRI Transfer','Other']
 
 const CAT_COLORS: Record<string,string> = {
   Food:'#D97706', Shopping:'#2563EB', Utilities:'#7C3AED', Transport:'#16A34A',
   Health:'#059669', Entertainment:'#E11D48', Travel:'#EA580C', Education:'#0284C7',
-  Subscription:'#EC4899',
+  Subscription:'#EC4899', 'Personal Care':'#DB2777',
   Salary:'#16A34A', Dividend:'#2563EB', Rental:'#7C3AED', Gift:'#E11D48',
   Bonus:'#D97706', 'Tax Refund':'#059669', Interest:'#0284C7', Freelance:'#EA580C',
   'NRI Transfer':'#0EA5E9',

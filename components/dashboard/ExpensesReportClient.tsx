@@ -33,7 +33,7 @@ function momChange(curr: number, prev: number): number | null {
 const CAT_COLORS: Record<string,string> = {
   Food:'#D97706', Shopping:'#2563EB', Utilities:'#7C3AED', Transport:'#16A34A',
   Health:'#059669', Entertainment:'#E11D48', Travel:'#EA580C', Education:'#0284C7',
-  Subscription:'#EC4899', 'EMI/Loan':'#9333EA', Investment:'#0EA5E9',
+  Subscription:'#EC4899', 'Personal Care':'#DB2777', 'EMI/Loan':'#9333EA', Investment:'#0EA5E9',
   Transfer:'#3B7DD8', Other:'#6B7280',
   // Transfers / payments / loans (so they show by name, not lumped into "Other")
   'Credit Card Payment':'#9333EA', 'International Transfer':'#0EA5E9', 'NRE Received':'#0284C7',

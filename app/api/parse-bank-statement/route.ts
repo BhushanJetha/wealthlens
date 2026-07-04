@@ -121,7 +121,9 @@ const CAT_RULES: [RegExp, string][] = [
   [/irctc|makemytrip|cleartrip|goibibo|easemytrip|yatra|\bhotel\b|airbnb|\boyo\b|booking\.com|agoda|marriott|flight|airline|air\s*india|indigo|spicejet|vistara|airport|resort/i, 'Travel'],
   [/netflix|hotstar|disney|prime\s*video|amazon\s*prime|zee5|sonyliv|youtube\s*prem|apple\s*tv|spotify|gaana|apple\s*music|bookmyshow|\bpvr\b|\binox\b/i, 'Subscription'],
   [/electricity|bescom|msedcl|tata\s*power|water\s*board|\bgas\b|airtel|\bjio\b|vodafone|\bvi\b|bsnl|postpaid|prepaid|broadband|wifi|etisalat|\bdu\b|telecom/i, 'Utilities'],
-  [/apollo|pharmeasy|netmeds|medplus|1mg|doctor|hospital|clinic|pharmacy|\bmed\b|diagnostic|dental|spa\b|wellness|fitness|gym\b/i, 'Health'],
+  // Personal care / grooming — before Health so salon & spa land here
+  [/\bsalon\b|\bspa\b|barber|grooming|\bbeauty\b|parlou?r|hair\s*cut|haircut|cosmetic|make[\s-]?up|manicure|pedicure|waxing|threading|nail\s*(?:bar|salon|studio)|\bsephora\b/i, 'Personal Care'],
+  [/apollo|pharmeasy|netmeds|medplus|1mg|doctor|hospital|clinic|pharmacy|\bmed\b|diagnostic|dental|wellness|fitness|gym\b/i, 'Health'],
   [/snooker|bowling|cinema|movie|concert|gaming|arcade/i, 'Entertainment'],
   // Shopping — lulu alone (hypermarket), but NOT lulu international exchange (already caught above)
   [/amazon(?!\s*prime)|flipkart|myntra|ajio|nykaa|reliance\s*digital|croma|d[\s\-]?mart|big\s*bazaar|supermarket|hypermarket|carrefour|(?<!international\s)lulu\b|spinneys|\bmart\b|\bmarket\b/i, 'Shopping'],

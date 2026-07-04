@@ -134,7 +134,8 @@ const CAT_RULES: [RegExp, string][] = [
   // Utilities
   [/electricity|bescom|msedcl|tata\s*power|adani\s*elec|water\s*board|\bgas\b|mahanagar|\bigl\b|airtel|\bjio\b|vodafone|\bvi\b|bsnl|\bidea\b|postpaid|prepaid|broadband|wifi|dish\s*tv|tata\s*sky|\bd2h\b|etisalat|\bdu\b|telecom/i, 'Utilities'],
   // Health & wellness
-  [/apollo|practo|pharmeasy|netmeds|medplus|healthkart|1mg|doctor|hospital|clinic|pharmacy|\bmed\b|diagnostic|dental|optical|massage|spa\b|wellness|fitness|gym\b/i, 'Health'],
+  [/\bsalon\b|\bspa\b|barber|grooming|\bbeauty\b|parlou?r|hair\s*cut|haircut|cosmetic|make[\s-]?up|manicure|pedicure|waxing|threading|nail\s*(?:bar|salon|studio)|\bsephora\b/i, 'Personal Care'],
+  [/apollo|practo|pharmeasy|netmeds|medplus|healthkart|1mg|doctor|hospital|clinic|pharmacy|\bmed\b|diagnostic|dental|optical|massage|wellness|fitness|gym\b/i, 'Health'],
   // Entertainment
   [/snooker|billiard|bowling|cinema|movie|concert|gaming|arcade|laser\s*tag|karting|paintball/i, 'Entertainment'],
   // Shopping & grocery
