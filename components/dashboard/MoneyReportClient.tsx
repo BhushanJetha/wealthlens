@@ -1,7 +1,8 @@
 'use client'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useViewStore } from '@/store/viewStore'
 import { normMerchant } from '@/lib/categoryMemory'
+import TxnDrillModal from '@/components/dashboard/TxnDrillModal'
 import { BarChart, Bar, ComposedChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
 import {
   TrendingUp, TrendingDown, PiggyBank, Wallet, ArrowLeftRight,
@@ -41,6 +42,7 @@ function addMonths(ym: string, delta: number): string {
 
 export default function MoneyReportClient({ transactions, budgets, accounts = [] }: { transactions: any[]; budgets: any[]; accounts?: any[] }) {
   const { view, fromMonth, toMonth, fxRate: FX } = useViewStore()
+  const [drill, setDrill] = useState<{ title: string; subtitle?: string; items: any[] } | null>(null)
 
   const sym = view === 'uae' ? 'AED ' : '₹'
   const toDisplay = (amt: number, cur: string) =>
@@ -116,7 +118,7 @@ export default function MoneyReportClient({ transactions, budgets, accounts = []
 
   const monthly = useMemo(() => MONTHLY_BUCKETS.map(b => {
     const vals = months.map(m => Math.round(sum(b.rows.filter((t: any) => t.txn_date?.slice(0, 7) === m))))
-    return { key: b.key, color: b.color, isIncome: b.isIncome, exclude: b.exclude, vals, total: vals.reduce((a, v) => a + v, 0) }
+    return { key: b.key, color: b.color, isIncome: b.isIncome, exclude: b.exclude, rows: b.rows, vals, total: vals.reduce((a, v) => a + v, 0) }
   }).filter(b => b.total > 0 || !b.exclude), [MONTHLY_BUCKETS, months])
 
   // Only real spending buckets feed the chart's stack + "Total Outflow"
@@ -461,16 +463,30 @@ export default function MoneyReportClient({ transactions, budgets, accounts = []
                     <td className="sticky left-0 px-3 py-2 font-semibold" style={{ background: '#fff' }}>
                       <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm" style={{ background: b.color }} /><span style={{ color: 'var(--text)' }}>{b.key}</span></span>
                     </td>
-                    {b.vals.map((v, i) => <td key={i} className="px-3 py-2 text-right font-mono" style={{ color: v > 0 ? (b.isIncome ? 'var(--income)' : b.exclude ? '#6366F1' : 'var(--text2)') : 'var(--text3)' }}>{v > 0 ? money(v) : '—'}</td>)}
-                    <td className="px-3 py-2 text-right font-mono font-bold" style={{ color: b.isIncome ? 'var(--income)' : b.exclude ? '#6366F1' : 'var(--text)', borderLeft: '2px solid var(--border)' }}>{money(b.total)}</td>
+                    {b.vals.map((v, i) => (
+                      <td key={i} className="px-3 py-2 text-right font-mono" style={{ color: v > 0 ? (b.isIncome ? 'var(--income)' : b.exclude ? '#6366F1' : 'var(--text2)') : 'var(--text3)' }}>
+                        {v > 0
+                          ? <button onClick={() => setDrill({ title: b.key, subtitle: `${MONTH_NAMES[Number(months[i].slice(5)) - 1]} ${months[i].slice(0, 4)}`, items: b.rows.filter((t: any) => t.txn_date?.slice(0, 7) === months[i]) })} className="hover:underline" style={{ color: 'inherit' }}>{money(v)}</button>
+                          : '—'}
+                      </td>
+                    ))}
+                    <td className="px-3 py-2 text-right font-mono font-bold" style={{ color: b.isIncome ? 'var(--income)' : b.exclude ? '#6366F1' : 'var(--text)', borderLeft: '2px solid var(--border)' }}>
+                      {b.total > 0 ? <button onClick={() => setDrill({ title: b.key, subtitle: rangeLabel, items: b.rows })} className="hover:underline" style={{ color: 'inherit' }}>{money(b.total)}</button> : money(b.total)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr style={{ background: 'var(--bg2)', borderTop: '2px solid var(--border)' }}>
                   <td className="sticky left-0 px-3 py-2 font-bold uppercase tracking-wider text-[10px]" style={{ background: 'var(--bg2)', color: 'var(--text)' }}>Total Outflow</td>
-                  {monthOutTotals.map((v, i) => <td key={i} className="px-3 py-2 text-right font-mono font-bold" style={{ color: 'var(--expense)' }}>{v > 0 ? money(v) : '—'}</td>)}
-                  <td className="px-3 py-2 text-right font-mono font-bold text-[12px]" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--border)' }}>{money(grandOut)}</td>
+                  {monthOutTotals.map((v, i) => (
+                    <td key={i} className="px-3 py-2 text-right font-mono font-bold" style={{ color: 'var(--expense)' }}>
+                      {v > 0 ? <button onClick={() => setDrill({ title: 'Total Outflow', subtitle: `${MONTH_NAMES[Number(months[i].slice(5)) - 1]} ${months[i].slice(0, 4)}`, items: outBuckets.flatMap(b => b.rows.filter((t: any) => t.txn_date?.slice(0, 7) === months[i])) })} className="hover:underline" style={{ color: 'inherit' }}>{money(v)}</button> : '—'}
+                    </td>
+                  ))}
+                  <td className="px-3 py-2 text-right font-mono font-bold text-[12px]" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--border)' }}>
+                    <button onClick={() => setDrill({ title: 'Total Outflow', subtitle: rangeLabel, items: outBuckets.flatMap(b => b.rows) })} className="hover:underline" style={{ color: 'inherit' }}>{money(grandOut)}</button>
+                  </td>
                 </tr>
               </tfoot>
             </table>
@@ -599,6 +615,8 @@ export default function MoneyReportClient({ transactions, budgets, accounts = []
           )}
         </div>
       </div>
+
+      {drill && <TxnDrillModal title={drill.title} subtitle={drill.subtitle} items={drill.items} amt={amt} money={money} onClose={() => setDrill(null)} />}
     </div>
   )
 }

@@ -3,6 +3,7 @@ import { useMemo, useState, useEffect } from 'react'
 import { useViewStore } from '@/store/viewStore'
 import { Download, ChevronLeft, ChevronRight } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, Cell } from 'recharts'
+import TxnDrillModal from '@/components/dashboard/TxnDrillModal'
 
 // ─── Analytics Utilities ────────────────────────────────────────────────────
 
@@ -79,8 +80,13 @@ export default function ExpensesReportClient({ transactions }: { transactions: a
   const toDisplay = (amt: number, cur: string) =>
     view === 'consolidated' ? (cur === 'AED' ? amt * FX : amt) : amt
   const sym = view === 'uae' ? 'AED ' : '₹'
+  const amtOf = (t: any) => toDisplay(Number(t.amount) || 0, t.currency)
+  const catOf = (t: any) => (t.category && String(t.category).trim()) || 'Other'
+  const moneyFull = (n: number) => `${sym}${Math.round(n).toLocaleString('en-IN')}`
+  const mLabel = (m: string) => new Date(m + '-01').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
 
   const [viewYear, setViewYear] = useState(() => parseInt(fromMonth.slice(0, 4)))
+  const [drill, setDrill] = useState<{ title: string; subtitle?: string; items: any[] } | null>(null)
 
   // Sync year when the date-range control in the topbar changes
   useEffect(() => {
@@ -416,7 +422,9 @@ export default function ExpensesReportClient({ transactions }: { transactions: a
                               background: inSel ? `${color}08` : 'transparent',
                               fontWeight: val > 0 ? 600 : 400,
                             }}>
-                            <div>{val > 0 ? `${sym}${fmt(val)}` : '—'}</div>
+                            <div>{val > 0
+                              ? <button onClick={() => setDrill({ title: cat, subtitle: mLabel(m), items: yearTxns.filter((t: any) => catOf(t) === cat && t.txn_date?.slice(0, 7) === m) })} className="hover:underline" style={{ color: 'inherit' }}>{sym}{fmt(val)}</button>
+                              : '—'}</div>
                             {mi > 0 && val > 0 && delta !== null && (
                               <div className="text-[9px] font-normal"
                                 style={{ color: delta > 0 ? 'var(--rose)' : '#10B981' }}>
@@ -428,7 +436,9 @@ export default function ExpensesReportClient({ transactions }: { transactions: a
                       })}
                       <td className="px-4 py-2.5 text-right font-mono font-bold"
                         style={{ color: total > 0 ? 'var(--expense)' : 'var(--text3)', borderLeft:'2px solid var(--border)' }}>
-                        {total > 0 ? `${sym}${Math.round(total).toLocaleString('en-IN')}` : '—'}
+                        {total > 0
+                          ? <button onClick={() => setDrill({ title: cat, subtitle: String(viewYear), items: yearTxns.filter((t: any) => catOf(t) === cat) })} className="hover:underline" style={{ color: 'inherit' }}>{sym}{Math.round(total).toLocaleString('en-IN')}</button>
+                          : '—'}
                       </td>
                     </tr>
                   )
@@ -448,7 +458,9 @@ export default function ExpensesReportClient({ transactions }: { transactions: a
                     return (
                       <td key={m} className="px-3 py-3 text-right font-mono font-bold"
                         style={{ color:'var(--expense)', background: m >= fromMonth && m <= toMonth ? 'var(--rose-bg)' : 'var(--bg2)' }}>
-                        <div>{val > 0 ? `${sym}${fmt(val)}` : '—'}</div>
+                        <div>{val > 0
+                          ? <button onClick={() => setDrill({ title: 'All categories', subtitle: mLabel(m), items: yearTxns.filter((t: any) => t.txn_date?.slice(0, 7) === m) })} className="hover:underline" style={{ color: 'inherit' }}>{sym}{fmt(val)}</button>
+                          : '—'}</div>
                         {mi > 0 && val > 0 && delta !== null && (
                           <div className="text-[9px] font-normal"
                             style={{ color: delta > 0 ? 'var(--rose)' : '#10B981' }}>
@@ -493,6 +505,8 @@ export default function ExpensesReportClient({ transactions }: { transactions: a
           </div>
         </div>
       )}
+
+      {drill && <TxnDrillModal title={drill.title} subtitle={drill.subtitle} items={drill.items} amt={amtOf} money={moneyFull} onClose={() => setDrill(null)} />}
     </div>
   )
 }
