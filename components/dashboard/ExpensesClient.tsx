@@ -11,7 +11,7 @@ import BillImageUploadModal from '@/components/forms/BillImageUploadModal'
 import TransactionVoiceModal from '@/components/forms/TransactionVoiceModal'
 import CreditCardUploadModal from '@/components/forms/CreditCardUploadModal'
 
-import { Search, Upload, Image, Mic, PenLine, BarChart2, ArrowRight, AlertTriangle, X, CreditCard, Pencil, Trash2, Check, BookOpen, ChevronDown, Plus, Copy } from 'lucide-react'
+import { Search, Upload, Image, Mic, PenLine, BarChart2, ArrowRight, AlertTriangle, X, CreditCard, Pencil, Trash2, Check, BookOpen, ChevronDown, Plus, Copy, Wallet } from 'lucide-react'
 import Link from 'next/link'
 
 const EXPENSE_CATS = ['All','Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment','Travel','Education','Subscription','Credit Card Payment','Loan on Card','EMI/Loan','Family Transfer','Transfer','Refund','Other']
@@ -26,7 +26,7 @@ const CAT_COLORS: Record<string,string> = {
 const TRANSFER_SUBTYPE_COLORS: Record<string,string> = {
   International: '#3B7DD8', Internal: '#7C5CBF', Family: '#3D7A58',
 }
-type Modal = 'none' | 'manual' | 'statement' | 'bill' | 'voice' | 'credit_card'
+type Modal = 'none' | 'manual' | 'statement' | 'bill' | 'voice' | 'credit_card' | 'cash'
 
 function budgetColor(pct: number): string {
   if (pct >= 100) return 'var(--rose)'
@@ -198,6 +198,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
     { key: 'bill',        label: 'Bill / Image',     desc: 'Scan a receipt or bill photo',          icon: Image,      color: '#D97706' },
     { key: 'voice',       label: 'Voice Entry',      desc: 'Speak your transaction aloud',          icon: Mic,        color: '#7C3AED' },
     { key: 'manual',      label: 'Manual Entry',     desc: 'Type in a transaction manually',        icon: PenLine,    color: '#16A34A' },
+    { key: 'cash',        label: 'Cash Expense',     desc: 'Log spending paid with cash',           icon: Wallet,     color: '#DB2777' },
   ]
 
   const paged = filteredForMonth.slice((page-1)*pageSize, page*pageSize)
@@ -599,6 +600,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
       </div>
 
       {activeModal === 'manual'      && <AddTransactionModal onClose={() => setActiveModal('none')} />}
+      {activeModal === 'cash'        && <AddTransactionModal onClose={() => setActiveModal('none')} defaults={{ txn_type:'expense', account_id:'__cash__', currency: view === 'uae' ? 'AED' : 'INR' }} />}
       {activeModal === 'statement'   && <BankStatementUploadModal onClose={() => setActiveModal('none')} />}
       {activeModal === 'bill'        && <BillImageUploadModal onClose={() => setActiveModal('none')} defaultType="expense" />}
       {activeModal === 'voice'       && <TransactionVoiceModal onClose={() => setActiveModal('none')} defaultType="expense" />}

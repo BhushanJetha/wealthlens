@@ -29,17 +29,21 @@ const Lbl = ({ children }: { children: React.ReactNode }) => (
 )
 const inputStyle = { background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }
 
-export default function AddTransactionModal({ onClose, onAdded }: { onClose: () => void; onAdded?: () => void }) {
+export default function AddTransactionModal({ onClose, onAdded, defaults }: {
+  onClose: () => void
+  onAdded?: () => void
+  defaults?: Partial<{ txn_type: string; account_id: string; category: string; currency: string }>
+}) {
   const [form, setForm] = useState({
     txn_date:     new Date().toISOString().slice(0, 10),
     merchant:     '',
     description:  '',
-    category:     'Food',
+    category:     defaults?.category ?? (defaults?.txn_type === 'income' ? 'Salary' : 'Food'),
     sub_category: '',
     amount:       '',
-    currency:     'INR',
-    txn_type:     'expense',
-    account_id:   '',
+    currency:     defaults?.currency ?? 'INR',
+    txn_type:     defaults?.txn_type ?? 'expense',
+    account_id:   defaults?.account_id ?? '',
   })
   const [accounts,    setAccounts]    = useState<any[]>([])
   const [saving,      setSaving]      = useState(false)
@@ -52,7 +56,7 @@ export default function AddTransactionModal({ onClose, onAdded }: { onClose: () 
   const router   = useRouter()
 
   useEffect(() => {
-    supabase.from('accounts').select('id,name,bank_name,currency').eq('is_active', true)
+    supabase.from('accounts').select('id,name,bank_name,currency,account_type').eq('is_active', true)
       .then(({ data }) => setAccounts(data ?? []))
   }, [])
 
@@ -101,15 +105,34 @@ export default function AddTransactionModal({ onClose, onAdded }: { onClose: () 
     if (sub === 'International' && liveRate === null) fetchLiveRate()
   }
 
+  // Resolve the "💵 Cash" sentinel to a real wallet account, creating one
+  // (per-currency) the first time cash is used so cash spend is tracked.
+  async function resolveAccountId(): Promise<string | null> {
+    if (form.account_id !== '__cash__') return form.account_id || null
+    const existing = accounts.find(a => a.account_type === 'wallet' && a.currency === form.currency)
+    if (existing) return existing.id
+    const { data, error: err } = await supabase.from('accounts').insert({
+      name: 'Cash', bank_name: 'Cash', account_type: 'wallet',
+      currency: form.currency, country: form.currency === 'AED' ? 'UAE' : 'India',
+      outstanding_bal: 0,
+    }).select('id').single()
+    if (err || !data) throw new Error(err?.message || 'Could not create Cash wallet')
+    setAccounts(p => [...p, { ...data, name: 'Cash', bank_name: 'Cash', currency: form.currency, account_type: 'wallet' }])
+    return data.id
+  }
+
   async function save() {
     if (!form.merchant || !form.amount || !form.txn_date) {
       setError('Merchant/label, amount and date are required'); return
     }
     setSaving(true); setError('')
+    let acctId: string | null
+    try { acctId = await resolveAccountId() }
+    catch (e: any) { setSaving(false); setError(e.message ?? 'Could not save'); return }
     const res = await fetch('/api/transactions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form),
+      body: JSON.stringify({ ...form, account_id: acctId }),
     })
     const data = await res.json()
     setSaving(false)
@@ -296,16 +319,22 @@ export default function AddTransactionModal({ onClose, onAdded }: { onClose: () 
             </div>
           )}
 
-          {/* Account dropdown */}
-          {accounts.length > 0 && (
+          {/* Account / payment source */}
+          {(!isTransfer || accounts.length > 0) && (
             <div>
-              <Lbl>{isTransfer ? 'From Account' : 'Account (optional)'}</Lbl>
+              <Lbl>{isTransfer ? 'From Account' : 'Paid From (optional)'}</Lbl>
               <select value={form.account_id} onChange={f('account_id')}
                 className="wl-input" style={inputStyle}
                 onFocus={e => (e.target.style.borderColor = 'var(--sage)')}
                 onBlur={e => (e.target.style.borderColor = 'var(--border)')}>
                 <option value="">No account linked</option>
+                {!isTransfer && (
+                  <option value={
+                    accounts.find(a => a.account_type === 'wallet' && a.currency === form.currency)?.id ?? '__cash__'
+                  }>💵 Cash — spent from wallet</option>
+                )}
                 {accounts
+                  .filter(a => a.account_type !== 'wallet')
                   .filter(a => !isTransfer || a.currency === form.currency)
                   .map(a => (
                     <option key={a.id} value={a.id}>{a.name} ({a.bank_name})</option>
