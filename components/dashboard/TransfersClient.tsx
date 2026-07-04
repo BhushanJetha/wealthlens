@@ -297,37 +297,23 @@ export default function TransfersClient({ transactions }: { transactions: Txn[] 
     : `${new Date(fromMonth + '-01').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })} – ${new Date(toMonth + '-01').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}`
 
   // ── Column filters ──────────────────────────────────────────────────────────
-  const uaeOutgoing = useMemo(() =>
-    transactions.filter(t =>
-      inRange(t.txn_date) &&
-      t.currency === 'AED' &&
-      (t.sub_category === 'International' || t.category === 'Transfer')
-    ),
-    [transactions, fromMonth, toMonth]
-  )
+  // Robust matchers — the parser/label for international transfers has varied over
+  // time (category "International" vs "International Transfer" vs generic "Transfer",
+  // sub_category "International" vs "Transfer"). Match all variants so nothing is lost.
+  const INTL_CATS = ['International', 'International Transfer', 'Transfer', 'NRE Received', 'NRI Transfer']
+  const NRO_CATS  = ['Loan Received', 'NRO to Family', 'NRE to NRO', 'Self Transfer', 'Family Transfer']
+  const isUae = (t: any) => t.currency === 'AED' && (t.sub_category === 'International' || INTL_CATS.includes(t.category))
+  const isNre = (t: any) => t.currency === 'INR' && (t.sub_category === 'International' || t.category === 'NRI Transfer' || t.category === 'NRE Received' || t.category === 'International Transfer')
+  const isNro = (t: any) => t.currency === 'INR' && (t.sub_category === 'Internal' || NRO_CATS.includes(t.category))
 
-  const nreReceived = useMemo(() =>
-    transactions.filter(t =>
-      inRange(t.txn_date) &&
-      t.currency === 'INR' &&
-      (t.sub_category === 'International' || t.category === 'NRI Transfer')
-    ),
-    [transactions, fromMonth, toMonth]
-  )
-
-  const nroSettled = useMemo(() =>
-    transactions.filter(t =>
-      inRange(t.txn_date) &&
-      t.currency === 'INR' &&
-      (t.sub_category === 'Internal' || t.category === 'Loan Received')
-    ),
-    [transactions, fromMonth, toMonth]
-  )
+  const uaeOutgoing = useMemo(() => transactions.filter(t => inRange(t.txn_date) && isUae(t)), [transactions, fromMonth, toMonth])
+  const nreReceived = useMemo(() => transactions.filter(t => inRange(t.txn_date) && isNre(t)), [transactions, fromMonth, toMonth])
+  const nroSettled  = useMemo(() => transactions.filter(t => inRange(t.txn_date) && isNro(t)), [transactions, fromMonth, toMonth])
 
   // ── All-time lists (no date-range filter) for the year/month matrix ──────────
-  const allUae = useMemo(() => transactions.filter(t => t.currency === 'AED' && (t.sub_category === 'International' || t.category === 'Transfer')), [transactions])
-  const allNre = useMemo(() => transactions.filter(t => t.currency === 'INR' && (t.sub_category === 'International' || t.category === 'NRI Transfer')), [transactions])
-  const allNro = useMemo(() => transactions.filter(t => t.currency === 'INR' && (t.sub_category === 'Internal' || t.category === 'Loan Received')), [transactions])
+  const allUae = useMemo(() => transactions.filter(isUae), [transactions])
+  const allNre = useMemo(() => transactions.filter(isNre), [transactions])
+  const allNro = useMemo(() => transactions.filter(isNro), [transactions])
 
   // ── Summary totals ──────────────────────────────────────────────────────────
   const totalAED = colTotal(uaeOutgoing)

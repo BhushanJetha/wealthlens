@@ -217,27 +217,30 @@ export default function BankStatementUploadModal({ onClose }: Props) {
 
     const country = result.currency === 'AED' ? 'UAE' : 'India'
 
-    // Auto-create or find the bank account
+    // Auto-create or find the bank account.
+    // Match priority: exact last-4 → same bank+currency (so re-imports of the
+    // same Wio/ENBD account don't create duplicates when the last-4 is missing,
+    // differs, or the account_type is read differently between statements).
     const accountName = `${result.bank_name}${result.account_last4 ? ` ••••${result.account_last4}` : ''}`
 
-    let acctQuery = supabase
-      .from('accounts').select('id')
-      .eq('user_id', user!.id)
-      .eq('account_type', result.account_type)
-      .eq('currency', result.currency)
-
+    let existingId: string | null = null
     if (result.account_last4) {
-      acctQuery = acctQuery.eq('last_four', result.account_last4)
-    } else {
-      acctQuery = acctQuery.eq('name', accountName)
+      const { data } = await supabase.from('accounts').select('id')
+        .eq('user_id', user!.id).eq('currency', result.currency).eq('last_four', result.account_last4).limit(1)
+      existingId = data?.[0]?.id ?? null
+    }
+    if (!existingId) {
+      const { data } = await supabase.from('accounts').select('id')
+        .eq('user_id', user!.id).eq('currency', result.currency).ilike('bank_name', result.bank_name).limit(1)
+      existingId = data?.[0]?.id ?? null
     }
 
-    const { data: existingAccts } = await acctQuery.limit(1)
     let accountId: string | null = null
 
-    if (existingAccts && existingAccts.length > 0) {
-      accountId = existingAccts[0].id
+    if (existingId) {
+      accountId = existingId
       const updates: Record<string, any> = { name: accountName }
+      if (result.account_last4) updates.last_four = result.account_last4
       if (result.closing_balance != null) updates.current_balance = result.closing_balance
       await supabase.from('accounts').update(updates).eq('id', accountId)
     } else if (selected.length > 0) {
