@@ -88,7 +88,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
       category:    txn.category,
       amount:      txn.amount,
       txn_type:    txn.txn_type,
-      description: txn.description ?? '',
+      description: (txn.description && txn.description !== txn.merchant) ? txn.description : '',
     })
   }
 
@@ -101,7 +101,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
       category:    txn.category,
       amount:      txn.amount,
       txn_type:    txn.txn_type,
-      description: txn.description ?? '',
+      description: (txn.description && txn.description !== txn.merchant) ? txn.description : '',
       currency:    txn.currency,
       account_id:  txn.account_id ?? null,
     })

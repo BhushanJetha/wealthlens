@@ -65,12 +65,12 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
   function openEdit(t: any) {
     setIsDup(false)
     setEditTxn(t)
-    setEditFields({ txn_date: t.txn_date, merchant: t.merchant, category: t.category, amount: t.amount, txn_type: t.txn_type ?? 'income', description: t.description ?? '' })
+    setEditFields({ txn_date: t.txn_date, merchant: t.merchant, category: t.category, amount: t.amount, txn_type: t.txn_type ?? 'income', description: (t.description && t.description !== t.merchant) ? t.description : '' })
   }
   function openDuplicate(t: any) {
     setIsDup(true)
     setEditTxn(t)
-    setEditFields({ txn_date: t.txn_date, merchant: t.merchant, category: t.category, amount: t.amount, txn_type: t.txn_type ?? 'income', description: t.description ?? '', currency: t.currency, account_id: t.account_id ?? null })
+    setEditFields({ txn_date: t.txn_date, merchant: t.merchant, category: t.category, amount: t.amount, txn_type: t.txn_type ?? 'income', description: (t.description && t.description !== t.merchant) ? t.description : '', currency: t.currency, account_id: t.account_id ?? null })
   }
   function closeEdit() { setEditTxn(null); setIsDup(false) }
   async function saveEdit() {
