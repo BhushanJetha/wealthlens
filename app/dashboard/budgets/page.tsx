@@ -12,7 +12,7 @@ export default async function BudgetsPage() {
   const [budgetsRes, txnsRes, incomeRes] = await Promise.all([
     supabase.from('budgets').select('*').eq('user_id', user!.id).eq('month_year', thisMonth),
     supabase.from('transactions')
-      .select('category,amount,currency,txn_date,merchant')
+      .select('category,amount,currency,txn_date,merchant,txn_type')
       .eq('user_id', user!.id)
       .in('txn_type', ['expense', 'transfer', 'loan'])
       .gte('txn_date', yearStart)
