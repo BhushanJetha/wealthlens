@@ -111,7 +111,10 @@ export default function AddTransactionModal({ onClose, onAdded, defaults }: {
     if (form.account_id !== '__cash__') return form.account_id || null
     const existing = accounts.find(a => a.account_type === 'wallet' && a.currency === form.currency)
     if (existing) return existing.id
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new Error('Not signed in')
     const { data, error: err } = await supabase.from('accounts').insert({
+      user_id: user.id,
       name: 'Cash', bank_name: 'Cash', account_type: 'wallet',
       currency: form.currency, country: form.currency === 'AED' ? 'UAE' : 'India',
       outstanding_bal: 0,

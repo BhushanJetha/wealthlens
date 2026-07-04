@@ -76,9 +76,14 @@ export default function AddAccountModal({ onClose, type = 'credit_card', initial
       due_date:        form.due_date        || null,
     }
 
-    const { error: err } = isEdit
-      ? await supabase.from('accounts').update(payload).eq('id', cardId!)
-      : await supabase.from('accounts').insert(payload)
+    let err
+    if (isEdit) {
+      ({ error: err } = await supabase.from('accounts').update(payload).eq('id', cardId!))
+    } else {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { setSaving(false); setError('Not signed in'); return }
+      ;({ error: err } = await supabase.from('accounts').insert({ ...payload, user_id: user.id }))
+    }
 
     setSaving(false)
     if (err) { setError(err.message); return }
