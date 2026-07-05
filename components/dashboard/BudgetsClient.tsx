@@ -235,6 +235,28 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
   const allocPctInc  = incomeBasis > 0 ? Math.round(allocTotal / incomeBasis * 100) : 0
   const unallocated  = incomeBasis > 0 ? incomeBasis - allocTotal : null
 
+  // Per-currency upsert so India (INR) and UAE (AED) budgets for the same
+  // category+month coexist. Done manually (find → update/insert) so it also
+  // works before the currency-aware unique index (migration 021) is applied.
+  async function writeBudget(row: any): Promise<{ data: any; error: any }> {
+    const { data: existing } = await supabase.from('budgets')
+      .select('id')
+      .eq('user_id', row.user_id)
+      .eq('category', row.category)
+      .eq('month_year', row.month_year)
+      .eq('currency', row.currency)
+      .maybeSingle()
+    const run = (payload: any) => existing
+      ? supabase.from('budgets').update(payload).eq('id', existing.id).select().single()
+      : supabase.from('budgets').insert(payload).select().single()
+    let { data, error } = await run(row)
+    if (error && /is_manual|column/i.test(error.message || '')) {
+      const { is_manual, ...base } = row
+      ;({ data, error } = await run(base))
+    }
+    return { data, error }
+  }
+
   // ── Smart Budget: average of the 3 most recent months WITH data + 10% buffer ──
   // Anchored on the user's latest spending (in the active view) rather than a
   // fixed calendar window, so it still works when the data is in the current
@@ -272,75 +294,55 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
     return sug
   }
 
-  // Auto-apply smart budget on page load (silently) for non-manual categories
+  // Auto-apply smart budget on page load (silently) for non-manual categories.
+  // Scoped to the active currency so India budgets don't block UAE (and vice versa).
   useEffect(() => {
     async function autoUpdate() {
       const suggestions = calcSmartSuggestions()
       if (!Object.keys(suggestions).length) return
-      const manualCats = new Set(budgets.filter((b: any) => b.is_manual).map((b: any) => b.category as string))
+      const manualCats = new Set(viewBudgets.filter((b: any) => b.is_manual).map((b: any) => b.category as string))
       const rows = Object.entries(suggestions).filter(([cat]) => !manualCats.has(cat))
       if (!rows.length) return
       const { data: { user } } = await supabase.auth.getUser()
-      const upsertRows = rows.map(([cat, cap]) => ({
-        user_id:     user!.id,
-        category:    cat,
-        monthly_cap: cap,
-        currency:    view === 'uae' ? 'AED' : 'INR',
-        month_year:  thisMonth,
-        is_manual:   false,
-      }))
-      const { data } = await supabase
-        .from('budgets')
-        .upsert(upsertRows, { onConflict: 'user_id,category,month_year' })
-        .select()
-      if (data) {
-        setBudgets((prev: any[]) => {
-          const next = [...prev]
-          data.forEach((nb: any) => {
-            const idx = next.findIndex((b: any) => b.category === nb.category)
-            if (idx >= 0) next[idx] = nb; else next.push(nb)
-          })
-          return next
-        })
+      const cur = view === 'uae' ? 'AED' : 'INR'
+      const saved: any[] = []
+      for (const [cat, cap] of rows) {
+        const { data } = await writeBudget({ user_id: user!.id, category: cat, monthly_cap: cap, currency: cur, month_year: thisMonth, is_manual: false })
+        if (data) saved.push(data)
       }
+      if (saved.length) setBudgets((prev: any[]) => {
+        const next = [...prev]
+        saved.forEach((nb: any) => { const idx = next.findIndex((b: any) => b.id === nb.id); if (idx >= 0) next[idx] = nb; else next.push(nb) })
+        return next
+      })
     }
     autoUpdate()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view])
 
   async function applySmartBudget() {
-    setSmartLoading(true)
+    setSmartLoading(true); setBudgetError('')
     const suggestions = calcSmartSuggestions()
-    const manualCats  = new Set(budgets.filter((b: any) => b.is_manual).map((b: any) => b.category as string))
+    // Only the current currency's manual budgets should be protected.
+    const manualCats  = new Set(viewBudgets.filter((b: any) => b.is_manual).map((b: any) => b.category as string))
     const { data: { user } } = await supabase.auth.getUser()
-    const rows = Object.entries(suggestions)
-      .filter(([cat]) => !manualCats.has(cat))
-      .map(([cat, cap]) => ({
-        user_id:     user!.id,
-        category:    cat,
-        monthly_cap: cap,
-        currency:    view === 'uae' ? 'AED' : 'INR',
-        month_year:  thisMonth,
-        is_manual:   false,
-      }))
-    if (rows.length) {
-      const { data } = await supabase
-        .from('budgets')
-        .upsert(rows, { onConflict: 'user_id,category,month_year' })
-        .select()
-      if (data) {
-        setBudgets((prev: any[]) => {
-          const next = [...prev]
-          data.forEach((nb: any) => {
-            const idx = next.findIndex((b: any) => b.category === nb.category)
-            if (idx >= 0) next[idx] = nb; else next.push(nb)
-          })
-          return next
-        })
-      }
+    const cur  = view === 'uae' ? 'AED' : 'INR'
+    const rows = Object.entries(suggestions).filter(([cat]) => !manualCats.has(cat))
+    const saved: any[] = []
+    let lastErr: any = null
+    for (const [cat, cap] of rows) {
+      const { data, error } = await writeBudget({ user_id: user!.id, category: cat, monthly_cap: cap, currency: cur, month_year: thisMonth, is_manual: false })
+      if (error) lastErr = error
+      else if (data) saved.push(data)
     }
-    setSmartPreview(null)
+    if (saved.length) setBudgets((prev: any[]) => {
+      const next = [...prev]
+      saved.forEach((nb: any) => { const idx = next.findIndex((b: any) => b.id === nb.id); if (idx >= 0) next[idx] = nb; else next.push(nb) })
+      return next
+    })
     setSmartLoading(false)
+    if (lastErr && !saved.length) { setBudgetError(`Couldn't apply Smart Budget: ${lastErr.message ?? 'unknown error'}`); return }
+    setSmartPreview(null)
   }
 
   async function toggleManual(b: any) {
@@ -374,26 +376,18 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
     if (!newBudget.category || !(cap > 0)) { setBudgetError('Pick a category and enter a cap above 0'); return }
     setSaving(true); setBudgetError('')
     const { data: { user } } = await supabase.auth.getUser()
-    const full: any = {
+    const { data, error } = await writeBudget({
       user_id:     user!.id,
       category:    newBudget.category,
       monthly_cap: cap,
       currency:    view === 'uae' ? 'AED' : 'INR',
       month_year:  thisMonth,
       is_manual:   true,
-    }
-    // Resilient write: retry without newer columns if the DB is missing them.
-    let { data, error } = await supabase.from('budgets')
-      .upsert(full, { onConflict: 'user_id,category,month_year' }).select().single()
-    if (error && /is_manual|column/i.test(error.message)) {
-      const { is_manual, ...base } = full
-      ;({ data, error } = await supabase.from('budgets')
-        .upsert(base, { onConflict: 'user_id,category,month_year' }).select().single())
-    }
+    })
     setSaving(false)
     if (error || !data) { setBudgetError(error?.message ?? 'Could not save budget'); return }
     setBudgets((prev: any[]) => {
-      const idx = prev.findIndex((b: any) => b.category === data.category)
+      const idx = prev.findIndex((b: any) => b.id === data.id)
       return idx >= 0 ? prev.map((b: any, i: number) => i === idx ? data : b) : [...prev, data]
     })
     setShowBudgetForm(false)
@@ -562,6 +556,9 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
                   {smartLoading ? 'Applying…' : <><Sparkles size={13}/> Apply Smart Budget</>}
                 </button>
               </>
+            )}
+            {budgetError && (
+              <div className="mt-2 text-[11px]" style={{ color: 'var(--rose)' }}>{budgetError}</div>
             )}
           </div>
         )}
