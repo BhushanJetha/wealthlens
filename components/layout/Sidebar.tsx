@@ -8,7 +8,7 @@ import {
   ChevronDown, BarChart2, RefreshCw, Landmark, Briefcase,
   FileText, Activity, Gem, Car, Home, User, CircleDollarSign,
   ArrowDownCircle, ArrowUpCircle, PieChart, HeartPulse, Flag,
-  ArrowLeftRight, GraduationCap, PiggyBank
+  ArrowLeftRight, GraduationCap, PiggyBank, Wallet
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -59,6 +59,7 @@ const TXN_SUBS = [
 
 const MAIN_NAV = [
   { href: '/dashboard',            icon: LayoutDashboard, label: 'Dashboard'         },
+  { href: '/dashboard/net-worth',  icon: Wallet,          label: 'Net Worth'         },
   { href: '/dashboard/income',     icon: Receipt,         label: 'Transactions',     sub: 'txn'  },
   { href: '/dashboard/investments',icon: TrendingUp,      label: 'Investments',      sub: 'inv'  },
   { href: '/dashboard/loans',      icon: Building2,       label: 'Loans',            sub: 'loan' },
