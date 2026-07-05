@@ -235,6 +235,15 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
   const allocPctInc  = incomeBasis > 0 ? Math.round(allocTotal / incomeBasis * 100) : 0
   const unallocated  = incomeBasis > 0 ? incomeBasis - allocTotal : null
 
+  // Friendlier message when the pre-021 constraint blocks a second-currency budget.
+  function friendlyBudgetError(err: any): string {
+    const m = err?.message ?? 'Could not save budget'
+    if (/budgets_user_id_category_month_year_key|duplicate key/i.test(m)) {
+      return 'One-time database update needed so India (INR) and UAE (AED) budgets can coexist. Run migration 021_budget_currency_unique.sql in Supabase, then try again.'
+    }
+    return m
+  }
+
   // Per-currency upsert so India (INR) and UAE (AED) budgets for the same
   // category+month coexist. Done manually (find → update/insert) so it also
   // works before the currency-aware unique index (migration 021) is applied.
@@ -341,7 +350,7 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
       return next
     })
     setSmartLoading(false)
-    if (lastErr && !saved.length) { setBudgetError(`Couldn't apply Smart Budget: ${lastErr.message ?? 'unknown error'}`); return }
+    if (lastErr && !saved.length) { setBudgetError(friendlyBudgetError(lastErr)); return }
     setSmartPreview(null)
   }
 
@@ -385,7 +394,7 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
       is_manual:   true,
     })
     setSaving(false)
-    if (error || !data) { setBudgetError(error?.message ?? 'Could not save budget'); return }
+    if (error || !data) { setBudgetError(friendlyBudgetError(error)); return }
     setBudgets((prev: any[]) => {
       const idx = prev.findIndex((b: any) => b.id === data.id)
       return idx >= 0 ? prev.map((b: any, i: number) => i === idx ? data : b) : [...prev, data]
