@@ -1,8 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import ExpensesReportClient from '@/components/dashboard/ExpensesReportClient'
-
-const NRO_CATS = new Set(['NRE to NRO', 'NRO Settled', 'NRE → NRO'])
-const isNroSettlement = (t: any) => NRO_CATS.has(t.category) || t.sub_category === 'Internal'
+import { isNroSettled, toNroIncome } from '@/lib/nro'
 
 export default async function ExpensesReportPage() {
   const supabase = createClient()
@@ -22,9 +20,7 @@ export default async function ExpensesReportPage() {
 
   const txns = txnsRes.data ?? []
   // NRO settlements are the effective India income for NRIs without local salary
-  const nroIncome = txns.filter(isNroSettlement).map((t: any) => ({
-    amount: t.amount, currency: t.currency, txn_date: t.txn_date, category: 'UAE Income (NRO)',
-  }))
+  const nroIncome = txns.filter(isNroSettled).map(toNroIncome)
   const income = [...(incomeRes.data ?? []), ...nroIncome]
 
   return (

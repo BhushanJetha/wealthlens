@@ -3,6 +3,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { useViewStore } from '@/store/viewStore'
 import { ChevronRight, X, ArrowLeftRight } from 'lucide-react'
 import TransferMatrix from '@/components/dashboard/TransferMatrix'
+import { isNroSettled } from '@/lib/nro'
 
 // ─── Column accent definitions ────────────────────────────────────────────────
 const UAE_COLOR  = '#D4920A'
@@ -301,10 +302,10 @@ export default function TransfersClient({ transactions }: { transactions: Txn[] 
   // time (category "International" vs "International Transfer" vs generic "Transfer",
   // sub_category "International" vs "Transfer"). Match all variants so nothing is lost.
   const INTL_CATS = ['International', 'International Transfer', 'Transfer', 'NRE Received', 'NRI Transfer']
-  const NRO_CATS  = ['Loan Received', 'NRO to Family', 'NRE to NRO', 'Self Transfer', 'Family Transfer']
   const isUae = (t: any) => t.currency === 'AED' && (t.sub_category === 'International' || INTL_CATS.includes(t.category))
   const isNre = (t: any) => t.currency === 'INR' && (t.sub_category === 'International' || t.category === 'NRI Transfer' || t.category === 'NRE Received' || t.category === 'International Transfer')
-  const isNro = (t: any) => t.currency === 'INR' && (t.sub_category === 'Internal' || NRO_CATS.includes(t.category))
+  // Shared with the Income views so "NRO Settled" here == "UAE Income (NRO)" there
+  const isNro = isNroSettled
 
   const uaeOutgoing = useMemo(() => transactions.filter(t => inRange(t.txn_date) && isUae(t)), [transactions, fromMonth, toMonth])
   const nreReceived = useMemo(() => transactions.filter(t => inRange(t.txn_date) && isNre(t)), [transactions, fromMonth, toMonth])

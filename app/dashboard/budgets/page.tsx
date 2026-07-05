@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import BudgetsClient from '@/components/dashboard/BudgetsClient'
+import { isNroSettled } from '@/lib/nro'
 
 export default async function BudgetsPage() {
   const supabase = createClient()
@@ -34,11 +35,10 @@ export default async function BudgetsPage() {
       .limit(5000),
   ])
 
-  // NRO settlements (NRE → NRO) are the effective India income for NRIs with no
-  // local salary, so count them toward the budget's income basis.
-  const NRO_CATS = new Set(['NRE to NRO', 'NRO Settled', 'NRE → NRO'])
+  // NRO settlements are the effective India income for NRIs with no local
+  // salary, so count them toward the budget's income basis.
   const nroIncome = (txnsRes.data ?? [])
-    .filter((t: any) => NRO_CATS.has(t.category) || t.sub_category === 'Internal')
+    .filter(isNroSettled)
     .map((t: any) => ({ amount: t.amount, currency: t.currency, txn_date: t.txn_date }))
   const incomeTransactions = [...(incomeRes.data ?? []), ...nroIncome]
 

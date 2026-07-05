@@ -25,16 +25,20 @@ function stabilityScore(values: number[]): number {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const INCOME_CATS = ['Salary','Dividend','Rental','Gift','Bonus','Tax Refund','Interest','Freelance','Other']
+const INCOME_CATS = ['UAE Income (NRO)','Salary','NRE Received','Dividend','Interest','FD/RD Maturity','Rental','Gift','Bonus','Tax Refund','Freelance','NRI Transfer','Other']
 const CAT_COLORS: Record<string,string> = {
+  'UAE Income (NRO)':'#15803D',
   Salary:      '#16A34A',
+  'NRE Received':'#0284C7',
   Dividend:    '#2563EB',
+  Interest:    '#0369A1',
+  'FD/RD Maturity':'#0891B2',
   Rental:      '#7C3AED',
   Gift:        '#E11D48',
   Bonus:       '#D97706',
   'Tax Refund':'#059669',
-  Interest:    '#0284C7',
   Freelance:   '#EA580C',
+  'NRI Transfer':'#0EA5E9',
   Other:       '#6B7280',
 }
 

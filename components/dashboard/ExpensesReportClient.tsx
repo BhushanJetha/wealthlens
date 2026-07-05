@@ -167,6 +167,16 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
   }, [transactions, incomeTransactions, view, FX])
   const yearsSorted = Object.keys(yearAgg).sort()
 
+  // Running balance (carry-over): prior-years' net carried in, then each month
+  // adds income − outflow. Shows a true "money left" picture even when income
+  // arrives one month and is spent the next (so single months don't read red).
+  const openingBalance = yearsSorted
+    .filter(y => y < String(viewYear))
+    .reduce((a, y) => a + (yearAgg[y].income - yearAgg[y].outflow), 0)
+  const runningByMonth: Record<string, number> = {}
+  { let run = openingBalance; months.forEach(m => { run += netCol(m); runningByMonth[m] = run }) }
+  const runningEnd = months.length ? runningByMonth[months[months.length - 1]] : openingBalance
+
   const barData = months.map(m => ({
     month: MONTH_NAMES[Number(m.slice(5)) - 1],
     Expenses: Math.round(outflowCol(m)),
@@ -330,18 +340,27 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
                       <td className="px-4 py-2.5 text-right font-mono font-bold text-[13px]" style={{ color: 'var(--income)', borderLeft: '2px solid var(--border)' }}>{money(incomeGrand)}</td>
                     </tr>
                     {/* Net */}
-                    <tr style={{ background: 'var(--bg2)', borderTop: '1px solid var(--border)' }}>
-                      <td className="sticky left-0 px-4 py-3 font-black text-[11px] uppercase tracking-wider" style={{ background: 'var(--bg2)', color: 'var(--text)', borderRight: '1px solid var(--border)' }}>Net (Inc − Out)</td>
+                    <tr style={{ background: 'var(--bg2)' }}>
+                      <td className="sticky left-0 px-4 py-2.5 font-bold text-[11px] uppercase tracking-wider" style={{ background: 'var(--bg2)', color: 'var(--text)', borderRight: '1px solid var(--border)' }}>Net (Inc − Out)</td>
                       {months.map(m => { const n = netCol(m); const has = incomeCol(m) > 0 || outflowCol(m) > 0
-                        return (<td key={m} className="px-3 py-3 text-right font-mono font-black" style={{ color: !has ? 'var(--text3)' : n >= 0 ? 'var(--income)' : 'var(--rose)' }}>{has ? `${n < 0 ? '-' : ''}${sym}${fmt(Math.abs(n))}` : '—'}</td>) })}
-                      <td className="px-4 py-3 text-right font-mono font-black text-[13px]" style={{ color: netGrand >= 0 ? 'var(--income)' : 'var(--rose)', borderLeft: '2px solid var(--border)' }}>{netGrand < 0 ? '-' : ''}{money(Math.abs(netGrand))}</td>
+                        return (<td key={m} className="px-3 py-2.5 text-right font-mono font-bold" style={{ color: !has ? 'var(--text3)' : n >= 0 ? 'var(--income)' : 'var(--rose)' }}>{has ? `${n < 0 ? '-' : ''}${sym}${fmt(Math.abs(n))}` : '—'}</td>) })}
+                      <td className="px-4 py-2.5 text-right font-mono font-bold text-[13px]" style={{ color: netGrand >= 0 ? 'var(--income)' : 'var(--rose)', borderLeft: '2px solid var(--border)' }}>{netGrand < 0 ? '-' : ''}{money(Math.abs(netGrand))}</td>
+                    </tr>
+                    {/* Running balance (carry-over) */}
+                    <tr style={{ background: 'var(--bg2)', borderTop: '1px solid var(--border)' }}>
+                      <td className="sticky left-0 px-4 py-3 font-black text-[11px] uppercase tracking-wider" style={{ background: 'var(--bg2)', color: 'var(--text)', borderRight: '1px solid var(--border)' }}>
+                        Balance <span className="font-normal normal-case">(carry-over)</span>
+                      </td>
+                      {months.map(m => { const b = runningByMonth[m] ?? 0
+                        return (<td key={m} className="px-3 py-3 text-right font-mono font-black" style={{ color: b >= 0 ? 'var(--income)' : 'var(--rose)', background: m >= fromMonth && m <= toMonth ? (b >= 0 ? 'var(--income-bg)' : 'var(--rose-bg)') : 'var(--bg2)' }}>{b < 0 ? '-' : ''}{sym}{fmt(Math.abs(b))}</td>) })}
+                      <td className="px-4 py-3 text-right font-mono font-black text-[13px]" style={{ color: runningEnd >= 0 ? 'var(--income)' : 'var(--rose)', borderLeft: '2px solid var(--border)' }}>{runningEnd < 0 ? '-' : ''}{money(Math.abs(runningEnd))}</td>
                     </tr>
                   </tfoot>
                 </table>
               </div>
             )}
             <div className="px-4 py-2 text-[10px]" style={{ color: 'var(--text3)', borderTop: '1px solid var(--border)' }}>
-              Net = income − outflow (incl. Investment & EMI). Card & loan bill payments and transfers are excluded to avoid double-counting — see tables below.
+              Net = income − outflow (incl. Investment & EMI). <strong>Balance</strong> carries the running total forward (prior year + each month's net), so a month you spend last month's money doesn't read red. Card & loan bill payments and transfers are excluded to avoid double-counting.
             </div>
           </div>
 
