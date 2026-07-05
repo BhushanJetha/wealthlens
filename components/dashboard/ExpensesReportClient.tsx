@@ -33,11 +33,19 @@ const FALLBACK_PALETTE = ['#6366F1','#DB2777','#0D9488','#CA8A04','#C2640A','#47
 const colorOf = (cat: string, idx: number) => CAT_COLORS[cat] ?? FALLBACK_PALETTE[idx % FALLBACK_PALETTE.length]
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
-// Which account a transaction ran through — NRE if the linked account is named
-// NRE, otherwise NRO (the account most India spending happens from). Strict
-// binary split so NRE + NRO = everything (no overlap / double-count).
+// Which account a transaction ran through. Strict binary split so NRE + NRO =
+// everything (no overlap / double-count).
 type Scope = 'both' | 'nre' | 'nro'
+const NRE_CATS = new Set(['NRE Received', 'NRE to NRO', 'NRE → NRO', 'International Transfer'])
 function acctScope(t: any): 'nre' | 'nro' {
+  const cat = t?.category || ''
+  const sub = t?.sub_category || ''
+  // The auto-linked NRO inflow is NRO-side income (check first — it's spread
+  // from an NRE→NRO transfer so it still carries sub_category "Internal").
+  if (cat === 'UAE Income (NRO)') return 'nro'
+  // Money that runs THROUGH the NRE account regardless of what row it's linked
+  // to: received from UAE into NRE, or moved from NRE out to NRO.
+  if (NRE_CATS.has(cat) || sub === 'Internal' || sub === 'International') return 'nre'
   const s = `${t?.accounts?.name || ''} ${t?.accounts?.bank_name || ''}`.toLowerCase()
   return /\bnre\b|non[-\s]?resident\s+external/.test(s) ? 'nre' : 'nro'
 }
@@ -177,6 +185,26 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
     return agg
   }, [transactions, incomeTransactions, view, FX, scope])
   const yearsSorted = Object.keys(yearAgg).sort()
+
+  // Category × year matrix for the Yearly tab (rows = categories/Income, cols = years)
+  const catYear = useMemo(() => {
+    const matrix: Record<string, Record<string, number>> = {}
+    const inc: Record<string, number> = {}
+    transactions.forEach(t => {
+      const y = t.txn_date?.slice(0, 4); if (!y || !inView(t.currency) || !inScope(t)) return
+      if (classify(catOf(t)) !== 'expense') return
+      const cat = catOf(t)
+      if (!matrix[cat]) matrix[cat] = {}
+      matrix[cat][y] = (matrix[cat][y] ?? 0) + disp(t)
+    })
+    incomeTransactions.forEach(t => {
+      const y = t.txn_date?.slice(0, 4); if (!y || !inView(t.currency) || !inScope(t)) return
+      inc[y] = (inc[y] ?? 0) + conv(Number(t.amount) || 0, t.currency)
+    })
+    const list = Object.keys(matrix).sort((a, b) =>
+      Object.values(matrix[b]).reduce((x, v) => x + v, 0) - Object.values(matrix[a]).reduce((x, v) => x + v, 0))
+    return { matrix, inc, list }
+  }, [transactions, incomeTransactions, view, FX, scope])
 
   const barData = months.map(m => ({
     month: MONTH_NAMES[Number(m.slice(5)) - 1],
@@ -409,53 +437,77 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
         </>
       )}
 
-      {/* ─────────────── YEARLY TAB ─────────────── */}
+      {/* ─────────────── YEARLY TAB — category × year ─────────────── */}
       {tab === 'yearly' && (
         <div className="wl-card overflow-hidden">
-          <div className="px-4 py-3 border-b text-[12px] font-bold" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>Year-over-Year</div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-[12px]">
-              <thead>
-                <tr style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
-                  {['Year', 'Income', 'Outflow', 'Net', 'Savings %', 'Card & Loan'].map((h, i) => (
-                    <th key={h} className={`px-4 py-2.5 text-[9px] uppercase tracking-wider font-bold ${i === 0 ? 'text-left' : 'text-right'}`} style={{ color: 'var(--text3)' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {yearsSorted.map(y => {
-                  const a = yearAgg[y]; const net = a.income - a.outflow; const sr = a.income > 0 ? Math.round(net / a.income * 100) : 0
-                  return (
-                    <tr key={y} className="hover:bg-stone-50" style={{ borderBottom: '1px solid var(--border)', background: y === String(viewYear) ? 'var(--sage-bg)' : undefined }}>
-                      <td className="px-4 py-2.5 font-bold" style={{ color: y === String(viewYear) ? 'var(--sage)' : 'var(--text)' }}>
+          {yearsSorted.length === 0 || catYear.list.length === 0 ? (
+            <div className="text-center py-16 text-[13px]" style={{ color: 'var(--text3)' }}>No expense data yet.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-[12px] border-collapse">
+                <thead>
+                  <tr style={{ background: 'var(--bg2)', borderBottom: '2px solid var(--border)' }}>
+                    <th className="sticky left-0 px-4 py-3 text-left text-[10px] uppercase tracking-wider font-bold min-w-[150px]"
+                      style={{ background: 'var(--bg2)', color: 'var(--text3)', borderRight: '1px solid var(--border)' }}>Category</th>
+                    {yearsSorted.map(y => (
+                      <th key={y} className="px-4 py-3 text-right text-[11px] font-bold min-w-[90px]"
+                        style={{ color: y === String(viewYear) ? 'var(--sage)' : 'var(--text3)', background: y === String(viewYear) ? 'var(--sage-bg)' : 'var(--bg2)' }}>
                         <button onClick={() => setViewYear(parseInt(y))} className="hover:underline">{y}</button>
-                      </td>
-                      <td className="px-4 py-2.5 text-right font-mono" style={{ color: 'var(--income)' }}>{money(a.income)}</td>
-                      <td className="px-4 py-2.5 text-right font-mono" style={{ color: 'var(--expense)' }}>{money(a.outflow)}</td>
-                      <td className="px-4 py-2.5 text-right font-mono font-bold" style={{ color: net >= 0 ? 'var(--income)' : 'var(--rose)' }}>{net < 0 ? '-' : ''}{money(Math.abs(net))}</td>
-                      <td className="px-4 py-2.5 text-right font-mono" style={{ color: sr >= 20 ? 'var(--income)' : sr >= 0 ? 'var(--gold)' : 'var(--rose)' }}>{sr}%</td>
-                      <td className="px-4 py-2.5 text-right font-mono" style={{ color: 'var(--text3)' }}>{a.cardloan > 0 ? money(a.cardloan) : '—'}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div className="px-4 py-3 border-t" style={{ borderColor: 'var(--border)' }}>
-            <div className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text3)' }}>{viewYear} categories</div>
-            <div className="space-y-2">
-              {activeExpense.map((cat, ci) => {
-                const pct = outflowGrand > 0 ? (rowTot(cat) / outflowGrand) * 100 : 0; const color = colorOf(cat, ci)
-                return (
-                  <div key={cat} className="flex items-center gap-3">
-                    <div className="text-[11px] font-medium w-28 flex-shrink-0 truncate" style={{ color: 'var(--text2, var(--text))' }}>{cat}</div>
-                    <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}><div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} /></div>
-                    <div className="text-[11px] font-mono w-20 text-right" style={{ color: 'var(--text)' }}>{money(rowTot(cat))}</div>
-                  </div>
-                )
-              })}
-              {activeExpense.length === 0 && <div className="text-center py-6 text-[12px]" style={{ color: 'var(--text3)' }}>No expense data for {viewYear}</div>}
+                      </th>
+                    ))}
+                    <th className="px-4 py-3 text-right text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--expense)', background: 'var(--bg2)', borderLeft: '2px solid var(--border)' }}>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {catYear.list.map((cat, ci) => {
+                    const rowTotal = yearsSorted.reduce((a, y) => a + (catYear.matrix[cat]?.[y] ?? 0), 0)
+                    return (
+                      <tr key={cat} style={{ borderBottom: '1px solid var(--border)' }} className="hover:bg-stone-50 transition-colors">
+                        <td className="sticky left-0 px-4 py-2.5 font-semibold" style={{ background: ci % 2 === 0 ? '#fff' : 'var(--bg2)', borderRight: '1px solid var(--border)' }}>
+                          <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: colorOf(cat, ci) }} /><span style={{ color: 'var(--text)' }}>{cat}</span></div>
+                        </td>
+                        {yearsSorted.map(y => { const v = catYear.matrix[cat]?.[y] ?? 0
+                          return (
+                            <td key={y} className="px-4 py-2.5 text-right font-mono" style={{ color: v > 0 ? 'var(--text)' : 'var(--text3)', fontWeight: v > 0 ? 600 : 400, background: y === String(viewYear) ? 'rgba(0,0,0,0.02)' : 'transparent' }}>
+                              {v > 0
+                                ? <button onClick={() => setDrill({ title: cat, subtitle: y, items: transactions.filter((t: any) => catOf(t) === cat && t.txn_date?.slice(0, 4) === y && inView(t.currency) && inScope(t)) })} className="hover:underline" style={{ color: 'inherit' }}>{sym}{fmt(v)}</button>
+                                : '—'}
+                            </td>
+                          )
+                        })}
+                        <td className="px-4 py-2.5 text-right font-mono font-bold" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--border)' }}>{money(rowTotal)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot>
+                  {/* Total Outflow */}
+                  <tr style={{ borderTop: '2px solid var(--border)', background: 'var(--bg2)' }}>
+                    <td className="sticky left-0 px-4 py-2.5 font-bold text-[11px] uppercase tracking-wider" style={{ background: 'var(--bg2)', color: 'var(--expense)', borderRight: '1px solid var(--border)' }}>Total Outflow</td>
+                    {yearsSorted.map(y => (<td key={y} className="px-4 py-2.5 text-right font-mono font-bold" style={{ color: 'var(--expense)' }}>{yearAgg[y].outflow > 0 ? `${sym}${fmt(yearAgg[y].outflow)}` : '—'}</td>))}
+                    <td className="px-4 py-2.5 text-right font-mono font-bold text-[13px]" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--border)' }}>{money(yearsSorted.reduce((a, y) => a + yearAgg[y].outflow, 0))}</td>
+                  </tr>
+                  {/* Income */}
+                  <tr style={{ background: 'var(--income-bg)' }}>
+                    <td className="sticky left-0 px-4 py-2.5 font-bold text-[11px] uppercase tracking-wider" style={{ background: 'var(--income-bg)', color: 'var(--income)', borderRight: '1px solid var(--border)' }}>Income</td>
+                    {yearsSorted.map(y => (<td key={y} className="px-4 py-2.5 text-right font-mono font-bold" style={{ color: 'var(--income)' }}>{(catYear.inc[y] ?? 0) > 0 ? `${sym}${fmt(catYear.inc[y])}` : '—'}</td>))}
+                    <td className="px-4 py-2.5 text-right font-mono font-bold text-[13px]" style={{ color: 'var(--income)', borderLeft: '2px solid var(--border)' }}>{money(yearsSorted.reduce((a, y) => a + (catYear.inc[y] ?? 0), 0))}</td>
+                  </tr>
+                  {/* Net */}
+                  <tr style={{ background: 'var(--bg2)', borderTop: '1px solid var(--border)' }}>
+                    <td className="sticky left-0 px-4 py-3 font-black text-[11px] uppercase tracking-wider" style={{ background: 'var(--bg2)', color: 'var(--text)', borderRight: '1px solid var(--border)' }}>Net (Inc − Out)</td>
+                    {yearsSorted.map(y => { const n = (catYear.inc[y] ?? 0) - yearAgg[y].outflow
+                      return (<td key={y} className="px-4 py-3 text-right font-mono font-black" style={{ color: n >= 0 ? 'var(--income)' : 'var(--rose)' }}>{n < 0 ? '-' : ''}{sym}{fmt(Math.abs(n))}</td>) })}
+                    <td className="px-4 py-3 text-right font-mono font-black text-[13px]" style={{ borderLeft: '2px solid var(--border)', color: (yearsSorted.reduce((a, y) => a + ((catYear.inc[y] ?? 0) - yearAgg[y].outflow), 0)) >= 0 ? 'var(--income)' : 'var(--rose)' }}>
+                      {(() => { const t = yearsSorted.reduce((a, y) => a + ((catYear.inc[y] ?? 0) - yearAgg[y].outflow), 0); return `${t < 0 ? '-' : ''}${money(Math.abs(t))}` })()}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
             </div>
+          )}
+          <div className="px-4 py-2 text-[10px]" style={{ color: 'var(--text3)', borderTop: '1px solid var(--border)' }}>
+            Actual spend per category each year · click a cell to see the transactions · click a year header to open its monthly view.
           </div>
         </div>
       )}
