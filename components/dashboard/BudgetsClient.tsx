@@ -12,14 +12,24 @@ const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct
 // would double-count. EMI/Loan Payment IS budgetable (a real monthly outflow).
 const CATS = [
   'Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment',
-  'Travel','Education','Subscription','Investment','EMI/Loan','Family Transfer','Transfer','Other',
+  'Travel','Education','Subscription','Investment','EMI/Loan','International Transfer','Family Transfer','Transfer','Other',
 ]
+
+// Budgets previously created for these are hidden (no longer planable).
+const DEPRECATED_BUDGET_CATS = new Set(['Loan on Card', 'Credit Card Payment'])
+
+// Friendlier dropdown labels (stored value is unchanged so spend still matches).
+const CAT_LABEL: Record<string, string> = {
+  'EMI/Loan': 'EMI / Loan Payment',
+  'Transfer': 'Money Transfer',
+  'International Transfer': 'Transfer to India (Remittance)',
+}
 
 const CAT_COLORS: Record<string, string> = {
   Food: '#D97706', Shopping: '#2563EB', Utilities: '#7C3AED', Transport: '#16A34A',
   Health: '#059669', Entertainment: '#E11D48', Travel: '#EA580C', Education: '#0284C7',
   Subscription: '#EC4899', Investment: '#8B5CF6', 'EMI/Loan': '#DC2626',
-  'Personal Care': '#DB2777', 'Family Transfer': '#0EA5E9',
+  'Personal Care': '#DB2777', 'Family Transfer': '#0EA5E9', 'International Transfer': '#2563EB',
   Transfer: '#3B7DD8', Other: '#6B7280',
 }
 
@@ -92,7 +102,7 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
     return view === 'uae' ? cur === 'AED' : cur === 'INR'
   }
   const budgetCapOf = (b: any): number => display(Number(b.monthly_cap) || 0, b.currency || 'INR')
-  const viewBudgets = budgets.filter((b: any) => inViewCur(b.currency || 'INR'))
+  const viewBudgets = budgets.filter((b: any) => inViewCur(b.currency || 'INR') && !DEPRECATED_BUDGET_CATS.has(b.category))
 
   // Current-month spend per category
   const spendMap: Record<string, number> = {}
@@ -382,7 +392,9 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
 
   async function saveBudget() {
     const cap = Number(newBudget.monthly_cap)
-    if (!newBudget.category || !(cap > 0)) { setBudgetError('Pick a category and enter a cap above 0'); return }
+    if (!newBudget.category || newBudget.monthly_cap === '' || isNaN(cap) || cap < 0) {
+      setBudgetError('Pick a category and enter a cap of 0 or more'); return
+    }
     setSaving(true); setBudgetError('')
     const { data: { user } } = await supabase.auth.getUser()
     const { data, error } = await writeBudget({
@@ -585,7 +597,7 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
                   disabled={!!editingId}
                   onChange={e => setNewBudget(p => ({ ...p, category: e.target.value }))}
                   className="wl-input" style={{ background: 'var(--bg2)', opacity: editingId ? 0.6 : 1 }}>
-                  {CATS.map(c => <option key={c} value={c}>{c === 'EMI/Loan' ? 'EMI / Loan Payment' : c}</option>)}
+                  {CATS.map(c => <option key={c} value={c}>{CAT_LABEL[c] ?? c}</option>)}
                 </select>
               </div>
               <div className="min-w-[150px]">
@@ -635,7 +647,7 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
                   <div className="flex justify-between items-center mb-2">
                     <div className="flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: catCol }} />
-                      <span className="text-[13px] font-bold" style={{ color: 'var(--text)' }}>{b.category}</span>
+                      <span className="text-[13px] font-bold" style={{ color: 'var(--text)' }}>{CAT_LABEL[b.category] ?? b.category}</span>
                       {b.is_manual
                         ? <span className="text-[8px] px-1.5 py-0.5 rounded font-bold" style={{ background:'#DBEAFE', color:'#1D4ED8' }}>Custom</span>
                         : <span className="text-[8px] px-1.5 py-0.5 rounded font-bold" style={{ background:'#F0FDF4', color:'#15803D' }}>Auto</span>
@@ -724,7 +736,7 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
                         <td className="px-4 py-2.5 font-semibold" style={{ color: 'var(--text)' }}>
                           <div className="flex items-center gap-2">
                             <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: CAT_COLORS[r.category] ?? '#6B7280' }} />
-                            {r.category}
+                            {CAT_LABEL[r.category] ?? r.category}
                           </div>
                         </td>
                         <td className="px-4 py-2.5 text-right font-mono font-bold" style={{ color: 'var(--text)' }}>
