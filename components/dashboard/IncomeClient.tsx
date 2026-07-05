@@ -278,6 +278,12 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
                           </span>
                         </td>
                         <td className="px-4 py-3">
+                          {t._autoNro ? (
+                            <span className="text-[9px] px-2 py-1 rounded-full whitespace-nowrap" title="Auto-linked from an NRE → NRO transfer; manage it in Transfers"
+                              style={{ background: 'var(--bg2)', color: 'var(--text3)', border: '1px solid var(--border)' }}>
+                              via NRE→NRO
+                            </span>
+                          ) : (
                           <div className="flex items-center gap-1.5">
                             <button onClick={() => openDuplicate(t)} title="Duplicate"
                               className="p-1 rounded hover:bg-stone-100 transition-colors" style={{ color: 'var(--text3)' }}>
@@ -292,6 +298,7 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
                               <Trash2 size={12} />
                             </button>
                           </div>
+                          )}
                         </td>
                       </tr>
                     )
@@ -307,7 +314,7 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
                 const account = accounts.find((a:any) => a.id === t.account_id)?.name ?? null
                 return (
                   <div key={i} className="flex items-start gap-3 px-3 py-3 active:bg-stone-50">
-                    <div className="flex-1 min-w-0" onClick={() => openEdit(t)}>
+                    <div className="flex-1 min-w-0" onClick={() => { if (!t._autoNro) openEdit(t) }}>
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-semibold text-[13px] truncate" style={{ color:'var(--text)' }}>{t.merchant}</span>
                         <span className="font-bold font-mono text-[13px] flex-shrink-0" style={{ color:'var(--income)' }}>+{t.currency === 'AED' ? 'AED ' : '₹'}{Number(t.amount).toLocaleString('en-IN')}</span>
@@ -316,13 +323,16 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
                         <span className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ background:c+'18', color:c }}>{t.category}</span>
                         <span className="text-[10px] font-mono" style={{ color:'var(--text3)' }}>{t.txn_date}</span>
                         {account && <span className="text-[10px] truncate" style={{ color:'var(--text3)' }}>· {account}</span>}
+                        {t._autoNro && <span className="text-[9px]" style={{ color:'var(--text3)' }}>· via NRE→NRO</span>}
                       </div>
                     </div>
+                    {!t._autoNro && (
                     <div className="flex flex-col gap-1.5 flex-shrink-0">
                       <button onClick={() => openEdit(t)} className="p-1.5 rounded-lg" style={{ color:'var(--blue)', background:'var(--bg2)' }} aria-label="Edit"><Pencil size={13} /></button>
                       <button onClick={() => openDuplicate(t)} className="p-1.5 rounded-lg" style={{ color:'var(--text3)', background:'var(--bg2)' }} aria-label="Duplicate"><Copy size={13} /></button>
                       <button onClick={() => deleteTxn(t.id)} disabled={deletingId === t.id} className="p-1.5 rounded-lg disabled:opacity-40" style={{ color:'var(--rose)', background:'var(--bg2)' }} aria-label="Delete"><Trash2 size={13} /></button>
                     </div>
+                    )}
                   </div>
                 )
               })}

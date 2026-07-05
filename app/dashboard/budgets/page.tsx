@@ -17,7 +17,7 @@ export default async function BudgetsPage() {
   const [budgetsRes, txnsRes, incomeRes] = await Promise.all([
     supabase.from('budgets').select('*').eq('user_id', user!.id).eq('month_year', thisMonth),
     supabase.from('transactions')
-      .select('category,amount,currency,txn_date,merchant,txn_type')
+      .select('category,amount,currency,txn_date,merchant,txn_type,sub_category')
       .eq('user_id', user!.id)
       .in('txn_type', ['expense', 'transfer', 'loan'])
       .gte('txn_date', yearStart)
@@ -34,11 +34,19 @@ export default async function BudgetsPage() {
       .limit(5000),
   ])
 
+  // NRO settlements (NRE → NRO) are the effective India income for NRIs with no
+  // local salary, so count them toward the budget's income basis.
+  const NRO_CATS = new Set(['NRE to NRO', 'NRO Settled', 'NRE → NRO'])
+  const nroIncome = (txnsRes.data ?? [])
+    .filter((t: any) => NRO_CATS.has(t.category) || t.sub_category === 'Internal')
+    .map((t: any) => ({ amount: t.amount, currency: t.currency, txn_date: t.txn_date }))
+  const incomeTransactions = [...(incomeRes.data ?? []), ...nroIncome]
+
   return (
     <BudgetsClient
       budgets={budgetsRes.data ?? []}
       transactions={txnsRes.data ?? []}
-      incomeTransactions={incomeRes.data ?? []}
+      incomeTransactions={incomeTransactions}
     />
   )
 }
