@@ -21,7 +21,7 @@ BEGIN
     WHERE con.conrelid = 'budgets'::regclass
       AND con.contype = 'u'
       AND (
-        SELECT array_agg(att.attname ORDER BY att.attname)
+        SELECT array_agg(att.attname::text ORDER BY att.attname::text)
         FROM unnest(con.conkey) k
         JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = k
       ) = ARRAY['category','month_year','user_id']
