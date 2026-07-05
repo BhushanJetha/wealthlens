@@ -128,6 +128,7 @@ const CAT_RULES: [RegExp, string][] = [
   // Shopping — lulu alone (hypermarket), but NOT lulu international exchange (already caught above)
   [/amazon(?!\s*prime)|flipkart|myntra|ajio|nykaa|reliance\s*digital|croma|d[\s\-]?mart|big\s*bazaar|supermarket|hypermarket|carrefour|(?<!international\s)lulu\b|spinneys|\bmart\b|\bmarket\b/i, 'Shopping'],
   [/byju|coursera|udemy|upgrad|vedantu|school\s*fee|tuition|coaching|exam\s*fee/i, 'Education'],
+  [/income\s*tax|\btax\s*pay|\btds\b|advance\s*tax|self[-\s]*assess|tax\s*challan|\bitns\b|property\s*tax|municipal\s*tax|road\s*tax|\bcbdt\b/i, 'Tax Payment'],
   [/zerodha|groww|upstox|mutual\s*fund|\bsip\b|\bppf\b|\bnps\b|\blic\b|sbi\s*life|hdfc\s*life|insurance|policy\s*prem/i, 'Investment'],
   // Loan on Card — ENBD LOC/DAC transit, line-of-credit payments
   [/\bloc\s+and\s+dac\b|loc\s+transit|dac\s+transit|line\s+of\s+credit\s+(?:payment|debit)|loc\s+(?:debit|payment)|loan\s+on\s+card/i, 'Loan on Card'],

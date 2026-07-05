@@ -12,7 +12,7 @@ const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct
 // would double-count. EMI/Loan Payment IS budgetable (a real monthly outflow).
 const CATS = [
   'Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment',
-  'Travel','Education','Subscription','Investment','EMI/Loan','International Transfer','Family Transfer','Transfer','Other',
+  'Travel','Education','Subscription','Investment','Tax Payment','EMI/Loan','International Transfer','Family Transfer','Transfer','Other',
 ]
 
 // Budgets previously created for these are hidden (no longer planable).
@@ -28,7 +28,7 @@ const CAT_LABEL: Record<string, string> = {
 const CAT_COLORS: Record<string, string> = {
   Food: '#D97706', Shopping: '#2563EB', Utilities: '#7C3AED', Transport: '#16A34A',
   Health: '#059669', Entertainment: '#E11D48', Travel: '#EA580C', Education: '#0284C7',
-  Subscription: '#EC4899', Investment: '#8B5CF6', 'EMI/Loan': '#DC2626',
+  Subscription: '#EC4899', Investment: '#8B5CF6', 'Tax Payment': '#BE123C', 'EMI/Loan': '#DC2626',
   'Personal Care': '#DB2777', 'Family Transfer': '#0EA5E9', 'International Transfer': '#2563EB',
   Transfer: '#3B7DD8', Other: '#6B7280',
 }

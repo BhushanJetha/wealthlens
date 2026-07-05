@@ -658,12 +658,12 @@ export default function BankStatementUploadModal({ onClose }: Props) {
                                 if (['Transfer','Family Transfer','Loan Received','Loan Taken','International Transfer','NRE to NRO','NRO to Family','Self Transfer'].includes(cat)) updateTxn(i, 'txn_type', 'transfer')
                                 else if (cat === 'Loan on Card' || cat === 'EMI/Loan') updateTxn(i, 'txn_type', 'loan')
                                 else if (['UAE Income (NRO)','Salary','NRE Received','Interest','Dividend','Rental','Bonus','Tax Refund','Freelance','Gift','NRI Transfer','FD/RD Maturity'].includes(cat)) updateTxn(i, 'txn_type', 'income')
-                                else if (['Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment','Travel','Education','Subscription'].includes(cat)) updateTxn(i, 'txn_type', 'expense')
+                                else if (['Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment','Travel','Education','Subscription','Tax Payment','Investment'].includes(cat)) updateTxn(i, 'txn_type', 'expense')
                               }}
                               className="text-[10px] px-1.5 py-1 rounded border w-full"
                               style={{ borderColor: 'var(--border)', background: 'var(--bg2)', color: 'var(--text)' }}>
                               <optgroup label="Spending">
-                                {['Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment','Travel','Education','Subscription'].map(c => <option key={c}>{c}</option>)}
+                                {['Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment','Travel','Education','Subscription','Tax Payment'].map(c => <option key={c}>{c}</option>)}
                               </optgroup>
                               <optgroup label="Income">
                                 {['UAE Income (NRO)','Salary','NRE Received','Interest','Dividend','FD/RD Maturity','Rental','Bonus','Tax Refund','Freelance','Gift','NRI Transfer'].map(c => <option key={c}>{c}</option>)}
