@@ -55,6 +55,7 @@ const TXN_SUBS = [
   { href: '/dashboard/expenses',        icon: ArrowDownCircle, label: 'Expenses'        },
   { href: '/dashboard/expenses/report', icon: PieChart,        label: 'Expense Report'  },
   { href: '/dashboard/transfers',       icon: ArrowLeftRight,  label: 'Transfers'       },
+  { href: '/dashboard/fx',              icon: ArrowLeftRight,  label: 'FX Optimizer'    },
 ]
 
 const MAIN_NAV = [
