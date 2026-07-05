@@ -585,7 +585,7 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
                   disabled={!!editingId}
                   onChange={e => setNewBudget(p => ({ ...p, category: e.target.value }))}
                   className="wl-input" style={{ background: 'var(--bg2)', opacity: editingId ? 0.6 : 1 }}>
-                  {CATS.map(c => <option key={c}>{c}</option>)}
+                  {CATS.map(c => <option key={c} value={c}>{c === 'EMI/Loan' ? 'EMI / Loan Payment' : c}</option>)}
                 </select>
               </div>
               <div className="min-w-[150px]">
