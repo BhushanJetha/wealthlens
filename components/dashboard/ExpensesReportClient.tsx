@@ -33,6 +33,15 @@ const FALLBACK_PALETTE = ['#6366F1','#DB2777','#0D9488','#CA8A04','#C2640A','#47
 const colorOf = (cat: string, idx: number) => CAT_COLORS[cat] ?? FALLBACK_PALETTE[idx % FALLBACK_PALETTE.length]
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
+// Which account a transaction ran through — NRE if the linked account is named
+// NRE, otherwise NRO (the account most India spending happens from). Strict
+// binary split so NRE + NRO = everything (no overlap / double-count).
+type Scope = 'both' | 'nre' | 'nro'
+function acctScope(t: any): 'nre' | 'nro' {
+  const s = `${t?.accounts?.name || ''} ${t?.accounts?.bank_name || ''}`.toLowerCase()
+  return /\bnre\b|non[-\s]?resident\s+external/.test(s) ? 'nre' : 'nro'
+}
+
 function buildMonths(from: string, to: string): string[] {
   const months: string[] = []; let cur = from
   while (cur <= to && months.length < 60) {
@@ -72,6 +81,8 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
   const mLabel = (m: string) => new Date(m + '-01').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
 
   const [tab, setTab] = useState<Tab>('monthly')
+  const [scope, setScope] = useState<Scope>('both')
+  const inScope = (t: any) => scope === 'both' || acctScope(t) === scope
   const [viewYear, setViewYear] = useState(() => parseInt(fromMonth.slice(0, 4)))
   const [drill, setDrill] = useState<{ title: string; subtitle?: string; items: any[] } | null>(null)
   useEffect(() => { setViewYear(parseInt(fromMonth.slice(0, 4))) }, [fromMonth])
@@ -81,8 +92,8 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
 
   const yearTxns = useMemo(() => transactions.filter(t => {
     const m = t.txn_date?.slice(0, 7) ?? ''
-    return m >= yearFrom && m <= yearTo && inView(t.currency)
-  }), [transactions, viewYear, view])
+    return m >= yearFrom && m <= yearTo && inView(t.currency) && inScope(t)
+  }), [transactions, viewYear, view, scope])
 
   // category → month → amount (all fetched txns for the year)
   const pivot = useMemo(() => {
@@ -111,11 +122,11 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
   const incByMonth = useMemo(() => {
     const map: Record<string, number> = {}
     incomeTransactions.forEach(t => {
-      const m = t.txn_date?.slice(0, 7); if (!m || !inView(t.currency)) return
+      const m = t.txn_date?.slice(0, 7); if (!m || !inView(t.currency) || !inScope(t)) return
       map[m] = (map[m] ?? 0) + conv(Number(t.amount) || 0, t.currency)
     })
     return map
-  }, [incomeTransactions, view, FX])
+  }, [incomeTransactions, view, FX, scope])
   const incomeCol = (m: string) => incByMonth[m] ?? 0
   const netCol = (m: string) => incomeCol(m) - outflowCol(m)
 
@@ -154,17 +165,17 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
     const agg: Record<string, { income: number; outflow: number; cardloan: number }> = {}
     years.forEach(y => agg[y] = { income: 0, outflow: 0, cardloan: 0 })
     transactions.forEach(t => {
-      const y = t.txn_date?.slice(0, 4); if (!y || !agg[y] || !inView(t.currency)) return
+      const y = t.txn_date?.slice(0, 4); if (!y || !agg[y] || !inView(t.currency) || !inScope(t)) return
       const cls = classify(catOf(t))
       if (cls === 'expense') agg[y].outflow += disp(t)
       else if (cls === 'cardloan') agg[y].cardloan += disp(t)
     })
     incomeTransactions.forEach(t => {
-      const y = t.txn_date?.slice(0, 4); if (!y || !agg[y] || !inView(t.currency)) return
+      const y = t.txn_date?.slice(0, 4); if (!y || !agg[y] || !inView(t.currency) || !inScope(t)) return
       agg[y].income += conv(Number(t.amount) || 0, t.currency)
     })
     return agg
-  }, [transactions, incomeTransactions, view, FX])
+  }, [transactions, incomeTransactions, view, FX, scope])
   const yearsSorted = Object.keys(yearAgg).sort()
 
   // Running balance (carry-over): prior-years' net carried in, then each month
@@ -223,7 +234,8 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
         <div>
           <h1 className="text-xl font-bold" style={{ color: 'var(--text)' }}>Expense Report</h1>
           <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
-            {view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'} · income, spend & net
+            {view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'}
+            {scope !== 'both' && <> · <strong>{scope.toUpperCase()} account only</strong></>} · income, spend &amp; net
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -239,15 +251,26 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 p-1 rounded-xl w-fit" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-        {TABS.map(({ key, label, icon: Icon }) => (
-          <button key={key} onClick={() => setTab(key)}
-            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[12px] font-bold transition-all"
-            style={tab === key ? { background: '#fff', color: 'var(--text)', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' } : { color: 'var(--text3)' }}>
-            <Icon size={13} /> {label}
-          </button>
-        ))}
+      {/* Tabs + account scope */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex gap-1 p-1 rounded-xl w-fit" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+          {TABS.map(({ key, label, icon: Icon }) => (
+            <button key={key} onClick={() => setTab(key)}
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[12px] font-bold transition-all"
+              style={tab === key ? { background: '#fff', color: 'var(--text)', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' } : { color: 'var(--text3)' }}>
+              <Icon size={13} /> {label}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-1 p-1 rounded-xl w-fit" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+          {([['both', 'NRE + NRO'], ['nre', 'NRE'], ['nro', 'NRO']] as [Scope, string][]).map(([key, label]) => (
+            <button key={key} onClick={() => setScope(key)}
+              className="px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all"
+              style={scope === key ? { background: '#fff', color: 'var(--blue)', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' } : { color: 'var(--text3)' }}>
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* KPI strip — income / outflow / net / savings (hidden on Yearly, which has its own YoY table) */}
