@@ -162,6 +162,14 @@ export default function ExpensesReportClient({ transactions }: { transactions: a
   const activeMovementCats = movementCatsAll.filter(cat => rowTotals[cat] > 0).sort((a, b) => rowTotals[b] - rowTotals[a])
   const peakMonth     = months.reduce((best, m) => (colTotals[m] ?? 0) > (colTotals[best] ?? 0) ? m : best, months[0])
 
+  // Money flows UAE → NRE → NRO, so "NRE Received" and "NRE to NRO" are the SAME
+  // rupees. Summing them double-counts. The amount that actually reaches the
+  // account you spend/invest from (NRO) is the real figure — count that only.
+  const NRO_REACH_CAT = 'NRE to NRO'
+  const hasNroChain   = activeMovementCats.includes(NRO_REACH_CAT) && activeMovementCats.includes('NRE Received')
+  const nroCol        = (m: string) => pivot[NRO_REACH_CAT]?.[m] ?? 0
+  const spendableTotal = hasNroChain ? months.reduce((a, m) => a + nroCol(m), 0) : movGrandTotal
+
   // ─── Analytics: Monthly totals for forecasting & anomaly detection ────────
   const monthlyTotals = useMemo(() => {
     return Array.from({ length: 12 }, (_, i) => {
@@ -515,13 +523,17 @@ export default function ExpensesReportClient({ transactions }: { transactions: a
                 Transfers &amp; Money Received — not expenses
               </div>
               <div className="text-[10px] mt-0.5" style={{ color: 'var(--text3)' }}>
-                NRE credits, inter-account & remittance movement · excluded from the expense totals above
+                {hasNroChain
+                  ? 'UAE → NRE → NRO is the same money. Only the NRO amount is counted as spendable in India.'
+                  : 'NRE credits, inter-account & remittance movement · excluded from the expense totals above'}
               </div>
             </div>
             <div className="text-right">
-              <div className="text-[9px] uppercase tracking-wider font-bold" style={{ color: 'var(--text3)' }}>Total moved</div>
+              <div className="text-[9px] uppercase tracking-wider font-bold" style={{ color: 'var(--text3)' }}>
+                {hasNroChain ? 'Reached NRO · spendable' : 'Total moved'}
+              </div>
               <div className="text-[15px] font-black font-mono" style={{ color: 'var(--blue)' }}>
-                {sym}{Math.round(movGrandTotal).toLocaleString('en-IN')}
+                {sym}{Math.round(spendableTotal).toLocaleString('en-IN')}
               </div>
             </div>
           </div>
@@ -576,9 +588,11 @@ export default function ExpensesReportClient({ transactions }: { transactions: a
               <tfoot>
                 <tr style={{ borderTop: '2px solid var(--border)', background: 'var(--bg2)' }}>
                   <td className="sticky left-0 px-4 py-2.5 font-bold text-[11px] uppercase tracking-wider"
-                    style={{ background: 'var(--bg2)', color: 'var(--text)', borderRight: '1px solid var(--border)' }}>Monthly Total</td>
+                    style={{ background: 'var(--bg2)', color: 'var(--text)', borderRight: '1px solid var(--border)' }}>
+                    {hasNroChain ? 'Reached NRO (spendable)' : 'Monthly Total'}
+                  </td>
                   {months.map(m => {
-                    const val = movColTotals[m] ?? 0
+                    const val = hasNroChain ? nroCol(m) : (movColTotals[m] ?? 0)
                     return (
                       <td key={m} className="px-3 py-2.5 text-right font-mono font-bold"
                         style={{ color: 'var(--blue)', background: m >= fromMonth && m <= toMonth ? 'var(--blue-bg, #EFF6FF)' : 'var(--bg2)' }}>
@@ -588,7 +602,7 @@ export default function ExpensesReportClient({ transactions }: { transactions: a
                   })}
                   <td className="px-4 py-2.5 text-right font-mono font-bold text-[13px]"
                     style={{ color: 'var(--blue)', borderLeft: '2px solid var(--border)' }}>
-                    {sym}{Math.round(movGrandTotal).toLocaleString('en-IN')}
+                    {sym}{Math.round(spendableTotal).toLocaleString('en-IN')}
                   </td>
                 </tr>
               </tfoot>

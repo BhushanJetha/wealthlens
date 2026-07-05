@@ -13,10 +13,11 @@ import { Search, PenLine, BarChart2, Plus, Pencil, Trash2, X, Check, Upload, Ima
 import Link from 'next/link'
 
 const INCOME_CATS = [
-  'All', 'Salary', 'NRE Received', 'Dividend', 'Interest', 'FD/RD Maturity', 'Rental', 'Gift', 'Bonus', 'Tax Refund', 'Freelance', 'NRI Transfer', 'Other'
+  'All', 'UAE Income (NRO)', 'Salary', 'NRE Received', 'Dividend', 'Interest', 'FD/RD Maturity', 'Rental', 'Gift', 'Bonus', 'Tax Refund', 'Freelance', 'NRI Transfer', 'Other'
 ]
 
 const CAT_COLORS: Record<string,string> = {
+  'UAE Income (NRO)': '#15803D',
   Salary:          '#16A34A',
   'NRE Received':  '#0284C7',
   Dividend:        '#2563EB',

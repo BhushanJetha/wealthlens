@@ -5,7 +5,7 @@ import { X, Loader2, Plus, ArrowRight, RefreshCw } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 const EXPENSE_CATS = ['Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment','Travel','Education','Subscription','Investment','EMI/Loan','Loan on Card','Credit Card Payment','Family Transfer','Refund','Other']
-const INCOME_CATS  = ['Salary','NRE Received','Dividend','Interest','FD/RD Maturity','Rental','Gift','Bonus','Tax Refund','Freelance','NRI Transfer','Loan Taken','Refund','Other']
+const INCOME_CATS  = ['UAE Income (NRO)','Salary','NRE Received','Dividend','Interest','FD/RD Maturity','Rental','Gift','Bonus','Tax Refund','Freelance','NRI Transfer','Loan Taken','Refund','Other']
 
 const CAT_COLORS: Record<string,string> = {
   Food:'#D97706', Shopping:'#2563EB', Utilities:'#7C3AED', Transport:'#16A34A',
@@ -13,7 +13,7 @@ const CAT_COLORS: Record<string,string> = {
   Subscription:'#EC4899', 'Personal Care':'#DB2777',
   Investment:'#10B981', 'EMI/Loan':'#F97316', 'Loan on Card':'#F59E0B',
   'Credit Card Payment':'#9333EA', 'Family Transfer':'#0EA5E9', Refund:'#059669',
-  Salary:'#16A34A', 'NRE Received':'#0284C7', Dividend:'#2563EB', Rental:'#7C3AED', Gift:'#E11D48',
+  'UAE Income (NRO)':'#15803D', Salary:'#16A34A', 'NRE Received':'#0284C7', Dividend:'#2563EB', Rental:'#7C3AED', Gift:'#E11D48',
   Bonus:'#D97706', 'Tax Refund':'#059669', Interest:'#0369A1', 'FD/RD Maturity':'#0891B2', Freelance:'#EA580C',
   'NRI Transfer':'#0EA5E9', 'Loan Taken':'#6366F1',
   Other:'#6B7280',
