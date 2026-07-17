@@ -127,22 +127,22 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
 
   return (
     <div className="space-y-5 animate-fade-up">
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 md:gap-4">
         <div>
           <h1 className="text-xl font-bold" style={{ color:'var(--text)' }}>Income</h1>
           <p className="text-[12px] mt-0.5" style={{ color:'var(--text3)' }}>
             {view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'} · {rangeLabel}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-stretch gap-2 w-full md:w-auto">
           <Link href="/dashboard/income/report"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all"
+            className="flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 py-2 md:py-1.5 rounded-lg text-[11px] font-semibold border transition-all"
             style={{ background: 'var(--bg2)', borderColor: 'var(--border)', color: 'var(--text3)' }}>
             <BarChart2 size={12} /> Annual Report
           </Link>
-          <div className="relative" ref={menuRef}>
+          <div className="relative flex-1 md:flex-none" ref={menuRef}>
             <button onClick={() => setShowAddMenu(v => !v)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-bold text-white shadow-sm hover:opacity-90 transition-all"
+              className="w-full md:w-auto flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-[13px] font-bold text-white shadow-sm hover:opacity-90 transition-all"
               style={{ background: 'var(--income)' }}>
               <Plus size={14} /> Add Income
               <ChevronDown size={13} style={{ transition: 'transform 0.2s', transform: showAddMenu ? 'rotate(180deg)' : 'rotate(0deg)' }} />
@@ -206,14 +206,15 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
 
       {/* Filters */}
       <div className="flex flex-wrap gap-2 items-center">
-        <div className="relative">
+        <div className="relative w-full md:w-48">
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color:'var(--text3)' }} />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search source…"
-            className="wl-input pl-8 w-48" style={{ background:'var(--bg2)' }}
+            className="wl-input pl-8 w-full" style={{ background:'var(--bg2)' }}
             onFocus={e=>(e.target.style.borderColor='var(--sage)')}
             onBlur={e=>(e.target.style.borderColor='var(--border)')} />
         </div>
-        <div className="flex gap-1 flex-wrap">
+        {/* Category chips — desktop only */}
+        <div className="hidden md:flex gap-1 flex-wrap">
           {INCOME_CATS.map(c => (
             <button key={c} onClick={() => setCat(c)}
               className="px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all"
@@ -224,8 +225,13 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
             </button>
           ))}
         </div>
+        {/* Category dropdown — mobile only (replaces the chip row) */}
+        <select value={cat} onChange={e => setCat(e.target.value)}
+          className="wl-input md:hidden flex-1" style={{ background:'var(--bg2)' }}>
+          {INCOME_CATS.map(c => <option key={c} value={c}>{c === 'All' ? 'All Categories' : c}</option>)}
+        </select>
         <select value={accFilter} onChange={e => setAccFilter(e.target.value)}
-          className="wl-input" style={{ background:'var(--bg2)', width:'auto' }}>
+          className="wl-input flex-1 md:flex-none" style={{ background:'var(--bg2)', width:'auto' }}>
           <option value="All">All Accounts</option>
           {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
@@ -313,8 +319,8 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
                 const c = CAT_COLORS[t.category] ?? '#16A34A'
                 const account = accounts.find((a:any) => a.id === t.account_id)?.name ?? null
                 return (
-                  <div key={i} className="flex items-start gap-3 px-3 py-3 active:bg-stone-50">
-                    <div className="flex-1 min-w-0" onClick={() => { if (!t._autoNro) openEdit(t) }}>
+                  <div key={i} className="px-3 py-3 active:bg-stone-50">
+                    <div className="min-w-0" onClick={() => { if (!t._autoNro) openEdit(t) }}>
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-semibold text-[13px] truncate" style={{ color:'var(--text)' }}>{t.merchant}</span>
                         <span className="font-bold font-mono text-[13px] flex-shrink-0" style={{ color:'var(--income)' }}>+{t.currency === 'AED' ? 'AED ' : '₹'}{Number(t.amount).toLocaleString('en-IN')}</span>
@@ -327,10 +333,10 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
                       </div>
                     </div>
                     {!t._autoNro && (
-                    <div className="flex flex-col gap-1.5 flex-shrink-0">
-                      <button onClick={() => openEdit(t)} className="p-1.5 rounded-lg" style={{ color:'var(--blue)', background:'var(--bg2)' }} aria-label="Edit"><Pencil size={13} /></button>
-                      <button onClick={() => openDuplicate(t)} className="p-1.5 rounded-lg" style={{ color:'var(--text3)', background:'var(--bg2)' }} aria-label="Duplicate"><Copy size={13} /></button>
-                      <button onClick={() => deleteTxn(t.id)} disabled={deletingId === t.id} className="p-1.5 rounded-lg disabled:opacity-40" style={{ color:'var(--rose)', background:'var(--bg2)' }} aria-label="Delete"><Trash2 size={13} /></button>
+                    <div className="flex items-center justify-end gap-2 mt-2">
+                      <button onClick={() => openEdit(t)} className="p-2 rounded-lg" style={{ color:'var(--blue)', background:'var(--bg2)' }} aria-label="Edit"><Pencil size={14} /></button>
+                      <button onClick={() => openDuplicate(t)} className="p-2 rounded-lg" style={{ color:'var(--text3)', background:'var(--bg2)' }} aria-label="Duplicate"><Copy size={14} /></button>
+                      <button onClick={() => deleteTxn(t.id)} disabled={deletingId === t.id} className="p-2 rounded-lg disabled:opacity-40" style={{ color:'var(--rose)', background:'var(--bg2)' }} aria-label="Delete"><Trash2 size={14} /></button>
                     </div>
                     )}
                   </div>

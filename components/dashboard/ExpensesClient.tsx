@@ -206,39 +206,39 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
 
   return (
     <div className="space-y-5 animate-fade-up">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 md:gap-4">
         <div>
           <h1 className="text-xl font-bold" style={{ color:'var(--text)' }}>Expenses</h1>
           <p className="text-[12px] mt-0.5" style={{ color:'var(--text3)' }}>
             {view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'} · {rangeLabel}
             {liveRate && (
-              <span className="ml-2 font-mono" style={{ color:'var(--gold)' }}>
+              <span className="ml-2 font-mono hidden sm:inline" style={{ color:'var(--gold)' }}>
                 · Live: 1 AED = ₹{liveRate.toFixed(2)}{rateDate ? ` (${rateDate})` : ''}
               </span>
             )}
           </p>
         </div>
 
-        <div className="flex flex-col items-end gap-2 flex-shrink-0">
+        <div className="flex flex-col items-stretch md:items-end gap-2 flex-shrink-0 w-full md:w-auto">
           {/* Secondary links */}
           <div className="flex gap-2">
             <Link href="/dashboard/expenses/report"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all"
+              className="flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 py-2 md:py-1.5 rounded-lg text-[11px] font-semibold border transition-all"
               style={{ background:'var(--bg2)', borderColor:'var(--border)', color:'var(--text3)' }}>
               <BarChart2 size={12} /> Annual Report
             </Link>
             <Link href="/dashboard/budgets/learn"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all"
+              className="flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 py-2 md:py-1.5 rounded-lg text-[11px] font-semibold border transition-all"
               style={{ background:'var(--sage-bg)', borderColor:'var(--sage)', color:'var(--sage)' }}>
               <BookOpen size={12} /> Learn Categories
             </Link>
           </div>
 
           {/* Primary add dropdown */}
-          <div className="relative" ref={menuRef}>
+          <div className="relative w-full md:w-auto" ref={menuRef}>
             <button
               onClick={() => setShowAddMenu(v => !v)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-bold text-white shadow-sm transition-all hover:opacity-90"
+              className="w-full md:w-auto flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-bold text-white shadow-sm transition-all hover:opacity-90"
               style={{ background:'var(--sage)' }}>
               <Plus size={15} />
               Add Transaction
@@ -421,14 +421,15 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
 
       {/* Filters */}
       <div className="flex flex-wrap gap-2 items-center">
-        <div className="relative">
+        <div className="relative w-full md:w-48">
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color:'var(--text3)' }} />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search merchant…"
-            className="wl-input pl-8 w-48" style={{ background:'var(--bg2)' }}
+            className="wl-input pl-8 w-full" style={{ background:'var(--bg2)' }}
             onFocus={e=>(e.target.style.borderColor='var(--sage)')}
             onBlur={e=>(e.target.style.borderColor='var(--border)')} />
         </div>
-        <div className="flex gap-1 flex-wrap">
+        {/* Category chips — desktop only */}
+        <div className="hidden md:flex gap-1 flex-wrap">
           {EXPENSE_CATS.map(c => {
             const bs = c !== 'All' ? getBudgetStatus(c) : null
             const isOver = bs && bs.pct >= 100
@@ -444,8 +445,16 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
             )
           })}
         </div>
+        {/* Category dropdown — mobile only (replaces the chip wall) */}
+        <select value={cat} onChange={e => setCat(e.target.value)}
+          className="wl-input md:hidden flex-1" style={{ background:'var(--bg2)' }}>
+          {EXPENSE_CATS.map(c => {
+            const bs = c !== 'All' ? getBudgetStatus(c) : null
+            return <option key={c} value={c}>{c === 'All' ? 'All Categories' : c}{bs && bs.pct >= 100 ? ' ⚠' : ''}</option>
+          })}
+        </select>
         <select value={accFilter} onChange={e => setAccFilter(e.target.value)}
-          className="wl-input" style={{ background:'var(--bg2)', width:'auto' }}>
+          className="wl-input flex-1 md:flex-none" style={{ background:'var(--bg2)', width:'auto' }}>
           <option value="All">All Accounts</option>
           {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
@@ -571,8 +580,8 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
                 const label = isTransfer ? (t.category === 'Family Transfer' ? 'Family Transfer' : t.sub_category || t.category || 'Transfer') : t.category
                 const account = accounts.find((a:any) => a.id === t.account_id)?.name ?? null
                 return (
-                  <div key={i} className="flex items-start gap-3 px-3 py-3 active:bg-stone-50">
-                    <div className="flex-1 min-w-0" onClick={() => openEdit(t)}>
+                  <div key={i} className="px-3 py-3 active:bg-stone-50">
+                    <div className="min-w-0" onClick={() => openEdit(t)}>
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-semibold text-[13px] truncate" style={{ color:'var(--text)' }}>{t.merchant}</span>
                         <span className="font-bold font-mono text-[13px] flex-shrink-0" style={{ color:amtColor }}>{lSym}{Number(t.amount).toLocaleString('en-IN')}</span>
@@ -585,10 +594,10 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
                       </div>
                       {inrEq && <div className="text-[10px] font-mono mt-0.5" style={{ color:'var(--text3)' }}>{inrEq}</div>}
                     </div>
-                    <div className="flex flex-col gap-1.5 flex-shrink-0">
-                      <button onClick={() => openEdit(t)} className="p-1.5 rounded-lg" style={{ color:'var(--blue)', background:'var(--bg2)' }} aria-label="Edit"><Pencil size={13} /></button>
-                      <button onClick={() => openDuplicate(t)} className="p-1.5 rounded-lg" style={{ color:'var(--text3)', background:'var(--bg2)' }} aria-label="Duplicate"><Copy size={13} /></button>
-                      <button onClick={() => deleteTxn(t.id)} disabled={deletingId === t.id} className="p-1.5 rounded-lg disabled:opacity-40" style={{ color:'var(--rose)', background:'var(--bg2)' }} aria-label="Delete"><Trash2 size={13} /></button>
+                    <div className="flex items-center justify-end gap-2 mt-2">
+                      <button onClick={() => openEdit(t)} className="p-2 rounded-lg" style={{ color:'var(--blue)', background:'var(--bg2)' }} aria-label="Edit"><Pencil size={14} /></button>
+                      <button onClick={() => openDuplicate(t)} className="p-2 rounded-lg" style={{ color:'var(--text3)', background:'var(--bg2)' }} aria-label="Duplicate"><Copy size={14} /></button>
+                      <button onClick={() => deleteTxn(t.id)} disabled={deletingId === t.id} className="p-2 rounded-lg disabled:opacity-40" style={{ color:'var(--rose)', background:'var(--bg2)' }} aria-label="Delete"><Trash2 size={14} /></button>
                     </div>
                   </div>
                 )
