@@ -10,8 +10,9 @@ import BankStatementUploadModal from '@/components/forms/BankStatementUploadModa
 import BillImageUploadModal from '@/components/forms/BillImageUploadModal'
 import TransactionVoiceModal from '@/components/forms/TransactionVoiceModal'
 import CreditCardUploadModal from '@/components/forms/CreditCardUploadModal'
+import MessageParseModal from '@/components/forms/MessageParseModal'
 
-import { Search, Upload, Image, Mic, PenLine, BarChart2, ArrowRight, AlertTriangle, X, CreditCard, Pencil, Trash2, Check, BookOpen, ChevronDown, Plus, Copy, Wallet, Banknote } from 'lucide-react'
+import { Search, Upload, Image, Mic, PenLine, BarChart2, ArrowRight, AlertTriangle, X, CreditCard, Pencil, Trash2, Check, BookOpen, ChevronDown, Plus, Copy, Wallet, Banknote, MessageSquareText } from 'lucide-react'
 import Link from 'next/link'
 
 const EXPENSE_CATS = ['All','Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment','Travel','Education','Subscription','Investment','Tax Payment','Credit Card Payment','Loan on Card','EMI/Loan','Family Transfer','Transfer','Refund','Other']
@@ -26,7 +27,7 @@ const CAT_COLORS: Record<string,string> = {
 const TRANSFER_SUBTYPE_COLORS: Record<string,string> = {
   International: '#3B7DD8', Internal: '#7C5CBF', Family: '#3D7A58',
 }
-type Modal = 'none' | 'manual' | 'statement' | 'bill' | 'voice' | 'credit_card' | 'cash' | 'atm'
+type Modal = 'none' | 'manual' | 'statement' | 'bill' | 'voice' | 'credit_card' | 'cash' | 'atm' | 'message'
 
 function budgetColor(pct: number): string {
   if (pct >= 100) return 'var(--rose)'
@@ -54,6 +55,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
   const [deletingId,   setDeletingId]   = useState<string | null>(null)
   const [showAddMenu,  setShowAddMenu]  = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const [sharedText, setSharedText] = useState<string | null>(null)
 
   const supabase = createClient()
   const router   = useRouter()
@@ -64,6 +66,18 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
 
   useEffect(() => {
     fetch('/api/fx-rate').then(r => r.json()).then(d => { setLiveRate(d.rate); setRateDate(d.date) }).catch(() => {})
+  }, [])
+
+  // PWA share-target: on Android, "Share → WealthLens" of a bank SMS opens
+  // /dashboard/expenses?text=… — auto-open the message parser with that text.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search)
+    const shared = p.get('text') || p.get('title')
+    if (shared) {
+      setSharedText(shared)
+      setActiveModal('message')
+      window.history.replaceState({}, '', '/dashboard/expenses')
+    }
   }, [])
 
   useEffect(() => {
@@ -193,6 +207,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
     : `${new Date(fromMonth+'-01').toLocaleDateString('en-GB',{month:'short',year:'numeric'})} – ${new Date(toMonth+'-01').toLocaleDateString('en-GB',{month:'short',year:'numeric'})}`
 
   const addButtons: { key: Modal; label: string; desc: string; icon: React.ElementType; color: string }[] = [
+    { key: 'message',     label: 'From SMS / Email', desc: 'Paste or share a bank alert — auto-fills', icon: MessageSquareText, color: '#0EA5E9' },
     { key: 'credit_card', label: 'Credit Card PDF',  desc: 'Parse ENBD, Amex, ADCB CC statements', icon: CreditCard, color: '#2563EB' },
     { key: 'statement',   label: 'Bank Statement',   desc: 'Parse Wio, Emirates NBD, ADCB PDFs',   icon: Upload,     color: '#059669' },
     { key: 'bill',        label: 'Bill / Image',     desc: 'Scan a receipt or bill photo',          icon: Image,      color: '#D97706' },
@@ -609,6 +624,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
         )}
       </div>
 
+      {activeModal === 'message'     && <MessageParseModal onClose={() => setActiveModal('none')} initialText={sharedText ?? ''} />}
       {activeModal === 'manual'      && <AddTransactionModal onClose={() => setActiveModal('none')} />}
       {activeModal === 'cash'        && <AddTransactionModal onClose={() => setActiveModal('none')} defaults={{ txn_type:'expense', account_id:'__cash__', currency: view === 'uae' ? 'AED' : 'INR' }} />}
       {activeModal === 'atm'         && <AddTransactionModal onClose={() => setActiveModal('none')} defaults={{ txn_type:'transfer', category:'ATM Withdrawal', sub_category:'ATM Withdrawal', account_id:'__cash__', merchant:'ATM Withdrawal', currency: view === 'uae' ? 'AED' : 'INR' }} />}

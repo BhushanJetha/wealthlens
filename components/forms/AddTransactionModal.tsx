@@ -35,15 +35,15 @@ const inputStyle = { background: 'var(--bg2)', border: '1px solid var(--border)'
 export default function AddTransactionModal({ onClose, onAdded, defaults }: {
   onClose: () => void
   onAdded?: () => void
-  defaults?: Partial<{ txn_type: string; account_id: string; category: string; currency: string; sub_category: string; merchant: string }>
+  defaults?: Partial<{ txn_type: string; account_id: string; category: string; currency: string; sub_category: string; merchant: string; amount: string; txn_date: string; description: string }>
 }) {
   const [form, setForm] = useState({
-    txn_date:     new Date().toISOString().slice(0, 10),
+    txn_date:     defaults?.txn_date ?? new Date().toISOString().slice(0, 10),
     merchant:     defaults?.merchant ?? '',
-    description:  '',
+    description:  defaults?.description ?? '',
     category:     defaults?.category ?? (defaults?.txn_type === 'income' ? 'Salary' : 'Food'),
     sub_category: defaults?.sub_category ?? '',
-    amount:       '',
+    amount:       defaults?.amount ?? '',
     currency:     defaults?.currency ?? 'INR',
     txn_type:     defaults?.txn_type ?? 'expense',
     account_id:   defaults?.account_id ?? '',
