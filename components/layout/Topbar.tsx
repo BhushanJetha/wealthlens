@@ -259,11 +259,11 @@ export default function Topbar({ user }: { user: any }) {
         )}
       </div>
 
-      {/* View toggle */}
-      <div className="flex gap-1">
+      {/* View toggle — full-width segmented control on mobile (own row), inline on desktop */}
+      <div className="flex gap-1 order-last w-full md:order-none md:w-auto">
         {views.map(v => (
           <button key={v.key} onClick={() => setView(v.key)}
-            className="px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all border"
+            className="flex-1 md:flex-none px-3 py-2 md:py-1.5 rounded-lg text-[11px] font-semibold transition-all border"
             style={view === v.key ? {
               background: 'var(--sage)',
               borderColor: 'var(--sage)',

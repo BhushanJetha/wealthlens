@@ -161,3 +161,51 @@ main > * { will-change: opacity; }
   main { overflow: visible !important; padding: 0 !important; }
   .wl-card { break-inside: avoid; box-shadow: none !important; border: 1px solid #e5e7eb !important; }
 }
+
+/* ─── Mobile app polish ────────────────────────────────────────────────────
+   Everything here is scoped to phones (< md) so the desktop UI is untouched. */
+
+/* Safe-area helpers for notch / home-indicator (used by the bottom tab bar) */
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+.safe-top    { padding-top:    env(safe-area-inset-top, 0px); }
+
+/* Smooth, momentum horizontal scroll for any wide table that still scrolls */
+.overflow-x-auto { -webkit-overflow-scrolling: touch; }
+
+@media (max-width: 767px) {
+  /* Stop the page from ever scrolling sideways */
+  html, body { overflow-x: hidden; }
+
+  /* iOS zooms the viewport when focusing an input whose font < 16px.
+     Force 16px on form controls on phones so typing never triggers a zoom.
+     (Desktop keeps its compact sizes — this block is phone-only.) */
+  .wl-input,
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  select,
+  textarea { font-size: 16px; }
+
+  /* Comfortable min touch targets for primary tap controls */
+  .wl-tap { min-height: 44px; }
+}
+
+/* Mobile row-card — wide tables collapse into these on phones (hidden md:block
+   keeps the real <table> for desktop). Reuses the app card styling. */
+.wl-mcard {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 11px 13px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+.wl-mcard + .wl-mcard { margin-top: 8px; }
+
+/* Hide-scrollbar for horizontal chip/tab strips on mobile */
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* AI chat floating button — sits clear of the bottom tab bar + home indicator
+   on phones, and returns to the corner on desktop. */
+.chat-fab { bottom: 1.5rem; right: 1.5rem; }
+@media (max-width: 767px) {
+  .chat-fab { bottom: calc(env(safe-area-inset-bottom, 0px) + 68px); right: 1rem; }
+}

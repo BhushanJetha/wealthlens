@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import Sidebar from '@/components/layout/Sidebar'
 import Topbar from '@/components/layout/Topbar'
 import ChatPanel from '@/components/layout/ChatPanel'
+import MobileTabBar from '@/components/layout/MobileTabBar'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = createClient()
@@ -29,11 +30,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <Sidebar />
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <Topbar user={profile} />
-        <main className="flex-1 overflow-y-auto p-3 sm:p-5 pb-8">
+        <main className="flex-1 overflow-y-auto px-3 sm:px-5 pt-3 sm:pt-5 pb-24 md:pb-8">
           {children}
         </main>
       </div>
       <ChatPanel userId={user.id} />
+      <MobileTabBar />
     </div>
   )
 }

@@ -56,7 +56,7 @@ export default function ChatPanel({ userId }: { userId: string }) {
     <>
       {/* Toggle button */}
       <button onClick={() => setOpen(!open)}
-        className="fixed bottom-6 right-6 z-50 w-12 h-12 rounded-full flex items-center justify-center text-black shadow-lg transition-transform hover:scale-105"
+        className="chat-fab fixed z-50 w-12 h-12 rounded-full flex items-center justify-center text-black shadow-lg transition-transform hover:scale-105"
         style={{ background: 'linear-gradient(135deg,#7C5CBF,#00C9A7)' }}>
         {open ? <X size={18} /> : <Sparkles size={18} />}
       </button>
