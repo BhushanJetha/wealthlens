@@ -633,8 +633,8 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
           </div>
 
           <div className="wl-card overflow-hidden">
-          {/* Table header */}
-          <div className="overflow-x-auto">
+          {/* Desktop holdings table */}
+          <div className="overflow-x-auto hidden md:block">
             <table className="w-full text-[12px]">
               <thead>
                 <tr style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
@@ -903,6 +903,121 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
               </tbody>
             </table>
           </div>
+
+          {/* Mobile holdings cards */}
+          <div className="md:hidden divide-y" style={{ borderColor: 'var(--border)' }}>
+            {paged.map(f => {
+              const effectiveNav = getEffectiveNav(f)
+              const nav          = effectiveNav ?? Number(f.avg_nav)
+              const hasRealNav   = effectiveNav !== null
+              const currVal      = hasRealNav ? Number(f.units) * effectiveNav! : Number(f.invested_amount)
+              const invested     = Number(f.invested_amount)
+              const retPct       = hasRealNav && invested > 0 ? (Number(f.units) * effectiveNav! - invested) / invested * 100 : null
+              const absRt        = hasRealNav ? Number(f.units) * effectiveNav! - invested : 0
+              const hasLive      = !!liveNavs[f.id]
+              const tc           = TYPE_COLORS[f.fund_type] ?? '#6B7280'
+              const isExpanded   = expandedId === f.id
+              const retColor     = retPct === null ? 'var(--text3)' : retPct >= 0 ? 'var(--income)' : 'var(--rose)'
+              const weight       = currentValue > 0 ? currVal / currentValue * 100 : 0
+              const rating       = computeRating(retPct, f.fund_type).stars
+              return (
+                <div key={f.id} className="py-3">
+                  <div className="flex items-start gap-2.5 active:opacity-70"
+                    onClick={async () => { const next = isExpanded ? null : f.id; setExpandedId(next); if (next) await loadFundHistory(f) }}>
+                    <div className="w-1 self-stretch rounded-full flex-shrink-0" style={{ background: tc, minHeight: 42 }} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="font-semibold text-[13px] leading-snug" style={{ color: 'var(--text)' }}>{f.fund_name}</div>
+                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                            <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold" style={{ background: tc + '18', color: tc }}>{TYPE_LABELS[f.fund_type] ?? f.fund_type}</span>
+                            {f.has_sip && f.sip_amount && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold flex items-center gap-0.5" style={{ background: '#7C5CBF18', color: '#7C5CBF' }}>
+                                <CalendarClock size={8} /> SIP ₹{Number(f.sip_amount).toLocaleString('en-IN')}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <ChevronDown size={16} className={`transition-transform flex-shrink-0 mt-0.5 ${isExpanded ? 'rotate-180' : ''}`} style={{ color: 'var(--text3)' }} />
+                      </div>
+                      <div className="flex items-end justify-between gap-2 mt-2">
+                        <div>
+                          <div className="text-[9px]" style={{ color: 'var(--text3)' }}>Current</div>
+                          <div className="font-mono font-bold text-[14px]" style={{ color: retColor }}>{fmt(currVal)}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-[9px]" style={{ color: 'var(--text3)' }}>Return</div>
+                          <div className="font-mono font-bold text-[13px]" style={{ color: retColor }}>{retPct === null ? '—' : `${retPct >= 0 ? '+' : ''}${retPct.toFixed(1)}%`}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-[9px]" style={{ color: 'var(--text3)' }}>NAV</div>
+                          <div className="font-mono font-semibold text-[12px] flex items-center gap-1 justify-end" style={{ color: 'var(--text)' }}>
+                            <span className="w-1.5 h-1.5 rounded-full" style={{ background: hasLive ? '#10B981' : 'var(--text3)' }} />₹{nav.toFixed(2)}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-2">
+                        <div className="flex items-center justify-between text-[9px] mb-0.5" style={{ color: 'var(--text3)' }}>
+                          <span>{fmt(invested)} invested</span><span>{weight.toFixed(1)}% of portfolio</span>
+                        </div>
+                        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}>
+                          <div className="h-full rounded-full" style={{ width: `${Math.min(100, weight)}%`, background: tc }} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="mt-3 rounded-xl p-3 space-y-3" style={{ background: 'var(--sage-bg)' }}>
+                      <div className="grid grid-cols-3 gap-y-2 gap-x-2">
+                        {([
+                          ['Units', Number(f.units).toFixed(3)],
+                          ['Avg NAV', `₹${Number(f.avg_nav).toFixed(2)}`],
+                          ['Abs P/L', `${absRt >= 0 ? '+' : ''}₹${Math.abs(Math.round(absRt)).toLocaleString('en-IN')}`],
+                          ['Folio', f.folio_number || '—'],
+                          ['WL Rating', '★'.repeat(rating) + '☆'.repeat(5 - rating)],
+                          ['Type', TYPE_LABELS[f.fund_type] ?? f.fund_type],
+                        ] as [string, string][]).map(([l, v]) => (
+                          <div key={l}>
+                            <div className="text-[9px]" style={{ color: 'var(--text3)' }}>{l}</div>
+                            <div className="text-[11px] font-semibold truncate" style={{ color: 'var(--text)' }}>{v}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button onClick={() => openSipModal(f)}
+                          className="wl-tap flex items-center justify-center gap-1 px-3 rounded-lg border text-[11px] font-semibold"
+                          style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>
+                          {f.has_sip ? '✏ Edit SIP' : '+ Add SIP'}
+                        </button>
+                        <button onClick={() => { setLumpsumFund(f); setLumpsumAmt('') }}
+                          className="wl-tap flex items-center justify-center gap-1 px-3 rounded-lg border text-[11px] font-semibold"
+                          style={{ borderColor: 'var(--sage)', color: 'var(--sage)', background: 'var(--sage-bg)' }}>
+                          <IndianRupee size={11} /> Add Lumpsum
+                        </button>
+                        <button onClick={() => setEditFund(f)}
+                          className="wl-tap flex items-center justify-center gap-1 px-3 rounded-lg border text-[11px] font-semibold"
+                          style={{ borderColor: 'var(--border)', color: 'var(--text2)', background: 'var(--bg2)' }}>
+                          <Pencil size={11} /> Edit
+                        </button>
+                        <button onClick={() => setDeleteFund(f)}
+                          className="wl-tap flex items-center justify-center gap-1 px-3 rounded-lg border text-[11px] font-semibold"
+                          style={{ borderColor: 'var(--rose)', color: 'var(--rose)', background: 'transparent' }}>
+                          <Trash2 size={11} /> Delete
+                        </button>
+                      </div>
+                      <button onClick={() => { setRepickFund(f); setRepickQuery(f.fund_name); setRepickResults([]); searchSchemes(f.fund_name) }}
+                        className="wl-tap w-full flex items-center justify-center gap-1 px-3 rounded-lg border text-[11px] font-semibold"
+                        style={{ borderColor: 'var(--blue)', color: 'var(--blue)', background: 'transparent' }}>
+                        <RefreshCw size={11} /> Wrong NAV / returns? Re-pick fund
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
           <Pagination total={visible.length} page={page} pageSize={pageSize}
             onPage={setPage} onPageSize={s => { setPageSize(s); setPage(1) }} />
           </div>

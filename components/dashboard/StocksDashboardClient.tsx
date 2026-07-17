@@ -8,7 +8,7 @@ import {
 } from 'recharts'
 import {
   RefreshCw, Plus, TrendingUp, TrendingDown, X,
-  Newspaper, BarChart2, ListFilter, ArrowUpDown, IndianRupee, FileUp, Pencil, Trash2, GraduationCap,
+  Newspaper, BarChart2, ListFilter, ArrowUpDown, IndianRupee, FileUp, Pencil, Trash2, GraduationCap, ChevronDown,
 } from 'lucide-react'
 import Link from 'next/link'
 import AddInvestmentModal from '@/components/forms/AddInvestmentModal'
@@ -371,7 +371,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
       {/* ── PORTFOLIO TAB ─────────────────────────────────────────────────────── */}
       {tab === 'portfolio' && (
         <div className="wl-card overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto hidden md:block">
             <table className="w-full text-[12px]">
               <thead>
                 <tr style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
@@ -542,6 +542,114 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                 })}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile holdings cards */}
+          <div className="md:hidden divide-y" style={{ borderColor: 'var(--border)' }}>
+            {sorted.map(s => {
+              const price     = livePrices[s.id] ?? Number(s.current_price ?? s.avg_buy_price)
+              const invested  = Number(s.quantity) * Number(s.avg_buy_price)
+              const currVal   = Number(s.quantity) * price
+              const retPct    = getReturn(s, livePrices)
+              const absRt     = currVal - invested
+              const todayChg  = priceChange[s.id]
+              const hasLive   = !!livePrices[s.id]
+              const retColor  = retPct >= 0 ? 'var(--income)' : 'var(--rose)'
+              const sectorIdx = bySector.findIndex(b => b.sector === (s.sector || 'Other'))
+              const sColor    = SECTOR_COLORS[sectorIdx >= 0 ? sectorIdx % SECTOR_COLORS.length : 0]
+              const isExpanded = expandedId === s.id
+              const weight    = currentValue > 0 ? currVal / currentValue * 100 : 0
+              return (
+                <div key={s.id} className="py-3">
+                  <div className="flex items-start gap-2.5 active:opacity-70"
+                    onClick={() => setExpandedId(isExpanded ? null : s.id)}>
+                    <div className="w-1 self-stretch rounded-full flex-shrink-0" style={{ background: sColor, minHeight: 42 }} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="font-bold text-[13px] leading-snug" style={{ color: 'var(--text)' }}>{s.symbol}</div>
+                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                            <span className="text-[10px] truncate max-w-[150px]" style={{ color: 'var(--text3)' }}>{s.name}</span>
+                            {s.sector && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold" style={{ background: sColor + '18', color: sColor }}>
+                                {SECTOR_EMOJI[s.sector] ?? '🏭'} {s.sector}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <ChevronDown size={16} className={`transition-transform flex-shrink-0 mt-0.5 ${isExpanded ? 'rotate-180' : ''}`} style={{ color: 'var(--text3)' }} />
+                      </div>
+                      <div className="flex items-end justify-between gap-2 mt-2">
+                        <div>
+                          <div className="text-[9px]" style={{ color: 'var(--text3)' }}>Current</div>
+                          <div className="font-mono font-bold text-[14px]" style={{ color: retColor }}>{fmt(currVal)}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-[9px]" style={{ color: 'var(--text3)' }}>Return</div>
+                          <div className="font-mono font-bold text-[13px]" style={{ color: retColor }}>{retPct >= 0 ? '+' : ''}{retPct.toFixed(2)}%</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-[9px]" style={{ color: 'var(--text3)' }}>Price</div>
+                          <div className="font-mono font-semibold text-[12px] flex items-center gap-1 justify-end" style={{ color: 'var(--text)' }}>
+                            <span className="w-1.5 h-1.5 rounded-full" style={{ background: hasLive ? '#10B981' : 'var(--text3)' }} />₹{price.toFixed(2)}
+                          </div>
+                          {todayChg && (
+                            <div className="text-[9px] font-mono" style={{ color: todayChg.changePct >= 0 ? 'var(--income)' : 'var(--rose)' }}>
+                              {todayChg.changePct >= 0 ? '+' : ''}{todayChg.changePct.toFixed(2)}% today
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="mt-2">
+                        <div className="flex items-center justify-between text-[9px] mb-0.5" style={{ color: 'var(--text3)' }}>
+                          <span>{fmt(invested)} @ ₹{Number(s.avg_buy_price).toFixed(2)}</span><span>{weight.toFixed(1)}% of portfolio</span>
+                        </div>
+                        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}>
+                          <div className="h-full rounded-full" style={{ width: `${Math.min(100, weight)}%`, background: sColor }} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="mt-3 rounded-xl p-3 space-y-3" style={{ background: 'var(--bg2)' }}>
+                      <div className="grid grid-cols-3 gap-y-2 gap-x-2">
+                        {([
+                          ['Qty', Number(s.quantity).toFixed(s.exchange === 'NSE' ? 0 : 3)],
+                          ['Exchange', s.exchange || 'NSE'],
+                          ['Sector', s.sector || '—'],
+                          ['Avg Buy', `₹${Number(s.avg_buy_price).toFixed(2)}`],
+                          ['Abs P/L', `${absRt >= 0 ? '+' : ''}₹${Math.abs(Math.round(absRt)).toLocaleString('en-IN')}`],
+                          ['Live', hasLive ? 'Live ●' : 'Stored'],
+                        ] as [string, string][]).map(([l, v]) => (
+                          <div key={l}>
+                            <div className="text-[9px]" style={{ color: 'var(--text3)' }}>{l}</div>
+                            <div className="text-[11px] font-semibold truncate" style={{ color: 'var(--text)' }}>{v}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <button onClick={() => { setLumpsumStock(s); setLumpsumQty(''); setLumpsumPrice(String(price.toFixed(2))) }}
+                          className="wl-tap flex items-center justify-center gap-1 px-2 rounded-lg border text-[11px] font-semibold"
+                          style={{ borderColor: 'var(--sage)', color: 'var(--sage)', background: 'var(--sage-bg)' }}>
+                          <IndianRupee size={11} /> Buy
+                        </button>
+                        <button onClick={() => setEditStock(s)}
+                          className="wl-tap flex items-center justify-center gap-1 px-2 rounded-lg border text-[11px] font-semibold"
+                          style={{ borderColor: 'var(--border)', color: 'var(--text2)', background: 'var(--bg2)' }}>
+                          <Pencil size={11} /> Edit
+                        </button>
+                        <button onClick={() => setDeleteStock(s)}
+                          className="wl-tap flex items-center justify-center gap-1 px-2 rounded-lg border text-[11px] font-semibold"
+                          style={{ borderColor: 'var(--rose)', color: 'var(--rose)', background: 'transparent' }}>
+                          <Trash2 size={11} /> Delete
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
