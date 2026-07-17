@@ -299,7 +299,7 @@ export default function GoalDetailClient({ goal, linkedInvestments, allInvestmen
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1 p-1 rounded-xl" style={{ background: 'var(--bg2)' }}>
+      <div className="flex gap-1 p-1 rounded-xl wl-tabs" style={{ background: 'var(--bg2)' }}>
         {TABS.map(t => {
           const Icon = t.icon
           return (

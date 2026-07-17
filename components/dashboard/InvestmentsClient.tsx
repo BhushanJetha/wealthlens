@@ -566,7 +566,7 @@ export default function InvestmentsClient({
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex gap-1 p-1 rounded-xl" style={{ background: 'var(--bg2)', width: 'fit-content' }}>
+      <div className="flex gap-1 p-1 rounded-xl wl-tabs" style={{ background: 'var(--bg2)', width: 'fit-content' }}>
         {TABS.map(t => {
           const Icon = t.icon
           const active = tab === t.key

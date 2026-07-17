@@ -175,6 +175,11 @@ main > * { will-change: opacity; }
 @media (max-width: 767px) {
   /* Stop the page from ever scrolling sideways */
   html, body { overflow-x: hidden; }
+  /* The scroll container is <main>; clip its horizontal overflow so no screen
+     ever drags left/right. Inner .overflow-x-auto regions still scroll. */
+  main { overflow-x: hidden; }
+  /* Long titles/values inside cards must wrap/shrink, never force page width */
+  .wl-card { max-width: 100%; }
 
   /* iOS zooms the viewport when focusing an input whose font < 16px.
      Force 16px on form controls on phones so typing never triggers a zoom.
@@ -202,6 +207,19 @@ main > * { will-change: opacity; }
 /* Hide-scrollbar for horizontal chip/tab strips on mobile */
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Native-app tab strip: hugs its content on desktop, but if the tabs are wider
+   than the screen they scroll horizontally *within the strip* (swipe) instead of
+   dragging the whole page. Works even when an inline width:fit-content is set,
+   because max-width:100% caps it. */
+.wl-tabs {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.wl-tabs::-webkit-scrollbar { display: none; }
+.wl-tabs > * { flex-shrink: 0; }
 
 /* AI chat floating button — sits clear of the bottom tab bar + home indicator
    on phones, and returns to the corner on desktop. */

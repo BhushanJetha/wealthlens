@@ -271,7 +271,7 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
 
       {/* Tabs + account scope */}
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex gap-1 p-1 rounded-xl w-fit" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+        <div className="flex gap-1 p-1 rounded-xl w-fit wl-tabs" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
           {TABS.map(({ key, label, icon: Icon }) => (
             <button key={key} onClick={() => setTab(key)}
               className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[12px] font-bold transition-all"
@@ -280,7 +280,7 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
             </button>
           ))}
         </div>
-        <div className="flex gap-1 p-1 rounded-xl w-fit" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+        <div className="flex gap-1 p-1 rounded-xl w-fit wl-tabs" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
           {([['both', 'NRE + NRO'], ['nre', 'NRE'], ['nro', 'NRO']] as [Scope, string][]).map(([key, label]) => (
             <button key={key} onClick={() => setScope(key)}
               className="px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all"

@@ -239,7 +239,7 @@ export default function GoalsClient({ goals, goalInvestments, allInvestments }: 
         {/* Goals list */}
         <div className="lg:col-span-2 space-y-4">
           {/* Tabs */}
-          <div className="flex gap-1 p-1 rounded-xl" style={{ background: 'var(--bg2)' }}>
+          <div className="flex gap-1 p-1 rounded-xl wl-tabs" style={{ background: 'var(--bg2)' }}>
             {(['all', 'short', 'mid', 'long'] as const).map(t => (
               <button key={t} onClick={() => setTab(t)}
                 className="flex-1 py-1.5 rounded-lg text-[11px] font-semibold transition-all"

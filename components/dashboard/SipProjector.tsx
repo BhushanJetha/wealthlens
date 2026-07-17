@@ -118,7 +118,7 @@ export default function SipProjector({ currentValue, monthlySip, annualRate, cur
       </div>
 
       {/* Mode toggle */}
-      <div className="flex gap-1 p-1 rounded-xl w-fit" style={{ background: 'var(--bg2)' }}>
+      <div className="flex gap-1 p-1 rounded-xl w-fit wl-tabs" style={{ background: 'var(--bg2)' }}>
         {([['grow', 'Grow corpus', TrendingUp], ['swp', 'Withdraw (SWP)', TrendingDown]] as const).map(([k, label, Icon]) => (
           <button key={k} onClick={() => setMode(k)}
             className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[12px] font-semibold transition-all"

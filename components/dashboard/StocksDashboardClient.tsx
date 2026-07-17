@@ -356,7 +356,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 p-1 rounded-xl" style={{ background: 'var(--bg2)', width: 'fit-content' }}>
+      <div className="flex gap-1 p-1 rounded-xl wl-tabs" style={{ background: 'var(--bg2)', width: 'fit-content' }}>
         {([['portfolio', 'Portfolio', ListFilter], ['analytics', 'Analytics', BarChart2], ['growth', 'Growth', TrendingUp], ['news', 'News', Newspaper]] as const).map(([key, label, Icon]) => (
           <button key={key} onClick={() => setTab(key as Tab)}
             className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[12px] font-semibold transition-all"
