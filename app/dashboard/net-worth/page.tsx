@@ -12,7 +12,7 @@ export default async function NetWorthPage() {
 
   const [
     accountsRes, stocksRes, mfRes, etfRes, npsRes,
-    fdRes, rdRes, ppfRes, goldRes, bondRes, loansRes, txnsRes,
+    fdRes, rdRes, ppfRes, goldRes, bondRes, licRes, loansRes, txnsRes,
   ] = await Promise.all([
     supabase.from('accounts').select('*').eq('user_id', uid).eq('is_active', true),
     supabase.from('stocks').select('*').eq('user_id', uid),
@@ -24,6 +24,7 @@ export default async function NetWorthPage() {
     supabase.from('ppf_epf_accounts').select('*').eq('user_id', uid),
     supabase.from('gold_investments').select('*').eq('user_id', uid),
     supabase.from('bond_investments').select('*').eq('user_id', uid),
+    supabase.from('lic_policies').select('*').eq('user_id', uid).eq('is_active', true),
     supabase.from('home_loans').select('*').eq('user_id', uid).eq('is_active', true),
     supabase.from('transactions').select('txn_type,amount,currency,txn_date,category')
       .eq('user_id', uid).gte('txn_date', fromDate)
@@ -42,6 +43,7 @@ export default async function NetWorthPage() {
       ppfEpf={ppfRes.data ?? []}
       gold={goldRes.data ?? []}
       bonds={bondRes.data ?? []}
+      lic={licRes.data ?? []}
       loans={loansRes.data ?? []}
       transactions={txnsRes.data ?? []}
     />

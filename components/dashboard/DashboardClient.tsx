@@ -25,7 +25,7 @@ const DONUT_COLORS = ['#3D7A58','#D4920A','#3B7DD8','#C96A3A','#7C5CBF','#2E7D52
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 export default function DashboardClient({ transactions, loans, accounts, stocks, mutualFunds, fixedDeposits, insurance, goals, budgets,
-  recurringDeposits = [], npsAccounts = [], licPolicies = [], goldInvestments = [], bondInvestments = [], etfInvestments = [] }: any) {
+  recurringDeposits = [], npsAccounts = [], licPolicies = [], goldInvestments = [], bondInvestments = [], etfInvestments = [], ppfEpfAccounts = [] }: any) {
   const { view, fromMonth, toMonth, fxRate: FX } = useViewStore()
 
   const inRange = (txn_date: string) => {
@@ -56,7 +56,6 @@ export default function DashboardClient({ transactions, loans, accounts, stocks,
     const loanLiab = filteredLoans.reduce((a: number, l: any) => a + (view === 'consolidated' ? toINR(Number(l.outstanding_amt),l.currency,FX) : Number(l.outstanding_amt)), 0)
     const cardLiab = filteredCards.reduce((a: number, c: any) => a + (view === 'consolidated' ? toINR(Number(c.outstanding_bal??0),c.currency,FX) : Number(c.outstanding_bal??0)), 0)
     const totalLiab = loanLiab + cardLiab
-    const netWorth  = totalAssets - totalLiab
 
     const txRange = filterByView(transactions.filter((t: any) => inRange(t.txn_date)))
     const monthlyIncome  = txRange.filter((t:any)=>t.txn_type==='income').reduce((a:number,t:any)=>a+(view==='consolidated'?toINR(Number(t.amount),t.currency,FX):Number(t.amount)),0)
@@ -69,16 +68,22 @@ export default function DashboardClient({ transactions, loans, accounts, stocks,
 
     // Full equity (all investment types) for D/E widget — view-filtered
     const convV = (amt: number, cur: string) => view === 'consolidated' ? toINR(amt, cur, FX) : amt
-    const rdVal    = filterByView(recurringDeposits ?? []).reduce((a: number, r: any) => a + convV(Number(r.monthly_amount) * r.tenure_months, r.currency ?? 'INR'), 0)
+    // Bank & cash balances (non-credit-card accounts) — part of net worth
+    const bankVal  = filterByView(accounts.filter((a: any) => a.account_type !== 'credit_card')).reduce((a: number, x: any) => a + convV(Number(x.outstanding_bal ?? x.current_balance ?? 0), x.currency ?? 'INR'), 0)
+    // RD current value = amount paid in so far (not the full committed total)
+    const rdVal    = filterByView(recurringDeposits ?? []).reduce((a: number, r: any) => a + convV(r.current_amount != null ? Number(r.current_amount) : Number(r.monthly_amount ?? 0) * Number(r.months_paid ?? 0), r.currency ?? 'INR'), 0)
     const npsVal   = filterByView(npsAccounts ?? []).reduce((a: number, n: any) => a + Number(n.corpus_amount ?? 0), 0)
     const licPaid  = filterByView(licPolicies ?? []).reduce((a: number, l: any) => a + Number(l.total_paid ?? 0), 0)
+    const ppfVal   = filterByView(ppfEpfAccounts ?? []).reduce((a: number, x: any) => a + convV(Number(x.current_balance ?? 0), x.currency ?? 'INR'), 0)
     const goldVal  = filterByView(goldInvestments ?? []).reduce((a: number, g: any) => {
       if (g.current_price_per_gram && g.quantity_grams) return a + Number(g.current_price_per_gram) * Number(g.quantity_grams)
       return a + Number(g.invested_amount ?? 0)
     }, 0)
     const bondVal  = filterByView(bondInvestments ?? []).reduce((a: number, b: any) => a + Number(b.current_value ?? b.invested_amount ?? 0), 0)
     const etfVal   = filterByView(etfInvestments ?? []).reduce((a: number, e: any) => a + Number(e.units ?? 0) * Number(e.current_price ?? e.avg_buy_price ?? 0), 0)
-    const fullEquity = totalAssets + rdVal + npsVal + licPaid + goldVal + bondVal + etfVal
+    const fullEquity = totalAssets + rdVal + npsVal + licPaid + ppfVal + goldVal + bondVal + etfVal
+    // Total net worth = all investments + bank cash − liabilities (matches the Net Worth tab)
+    const netWorth  = fullEquity + bankVal - totalLiab
     const totalPortfolio = fullEquity + totalLiab
     const debtPct = totalPortfolio > 0 ? Math.round(totalLiab / totalPortfolio * 100) : 0
     const deZone  = debtPct > 60 ? 'high_debt' : debtPct > 30 ? 'moderate' : totalLiab === 0 && fullEquity > 0 ? 'debt_free' : 'healthy'

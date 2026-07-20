@@ -40,7 +40,7 @@ export default function CashFlowClient({ accounts, loans, transactions }: Props)
 
     const cards = accounts.filter(a => a.account_type === 'credit_card')
     const startCash = accounts.filter(a => a.account_type !== 'credit_card')
-      .reduce((s, a) => s + disp(Number(a.current_balance) || 0, a.currency), 0)
+      .reduce((s, a) => s + disp(Number(a.outstanding_bal ?? a.current_balance ?? 0), a.currency), 0)
 
     const nextDates = (dayRaw: number) => {
       const day = Math.min(Math.max(dayRaw, 1), 28)

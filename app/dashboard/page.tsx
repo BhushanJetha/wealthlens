@@ -6,7 +6,7 @@ export default async function DashboardPage() {
   const { data: { user } } = await supabase.auth.getUser()
 
   const [txnsRes, loansRes, accsRes, stocksRes, mfRes, fdRes, insRes, goalsRes, budgetsRes,
-    rdRes, npsRes, licRes, goldRes, bondRes, etfRes] = await Promise.all([
+    rdRes, npsRes, licRes, goldRes, bondRes, etfRes, ppfRes] = await Promise.all([
     supabase.from('transactions').select('*').eq('user_id', user!.id).order('txn_date', { ascending: false }).limit(500),
     supabase.from('home_loans').select('*').eq('user_id', user!.id).eq('is_active', true),
     supabase.from('accounts').select('*').eq('user_id', user!.id).eq('is_active', true),
@@ -22,6 +22,7 @@ export default async function DashboardPage() {
     supabase.from('gold_investments').select('*').eq('user_id', user!.id),
     supabase.from('bond_investments').select('*').eq('user_id', user!.id),
     supabase.from('etf_investments').select('*').eq('user_id', user!.id),
+    supabase.from('ppf_epf_accounts').select('*').eq('user_id', user!.id),
   ])
 
   return (
@@ -41,6 +42,7 @@ export default async function DashboardPage() {
       goldInvestments={goldRes.data ?? []}
       bondInvestments={bondRes.data ?? []}
       etfInvestments={etfRes.data ?? []}
+      ppfEpfAccounts={ppfRes.data ?? []}
     />
   )
 }

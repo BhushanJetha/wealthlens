@@ -10,7 +10,7 @@ import {
 interface Props {
   accounts: any[]; stocks: any[]; mutualFunds: any[]; etf: any[]; nps: any[]
   fixedDeposits: any[]; recurringDeposits: any[]; ppfEpf: any[]; gold: any[]
-  bonds: any[]; loans: any[]; transactions: any[]
+  bonds: any[]; lic: any[]; loans: any[]; transactions: any[]
 }
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -41,20 +41,37 @@ export default function NetWorthClient(p: Props) {
     // Bank & cash = all non-credit-card accounts
     const bankCash = p.accounts.filter(a => a.account_type !== 'credit_card')
     const cards    = p.accounts.filter(a => a.account_type === 'credit_card')
-    const rdVal = p.recurringDeposits.reduce((s, r) =>
-      s + disp(Number(r.current_amount) || (Number(r.monthly_installment) || 0) * 12, r.currency || 'INR'), 0)
+
+    // Current value of each holding — computed exactly as each category page does
+    // (these tables have no single "current_value" column; it's units × live price
+    // etc.), so we never fall back to 0 the way column-name reads did.
+    const sumBy = (rows: any[], val: (r: any) => number) =>
+      rows.reduce((s, r) => s + disp(val(r), r.currency || 'INR'), 0)
+
+    const bankVal  = sumBy(bankCash,            a => Number(a.outstanding_bal ?? a.current_balance ?? 0))
+    const stockVal = sumBy(p.stocks,            x => Number(x.quantity || 0) * Number(x.current_price ?? x.avg_buy_price ?? 0))
+    const mfVal    = sumBy(p.mutualFunds,       m => Number(m.units || 0) * Number(m.current_nav ?? m.avg_nav ?? 0))
+    const etfVal   = sumBy(p.etf,               e => Number(e.units || 0) * Number(e.current_price ?? e.avg_buy_price ?? 0))
+    const npsVal   = sumBy(p.nps,               n => Number(n.corpus_amount ?? n.current_value ?? 0))
+    const fdVal    = sumBy(p.fixedDeposits,     f => Number(f.principal ?? f.principal_amount ?? 0))
+    const rdVal    = sumBy(p.recurringDeposits, r => r.current_amount != null ? Number(r.current_amount) : Number(r.monthly_amount || 0) * Number(r.months_paid || 0))
+    const ppfVal   = sumBy(p.ppfEpf,            x => Number(x.current_balance ?? x.balance ?? 0))
+    const goldVal  = sumBy(p.gold,              g => (g.current_price_per_gram && g.quantity_grams) ? Number(g.current_price_per_gram) * Number(g.quantity_grams) : Number(g.invested_amount ?? 0))
+    const bondVal  = sumBy(p.bonds,             b => Number(b.current_value ?? b.invested_amount ?? 0))
+    const licVal   = sumBy(p.lic,               l => Number(l.total_paid ?? 0))
 
     const assetRows = [
-      { label: 'Bank & Cash',      value: sumRows(bankCash, 'current_balance'), color: '#16A34A' },
-      { label: 'Stocks',           value: sumRows(p.stocks, 'current_value'),    color: '#E11D48' },
-      { label: 'Mutual Funds',     value: sumRows(p.mutualFunds, 'current_value'), color: '#2563EB' },
-      { label: 'ETF',              value: sumRows(p.etf, 'current_value'),        color: '#0EA5E9' },
-      { label: 'NPS',              value: sumRows(p.nps, 'current_value'),        color: '#7C3AED' },
-      { label: 'Fixed Deposits',   value: sumRows(p.fixedDeposits, 'principal_amount'), color: '#0284C7' },
-      { label: 'Recurring Deposits', value: rdVal,                                color: '#0891B2' },
-      { label: 'PPF / EPF',        value: sumRows(p.ppfEpf, 'current_balance'),   color: '#059669' },
-      { label: 'Gold',             value: sumRows(p.gold, 'current_value'),       color: '#D97706' },
-      { label: 'Bonds / SGB',      value: sumRows(p.bonds, 'current_value'),      color: '#9333EA' },
+      { label: 'Bank & Cash',        value: bankVal,  color: '#16A34A' },
+      { label: 'Stocks',             value: stockVal, color: '#E11D48' },
+      { label: 'Mutual Funds',       value: mfVal,    color: '#2563EB' },
+      { label: 'ETF',                value: etfVal,   color: '#0EA5E9' },
+      { label: 'NPS',                value: npsVal,   color: '#7C3AED' },
+      { label: 'Fixed Deposits',     value: fdVal,    color: '#0284C7' },
+      { label: 'Recurring Deposits', value: rdVal,    color: '#0891B2' },
+      { label: 'PPF / EPF',          value: ppfVal,   color: '#059669' },
+      { label: 'Gold',               value: goldVal,  color: '#D97706' },
+      { label: 'Bonds / SGB',        value: bondVal,  color: '#9333EA' },
+      { label: 'LIC',                value: licVal,   color: '#DB2777' },
     ].filter(r => r.value > 0).sort((a, b) => b.value - a.value)
 
     const liabRows = [
