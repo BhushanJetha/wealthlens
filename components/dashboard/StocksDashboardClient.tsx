@@ -89,6 +89,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
   const [lumpsumStock, setLumpsumStock] = useState<any | null>(null)
   const [lumpsumQty, setLumpsumQty]   = useState('')
   const [lumpsumPrice, setLumpsumPrice] = useState('')
+  const [lumpsumDate, setLumpsumDate] = useState(new Date().toISOString().slice(0, 10))
   const [lumpsumSaving, setLumpsumSaving] = useState(false)
 
   // ── fetch live prices ─────────────────────────────────────────────────────────
@@ -210,7 +211,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
     const newAvg = (Number(lumpsumStock.quantity) * Number(lumpsumStock.avg_buy_price) + addQty * addPrice) / newQty
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
-      const ds = new Date().toISOString().slice(0, 10)
+      const ds = lumpsumDate || new Date().toISOString().slice(0, 10)
       await Promise.all([
         supabase.from('stocks').update({ quantity: newQty, avg_buy_price: newAvg }).eq('id', lumpsumStock.id),
         supabase.from('transactions').insert({ user_id: user.id, txn_date: ds, merchant: lumpsumStock.name ?? lumpsumStock.symbol, description: `Buy ${addQty} shares of ${lumpsumStock.symbol} @ ₹${addPrice}`, category: 'Investment', sub_category: 'Stock Purchase', amount: addQty * addPrice, currency: lumpsumStock.currency ?? 'INR', country: lumpsumStock.country ?? 'India', txn_type: 'expense', source: 'manual' }),
@@ -218,7 +219,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
       ])
       setStocks(prev => prev.map(s => s.id === lumpsumStock.id ? { ...s, quantity: newQty, avg_buy_price: newAvg } : s))
     }
-    setLumpsumStock(null); setLumpsumQty(''); setLumpsumPrice(''); setLumpsumSaving(false); router.refresh()
+    setLumpsumStock(null); setLumpsumQty(''); setLumpsumPrice(''); setLumpsumDate(new Date().toISOString().slice(0, 10)); setLumpsumSaving(false); router.refresh()
   }
 
   // ── empty ──────────────────────────────────────────────────────────────────────
@@ -254,7 +255,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
           <div className="rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
             <div className="flex items-center justify-between">
               <div className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>Buy More Shares</div>
-              <button onClick={() => { setLumpsumStock(null); setLumpsumQty(''); setLumpsumPrice('') }} style={{ color: 'var(--text3)' }}><X size={16} /></button>
+              <button onClick={() => { setLumpsumStock(null); setLumpsumQty(''); setLumpsumPrice(''); setLumpsumDate(new Date().toISOString().slice(0, 10)) }} style={{ color: 'var(--text3)' }}><X size={16} /></button>
             </div>
             <div className="flex items-center gap-2">
               <div className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>{lumpsumStock.symbol}</div>
@@ -266,6 +267,11 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                 ₹{(livePrices[lumpsumStock.id] ?? Number(lumpsumStock.current_price ?? lumpsumStock.avg_buy_price)).toFixed(2)}
                 {livePrices[lumpsumStock.id] && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded font-semibold" style={{ background: '#D1FAE5', color: '#065F46' }}>Live</span>}
               </div>
+            </div>
+            <div>
+              <label className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Purchase Date</label>
+              <input type="date" value={lumpsumDate} max={new Date().toISOString().slice(0, 10)} onChange={e => setLumpsumDate(e.target.value)} className="wl-input mt-1 w-full" style={{ background: 'var(--bg2)' }} />
+              <div className="text-[10px] mt-1" style={{ color: 'var(--text3)' }}>Pick a past date to log a historical purchase for your investment history.</div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -294,7 +300,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
               </div>
             )}
             <div className="flex gap-2">
-              <button onClick={() => { setLumpsumStock(null); setLumpsumQty(''); setLumpsumPrice('') }}
+              <button onClick={() => { setLumpsumStock(null); setLumpsumQty(''); setLumpsumPrice(''); setLumpsumDate(new Date().toISOString().slice(0, 10)) }}
                 className="flex-1 py-2.5 rounded-xl border text-[12px] font-semibold"
                 style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>Cancel</button>
               <button onClick={saveLumpsum} disabled={lumpsumSaving || !lumpsumQty || !lumpsumPrice}

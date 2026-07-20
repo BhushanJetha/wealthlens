@@ -137,6 +137,8 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
   const [markingPaid, setMarkingPaid] = useState(false)
   const [lumpsumFund, setLumpsumFund] = useState<any | null>(null)
   const [lumpsumAmt, setLumpsumAmt]   = useState('')
+  const [lumpsumDate, setLumpsumDate] = useState(new Date().toISOString().slice(0, 10))
+  const [lumpsumNav, setLumpsumNav]   = useState('')
   const [lumpsumSaving, setLumpsumSaving] = useState(false)
   const [fundHistory, setFundHistory] = useState<Record<string, any[]>>({})
   const [schemeCodes, setSchemeCodes] = useState<Record<string, number>>({}) // fund.id → schemeCode
@@ -405,19 +407,25 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
   async function saveLumpsum() {
     if (!lumpsumFund || !lumpsumAmt) return
     setLumpsumSaving(true)
-    const nav = liveNavs[lumpsumFund.id] ?? Number(lumpsumFund.current_nav ?? lumpsumFund.avg_nav)
+    // Use the NAV the user entered (for a historical buy), else the live/current NAV
+    const nav = Number(lumpsumNav) > 0
+      ? Number(lumpsumNav)
+      : (liveNavs[lumpsumFund.id] ?? Number(lumpsumFund.current_nav ?? lumpsumFund.avg_nav))
     const amt = Number(lumpsumAmt)
-    const newUnits = nav > 0 ? Number(lumpsumFund.units) + amt / nav : Number(lumpsumFund.units)
+    const addUnits = nav > 0 ? amt / nav : 0
+    const newUnits = Number(lumpsumFund.units) + addUnits
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
-      const ds = new Date().toISOString().slice(0, 10)
+      const ds = lumpsumDate || new Date().toISOString().slice(0, 10)
       await Promise.all([
         supabase.from('mutual_funds').update({ units: newUnits, invested_amount: Number(lumpsumFund.invested_amount) + amt }).eq('id', lumpsumFund.id),
         supabase.from('transactions').insert({ user_id: user.id, txn_date: ds, merchant: lumpsumFund.fund_name, description: `Lumpsum - ${lumpsumFund.fund_name}`, category: 'Investment', sub_category: 'Lumpsum', amount: amt, currency: lumpsumFund.currency ?? 'INR', country: lumpsumFund.country ?? 'India', txn_type: 'expense', source: 'manual' }),
+        // Record in the unified buy history so it shows in the Growth timeline
+        supabase.from('investment_transactions').insert({ user_id: user.id, asset_type: 'mutual_fund', asset_id: lumpsumFund.id, asset_name: lumpsumFund.fund_name, txn_date: ds, txn_type: 'purchase', amount: amt, units: addUnits, nav, currency: lumpsumFund.currency ?? 'INR', source: 'buy_action' }).then(() => {}, () => {}),
       ])
       setFunds(prev => prev.map(f => f.id === lumpsumFund.id ? { ...f, units: newUnits, invested_amount: Number(f.invested_amount) + amt } : f))
     }
-    setLumpsumFund(null); setLumpsumAmt(''); setLumpsumSaving(false); router.refresh()
+    setLumpsumFund(null); setLumpsumAmt(''); setLumpsumNav(''); setLumpsumDate(new Date().toISOString().slice(0, 10)); setLumpsumSaving(false); router.refresh()
   }
 
   const sym = '₹'
@@ -520,7 +528,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
       {/* Lumpsum */}
       {lumpsumFund && (
         <Overlay>
-          <Modal title="Add Lumpsum Investment" onClose={() => { setLumpsumFund(null); setLumpsumAmt('') }}>
+          <Modal title="Add Lumpsum Investment" onClose={() => { setLumpsumFund(null); setLumpsumAmt(''); setLumpsumNav(''); setLumpsumDate(new Date().toISOString().slice(0, 10)) }}>
             <div className="text-[11px] font-semibold truncate" style={{ color: 'var(--text3)' }}>{lumpsumFund.fund_name}</div>
             <div className="p-3 rounded-xl space-y-1" style={{ background: 'var(--bg2)' }}>
               <div className="text-[11px]" style={{ color: 'var(--text3)' }}>Current NAV</div>
@@ -530,16 +538,32 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
               </div>
             </div>
             <div>
-              <label className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Amount to Invest (₹)</label>
-              <input type="number" value={lumpsumAmt} onChange={e => setLumpsumAmt(e.target.value)} placeholder="25000" className="wl-input mt-1 w-full" style={{ background: 'var(--bg2)' }} />
-              {lumpsumAmt && (
-                <div className="text-[11px] mt-1" style={{ color: 'var(--text3)' }}>
-                  ≈ {(Number(lumpsumAmt) / (liveNavs[lumpsumFund.id] ?? Number(lumpsumFund.current_nav ?? lumpsumFund.avg_nav))).toFixed(3)} units will be added
-                </div>
-              )}
+              <label className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Purchase Date</label>
+              <input type="date" value={lumpsumDate} max={new Date().toISOString().slice(0, 10)} onChange={e => setLumpsumDate(e.target.value)} className="wl-input mt-1 w-full" style={{ background: 'var(--bg2)' }} />
+              <div className="text-[10px] mt-1" style={{ color: 'var(--text3)' }}>Pick a past date to log a historical purchase for your investment history.</div>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Amount (₹)</label>
+                <input type="number" value={lumpsumAmt} onChange={e => setLumpsumAmt(e.target.value)} placeholder="25000" className="wl-input mt-1 w-full" style={{ background: 'var(--bg2)' }} />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>NAV on that date</label>
+                <input type="number" value={lumpsumNav} onChange={e => setLumpsumNav(e.target.value)}
+                  placeholder={(liveNavs[lumpsumFund.id] ?? Number(lumpsumFund.current_nav ?? lumpsumFund.avg_nav)).toFixed(2)}
+                  className="wl-input mt-1 w-full" style={{ background: 'var(--bg2)' }} />
+              </div>
+            </div>
+            {lumpsumAmt && (() => {
+              const navUsed = Number(lumpsumNav) > 0 ? Number(lumpsumNav) : (liveNavs[lumpsumFund.id] ?? Number(lumpsumFund.current_nav ?? lumpsumFund.avg_nav))
+              return (
+                <div className="text-[11px]" style={{ color: 'var(--text3)' }}>
+                  ≈ {navUsed > 0 ? (Number(lumpsumAmt) / navUsed).toFixed(3) : '0'} units at {sym}{navUsed.toFixed(2)}/unit
+                </div>
+              )
+            })()}
             <div className="flex gap-2">
-              <button onClick={() => { setLumpsumFund(null); setLumpsumAmt('') }} className="flex-1 py-2.5 rounded-xl border text-[12px] font-semibold" style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>Cancel</button>
+              <button onClick={() => { setLumpsumFund(null); setLumpsumAmt(''); setLumpsumNav(''); setLumpsumDate(new Date().toISOString().slice(0, 10)) }} className="flex-1 py-2.5 rounded-xl border text-[12px] font-semibold" style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>Cancel</button>
               <button onClick={saveLumpsum} disabled={lumpsumSaving || !lumpsumAmt} className="flex-1 py-2.5 rounded-xl text-white text-[12px] font-bold" style={{ background: 'var(--sage)', opacity: !lumpsumAmt ? 0.5 : 1 }}>{lumpsumSaving ? 'Saving…' : 'Invest'}</button>
             </div>
           </Modal>
