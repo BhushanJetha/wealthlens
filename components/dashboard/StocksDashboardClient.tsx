@@ -121,23 +121,22 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
   // Sync when the server sends fresh data (e.g. after a PDF import → router.refresh())
   useEffect(() => { setStocks(initial) }, [initial])
 
-  // ── investment transaction history ─────────────────────────────────────
-  useEffect(() => {
-    (async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      try {
-        const { data } = await supabase
-          .from('investment_transactions')
-          .select('*').eq('user_id', user.id).eq('asset_type', 'stock')
-          .order('txn_date', { ascending: true })
-        const grouped: Record<string, any[]> = {}
-        ;(data ?? []).forEach((t: any) => { const k = t.asset_id ?? 'none'; (grouped[k] ||= []).push(t) })
-        setTxnsByStock(grouped)
-        setAllStockTxns(data ?? [])
-      } catch { /* table not migrated yet */ }
-    })()
-  }, []) // eslint-disable-line
+  // ── investment transaction history (re-runnable so it refreshes after a buy) ──
+  async function loadStockTxns() {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    try {
+      const { data } = await supabase
+        .from('investment_transactions')
+        .select('*').eq('user_id', user.id).eq('asset_type', 'stock')
+        .order('txn_date', { ascending: true })
+      const grouped: Record<string, any[]> = {}
+      ;(data ?? []).forEach((t: any) => { const k = t.asset_id ?? 'none'; (grouped[k] ||= []).push(t) })
+      setTxnsByStock(grouped)
+      setAllStockTxns(data ?? [])
+    } catch { /* table not migrated yet */ }
+  }
+  useEffect(() => { loadStockTxns() }, []) // eslint-disable-line
 
   async function confirmDelete() {
     if (!deleteStock) return
@@ -145,7 +144,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
     await supabase.from('investment_transactions').delete().eq('asset_id', deleteStock.id).then(() => {}, () => {})
     const { error } = await supabase.from('stocks').delete().eq('id', deleteStock.id)
     if (!error) setStocks(prev => prev.filter(x => x.id !== deleteStock.id))
-    setDeleting(false); setDeleteStock(null); router.refresh()
+    setDeleting(false); setDeleteStock(null); router.refresh(); loadStockTxns()
   }
   useEffect(() => {
     setNewsLoading(true)
@@ -247,7 +246,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
           <FileUp size={14} className="inline mr-1.5" /> Import from PDF
         </button>
       </div>
-      {showAdd && <BatchPurchaseModal kind="stock" onClose={() => { setShowAdd(false); router.refresh() }} />}
+      {showAdd && <BatchPurchaseModal kind="stock" onClose={() => { setShowAdd(false); router.refresh(); loadStockTxns() }} />}
       {showImport && <HoldingsUploadModal kind="stocks" onClose={() => { setShowImport(false); router.refresh() }} />}
     </div>
   )
@@ -566,14 +565,18 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                             const recorded = lots.reduce((a: number, t: any) => a + Number(t.units || 0), 0)
                             const opening = Number(s.quantity || 0) - recorded
                             if (lots.length === 0 && opening <= 0.001) return null
+                            // Opening shares' true cost = total invested − recorded lots' cost
+                            const lotsInvested = lots.reduce((a: number, t: any) => a + Number(t.amount || 0), 0)
+                            const openingInvested = Math.max(0, Number(s.quantity || 0) * Number(s.avg_buy_price || 0) - lotsInvested)
+                            const openingPrice = opening > 0.001 ? openingInvested / opening : 0
                             return (
                               <div className="mt-4">
                                 <div className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text3)' }}>Purchase History</div>
                                 <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
                                   {opening > 0.001 && (
                                     <div className="flex items-center justify-between text-[11px] rounded-lg px-3 py-1.5" style={{ background: 'var(--card)', border: '1px dashed var(--border2)' }}>
-                                      <div style={{ color: 'var(--text3)' }}>Initial holding · <span className="font-mono">{+opening.toFixed(3)}</span> sh @ ₹{Number(s.avg_buy_price).toFixed(2)}</div>
-                                      <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(opening * Number(s.avg_buy_price)).toLocaleString('en-IN')}</div>
+                                      <div style={{ color: 'var(--text3)' }}>Initial holding · <span className="font-mono">{+opening.toFixed(3)}</span> sh @ ₹{openingPrice.toFixed(2)}</div>
+                                      <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(openingInvested).toLocaleString('en-IN')}</div>
                                     </div>
                                   )}
                                   {lots.map((t: any, i: number) => (
@@ -701,14 +704,17 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                         const recorded = lots.reduce((a: number, t: any) => a + Number(t.units || 0), 0)
                         const opening = Number(s.quantity || 0) - recorded
                         if (lots.length === 0 && opening <= 0.001) return null
+                        const lotsInvested = lots.reduce((a: number, t: any) => a + Number(t.amount || 0), 0)
+                        const openingInvested = Math.max(0, Number(s.quantity || 0) * Number(s.avg_buy_price || 0) - lotsInvested)
+                        const openingPrice = opening > 0.001 ? openingInvested / opening : 0
                         return (
                           <div>
                             <div className="text-[9px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>Purchase History</div>
                             <div className="space-y-1 max-h-36 overflow-y-auto">
                               {opening > 0.001 && (
                                 <div className="flex items-center justify-between text-[11px] rounded-lg px-2.5 py-1.5" style={{ background: 'var(--card)', border: '1px dashed var(--border2)' }}>
-                                  <div style={{ color: 'var(--text3)' }}>Initial · {+opening.toFixed(3)} sh @ ₹{Number(s.avg_buy_price).toFixed(2)}</div>
-                                  <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(opening * Number(s.avg_buy_price)).toLocaleString('en-IN')}</div>
+                                  <div style={{ color: 'var(--text3)' }}>Initial · {+opening.toFixed(3)} sh @ ₹{openingPrice.toFixed(2)}</div>
+                                  <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(openingInvested).toLocaleString('en-IN')}</div>
                                 </div>
                               )}
                               {lots.map((t: any, i: number) => (
@@ -937,9 +943,9 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
         </div>
       )}
 
-      {showAdd && <BatchPurchaseModal kind="stock" onClose={() => { setShowAdd(false); router.refresh() }} />}
+      {showAdd && <BatchPurchaseModal kind="stock" onClose={() => { setShowAdd(false); router.refresh(); loadStockTxns() }} />}
       {showImport && <HoldingsUploadModal kind="stocks" onClose={() => { setShowImport(false); router.refresh() }} />}
-      {addLots && <BatchPurchaseModal kind="stock" existing={addLots} onClose={() => { setAddLots(null); router.refresh() }} />}
+      {addLots && <BatchPurchaseModal kind="stock" existing={addLots} onClose={() => { setAddLots(null); router.refresh(); loadStockTxns() }} />}
       {editStock && <EditHoldingModal kind="stock" row={editStock} onClose={() => { setEditStock(null); router.refresh() }} />}
       {deleteStock && (
         <Overlay>
