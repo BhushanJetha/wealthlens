@@ -87,6 +87,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
   const [allStockTxns, setAllStockTxns] = useState<any[]>([])
   const [editStock, setEditStock]     = useState<any | null>(null)
   const [deleteStock, setDeleteStock] = useState<any | null>(null)
+  const [addLots, setAddLots]         = useState<any | null>(null)
   const [deleting, setDeleting]       = useState(false)
   const [lumpsumStock, setLumpsumStock] = useState<any | null>(null)
   const [lumpsumQty, setLumpsumQty]   = useState('')
@@ -527,7 +528,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                       {/* Actions */}
                       <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
-                          <button onClick={() => { setLumpsumStock(s); setLumpsumQty(''); setLumpsumPrice(String((livePrices[s.id] ?? Number(s.current_price ?? s.avg_buy_price)).toFixed(2))) }}
+                          <button onClick={() => setAddLots(s)}
                             className="px-2.5 py-1 rounded text-[10px] font-semibold border transition-all hover:shadow-sm"
                             style={{ borderColor: 'var(--sage)', color: 'var(--sage)', background: 'var(--sage-bg)' }}>
                             + Buy
@@ -559,22 +560,34 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                               </div>
                             ))}
                           </div>
-                          {/* Purchase history — dated buy lots */}
-                          {(txnsByStock[s.id] ?? []).length > 0 && (
-                            <div className="mt-4">
-                              <div className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text3)' }}>Purchase History</div>
-                              <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
-                                {(txnsByStock[s.id] ?? []).map((t: any, i: number) => (
-                                  <div key={i} className="flex items-center justify-between text-[11px] rounded-lg px-3 py-1.5" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
-                                    <div style={{ color: 'var(--text2)' }}>{t.txn_date} · <span className="font-mono">{Number(t.units)}</span> sh @ ₹{Number(t.nav).toFixed(2)}</div>
-                                    <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(Number(t.amount)).toLocaleString('en-IN')}</div>
-                                  </div>
-                                ))}
+                          {/* Purchase history — initial holding + dated buy lots */}
+                          {(() => {
+                            const lots = txnsByStock[s.id] ?? []
+                            const recorded = lots.reduce((a: number, t: any) => a + Number(t.units || 0), 0)
+                            const opening = Number(s.quantity || 0) - recorded
+                            if (lots.length === 0 && opening <= 0.001) return null
+                            return (
+                              <div className="mt-4">
+                                <div className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text3)' }}>Purchase History</div>
+                                <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                                  {opening > 0.001 && (
+                                    <div className="flex items-center justify-between text-[11px] rounded-lg px-3 py-1.5" style={{ background: 'var(--card)', border: '1px dashed var(--border2)' }}>
+                                      <div style={{ color: 'var(--text3)' }}>Initial holding · <span className="font-mono">{+opening.toFixed(3)}</span> sh @ ₹{Number(s.avg_buy_price).toFixed(2)}</div>
+                                      <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(opening * Number(s.avg_buy_price)).toLocaleString('en-IN')}</div>
+                                    </div>
+                                  )}
+                                  {lots.map((t: any, i: number) => (
+                                    <div key={i} className="flex items-center justify-between text-[11px] rounded-lg px-3 py-1.5" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+                                      <div style={{ color: 'var(--text2)' }}>{t.txn_date} · <span className="font-mono">{Number(t.units)}</span> sh @ ₹{Number(t.nav).toFixed(2)}</div>
+                                      <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(Number(t.amount)).toLocaleString('en-IN')}</div>
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
-                            </div>
-                          )}
+                            )
+                          })()}
                           <div className="mt-4 flex gap-2">
-                            <button onClick={() => { setLumpsumStock(s); setLumpsumQty(''); setLumpsumPrice(String(price.toFixed(2))) }}
+                            <button onClick={() => setAddLots(s)}
                               className="text-[11px] font-semibold px-4 py-1.5 rounded-lg border"
                               style={{ borderColor: 'var(--sage)', color: 'var(--sage)', background: 'var(--sage-bg)' }}>
                               <IndianRupee size={10} className="inline mr-1" /> Buy More Shares
@@ -683,21 +696,33 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                           </div>
                         ))}
                       </div>
-                      {(txnsByStock[s.id] ?? []).length > 0 && (
-                        <div>
-                          <div className="text-[9px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>Purchase History</div>
-                          <div className="space-y-1 max-h-36 overflow-y-auto">
-                            {(txnsByStock[s.id] ?? []).map((t: any, i: number) => (
-                              <div key={i} className="flex items-center justify-between text-[11px] rounded-lg px-2.5 py-1.5" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
-                                <div style={{ color: 'var(--text2)' }}>{t.txn_date} · {Number(t.units)} sh @ ₹{Number(t.nav).toFixed(2)}</div>
-                                <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(Number(t.amount)).toLocaleString('en-IN')}</div>
-                              </div>
-                            ))}
+                      {(() => {
+                        const lots = txnsByStock[s.id] ?? []
+                        const recorded = lots.reduce((a: number, t: any) => a + Number(t.units || 0), 0)
+                        const opening = Number(s.quantity || 0) - recorded
+                        if (lots.length === 0 && opening <= 0.001) return null
+                        return (
+                          <div>
+                            <div className="text-[9px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>Purchase History</div>
+                            <div className="space-y-1 max-h-36 overflow-y-auto">
+                              {opening > 0.001 && (
+                                <div className="flex items-center justify-between text-[11px] rounded-lg px-2.5 py-1.5" style={{ background: 'var(--card)', border: '1px dashed var(--border2)' }}>
+                                  <div style={{ color: 'var(--text3)' }}>Initial · {+opening.toFixed(3)} sh @ ₹{Number(s.avg_buy_price).toFixed(2)}</div>
+                                  <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(opening * Number(s.avg_buy_price)).toLocaleString('en-IN')}</div>
+                                </div>
+                              )}
+                              {lots.map((t: any, i: number) => (
+                                <div key={i} className="flex items-center justify-between text-[11px] rounded-lg px-2.5 py-1.5" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+                                  <div style={{ color: 'var(--text2)' }}>{t.txn_date} · {Number(t.units)} sh @ ₹{Number(t.nav).toFixed(2)}</div>
+                                  <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(Number(t.amount)).toLocaleString('en-IN')}</div>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )
+                      })()}
                       <div className="grid grid-cols-3 gap-2">
-                        <button onClick={() => { setLumpsumStock(s); setLumpsumQty(''); setLumpsumPrice(String(price.toFixed(2))) }}
+                        <button onClick={() => setAddLots(s)}
                           className="wl-tap flex items-center justify-center gap-1 px-2 rounded-lg border text-[11px] font-semibold"
                           style={{ borderColor: 'var(--sage)', color: 'var(--sage)', background: 'var(--sage-bg)' }}>
                           <IndianRupee size={11} /> Buy
@@ -914,6 +939,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
 
       {showAdd && <BatchPurchaseModal kind="stock" onClose={() => { setShowAdd(false); router.refresh() }} />}
       {showImport && <HoldingsUploadModal kind="stocks" onClose={() => { setShowImport(false); router.refresh() }} />}
+      {addLots && <BatchPurchaseModal kind="stock" existing={addLots} onClose={() => { setAddLots(null); router.refresh() }} />}
       {editStock && <EditHoldingModal kind="stock" row={editStock} onClose={() => { setEditStock(null); router.refresh() }} />}
       {deleteStock && (
         <Overlay>

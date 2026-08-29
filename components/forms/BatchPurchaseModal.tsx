@@ -49,8 +49,8 @@ function Select({ label, value, onChange, options }: {
 let LOT_SEQ = 0
 const newLot = (): Lot => ({ _id: `l${++LOT_SEQ}`, date: new Date().toISOString().slice(0, 10), qty: '', price: '' })
 
-export default function BatchPurchaseModal({ kind, onClose }: {
-  kind: Kind; onClose: () => void
+export default function BatchPurchaseModal({ kind, onClose, existing }: {
+  kind: Kind; onClose: () => void; existing?: any
 }) {
   const isStock = kind === 'stock'
   const sym = (c: string) => (c === 'AED' ? 'AED ' : '₹')
@@ -62,7 +62,7 @@ export default function BatchPurchaseModal({ kind, onClose }: {
   const [sector, setSector]     = useState('')
   const [fundType, setFundType] = useState('equity')
   const [holder, setHolder]     = useState('Self')
-  const [currency, setCurrency] = useState('INR')
+  const [currency, setCurrency] = useState<string>(existing?.currency ?? 'INR')
   const [recordExpense, setRecordExpense] = useState(true)
   const [lots, setLots]         = useState<Lot[]>([newLot()])
   const [saving, setSaving]     = useState(false)
@@ -87,19 +87,35 @@ export default function BatchPurchaseModal({ kind, onClose }: {
 
   async function save() {
     setError('')
-    if (isStock && !symbol.trim()) { setError('Enter the stock symbol (e.g. INFY).'); return }
-    if (!isStock && !name.trim())  { setError('Enter the fund name.'); return }
+    if (!existing && isStock && !symbol.trim()) { setError('Enter the stock symbol (e.g. INFY).'); return }
+    if (!existing && !isStock && !name.trim())  { setError('Enter the fund name.'); return }
     if (valid.length === 0)        { setError('Add at least one purchase with quantity, price and date.'); return }
 
     setSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setSaving(false); setError('Not signed in.'); return }
     const country = currency === 'AED' ? 'UAE' : 'India'
-    const assetName = isStock ? (name.trim() || symbol.trim()) : name.trim()
+    const assetName = existing
+      ? (isStock ? existing.symbol : existing.fund_name)
+      : (isStock ? (name.trim() || symbol.trim()) : name.trim())
 
-    // 1) Create the holding with the aggregate of all lots
+    // 1) Create the holding (or add to an existing one) using the lots' aggregate
     let assetId: string | null = null
-    if (isStock) {
+    if (existing) {
+      assetId = existing.id
+      if (isStock) {
+        const newQty = Number(existing.quantity || 0) + totalUnits
+        const newAvg = newQty > 0 ? (Number(existing.quantity || 0) * Number(existing.avg_buy_price || 0) + totalInvested) / newQty : avg
+        const { error: e } = await supabase.from('stocks').update({ quantity: newQty, avg_buy_price: newAvg }).eq('id', existing.id)
+        if (e) { setSaving(false); setError(e.message || 'Could not update stock.'); return }
+      } else {
+        const newUnits = Number(existing.units || 0) + totalUnits
+        const newInv   = Number(existing.invested_amount || 0) + totalInvested
+        const newNav   = newUnits > 0 ? newInv / newUnits : avg
+        const { error: e } = await supabase.from('mutual_funds').update({ units: newUnits, invested_amount: newInv, avg_nav: newNav }).eq('id', existing.id)
+        if (e) { setSaving(false); setError(e.message || 'Could not update fund.'); return }
+      }
+    } else if (isStock) {
       const { data, error: e } = await supabase.from('stocks').insert({
         user_id: user.id, symbol: symbol.trim(), name: assetName, exchange: exchange || 'NSE',
         sector: sector || null, quantity: totalUnits, avg_buy_price: avg, currency, country, holder_name: holder,
@@ -146,7 +162,7 @@ export default function BatchPurchaseModal({ kind, onClose }: {
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-[15px] font-bold flex items-center gap-2" style={{ color: 'var(--text)' }}>
               <CalendarPlus size={16} style={{ color: 'var(--sage)' }} />
-              Add {isStock ? 'Stock' : 'Mutual Fund'} — dated purchases
+              {existing ? `Add to ${isStock ? existing.symbol : existing.fund_name}` : `Add ${isStock ? 'Stock' : 'Mutual Fund'} — dated purchases`}
             </h2>
             <button onClick={onClose} style={{ color: 'var(--text3)' }}><X size={18} /></button>
           </div>
@@ -157,7 +173,16 @@ export default function BatchPurchaseModal({ kind, onClose }: {
             </div>
           )}
 
-          {/* Asset identity */}
+          {/* Asset identity — hidden when adding lots to an existing holding */}
+          {existing ? (
+            <div className="rounded-xl p-3 flex items-center gap-2 flex-wrap" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+              <span className="font-bold text-[13px]" style={{ color: 'var(--text)' }}>{isStock ? existing.symbol : existing.fund_name}</span>
+              {isStock && existing.name && <span className="text-[11px]" style={{ color: 'var(--text3)' }}>{existing.name}</span>}
+              <span className="ml-auto text-[11px] font-mono" style={{ color: 'var(--text3)' }}>
+                {isStock ? `${Number(existing.quantity)} sh · avg ₹${Number(existing.avg_buy_price).toFixed(2)}` : `${Number(existing.units).toFixed(2)} units · NAV ₹${Number(existing.avg_nav).toFixed(2)}`}
+              </span>
+            </div>
+          ) : (
           <div className="space-y-3">
             {isStock ? (
               <>
@@ -188,6 +213,7 @@ export default function BatchPurchaseModal({ kind, onClose }: {
                 options={[{ value: 'Self', label: 'Self' }, ...members.map(m => ({ value: m.name, label: m.name }))]} />
             </div>
           </div>
+          )}
 
           {/* Purchase lots */}
           <div className="mt-4">
