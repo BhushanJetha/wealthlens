@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import AddInvestmentModal from '@/components/forms/AddInvestmentModal'
+import BatchPurchaseModal from '@/components/forms/BatchPurchaseModal'
 import HoldingsUploadModal from '@/components/forms/HoldingsUploadModal'
 import InvestmentTimeline from '@/components/dashboard/InvestmentTimeline'
 import InvestmentMatrix from '@/components/dashboard/InvestmentMatrix'
@@ -237,7 +238,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
           <FileUp size={14} className="inline mr-1.5" /> Import from PDF
         </button>
       </div>
-      {showAdd && <AddInvestmentModal onClose={() => { setShowAdd(false); router.refresh() }} defaultType="stock" />}
+      {showAdd && <BatchPurchaseModal kind="stock" onClose={() => { setShowAdd(false); router.refresh() }} />}
       {showImport && <HoldingsUploadModal kind="stocks" onClose={() => { setShowImport(false); router.refresh() }} />}
     </div>
   )
@@ -849,7 +850,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
         </div>
       )}
 
-      {showAdd && <AddInvestmentModal onClose={() => { setShowAdd(false); router.refresh() }} defaultType="stock" />}
+      {showAdd && <BatchPurchaseModal kind="stock" onClose={() => { setShowAdd(false); router.refresh() }} />}
       {showImport && <HoldingsUploadModal kind="stocks" onClose={() => { setShowImport(false); router.refresh() }} />}
       {editStock && <AddInvestmentModal editData={{ ...editStock, _type: 'stock' }} onClose={() => { setEditStock(null); router.refresh() }} />}
       {deleteStock && (

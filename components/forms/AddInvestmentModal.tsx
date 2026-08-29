@@ -169,7 +169,7 @@ export default function AddInvestmentModal({ onClose, defaultType = 'stock', edi
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 overflow-y-auto">
-      <div className="flex min-h-full items-center justify-center p-4 py-8">
+      <div className="flex min-h-full items-start sm:items-center justify-center p-4 py-8">
         <div className="wl-card p-6 w-full max-w-lg">
           <div className="flex justify-between items-center mb-5">
             <h2 className="text-[15px] font-bold" style={{ color:'var(--text)' }}>

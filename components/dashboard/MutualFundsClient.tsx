@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import AddInvestmentModal from '@/components/forms/AddInvestmentModal'
+import BatchPurchaseModal from '@/components/forms/BatchPurchaseModal'
 import HoldingsUploadModal from '@/components/forms/HoldingsUploadModal'
 import InvestmentTimeline from '@/components/dashboard/InvestmentTimeline'
 import InvestmentMatrix from '@/components/dashboard/InvestmentMatrix'
@@ -445,7 +446,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
           <FileUp size={14} className="inline mr-1.5" /> Import from PDF
         </button>
       </div>
-      {showAdd && <AddInvestmentModal onClose={() => { setShowAdd(false); router.refresh() }} defaultType="mutual_fund" />}
+      {showAdd && <BatchPurchaseModal kind="mutual_fund" onClose={() => { setShowAdd(false); router.refresh() }} />}
       {showImport && <HoldingsUploadModal kind="mutual_funds" onClose={() => { setShowImport(false); router.refresh() }} />}
     </div>
   )
@@ -1199,7 +1200,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
         )
       })()}
 
-      {showAdd && <AddInvestmentModal onClose={() => { setShowAdd(false); router.refresh() }} defaultType="mutual_fund" />}
+      {showAdd && <BatchPurchaseModal kind="mutual_fund" onClose={() => { setShowAdd(false); router.refresh() }} />}
       {showImport && <HoldingsUploadModal kind="mutual_funds" onClose={() => { setShowImport(false); router.refresh() }} />}
       {editFund && <AddInvestmentModal editData={{ ...editFund, _type: 'mutual_fund' }} onClose={() => { setEditFund(null); router.refresh() }} />}
       {repickFund && (
