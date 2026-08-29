@@ -13,6 +13,7 @@ import {
 import Link from 'next/link'
 import EditHoldingModal from '@/components/forms/EditHoldingModal'
 import BatchPurchaseModal from '@/components/forms/BatchPurchaseModal'
+import EditLotModal from '@/components/forms/EditLotModal'
 import HoldingsUploadModal from '@/components/forms/HoldingsUploadModal'
 import InvestmentTimeline from '@/components/dashboard/InvestmentTimeline'
 import InvestmentMatrix from '@/components/dashboard/InvestmentMatrix'
@@ -88,6 +89,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
   const [editStock, setEditStock]     = useState<any | null>(null)
   const [deleteStock, setDeleteStock] = useState<any | null>(null)
   const [addLots, setAddLots]         = useState<any | null>(null)
+  const [editLot, setEditLot]         = useState<{ stock: any; lot: any } | null>(null)
   const [deleting, setDeleting]       = useState(false)
   const [lumpsumStock, setLumpsumStock] = useState<any | null>(null)
   const [lumpsumQty, setLumpsumQty]   = useState('')
@@ -580,9 +582,10 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                                     </div>
                                   )}
                                   {lots.map((t: any, i: number) => (
-                                    <div key={i} className="flex items-center justify-between text-[11px] rounded-lg px-3 py-1.5" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
-                                      <div style={{ color: 'var(--text2)' }}>{t.txn_date} · <span className="font-mono">{Number(t.units)}</span> sh @ ₹{Number(t.nav).toFixed(2)}</div>
+                                    <div key={t.id ?? i} className="flex items-center gap-2 text-[11px] rounded-lg px-3 py-1.5" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+                                      <div className="flex-1" style={{ color: 'var(--text2)' }}>{t.txn_date} · <span className="font-mono">{Number(t.units)}</span> sh @ ₹{Number(t.nav).toFixed(2)}</div>
                                       <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(Number(t.amount)).toLocaleString('en-IN')}</div>
+                                      <button onClick={() => setEditLot({ stock: s, lot: t })} className="p-1 rounded hover:bg-blue-50" style={{ color: 'var(--blue)' }} aria-label="Edit purchase"><Pencil size={11} /></button>
                                     </div>
                                   ))}
                                 </div>
@@ -718,9 +721,10 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                                 </div>
                               )}
                               {lots.map((t: any, i: number) => (
-                                <div key={i} className="flex items-center justify-between text-[11px] rounded-lg px-2.5 py-1.5" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
-                                  <div style={{ color: 'var(--text2)' }}>{t.txn_date} · {Number(t.units)} sh @ ₹{Number(t.nav).toFixed(2)}</div>
+                                <div key={t.id ?? i} className="flex items-center gap-2 text-[11px] rounded-lg px-2.5 py-1.5" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+                                  <div className="flex-1" style={{ color: 'var(--text2)' }}>{t.txn_date} · {Number(t.units)} sh @ ₹{Number(t.nav).toFixed(2)}</div>
                                   <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(Number(t.amount)).toLocaleString('en-IN')}</div>
+                                  <button onClick={() => setEditLot({ stock: s, lot: t })} className="p-1.5 rounded" style={{ color: 'var(--blue)' }} aria-label="Edit purchase"><Pencil size={12} /></button>
                                 </div>
                               ))}
                             </div>
@@ -946,6 +950,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
       {showAdd && <BatchPurchaseModal kind="stock" onClose={() => { setShowAdd(false); router.refresh(); loadStockTxns() }} />}
       {showImport && <HoldingsUploadModal kind="stocks" onClose={() => { setShowImport(false); router.refresh() }} />}
       {addLots && <BatchPurchaseModal kind="stock" existing={addLots} onClose={() => { setAddLots(null); router.refresh(); loadStockTxns() }} />}
+      {editLot && <EditLotModal stock={editLot.stock} lot={editLot.lot} onClose={() => { setEditLot(null); router.refresh(); loadStockTxns() }} />}
       {editStock && <EditHoldingModal kind="stock" row={editStock} onClose={() => { setEditStock(null); router.refresh() }} />}
       {deleteStock && (
         <Overlay>
