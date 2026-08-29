@@ -14,7 +14,7 @@ import {
   ListFilter, ArrowUpDown, FileUp, Trash2, Rocket, Search, GraduationCap,
 } from 'lucide-react'
 import Link from 'next/link'
-import AddInvestmentModal from '@/components/forms/AddInvestmentModal'
+import EditHoldingModal from '@/components/forms/EditHoldingModal'
 import BatchPurchaseModal from '@/components/forms/BatchPurchaseModal'
 import HoldingsUploadModal from '@/components/forms/HoldingsUploadModal'
 import InvestmentTimeline from '@/components/dashboard/InvestmentTimeline'
@@ -1202,7 +1202,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
 
       {showAdd && <BatchPurchaseModal kind="mutual_fund" onClose={() => { setShowAdd(false); router.refresh() }} />}
       {showImport && <HoldingsUploadModal kind="mutual_funds" onClose={() => { setShowImport(false); router.refresh() }} />}
-      {editFund && <AddInvestmentModal editData={{ ...editFund, _type: 'mutual_fund' }} onClose={() => { setEditFund(null); router.refresh() }} />}
+      {editFund && <EditHoldingModal kind="mutual_fund" row={editFund} onClose={() => { setEditFund(null); router.refresh() }} />}
       {repickFund && (
         <Overlay>
           <Modal title="Match the correct scheme" onClose={() => { setRepickFund(null); setRepickResults([]) }}>

@@ -11,7 +11,7 @@ import {
   Newspaper, BarChart2, ListFilter, ArrowUpDown, IndianRupee, FileUp, Pencil, Trash2, GraduationCap, ChevronDown, Search,
 } from 'lucide-react'
 import Link from 'next/link'
-import AddInvestmentModal from '@/components/forms/AddInvestmentModal'
+import EditHoldingModal from '@/components/forms/EditHoldingModal'
 import BatchPurchaseModal from '@/components/forms/BatchPurchaseModal'
 import HoldingsUploadModal from '@/components/forms/HoldingsUploadModal'
 import InvestmentTimeline from '@/components/dashboard/InvestmentTimeline'
@@ -559,6 +559,20 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                               </div>
                             ))}
                           </div>
+                          {/* Purchase history — dated buy lots */}
+                          {(txnsByStock[s.id] ?? []).length > 0 && (
+                            <div className="mt-4">
+                              <div className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text3)' }}>Purchase History</div>
+                              <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                                {(txnsByStock[s.id] ?? []).map((t: any, i: number) => (
+                                  <div key={i} className="flex items-center justify-between text-[11px] rounded-lg px-3 py-1.5" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+                                    <div style={{ color: 'var(--text2)' }}>{t.txn_date} · <span className="font-mono">{Number(t.units)}</span> sh @ ₹{Number(t.nav).toFixed(2)}</div>
+                                    <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(Number(t.amount)).toLocaleString('en-IN')}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                           <div className="mt-4 flex gap-2">
                             <button onClick={() => { setLumpsumStock(s); setLumpsumQty(''); setLumpsumPrice(String(price.toFixed(2))) }}
                               className="text-[11px] font-semibold px-4 py-1.5 rounded-lg border"
@@ -567,7 +581,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                             </button>
                             <button onClick={() => setEditStock(s)}
                               className="text-[11px] font-semibold px-4 py-1.5 rounded-lg border"
-                              style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>
+                              style={{ borderColor: 'var(--blue)', color: 'var(--blue)', background: 'var(--blue-bg)' }}>
                               <Pencil size={10} className="inline mr-1" /> Edit
                             </button>
                             <button onClick={() => setDeleteStock(s)}
@@ -669,6 +683,19 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                           </div>
                         ))}
                       </div>
+                      {(txnsByStock[s.id] ?? []).length > 0 && (
+                        <div>
+                          <div className="text-[9px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>Purchase History</div>
+                          <div className="space-y-1 max-h-36 overflow-y-auto">
+                            {(txnsByStock[s.id] ?? []).map((t: any, i: number) => (
+                              <div key={i} className="flex items-center justify-between text-[11px] rounded-lg px-2.5 py-1.5" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+                                <div style={{ color: 'var(--text2)' }}>{t.txn_date} · {Number(t.units)} sh @ ₹{Number(t.nav).toFixed(2)}</div>
+                                <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(Number(t.amount)).toLocaleString('en-IN')}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       <div className="grid grid-cols-3 gap-2">
                         <button onClick={() => { setLumpsumStock(s); setLumpsumQty(''); setLumpsumPrice(String(price.toFixed(2))) }}
                           className="wl-tap flex items-center justify-center gap-1 px-2 rounded-lg border text-[11px] font-semibold"
@@ -677,7 +704,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                         </button>
                         <button onClick={() => setEditStock(s)}
                           className="wl-tap flex items-center justify-center gap-1 px-2 rounded-lg border text-[11px] font-semibold"
-                          style={{ borderColor: 'var(--border)', color: 'var(--text2)', background: 'var(--bg2)' }}>
+                          style={{ borderColor: 'var(--blue)', color: 'var(--blue)', background: 'var(--blue-bg)' }}>
                           <Pencil size={11} /> Edit
                         </button>
                         <button onClick={() => setDeleteStock(s)}
@@ -887,7 +914,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
 
       {showAdd && <BatchPurchaseModal kind="stock" onClose={() => { setShowAdd(false); router.refresh() }} />}
       {showImport && <HoldingsUploadModal kind="stocks" onClose={() => { setShowImport(false); router.refresh() }} />}
-      {editStock && <AddInvestmentModal editData={{ ...editStock, _type: 'stock' }} onClose={() => { setEditStock(null); router.refresh() }} />}
+      {editStock && <EditHoldingModal kind="stock" row={editStock} onClose={() => { setEditStock(null); router.refresh() }} />}
       {deleteStock && (
         <Overlay>
           <div className="rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
