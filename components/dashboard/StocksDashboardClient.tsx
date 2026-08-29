@@ -8,7 +8,7 @@ import {
 } from 'recharts'
 import {
   RefreshCw, Plus, TrendingUp, TrendingDown, X,
-  Newspaper, BarChart2, ListFilter, ArrowUpDown, IndianRupee, FileUp, Pencil, Trash2, GraduationCap, ChevronDown,
+  Newspaper, BarChart2, ListFilter, ArrowUpDown, IndianRupee, FileUp, Pencil, Trash2, GraduationCap, ChevronDown, Search,
 } from 'lucide-react'
 import Link from 'next/link'
 import AddInvestmentModal from '@/components/forms/AddInvestmentModal'
@@ -80,6 +80,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
   const [expandedId, setExpandedId]   = useState<string | null>(null)
   const [sortBy, setSortBy]           = useState<SortKey>('return')
   const [sortDir, setSortDir]         = useState<'asc' | 'desc'>('desc')
+  const [query, setQuery]             = useState('')
   const [showAdd, setShowAdd]         = useState(false)
   const [showImport, setShowImport]   = useState(false)
   const [txnsByStock, setTxnsByStock] = useState<Record<string, any[]>>({})
@@ -172,6 +173,13 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
     if (sortBy === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortBy(key); setSortDir('desc') }
   }
+
+  // Search-filtered view for the portfolio list (Growth tab keeps the full `sorted`)
+  const visible = useMemo(() => {
+    if (!query.trim()) return sorted
+    const q = query.toLowerCase()
+    return sorted.filter(s => `${s.symbol ?? ''} ${s.name ?? ''} ${s.sector ?? ''}`.toLowerCase().includes(q))
+  }, [sorted, query])
 
   // ── computed ───────────────────────────────────────────────────────────────────
   const totalInvested = stocks.reduce((a, s) => a + Number(s.quantity) * Number(s.avg_buy_price), 0)
@@ -377,6 +385,32 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
 
       {/* ── PORTFOLIO TAB ─────────────────────────────────────────────────────── */}
       {tab === 'portfolio' && (
+        <div className="space-y-3">
+          {/* Search + sort */}
+          <div className="flex flex-wrap gap-2 items-center">
+            <div className="relative flex-1 min-w-[180px]">
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text3)' }} />
+              <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search stock, symbol or sector…"
+                className="wl-input pl-8 w-full" style={{ background: 'var(--bg2)' }} />
+              {query && (
+                <button onClick={() => setQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text3)' }} aria-label="Clear">
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+            <select value={`${sortBy}-${sortDir}`}
+              onChange={e => { const [k, d] = e.target.value.split('-'); setSortBy(k as SortKey); setSortDir(d as 'asc' | 'desc') }}
+              className="wl-input" style={{ background: 'var(--bg2)', width: 'auto' }}>
+              <option value="return-desc">Returns: High → Low</option>
+              <option value="return-asc">Returns: Low → High</option>
+              <option value="value-desc">Value: High → Low</option>
+              <option value="invested-desc">Invested: High → Low</option>
+              <option value="price-desc">Price: High → Low</option>
+              <option value="name-asc">Name: A → Z</option>
+            </select>
+          </div>
+          {query && <div className="text-[11px]" style={{ color: 'var(--text3)' }}>{visible.length} of {stocks.length} stocks</div>}
+
         <div className="wl-card overflow-hidden">
           <div className="overflow-x-auto hidden md:block">
             <table className="w-full text-[12px]">
@@ -404,7 +438,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                 </tr>
               </thead>
               <tbody>
-                {sorted.map((s, idx) => {
+                {visible.map((s, idx) => {
                   const price     = livePrices[s.id] ?? Number(s.current_price ?? s.avg_buy_price)
                   const invested  = Number(s.quantity) * Number(s.avg_buy_price)
                   const currVal   = Number(s.quantity) * price
@@ -553,7 +587,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
 
           {/* Mobile holdings cards */}
           <div className="md:hidden divide-y" style={{ borderColor: 'var(--border)' }}>
-            {sorted.map(s => {
+            {visible.map(s => {
               const price     = livePrices[s.id] ?? Number(s.current_price ?? s.avg_buy_price)
               const invested  = Number(s.quantity) * Number(s.avg_buy_price)
               const currVal   = Number(s.quantity) * price
@@ -658,6 +692,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
               )
             })}
           </div>
+        </div>
         </div>
       )}
 
