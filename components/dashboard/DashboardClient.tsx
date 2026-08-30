@@ -82,13 +82,21 @@ export default function DashboardClient({ transactions, loans, accounts, stocks,
     const bondVal  = filterByView(bondInvestments ?? []).reduce((a: number, b: any) => a + Number(b.current_value ?? b.invested_amount ?? 0), 0)
     const etfVal   = filterByView(etfInvestments ?? []).reduce((a: number, e: any) => a + Number(e.units ?? 0) * Number(e.current_price ?? e.avg_buy_price ?? 0), 0)
     const fullEquity = totalAssets + rdVal + npsVal + licPaid + ppfVal + goldVal + bondVal + etfVal
+    // Invested (cost basis) — market-linked at cost; fixed-income at current
+    const stockInv = filteredStocks.reduce((a: number, s: any) => a + convV(Number(s.quantity || 0) * Number(s.avg_buy_price ?? 0), s.currency ?? 'INR'), 0)
+    const mfInv    = filteredMF.reduce((a: number, m: any) => a + (Number(m.invested_amount) || Number(m.units || 0) * Number(m.avg_nav ?? 0)), 0)
+    const npsInv   = filterByView(npsAccounts ?? []).reduce((a: number, n: any) => a + (Number(n.invested_amount) || Number(n.corpus_amount ?? 0)), 0)
+    const goldInv  = filterByView(goldInvestments ?? []).reduce((a: number, g: any) => a + Number(g.invested_amount ?? 0), 0)
+    const bondInv  = filterByView(bondInvestments ?? []).reduce((a: number, b: any) => a + Number(b.invested_amount ?? b.current_value ?? 0), 0)
+    const etfInv   = filterByView(etfInvestments ?? []).reduce((a: number, e: any) => a + (Number(e.invested_amount) || Number(e.units ?? 0) * Number(e.avg_buy_price ?? 0)), 0)
+    const fullInvested = stockInv + mfInv + fdVal + rdVal + npsInv + licPaid + ppfVal + goldInv + bondInv + etfInv
     // Total net worth = all investments + bank cash − liabilities (matches the Net Worth tab)
     const netWorth  = fullEquity + bankVal - totalLiab
     const totalPortfolio = fullEquity + totalLiab
     const debtPct = totalPortfolio > 0 ? Math.round(totalLiab / totalPortfolio * 100) : 0
     const deZone  = debtPct > 60 ? 'high_debt' : debtPct > 30 ? 'moderate' : totalLiab === 0 && fullEquity > 0 ? 'debt_free' : 'healthy'
 
-    return { sym, totalAssets, totalLiab, netWorth, monthlyIncome, monthlyExpense, savingsRate, utilPct, filteredLoans, filteredCards, fullEquity, debtPct, deZone }
+    return { sym, totalAssets, totalLiab, netWorth, monthlyIncome, monthlyExpense, savingsRate, utilPct, filteredLoans, filteredCards, fullEquity, fullInvested, debtPct, deZone }
   }, [view, fromMonth, toMonth, transactions, loans, accounts, stocks, mutualFunds, fixedDeposits, recurringDeposits, npsAccounts, licPolicies, goldInvestments, bondInvestments, etfInvestments])
 
   const { sym } = metrics
@@ -235,7 +243,9 @@ export default function DashboardClient({ transactions, loans, accounts, stocks,
 
       {/* D/E Ratio Widget */}
       {(() => {
-        const { debtPct, deZone, fullEquity, totalLiab } = metrics
+        const { debtPct, deZone, fullEquity, fullInvested, totalLiab } = metrics
+        const eqGain = fullEquity - fullInvested
+        const eqGainPct = fullInvested > 0 ? Math.round(eqGain / fullInvested * 1000) / 10 : 0
         const zoneColor   = deZone === 'high_debt' ? '#EF4444' : deZone === 'moderate' ? '#F59E0B' : '#10B981'
         const zoneBg      = deZone === 'high_debt' ? '#FEF2F2' : deZone === 'moderate' ? '#FFFBEB' : '#ECFDF5'
         const zoneLabel   = deZone === 'high_debt' ? 'High Debt' : deZone === 'moderate' ? 'Moderate' : deZone === 'debt_free' ? 'Debt Free' : 'Healthy'
@@ -263,8 +273,8 @@ export default function DashboardClient({ transactions, loans, accounts, stocks,
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: zoneColor + '20', color: zoneColor }}>{zoneLabel}</span>
               </div>
               <div className="text-[11px] mb-2" style={{ color: 'var(--text3)' }}>{zoneMessage}</div>
-              <div className="flex gap-3 text-[11px]">
-                <span><span style={{ color: '#10B981' }}>▲</span> Equity <span className="font-mono font-bold" style={{ color: 'var(--text)' }}>{fmt(fullEquity, sym)}</span></span>
+              <div className="flex gap-x-3 gap-y-1 text-[11px] flex-wrap">
+                <span><span style={{ color: '#10B981' }}>▲</span> Invested <span className="font-mono font-bold" style={{ color: 'var(--text)' }}>{fmt(fullInvested, sym)}</span> → <span className="font-mono font-bold" style={{ color: 'var(--text)' }}>{fmt(fullEquity, sym)}</span> <span className="font-mono font-bold" style={{ color: eqGain >= 0 ? 'var(--income)' : 'var(--rose)' }}>{eqGain >= 0 ? '+' : ''}{eqGainPct}%</span></span>
                 <span><span style={{ color: '#EF4444' }}>▼</span> Debt <span className="font-mono font-bold" style={{ color: 'var(--text)' }}>{fmt(totalLiab, sym)}</span></span>
               </div>
             </div>

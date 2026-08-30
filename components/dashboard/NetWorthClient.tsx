@@ -37,7 +37,7 @@ export default function NetWorthClient(p: Props) {
     return `${sym}${s}`
   }
 
-  const { assetRows, liabRows, totalAssets, totalLiab, netWorth, trend, netSavings } = useMemo(() => {
+  const { assetRows, liabRows, totalAssets, totalInvested, totalLiab, netWorth, trend, netSavings } = useMemo(() => {
     // Bank & cash = all non-credit-card accounts
     const bankCash = p.accounts.filter(a => a.account_type !== 'credit_card')
     const cards    = p.accounts.filter(a => a.account_type === 'credit_card')
@@ -54,7 +54,7 @@ export default function NetWorthClient(p: Props) {
     const stockVal = sumBy(p.stocks,            x => Number(x.quantity || 0) * Number(x.current_price ?? x.avg_buy_price ?? 0))
     const mfVal    = sumBy(p.mutualFunds,       m => Number(m.units || 0) * Number(m.current_nav ?? m.avg_nav ?? 0))
     const etfVal   = sumBy(p.etf,               e => Number(e.units || 0) * Number(e.current_price ?? e.avg_buy_price ?? 0))
-    const npsVal   = sumBy(p.nps,               n => Number(n.corpus_amount ?? n.current_value ?? 0))
+    const npsVal   = sumBy(p.nps,               n => Number(n.corpus_amount) || Number(n.invested_amount) || Number(n.current_value) || 0)
     const fdVal    = sumBy(p.fixedDeposits,     f => Number(f.principal ?? f.principal_amount ?? 0))
     const rdVal    = sumBy(p.recurringDeposits, r => r.current_amount != null ? Number(r.current_amount) : Number(r.monthly_amount || 0) * Number(r.months_paid || 0))
     const ppfVal   = sumBy(p.ppfEpf,            x => Number(x.current_balance ?? x.balance ?? 0))
@@ -62,18 +62,26 @@ export default function NetWorthClient(p: Props) {
     const bondVal  = sumBy(p.bonds,             b => Number(b.current_value ?? b.invested_amount ?? 0))
     const licVal   = sumBy(p.lic,               l => Number(l.total_paid ?? 0))
 
+    // Invested (cost basis) per segment — for the invested-vs-current view
+    const stockInv = sumBy(p.stocks,            x => Number(x.quantity || 0) * Number(x.avg_buy_price ?? 0))
+    const mfInv    = sumBy(p.mutualFunds,       m => Number(m.invested_amount) || Number(m.units || 0) * Number(m.avg_nav ?? 0))
+    const etfInv   = sumBy(p.etf,               e => Number(e.invested_amount) || Number(e.units || 0) * Number(e.avg_buy_price ?? 0))
+    const npsInv   = sumBy(p.nps,               n => Number(n.invested_amount) || Number(n.corpus_amount ?? 0))
+    const goldInv  = sumBy(p.gold,              g => Number(g.invested_amount ?? 0))
+    const bondInv  = sumBy(p.bonds,             b => Number(b.invested_amount ?? b.current_value ?? 0))
+
     const assetRows = [
-      { label: 'Bank & Cash',        value: bankVal,  color: '#16A34A' },
-      { label: 'Stocks',             value: stockVal, color: '#E11D48' },
-      { label: 'Mutual Funds',       value: mfVal,    color: '#2563EB' },
-      { label: 'ETF',                value: etfVal,   color: '#0EA5E9' },
-      { label: 'NPS',                value: npsVal,   color: '#7C3AED' },
-      { label: 'Fixed Deposits',     value: fdVal,    color: '#0284C7' },
-      { label: 'Recurring Deposits', value: rdVal,    color: '#0891B2' },
-      { label: 'PPF / EPF',          value: ppfVal,   color: '#059669' },
-      { label: 'Gold',               value: goldVal,  color: '#D97706' },
-      { label: 'Bonds / SGB',        value: bondVal,  color: '#9333EA' },
-      { label: 'LIC',                value: licVal,   color: '#DB2777' },
+      { label: 'Bank & Cash',        value: bankVal,  invested: bankVal,  color: '#16A34A' },
+      { label: 'Stocks',             value: stockVal, invested: stockInv, color: '#E11D48' },
+      { label: 'Mutual Funds',       value: mfVal,    invested: mfInv,    color: '#2563EB' },
+      { label: 'ETF',                value: etfVal,   invested: etfInv,   color: '#0EA5E9' },
+      { label: 'NPS',                value: npsVal,   invested: npsInv,   color: '#7C3AED' },
+      { label: 'Fixed Deposits',     value: fdVal,    invested: fdVal,    color: '#0284C7' },
+      { label: 'Recurring Deposits', value: rdVal,    invested: rdVal,    color: '#0891B2' },
+      { label: 'PPF / EPF',          value: ppfVal,   invested: ppfVal,   color: '#059669' },
+      { label: 'Gold',               value: goldVal,  invested: goldInv,  color: '#D97706' },
+      { label: 'Bonds / SGB',        value: bondVal,  invested: bondInv,  color: '#9333EA' },
+      { label: 'LIC',                value: licVal,   invested: licVal,   color: '#DB2777' },
     ].filter(r => r.value > 0).sort((a, b) => b.value - a.value)
 
     const liabRows = [
@@ -81,9 +89,10 @@ export default function NetWorthClient(p: Props) {
       { label: 'Credit Cards',         value: sumRows(cards, 'outstanding_bal'),   color: '#F97316' },
     ].filter(r => r.value > 0).sort((a, b) => b.value - a.value)
 
-    const totalAssets = assetRows.reduce((s, r) => s + r.value, 0)
-    const totalLiab   = liabRows.reduce((s, r) => s + r.value, 0)
-    const netWorth    = totalAssets - totalLiab
+    const totalAssets   = assetRows.reduce((s, r) => s + r.value, 0)
+    const totalInvested = assetRows.reduce((s, r) => s + r.invested, 0)
+    const totalLiab     = liabRows.reduce((s, r) => s + r.value, 0)
+    const netWorth      = totalAssets - totalLiab
 
     // Real monthly net savings (income − expense), view/FX aware, last 12 months
     const now = new Date()
@@ -108,7 +117,7 @@ export default function NetWorthClient(p: Props) {
       running -= netSavings[i].value
     }
 
-    return { assetRows, liabRows, totalAssets, totalLiab, netWorth, trend, netSavings }
+    return { assetRows, liabRows, totalAssets, totalInvested, totalLiab, netWorth, trend, netSavings }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p, view, FX])
 
@@ -116,6 +125,8 @@ export default function NetWorthClient(p: Props) {
   const prevNW = trend.length > 1 ? trend[trend.length - 2].value : netWorth
   const changePct = prevNW !== 0 ? Math.round((netWorth - prevNW) / Math.abs(prevNW) * 1000) / 10 : 0
   const debtRatio = totalAssets > 0 ? Math.round(totalLiab / totalAssets * 100) : 0
+  const investGain = totalAssets - totalInvested
+  const investGainPct = totalInvested > 0 ? Math.round(investGain / totalInvested * 1000) / 10 : 0
   const empty = totalAssets === 0 && totalLiab === 0
 
   return (
@@ -178,6 +189,34 @@ export default function NetWorthClient(p: Props) {
             </div>
           </div>
 
+          {/* Invested vs Current Value */}
+          <div className="wl-card p-4">
+            <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>Invested vs Current Value</div>
+            <div className="flex items-center flex-wrap gap-x-5 gap-y-3">
+              <div>
+                <div className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Total Invested</div>
+                <div className="text-[22px] font-black font-mono" style={{ color: 'var(--text)' }}>{money(totalInvested)}</div>
+              </div>
+              <span className="text-[18px]" style={{ color: 'var(--text3)' }}>→</span>
+              <div>
+                <div className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Current Value</div>
+                <div className="text-[22px] font-black font-mono" style={{ color: 'var(--text)' }}>{money(totalAssets)}</div>
+              </div>
+              <div className="ml-auto text-right">
+                <div className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Overall Gain</div>
+                <div className="text-[22px] font-black font-mono" style={{ color: investGain >= 0 ? 'var(--income)' : 'var(--rose)' }}>
+                  {investGain >= 0 ? '+' : ''}{investGainPct}%
+                </div>
+                <div className="text-[11px] font-mono" style={{ color: investGain >= 0 ? 'var(--income)' : 'var(--rose)' }}>
+                  {investGain >= 0 ? '+' : '−'}{money(Math.abs(investGain))}
+                </div>
+              </div>
+            </div>
+            <div className="text-[10px] mt-2" style={{ color: 'var(--text3)' }}>
+              Cost basis vs today's value across all segments · fixed-income &amp; cash are held at cost (no gain).
+            </div>
+          </div>
+
           {/* Trend */}
           <div className="wl-card p-4">
             <div className="flex items-center justify-between mb-3">
@@ -214,17 +253,35 @@ export default function NetWorthClient(p: Props) {
               <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>
                 Assets — {money(totalAssets)}
               </div>
-              <div className="space-y-2.5">
+              <div className="space-y-3">
                 {assetRows.map(r => {
                   const pct = totalAssets > 0 ? (r.value / totalAssets) * 100 : 0
+                  const gain = r.value - r.invested
+                  const gp = r.invested > 0 && Math.abs(gain) >= 1 ? Math.round(gain / r.invested * 1000) / 10 : null
                   return (
-                    <div key={r.label} className="flex items-center gap-3">
-                      <div className="text-[11px] w-32 flex-shrink-0 truncate" style={{ color: 'var(--text2, var(--text))' }}>{r.label}</div>
-                      <div className="flex-1 h-2.5 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}>
-                        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: r.color }} />
+                    <div key={r.label}>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: r.color }} />
+                          <span className="text-[12px] font-medium truncate" style={{ color: 'var(--text)' }}>{r.label}</span>
+                        </div>
+                        <div className="flex items-baseline gap-1.5 flex-shrink-0">
+                          <span className="text-[12px] font-mono font-semibold" style={{ color: 'var(--text)' }}>{short(r.value)}</span>
+                          {gp !== null && (
+                            <span className="text-[10px] font-mono" style={{ color: gain >= 0 ? 'var(--income)' : 'var(--rose)' }}>
+                              {gain >= 0 ? '+' : ''}{gp}%
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <div className="text-[11px] font-mono font-semibold w-11 text-right" style={{ color: r.color }}>{pct.toFixed(0)}%</div>
-                      <div className="text-[11px] font-mono w-20 text-right" style={{ color: 'var(--text)' }}>{short(r.value)}</div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}>
+                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: r.color }} />
+                        </div>
+                        <span className="text-[9px] font-mono flex-shrink-0" style={{ color: 'var(--text3)' }}>
+                          inv {short(r.invested)} · {pct.toFixed(0)}%
+                        </span>
+                      </div>
                     </div>
                   )
                 })}
