@@ -2,6 +2,7 @@ const CAT_COLORS: Record<string, string> = {
   Food:'#D97706', Shopping:'#2563EB', Utilities:'#7C3AED',
   Transport:'#16A34A', Health:'#059669', Entertainment:'#E11D48',
   Travel:'#EA580C', Education:'#0284C7', Other:'#6B7280',
+  'Trip/Vacation':'#0D9488', 'Event/Function':'#C026D3',
 }
 
 export function RecentActivity({ transactions, view }: { transactions: any[]; view: string }) {

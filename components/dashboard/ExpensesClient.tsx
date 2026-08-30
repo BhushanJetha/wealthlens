@@ -15,7 +15,7 @@ import MessageParseModal from '@/components/forms/MessageParseModal'
 import { Search, Upload, Image, Mic, PenLine, BarChart2, ArrowRight, AlertTriangle, X, CreditCard, Pencil, Trash2, Check, BookOpen, ChevronDown, Plus, Copy, Wallet, Banknote, MessageSquareText } from 'lucide-react'
 import Link from 'next/link'
 
-const EXPENSE_CATS = ['All','Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment','Travel','Education','Subscription','Investment','Tax Payment','Credit Card Payment','Loan on Card','EMI/Loan','Family Transfer','Transfer','Refund','Other']
+const EXPENSE_CATS = ['All','Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment','Travel','Trip/Vacation','Event/Function','Education','Subscription','Investment','Tax Payment','Credit Card Payment','Loan on Card','EMI/Loan','Family Transfer','Transfer','Refund','Other']
 const CAT_COLORS: Record<string,string> = {
   Food:'#D97706', Shopping:'#2563EB', Utilities:'#7C3AED', Transport:'#16A34A',
   Health:'#059669', Entertainment:'#E11D48', Travel:'#EA580C', Other:'#6B7280',
@@ -23,6 +23,7 @@ const CAT_COLORS: Record<string,string> = {
   'Personal Care':'#DB2777', Investment:'#14B8A6', 'Tax Payment':'#BE123C',
   'Credit Card Payment':'#9333EA', 'Family Transfer':'#0EA5E9',
   'Loan on Card':'#F59E0B', 'EMI/Loan':'#F97316',
+  'Trip/Vacation':'#0D9488', 'Event/Function':'#C026D3',
 }
 const TRANSFER_SUBTYPE_COLORS: Record<string,string> = {
   International: '#3B7DD8', Internal: '#7C5CBF', Family: '#3D7A58',

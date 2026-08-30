@@ -32,6 +32,8 @@ const CAT_RULES: [RegExp, string][] = [
   [/swiggy|zomato|dominos|mcdonald|kfc|restaurant|cafe|coffee|starbucks|eatery|food|dmart|bigbasket|blinkit|zepto|grocery|carrefour|lulu|spinneys/i, 'Food'],
   [/amazon|flipkart|myntra|ajio|meesho|nykaa|shop|mall|noon|namshi|store|retail/i, 'Shopping'],
   [/uber|ola|rapido|metro|petrol|fuel|hpcl|iocl|bpcl|adnoc|eppco|careem|salik|parking|toll/i, 'Transport'],
+  [/hotel|resort|flight|airline|indigo|vistara|akasa|makemytrip|goibibo|yatra|ixigo|irctc|airbnb|booking\.com|\boyo\b|vacation|holiday|\btrip\b|tour package/i, 'Trip/Vacation'],
+  [/wedding|marriage|birthday|anniversary|\bparty\b|banquet|catering|\bdecor|florist|\bevent\b|\bfunction\b|reception/i, 'Event/Function'],
   [/dewa|sewa|electricity|water|gas|broadband|airtel|jio|vodafone|vi |du |etisalat|internet|recharge|bill/i, 'Utilities'],
   [/netflix|spotify|prime|hotstar|youtube|subscription|icloud|google one|adobe/i, 'Subscription'],
   [/pharmacy|hospital|clinic|apollo|medic|doctor|health|aster|medcare/i, 'Health'],

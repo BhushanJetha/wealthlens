@@ -4,13 +4,13 @@ import { createClient } from '@/lib/supabase/client'
 import { X, Loader2, Plus, ArrowRight, RefreshCw } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
-const EXPENSE_CATS = ['Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment','Travel','Education','Subscription','Investment','Tax Payment','EMI/Loan','Loan on Card','Credit Card Payment','Family Transfer','Refund','Other']
+const EXPENSE_CATS = ['Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment','Travel','Trip/Vacation','Event/Function','Education','Subscription','Investment','Tax Payment','EMI/Loan','Loan on Card','Credit Card Payment','Family Transfer','Refund','Other']
 const INCOME_CATS  = ['UAE Income (NRO)','Salary','NRE Received','Dividend','Interest','FD/RD Maturity','Rental','Gift','Bonus','Tax Refund','Freelance','NRI Transfer','Loan Taken','Refund','Other']
 
 const CAT_COLORS: Record<string,string> = {
   Food:'#D97706', Shopping:'#2563EB', Utilities:'#7C3AED', Transport:'#16A34A',
   Health:'#059669', Entertainment:'#E11D48', Travel:'#EA580C', Education:'#0284C7',
-  Subscription:'#EC4899', 'Personal Care':'#DB2777',
+  Subscription:'#EC4899', 'Personal Care':'#DB2777', 'Trip/Vacation':'#0D9488', 'Event/Function':'#C026D3',
   Investment:'#10B981', 'Tax Payment':'#BE123C', 'EMI/Loan':'#F97316', 'Loan on Card':'#F59E0B',
   'Credit Card Payment':'#9333EA', 'Family Transfer':'#0EA5E9', Refund:'#059669',
   'UAE Income (NRO)':'#15803D', Salary:'#16A34A', 'NRE Received':'#0284C7', Dividend:'#2563EB', Rental:'#7C3AED', Gift:'#E11D48',

@@ -14,6 +14,7 @@ const CAT_COLORS: Record<string,string> = {
   Food:'#D97706', Shopping:'#2563EB', Utilities:'#7C3AED', Transport:'#16A34A',
   Health:'#059669', Entertainment:'#E11D48', Travel:'#EA580C', Education:'#0284C7',
   Subscription:'#EC4899', 'Personal Care':'#DB2777', 'EMI/Loan':'#9333EA', Investment:'#0EA5E9', 'Tax Payment':'#BE123C',
+  'Trip/Vacation':'#0D9488', 'Event/Function':'#C026D3',
   Transfer:'#3B7DD8', Other:'#6B7280', 'Family Transfer':'#0EA5E9',
   'Credit Card Payment':'#9333EA', 'International Transfer':'#0EA5E9', 'NRE Received':'#0284C7',
   'NRE to NRO':'#7C5CBF', 'Self Transfer':'#0891B2', 'Loan on Card':'#F59E0B', 'Loan Received':'#F97316', Refund:'#10B981',
