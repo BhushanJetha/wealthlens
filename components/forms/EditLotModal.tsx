@@ -23,10 +23,12 @@ function Field({ label, value, onChange, type = 'text', numeric = false }: {
 }
 
 // Edit or delete one recorded purchase lot (investment_transactions row) and
-// re-adjust the parent holding's total quantity + weighted-average price.
-export default function EditLotModal({ stock, lot, onClose }: {
-  stock: any; lot: any; onClose: () => void
+// re-adjust the parent holding's aggregate (quantity+avg for stocks; units +
+// invested + avg NAV for mutual funds).
+export default function EditLotModal({ kind = 'stock', holding, lot, onClose }: {
+  kind?: 'stock' | 'mutual_fund'; holding: any; lot: any; onClose: () => void
 }) {
+  const isStock = kind === 'stock'
   const [date, setDate]   = useState<string>(lot.txn_date ?? new Date().toISOString().slice(0, 10))
   const [qty, setQty]     = useState<string>(String(lot.units ?? ''))
   const [price, setPrice] = useState<string>(String(lot.nav ?? ''))
@@ -34,14 +36,22 @@ export default function EditLotModal({ stock, lot, onClose }: {
   const [error, setError] = useState('')
   const supabase = createClient()
 
-  const sym = stock.currency === 'AED' ? 'AED ' : '₹'
+  const sym = holding.currency === 'AED' ? 'AED ' : '₹'
+  const title = isStock ? (holding.symbol ?? '') : (holding.fund_name ?? '')
 
   // Apply a change of (deltaUnits, deltaAmount) to the holding's aggregate.
   async function applyHoldingDelta(deltaUnits: number, deltaAmount: number) {
-    const newQty = Number(stock.quantity || 0) + deltaUnits
-    const newInvested = Number(stock.quantity || 0) * Number(stock.avg_buy_price || 0) + deltaAmount
-    const newAvg = newQty > 0 ? newInvested / newQty : 0
-    await supabase.from('stocks').update({ quantity: newQty, avg_buy_price: newAvg }).eq('id', stock.id)
+    if (isStock) {
+      const newQty = Number(holding.quantity || 0) + deltaUnits
+      const newInvested = Number(holding.quantity || 0) * Number(holding.avg_buy_price || 0) + deltaAmount
+      const newAvg = newQty > 0 ? newInvested / newQty : 0
+      await supabase.from('stocks').update({ quantity: newQty, avg_buy_price: newAvg }).eq('id', holding.id)
+    } else {
+      const newUnits = Number(holding.units || 0) + deltaUnits
+      const newInvested = Number(holding.invested_amount || 0) + deltaAmount
+      const newNav = newUnits > 0 ? newInvested / newUnits : 0
+      await supabase.from('mutual_funds').update({ units: newUnits, invested_amount: newInvested, avg_nav: newNav }).eq('id', holding.id)
+    }
   }
 
   async function save() {
@@ -77,9 +87,7 @@ export default function EditLotModal({ stock, lot, onClose }: {
             <h2 className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>Edit purchase</h2>
             <button onClick={onClose} style={{ color: 'var(--text3)' }}><X size={18} /></button>
           </div>
-          <div className="text-[11px] mb-4" style={{ color: 'var(--text3)' }}>
-            {stock.symbol}{stock.name ? ` · ${stock.name}` : ''}
-          </div>
+          <div className="text-[11px] mb-4 truncate" style={{ color: 'var(--text3)' }}>{title}</div>
 
           {error && (
             <div className="rounded-lg p-3 text-[12px] mb-3" style={{ background: 'var(--rose-bg)', border: '1px solid var(--rose)', color: 'var(--rose)' }}>
@@ -90,8 +98,8 @@ export default function EditLotModal({ stock, lot, onClose }: {
           <div className="space-y-3">
             <Field label="Date" type="date" value={date} onChange={setDate} />
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Quantity" numeric value={qty} onChange={setQty} />
-              <Field label="Price / share" numeric value={price} onChange={setPrice} />
+              <Field label={isStock ? 'Quantity' : 'Units'} numeric value={qty} onChange={setQty} />
+              <Field label={isStock ? 'Price / share' : 'NAV'} numeric value={price} onChange={setPrice} />
             </div>
             {u > 0 && p > 0 && (
               <div className="text-[11px]" style={{ color: 'var(--text3)' }}>

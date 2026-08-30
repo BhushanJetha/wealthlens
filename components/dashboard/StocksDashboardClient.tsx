@@ -950,7 +950,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
       {showAdd && <BatchPurchaseModal kind="stock" onClose={() => { setShowAdd(false); router.refresh(); loadStockTxns() }} />}
       {showImport && <HoldingsUploadModal kind="stocks" onClose={() => { setShowImport(false); router.refresh() }} />}
       {addLots && <BatchPurchaseModal kind="stock" existing={addLots} onClose={() => { setAddLots(null); router.refresh(); loadStockTxns() }} />}
-      {editLot && <EditLotModal stock={editLot.stock} lot={editLot.lot} onClose={() => { setEditLot(null); router.refresh(); loadStockTxns() }} />}
+      {editLot && <EditLotModal kind="stock" holding={editLot.stock} lot={editLot.lot} onClose={() => { setEditLot(null); router.refresh(); loadStockTxns() }} />}
       {editStock && <EditHoldingModal kind="stock" row={editStock} onClose={() => { setEditStock(null); router.refresh() }} />}
       {deleteStock && (
         <Overlay>

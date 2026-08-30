@@ -16,6 +16,7 @@ import {
 import Link from 'next/link'
 import EditHoldingModal from '@/components/forms/EditHoldingModal'
 import BatchPurchaseModal from '@/components/forms/BatchPurchaseModal'
+import EditLotModal from '@/components/forms/EditLotModal'
 import HoldingsUploadModal from '@/components/forms/HoldingsUploadModal'
 import InvestmentTimeline from '@/components/dashboard/InvestmentTimeline'
 import InvestmentMatrix from '@/components/dashboard/InvestmentMatrix'
@@ -137,6 +138,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
   const [sipReminder, setSipReminder] = useState<any | null>(null)
   const [markingPaid, setMarkingPaid] = useState(false)
   const [addLotsFund, setAddLotsFund] = useState<any | null>(null)
+  const [editLot, setEditLot]         = useState<{ fund: any; lot: any } | null>(null)
   const [lumpsumFund, setLumpsumFund] = useState<any | null>(null)
   const [lumpsumAmt, setLumpsumAmt]   = useState('')
   const [lumpsumDate, setLumpsumDate] = useState(new Date().toISOString().slice(0, 10))
@@ -875,31 +877,38 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
                             {/* Investment history */}
                             <div className="space-y-2">
                               <div className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Investment History</div>
-                              {(fundHistory[f.id] ?? []).length === 0 ? (
-                                <div className="text-[11px] py-3" style={{ color: 'var(--text3)' }}>
-                                  {fundHistory[f.id] ? 'No recorded transactions. Use Lumpsum/SIP buttons to track investments.' : 'Loading…'}
-                                </div>
-                              ) : (
-                                <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
-                                  {(fundHistory[f.id] ?? []).map((tx, i) => (
-                                    <div key={i} className="flex items-center justify-between text-[11px] rounded-lg px-3 py-2"
-                                      style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
-                                      <div>
-                                        <div style={{ color: 'var(--text)' }}>{tx.sub_category ?? 'Investment'}</div>
-                                        <div style={{ color: 'var(--text3)' }}>{tx.txn_date}</div>
+                              {(() => {
+                                const lots = txnsByFund[f.id] ?? []
+                                const recorded = lots.reduce((a: number, t: any) => a + Number(t.units || 0), 0)
+                                const opening = Number(f.units || 0) - recorded
+                                if (lots.length === 0 && opening <= 0.001) {
+                                  return <div className="text-[11px] py-3" style={{ color: 'var(--text3)' }}>No recorded purchases yet. Use "Add purchases / SIP" below to build your history.</div>
+                                }
+                                const lotsInvested = lots.reduce((a: number, t: any) => a + Number(t.amount || 0), 0)
+                                const openingInvested = Math.max(0, Number(f.invested_amount || 0) - lotsInvested)
+                                const openingNav = opening > 0.001 ? openingInvested / opening : 0
+                                return (
+                                  <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+                                    {opening > 0.001 && (
+                                      <div className="flex items-center justify-between text-[11px] rounded-lg px-3 py-1.5" style={{ background: 'var(--card)', border: '1px dashed var(--border2)' }}>
+                                        <div style={{ color: 'var(--text3)' }}>Initial holding · <span className="font-mono">{+opening.toFixed(3)}</span> u @ ₹{openingNav.toFixed(2)}</div>
+                                        <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(openingInvested).toLocaleString('en-IN')}</div>
                                       </div>
-                                      <div className="font-mono font-semibold" style={{ color: 'var(--sage)' }}>
-                                        ₹{Number(tx.amount).toLocaleString('en-IN')}
+                                    )}
+                                    {lots.map((t: any, i: number) => (
+                                      <div key={t.id ?? i} className="flex items-center gap-2 text-[11px] rounded-lg px-3 py-1.5" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+                                        <div className="flex-1" style={{ color: 'var(--text2)' }}>{t.txn_date} · <span className="font-mono">{Number(t.units).toFixed(3)}</span> u @ ₹{Number(t.nav).toFixed(2)}</div>
+                                        <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(Number(t.amount)).toLocaleString('en-IN')}</div>
+                                        <button onClick={() => setEditLot({ fund: f, lot: t })} className="p-1 rounded hover:bg-blue-50" style={{ color: 'var(--blue)' }} aria-label="Edit purchase"><Pencil size={11} /></button>
                                       </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
+                                    ))}
+                                  </div>
+                                )
+                              })()}
                               <button onClick={() => setAddLotsFund(f)}
                                 className="text-[11px] font-semibold px-3 py-1.5 rounded-lg border w-full text-center"
                                 style={{ borderColor: 'var(--sage)', color: 'var(--sage)', background: 'var(--sage-bg)' }}>
-                                <IndianRupee size={10} className="inline mr-1" /> Add Lumpsum Investment
-                              </button>
+                                <IndianRupee size={10} className="inline mr-1" /> Add purchases / SIP</button>
                               <div className="flex gap-2">
                                 <button onClick={() => setEditFund(f)}
                                   className="flex-1 text-[11px] font-semibold px-3 py-1.5 rounded-lg border text-center"
@@ -1009,6 +1018,35 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
                           </div>
                         ))}
                       </div>
+                      {(() => {
+                        const lots = txnsByFund[f.id] ?? []
+                        const recorded = lots.reduce((a: number, t: any) => a + Number(t.units || 0), 0)
+                        const opening = Number(f.units || 0) - recorded
+                        if (lots.length === 0 && opening <= 0.001) return null
+                        const lotsInvested = lots.reduce((a: number, t: any) => a + Number(t.amount || 0), 0)
+                        const openingInvested = Math.max(0, Number(f.invested_amount || 0) - lotsInvested)
+                        const openingNav = opening > 0.001 ? openingInvested / opening : 0
+                        return (
+                          <div>
+                            <div className="text-[9px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>Purchase History</div>
+                            <div className="space-y-1 max-h-40 overflow-y-auto">
+                              {opening > 0.001 && (
+                                <div className="flex items-center justify-between text-[11px] rounded-lg px-2.5 py-1.5" style={{ background: 'var(--card)', border: '1px dashed var(--border2)' }}>
+                                  <div style={{ color: 'var(--text3)' }}>Initial · {+opening.toFixed(3)} u @ ₹{openingNav.toFixed(2)}</div>
+                                  <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(openingInvested).toLocaleString('en-IN')}</div>
+                                </div>
+                              )}
+                              {lots.map((t: any, i: number) => (
+                                <div key={t.id ?? i} className="flex items-center gap-2 text-[11px] rounded-lg px-2.5 py-1.5" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+                                  <div className="flex-1" style={{ color: 'var(--text2)' }}>{t.txn_date} · {Number(t.units).toFixed(3)} u @ ₹{Number(t.nav).toFixed(2)}</div>
+                                  <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(Number(t.amount)).toLocaleString('en-IN')}</div>
+                                  <button onClick={() => setEditLot({ fund: f, lot: t })} className="p-1.5 rounded" style={{ color: 'var(--blue)' }} aria-label="Edit purchase"><Pencil size={12} /></button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })()}
                       <div className="grid grid-cols-2 gap-2">
                         <button onClick={() => openSipModal(f)}
                           className="wl-tap flex items-center justify-center gap-1 px-3 rounded-lg border text-[11px] font-semibold"
@@ -1203,6 +1241,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
       {showAdd && <BatchPurchaseModal kind="mutual_fund" onClose={() => { setShowAdd(false); router.refresh(); loadMfTxns() }} />}
       {showImport && <HoldingsUploadModal kind="mutual_funds" onClose={() => { setShowImport(false); router.refresh() }} />}
       {addLotsFund && <BatchPurchaseModal kind="mutual_fund" existing={addLotsFund} onClose={() => { const f = addLotsFund; setAddLotsFund(null); router.refresh(); loadMfTxns(); if (f) loadFundHistory(f) }} />}
+      {editLot && <EditLotModal kind="mutual_fund" holding={editLot.fund} lot={editLot.lot} onClose={() => { setEditLot(null); router.refresh(); loadMfTxns() }} />}
       {editFund && <EditHoldingModal kind="mutual_fund" row={editFund} onClose={() => { setEditFund(null); router.refresh() }} />}
       {repickFund && (
         <Overlay>
