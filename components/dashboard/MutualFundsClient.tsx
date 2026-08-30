@@ -136,6 +136,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
   const [sipSaving, setSipSaving]     = useState(false)
   const [sipReminder, setSipReminder] = useState<any | null>(null)
   const [markingPaid, setMarkingPaid] = useState(false)
+  const [addLotsFund, setAddLotsFund] = useState<any | null>(null)
   const [lumpsumFund, setLumpsumFund] = useState<any | null>(null)
   const [lumpsumAmt, setLumpsumAmt]   = useState('')
   const [lumpsumDate, setLumpsumDate] = useState(new Date().toISOString().slice(0, 10))
@@ -225,23 +226,22 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
   // Sync when the server sends fresh data (e.g. after a PDF import → router.refresh())
   useEffect(() => { setFunds(initialFunds) }, [initialFunds])
 
-  // ── investment transaction history (CAMS import) ───────────────────────
-  useEffect(() => {
-    (async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      try {
-        const { data } = await supabase
-          .from('investment_transactions')
-          .select('*').eq('user_id', user.id).eq('asset_type', 'mutual_fund')
-          .order('txn_date', { ascending: true })
-        const grouped: Record<string, any[]> = {}
-        ;(data ?? []).forEach((t: any) => { const k = t.asset_id ?? 'none'; (grouped[k] ||= []).push(t) })
-        setTxnsByFund(grouped)
-        setAllMfTxns(data ?? [])
-      } catch { /* table not migrated yet */ }
-    })()
-  }, []) // eslint-disable-line
+  // ── investment transaction history (re-runnable so it refreshes after a buy) ──
+  async function loadMfTxns() {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    try {
+      const { data } = await supabase
+        .from('investment_transactions')
+        .select('*').eq('user_id', user.id).eq('asset_type', 'mutual_fund')
+        .order('txn_date', { ascending: true })
+      const grouped: Record<string, any[]> = {}
+      ;(data ?? []).forEach((t: any) => { const k = t.asset_id ?? 'none'; (grouped[k] ||= []).push(t) })
+      setTxnsByFund(grouped)
+      setAllMfTxns(data ?? [])
+    } catch { /* table not migrated yet */ }
+  }
+  useEffect(() => { loadMfTxns() }, []) // eslint-disable-line
 
   async function confirmDelete() {
     if (!deleteFund) return
@@ -446,7 +446,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
           <FileUp size={14} className="inline mr-1.5" /> Import from PDF
         </button>
       </div>
-      {showAdd && <BatchPurchaseModal kind="mutual_fund" onClose={() => { setShowAdd(false); router.refresh() }} />}
+      {showAdd && <BatchPurchaseModal kind="mutual_fund" onClose={() => { setShowAdd(false); router.refresh(); loadMfTxns() }} />}
       {showImport && <HoldingsUploadModal kind="mutual_funds" onClose={() => { setShowImport(false); router.refresh() }} />}
     </div>
   )
@@ -787,7 +787,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
                             style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>
                             {f.has_sip ? '✏ SIP' : '+ SIP'}
                           </button>
-                          <button onClick={() => { setLumpsumFund(f); setLumpsumAmt('') }}
+                          <button onClick={() => setAddLotsFund(f)}
                             className="px-2 py-1 rounded text-[10px] font-semibold border transition-all hover:shadow-sm"
                             style={{ borderColor: 'var(--sage)', color: 'var(--sage)', background: 'var(--sage-bg)' }}>
                             + More
@@ -895,7 +895,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
                                   ))}
                                 </div>
                               )}
-                              <button onClick={() => { setLumpsumFund(f); setLumpsumAmt('') }}
+                              <button onClick={() => setAddLotsFund(f)}
                                 className="text-[11px] font-semibold px-3 py-1.5 rounded-lg border w-full text-center"
                                 style={{ borderColor: 'var(--sage)', color: 'var(--sage)', background: 'var(--sage-bg)' }}>
                                 <IndianRupee size={10} className="inline mr-1" /> Add Lumpsum Investment
@@ -1015,7 +1015,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
                           style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>
                           {f.has_sip ? '✏ Edit SIP' : '+ Add SIP'}
                         </button>
-                        <button onClick={() => { setLumpsumFund(f); setLumpsumAmt('') }}
+                        <button onClick={() => setAddLotsFund(f)}
                           className="wl-tap flex items-center justify-center gap-1 px-3 rounded-lg border text-[11px] font-semibold"
                           style={{ borderColor: 'var(--sage)', color: 'var(--sage)', background: 'var(--sage-bg)' }}>
                           <IndianRupee size={11} /> Add Lumpsum
@@ -1200,8 +1200,9 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
         )
       })()}
 
-      {showAdd && <BatchPurchaseModal kind="mutual_fund" onClose={() => { setShowAdd(false); router.refresh() }} />}
+      {showAdd && <BatchPurchaseModal kind="mutual_fund" onClose={() => { setShowAdd(false); router.refresh(); loadMfTxns() }} />}
       {showImport && <HoldingsUploadModal kind="mutual_funds" onClose={() => { setShowImport(false); router.refresh() }} />}
+      {addLotsFund && <BatchPurchaseModal kind="mutual_fund" existing={addLotsFund} onClose={() => { const f = addLotsFund; setAddLotsFund(null); router.refresh(); loadMfTxns(); if (f) loadFundHistory(f) }} />}
       {editFund && <EditHoldingModal kind="mutual_fund" row={editFund} onClose={() => { setEditFund(null); router.refresh() }} />}
       {repickFund && (
         <Overlay>

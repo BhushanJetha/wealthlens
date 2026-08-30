@@ -65,6 +65,11 @@ export default function BatchPurchaseModal({ kind, onClose, existing }: {
   const [currency, setCurrency] = useState<string>(existing?.currency ?? 'INR')
   const [recordExpense, setRecordExpense] = useState(true)
   const [lots, setLots]         = useState<Lot[]>([newLot()])
+  const [showSip, setShowSip]   = useState(false)
+  const [sipAmt, setSipAmt]     = useState('')
+  const [sipNav, setSipNav]     = useState('')
+  const [sipStart, setSipStart] = useState(new Date().toISOString().slice(0, 7))
+  const [sipCount, setSipCount] = useState('12')
   const [saving, setSaving]     = useState(false)
   const [error, setError]       = useState('')
 
@@ -79,6 +84,22 @@ export default function BatchPurchaseModal({ kind, onClose, existing }: {
   const updateLot = (id: string, patch: Partial<Lot>) => setLots(ls => ls.map(l => l._id === id ? { ...l, ...patch } : l))
   const addLot    = () => setLots(ls => [...ls, newLot()])
   const removeLot = (id: string) => setLots(ls => ls.length > 1 ? ls.filter(l => l._id !== id) : ls)
+
+  // Generate one dated entry per past month (a monthly SIP) at a fixed amount.
+  function generateSip() {
+    const amt = Number(sipAmt), nav = Number(sipNav), n = Math.floor(Number(sipCount) || 0)
+    if (!(amt > 0) || !(nav > 0) || n < 1 || !sipStart) { setError('Fill SIP amount, NAV/price, start month and number of installments.'); return }
+    const [y, m] = sipStart.split('-').map(Number)
+    const today = new Date()
+    const rows: Lot[] = []
+    for (let i = 0; i < Math.min(n, 240); i++) {
+      const dt = new Date(y, (m - 1) + i, 1)
+      if (dt > today) break
+      rows.push({ _id: `l${++LOT_SEQ}`, date: dt.toISOString().slice(0, 10), qty: String(Math.round((amt / nav) * 1000) / 1000), price: String(nav) })
+    }
+    if (!rows.length) { setError('That start month is in the future — pick an earlier month.'); return }
+    setLots(rows); setError(''); setShowSip(false)
+  }
 
   const valid = lots.map(l => ({ ...l, q: Number(l.qty), p: Number(l.price) })).filter(l => l.q > 0 && l.p > 0 && l.date)
   const totalUnits    = valid.reduce((s, l) => s + l.q, 0)
@@ -220,6 +241,37 @@ export default function BatchPurchaseModal({ kind, onClose, existing }: {
             <div className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text3)' }}>
               Purchases {isStock ? '(qty × price)' : '(units × NAV)'}
             </div>
+
+            {/* SIP quick-fill — generate monthly entries */}
+            <button type="button" onClick={() => setShowSip(v => !v)}
+              className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border text-[12px] font-semibold mb-2"
+              style={{ borderColor: 'var(--blue)', color: 'var(--blue)', background: 'var(--blue-bg)' }}>
+              <CalendarPlus size={13} /> {showSip ? 'Hide SIP generator' : 'Generate SIP entries (monthly)'}
+            </button>
+            {showSip && (
+              <div className="rounded-xl p-3 space-y-2 mb-2" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label={isStock ? 'Amount / month' : 'SIP amount / month'} numeric value={sipAmt} onChange={setSipAmt} placeholder="5000" />
+                  <Field label={isStock ? 'Price (approx)' : 'NAV (approx)'} numeric value={sipNav} onChange={setSipNav} placeholder="68.20" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className={LBL} style={{ color: 'var(--text3)' }}>Start month</label>
+                    <input type="month" value={sipStart} max={new Date().toISOString().slice(0, 7)}
+                      onChange={e => setSipStart(e.target.value)} className={INP} style={inpStyle} />
+                  </div>
+                  <Field label="# installments" numeric value={sipCount} onChange={setSipCount} placeholder="12" />
+                </div>
+                <button type="button" onClick={generateSip}
+                  className="w-full py-2 rounded-lg text-white text-[12px] font-bold" style={{ background: 'var(--blue)' }}>
+                  Generate entries
+                </button>
+                <div className="text-[10px] leading-snug" style={{ color: 'var(--text3)' }}>
+                  Creates one dated entry per past month at that amount{isStock ? '' : ' & NAV'}. Adjust individual {isStock ? 'prices' : 'NAVs'} below if you have the exact figures.
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2">
               {lots.map((l, i) => (
                 <div key={l._id} className="rounded-xl p-2.5" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
