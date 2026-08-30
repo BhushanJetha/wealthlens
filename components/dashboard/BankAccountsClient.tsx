@@ -39,7 +39,7 @@ export default function BankAccountsClient({ accounts }: { accounts: any[] }) {
     view === 'consolidated' ? (cur === 'AED' ? amt * FX : amt) : amt
 
   const totalBalance = filtered.reduce((a, acc) =>
-    a + toConv(Number(acc.outstanding_bal ?? acc.current_balance ?? 0), acc.currency), 0)
+    a + toConv((Number(acc.current_balance) || Number(acc.outstanding_bal) || 0), acc.currency), 0)
 
   async function handleDelete() {
     if (!deleteId) return
@@ -100,7 +100,7 @@ export default function BankAccountsClient({ accounts }: { accounts: any[] }) {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((acc: any) => {
-            const bal      = Number(acc.outstanding_bal ?? acc.current_balance ?? 0)
+            const bal      = (Number(acc.current_balance) || Number(acc.outstanding_bal) || 0)
             const lSym     = acc.currency === 'AED' ? 'AED ' : '₹'
             const typeCol  = TYPE_COLORS[acc.account_type] ?? 'var(--text2)'
             return (

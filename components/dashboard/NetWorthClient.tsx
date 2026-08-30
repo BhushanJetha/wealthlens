@@ -48,7 +48,9 @@ export default function NetWorthClient(p: Props) {
     const sumBy = (rows: any[], val: (r: any) => number) =>
       rows.reduce((s, r) => s + disp(val(r), r.currency || 'INR'), 0)
 
-    const bankVal  = sumBy(bankCash,            a => Number(a.outstanding_bal ?? a.current_balance ?? 0))
+    // Bank/cash balance lives in current_balance (outstanding_bal is 0 for these
+    // and holds the DEBT on credit cards). Use || so a 0 falls through, not ??.
+    const bankVal  = sumBy(bankCash,            a => Number(a.current_balance) || Number(a.outstanding_bal) || 0)
     const stockVal = sumBy(p.stocks,            x => Number(x.quantity || 0) * Number(x.current_price ?? x.avg_buy_price ?? 0))
     const mfVal    = sumBy(p.mutualFunds,       m => Number(m.units || 0) * Number(m.current_nav ?? m.avg_nav ?? 0))
     const etfVal   = sumBy(p.etf,               e => Number(e.units || 0) * Number(e.current_price ?? e.avg_buy_price ?? 0))

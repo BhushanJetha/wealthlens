@@ -69,7 +69,7 @@ export default function DashboardClient({ transactions, loans, accounts, stocks,
     // Full equity (all investment types) for D/E widget — view-filtered
     const convV = (amt: number, cur: string) => view === 'consolidated' ? toINR(amt, cur, FX) : amt
     // Bank & cash balances (non-credit-card accounts) — part of net worth
-    const bankVal  = filterByView(accounts.filter((a: any) => a.account_type !== 'credit_card')).reduce((a: number, x: any) => a + convV(Number(x.outstanding_bal ?? x.current_balance ?? 0), x.currency ?? 'INR'), 0)
+    const bankVal  = filterByView(accounts.filter((a: any) => a.account_type !== 'credit_card')).reduce((a: number, x: any) => a + convV(Number(x.current_balance) || Number(x.outstanding_bal) || 0, x.currency ?? 'INR'), 0)
     // RD current value = amount paid in so far (not the full committed total)
     const rdVal    = filterByView(recurringDeposits ?? []).reduce((a: number, r: any) => a + convV(r.current_amount != null ? Number(r.current_amount) : Number(r.monthly_amount ?? 0) * Number(r.months_paid ?? 0), r.currency ?? 'INR'), 0)
     const npsVal   = filterByView(npsAccounts ?? []).reduce((a: number, n: any) => a + Number(n.corpus_amount ?? 0), 0)
