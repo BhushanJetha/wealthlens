@@ -165,26 +165,35 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
   // Spend (the same txns as Total Monthly Expenses) split by the account / card
   // it was paid from. Card-bill payments aren't charged to the paying bank
   // account — that spend already sits on the card.
+  // Rows merge by account NAME, not record id — the same account saved twice
+  // (e.g. Wio as both current & savings) or Cash kept per currency is one row.
+  const acctKey = (t: any) => !t.account_id ? '__none__'
+    : (t.accounts?.name || '').toLowerCase().replace(/\s+/g, ' ').trim() || t.account_id
   const accountRows = useMemo(() => {
-    const map: Record<string, { key: string; name: string; sub: string; type: string; byMonth: Record<string, number>; total: number }> = {}
+    const map: Record<string, { key: string; name: string; sub: string; type: string; currencies: Set<string>; byMonth: Record<string, number>; total: number }> = {}
     yearTxns.forEach(t => {
       const m = t.txn_date?.slice(0, 7); if (!m || classify(catOf(t)) !== 'expense') return
-      const key = t.account_id || '__none__'
+      const key = acctKey(t)
       if (!map[key]) {
         const a = t.accounts
+        const name: string = a?.name || (t.account_id ? 'Unknown account' : 'No account linked')
+        // Only show bank / last-4 when the name doesn't already carry them
+        const lower = name.toLowerCase()
         map[key] = {
-          key,
-          name: a?.name || (t.account_id ? 'Unknown account' : 'No account linked'),
-          sub: [a?.bank_name && a.bank_name !== a.name ? a.bank_name : '', a?.last_four ? `••${a.last_four}` : ''].filter(Boolean).join(' · '),
+          key, name,
+          sub: [a?.bank_name && !lower.includes(String(a.bank_name).toLowerCase()) ? a.bank_name : '',
+                a?.last_four && !name.includes(a.last_four) ? `••${a.last_four}` : ''].filter(Boolean).join(' · '),
           type: t.account_id ? (a?.account_type || '') : 'none',
-          byMonth: {}, total: 0,
+          currencies: new Set(), byMonth: {}, total: 0,
         }
       }
       const v = disp(t)
+      map[key].currencies.add(t.currency)
       map[key].byMonth[m] = (map[key].byMonth[m] ?? 0) + v
       map[key].total += v
     })
     return Object.values(map).filter(r => r.total > 0)
+      .map(r => r.currencies.size > 1 ? { ...r, sub: [r.sub, Array.from(r.currencies).sort().join(' + ')].filter(Boolean).join(' · ') } : r)
       .sort((a, b) => (a.key === '__none__' ? 1 : 0) - (b.key === '__none__' ? 1 : 0) || b.total - a.total)
   }, [yearTxns, view, FX])
 
@@ -500,7 +509,7 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
                     {accountRows.map((r, ri) => {
                       const Icon = r.type === 'credit_card' ? CreditCard : r.type === 'wallet' || r.type === 'nol' ? Wallet : r.type === 'none' ? Link2Off : Landmark
                       const iconColor = r.type === 'credit_card' ? CC_COLOR : r.type === 'none' ? 'var(--text3)' : 'var(--blue)'
-                      const acctItems = (m?: string) => yearTxns.filter((t: any) => (t.account_id || '__none__') === r.key
+                      const acctItems = (m?: string) => yearTxns.filter((t: any) => acctKey(t) === r.key
                         && classify(catOf(t)) === 'expense' && (!m || t.txn_date?.slice(0, 7) === m))
                       return (
                         <tr key={r.key} style={{ borderBottom: '1px solid var(--border)' }} className="hover:bg-stone-50 transition-colors">
