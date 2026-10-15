@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { X, Loader2, Plus, ArrowRight, RefreshCw } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { useViewStore } from '@/store/viewStore'
 
 const EXPENSE_CATS = ['Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment','Travel','Trip/Vacation','Event/Function','Education','Subscription','Investment','Tax Payment','EMI/Loan','Loan on Card','Credit Card Payment','Family Transfer','Refund','Other']
 const INCOME_CATS  = ['UAE Income (NRO)','Salary','NRE Received','Dividend','Interest','FD/RD Maturity','Rental','Gift','Bonus','Tax Refund','Freelance','NRI Transfer','Loan Taken','Refund','Other']
@@ -37,6 +38,8 @@ export default function AddTransactionModal({ onClose, onAdded, defaults }: {
   onAdded?: () => void
   defaults?: Partial<{ txn_type: string; account_id: string; category: string; currency: string; sub_category: string; merchant: string; amount: string; txn_date: string; description: string }>
 }) {
+  // In the UAE view new entries default to AED; India/Consolidated default to INR
+  const { view } = useViewStore()
   const [form, setForm] = useState({
     txn_date:     defaults?.txn_date ?? new Date().toISOString().slice(0, 10),
     merchant:     defaults?.merchant ?? '',
@@ -44,7 +47,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults }: {
     category:     defaults?.category ?? (defaults?.txn_type === 'income' ? 'Salary' : 'Food'),
     sub_category: defaults?.sub_category ?? '',
     amount:       defaults?.amount ?? '',
-    currency:     defaults?.currency ?? 'INR',
+    currency:     defaults?.currency ?? (view === 'uae' ? 'AED' : 'INR'),
     txn_type:     defaults?.txn_type ?? 'expense',
     account_id:   defaults?.account_id ?? '',
   })
@@ -78,7 +81,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults }: {
   }
 
   useEffect(() => {
-    if (form.txn_type === 'transfer' && form.currency === 'AED' && liveRate === null) {
+    if (form.currency === 'AED' && liveRate === null) {
       fetchLiveRate()
     }
   }, [form.txn_type, form.currency])

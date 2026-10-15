@@ -9,7 +9,7 @@ export default async function ExpensesReportPage() {
   const thisMonth = new Date().toISOString().slice(0, 7)
 
   const [txnsRes, incomeRes, budgetsRes] = await Promise.all([
-    supabase.from('transactions').select('*, accounts(name,bank_name,account_type)')
+    supabase.from('transactions').select('*, accounts(name,bank_name,account_type,last_four)')
       .eq('user_id', uid).in('txn_type', ['expense', 'transfer', 'loan'])
       .order('txn_date', { ascending: true }).limit(8000),
     supabase.from('transactions').select('amount,currency,txn_date,category,account_id, accounts(name,bank_name)')
