@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "seed:demo": "node scripts/seed-demo.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27.0",
