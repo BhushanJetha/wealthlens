@@ -230,8 +230,11 @@ export default function BankStatementUploadModal({ onClose }: Props) {
       existingId = data?.[0]?.id ?? null
     }
     if (!existingId) {
+      // Never fall back onto a credit card — a bank statement would otherwise
+      // rename the card and overwrite its last-4 / balance.
       const { data } = await supabase.from('accounts').select('id')
-        .eq('user_id', user!.id).eq('currency', result.currency).ilike('bank_name', result.bank_name).limit(1)
+        .eq('user_id', user!.id).eq('currency', result.currency).ilike('bank_name', result.bank_name)
+        .neq('account_type', 'credit_card').limit(1)
       existingId = data?.[0]?.id ?? null
     }
 
