@@ -29,15 +29,18 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg)' }}>
-      <Sidebar />
+      <Sidebar user={profile} />
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <Topbar user={profile} />
-        <main className="flex-1 overflow-y-auto px-3 sm:px-5 pt-3 sm:pt-5 pb-24 md:pb-8">
-          <SectionTabs />
-          {children}
-        </main>
+        {/* Content + docked AI advisor (design: advisor sits right of the page) */}
+        <div className="flex flex-1 min-h-0">
+          <main className="flex-1 min-w-0 overflow-y-auto px-4 md:px-7 pt-4 md:pt-6 pb-24 md:pb-8" style={{ background: 'var(--bg)' }}>
+            <SectionTabs />
+            {children}
+          </main>
+          <ChatPanel />
+        </div>
       </div>
-      <ChatPanel userId={user.id} />
       <MobileTabBar />
       <CommandPalette />
     </div>

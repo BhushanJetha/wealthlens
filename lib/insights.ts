@@ -55,15 +55,21 @@ export interface Insight { id: string; tone: 'good' | 'warn' | 'neutral'; title:
 export interface Upcoming { id: string; date: string; label: string; sub: string; amount: number; currency: string; kind: 'emi' | 'card' | 'premium' | 'fd' | 'sip' }
 export interface CatRow { cat: string; label: string; value: number; baseline: number | null }
 
+export interface ForecastPoint { date: string; value: number }
+export interface Forecast { points: ForecastPoint[]; low: ForecastPoint; end: number; lowAfter: string | null }
+
 export interface HomeInsights {
   isCurrent: boolean; dayCut: number | null
   income: Kpi; spend: Kpi
   saved: { value: number; rate: number | null; baselineRate: number | null; comparable: boolean }
   runway: { months: number | null; avgSpend: number }
+  // Averages over the last 3 complete months (savings rate in %)
+  trend: { avgIncome: number; avgSpend: number; savingsRate: number | null; months: number }
   categories: CatRow[]
   attention: Attention[]
   insights: Insight[]
   upcoming: Upcoming[]
+  forecast: Forecast | null
 }
 
 const SEV_RANK = { high: 0, medium: 1, low: 2 }
@@ -354,7 +360,54 @@ export function buildHomeInsights(inp: InsightInput): HomeInsights {
   }
   upcoming.sort((a, b) => a.date.localeCompare(b.date))
 
-  return { isCurrent, dayCut, income, spend, saved, runway, categories, attention, insights, upcoming }
+  // ─── 30-day cash-flow forecast ────────────────────────────────────────────
+  // Start from bank & cash, add the usual income on the day it usually lands,
+  // subtract scheduled EMIs / SIPs / premiums, add FD maturities, and burn the
+  // remaining average spend evenly. Card bills are left out: they settle spend
+  // that the daily run-rate already counts. An estimate, labelled as such.
+  let forecast: Forecast | null = null
+  if (inp.cash > 0 || avgIncFull > 0) {
+    const salaryDays: number[] = []
+    for (const m of [1, 2, 3].map(i => addMonths(thisMonth, -i))) {
+      const top = txns.filter(t => ymOf(t.txn_date) === m && isIncome(t)).sort((a, b) => amt(b) - amt(a))[0]
+      if (top) salaryDays.push(Number(top.txn_date.slice(8, 10)))
+    }
+    const salaryDay = salaryDays.length
+      ? salaryDays.sort((a, b) => salaryDays.filter(d => d === b).length - salaryDays.filter(d => d === a).length)[0]
+      : null
+    const sched = upcoming.filter(u => u.kind !== 'card')
+    const schedOut = sched.filter(u => u.kind !== 'fd')
+      .reduce((a, u) => a + viewAmount(u.amount, u.currency, view, fx), 0)
+    const daily = Math.max(0, avgSpendFull - schedOut) / 30
+    let bal = inp.cash
+    const points: ForecastPoint[] = [{ date: today, value: Math.round(bal) }]
+    let low = points[0], lowAfter: string | null = null
+    for (let d = 1; d <= 30; d++) {
+      const date = addDaysTo(today, d)
+      bal -= daily
+      if (salaryDay && Number(date.slice(8, 10)) === Math.min(salaryDay, daysInMonth(ymOf(date)))) bal += avgIncFull
+      for (const u of sched.filter(x => x.date === date)) {
+        const v = viewAmount(u.amount, u.currency, view, fx)
+        bal += u.kind === 'fd' ? v : -v
+      }
+      const p = { date, value: Math.round(bal) }
+      points.push(p)
+      if (p.value < low.value) { low = p; lowAfter = sched.find(x => x.date <= date && x.kind !== 'fd' && x.date >= addDaysTo(date, -3))?.label ?? null }
+    }
+    forecast = { points, low, end: Math.round(bal), lowAfter }
+  }
+
+  const trend = {
+    avgIncome: avgIncFull, avgSpend: avgSpendFull, months: full.length,
+    savingsRate: avgIncFull > 0 ? Math.round((avgIncFull - avgSpendFull) / avgIncFull * 100) : null,
+  }
+
+  return { isCurrent, dayCut, income, spend, saved, runway, trend, categories, attention, insights, upcoming, forecast }
+}
+
+function addDaysTo(date: string, n: number) {
+  const d = new Date(utc(date) + n * 86400000)
+  return d.toISOString().slice(0, 10)
 }
 
 function ordinal(n: number) {

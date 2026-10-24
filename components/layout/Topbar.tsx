@@ -1,10 +1,13 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
 import { useViewStore } from '@/store/viewStore'
-import { ArrowLeftRight, User, ChevronLeft, ChevronRight, Calendar, X, Upload, Menu, Search } from 'lucide-react'
+import { usePathname } from 'next/navigation'
+import { ChevronLeft, ChevronRight, Calendar, X, Search } from 'lucide-react'
 import NotificationsPanel from './NotificationsPanel'
+import HolderChips from './HolderChips'
 import BankStatementUploadModal from '@/components/forms/BankStatementUploadModal'
 import { useUiStore } from '@/store/uiStore'
+import { resolveNav } from '@/lib/nav'
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const MONTH_NAMES_LONG = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -81,8 +84,8 @@ function MonthRangePicker({ from, to, onApply, onClose }: {
   }
 
   return (
-    <div className="absolute top-full left-0 mt-2 z-50 rounded-2xl shadow-2xl overflow-hidden"
-      style={{ background: '#fff', border: '1px solid var(--border)', minWidth: 320, width: 340 }}>
+    <div className="absolute top-full left-0 mt-2 z-50 rounded-2xl shadow-2xl overflow-hidden w-[340px] max-md:fixed max-md:left-3 max-md:right-3 max-md:top-16 max-md:mt-0 max-md:w-auto"
+      style={{ background: '#fff', border: '1px solid var(--border)' }}>
 
       {/* Presets */}
       <div className="flex gap-1.5 p-3 pb-0">
@@ -164,10 +167,16 @@ function MonthRangePicker({ from, to, onApply, onClose }: {
 }
 
 export default function Topbar({ user }: { user: any }) {
-  const { view, setView, fromMonth, toMonth, setDateRange, fxRate, setFxRate } = useViewStore()
-  const { setSidebarOpen, uploadOpen, setUploadOpen, setPaletteOpen } = useUiStore()
+  const { view, setView, fromMonth, toMonth, setDateRange, setFxRate } = useViewStore()
+  const { uploadOpen, setUploadOpen, setPaletteOpen, advisorOpen, openAdvisor, closeAdvisor } = useUiStore()
   const [pickerOpen,  setPickerOpen]  = useState(false)
-  const wrapRef = useRef<HTMLDivElement>(null)
+  const deskRef = useRef<HTMLDivElement>(null)
+  const mobRef  = useRef<HTMLDivElement>(null)
+  const pathname = usePathname()
+  const { section, tab, sub } = resolveNav(pathname)
+  const crumbs = [section?.label ?? 'WealthLens', tab && tab.label !== section?.label ? tab.label : null, sub && sub.label !== 'Overview' ? sub.label : null]
+    .filter(Boolean) as string[]
+  const firstName = (user?.full_name ?? '').split(' ')[0] || null
 
   // Fetch live AED→INR rate once on mount; store in viewStore so all pages share it
   useEffect(() => {
@@ -180,19 +189,20 @@ export default function Topbar({ user }: { user: any }) {
   // Close picker when clicking outside
   useEffect(() => {
     if (!pickerOpen) return
+    // The picker renders in both the desktop and mobile headers (one hidden)
     function handler(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setPickerOpen(false)
+      const t = e.target as Node
+      if (!deskRef.current?.contains(t) && !mobRef.current?.contains(t)) setPickerOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [pickerOpen])
 
   const views = [
-    { key: 'uae',          label: 'UAE' },
-    { key: 'india',        label: 'India' },
-    { key: 'consolidated', label: 'All' },
+    { key: 'uae',          label: 'UAE · AED',    short: 'UAE' },
+    { key: 'india',        label: 'India · INR',  short: 'India' },
+    { key: 'consolidated', label: 'Consolidated', short: 'All' },
   ] as const
-  const initials = (user?.full_name || user?.email || 'U').split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((w: string) => w[0]?.toUpperCase()).join('')
 
   const isSingleMonth = fromMonth === toMonth
 
@@ -205,107 +215,109 @@ export default function Topbar({ user }: { user: any }) {
     }
   }
 
+  const monthPicker = (ref: React.RefObject<HTMLDivElement>) => (
+    <div ref={ref} className="relative flex items-center flex-shrink-0">
+      <div className="flex items-center rounded-lg overflow-hidden h-8"
+        style={{ border: '1px solid var(--border)', background: '#fff' }}>
+        <button onClick={() => shiftRange(-1)} aria-label="Previous period"
+          className="hidden sm:block px-1.5 h-full transition-colors hover:bg-slate-50" style={{ color: 'var(--text3)' }}>
+          <ChevronLeft size={14} />
+        </button>
+        <button onClick={() => setPickerOpen(p => !p)} aria-haspopup="dialog" aria-expanded={pickerOpen}
+          className="flex items-center gap-1.5 px-2 h-full transition-colors hover:bg-slate-50 sm:border-x"
+          style={{ borderColor: 'var(--border)' }}>
+          <Calendar size={13} style={{ color: 'var(--accent)' }} />
+          <span className="text-[12.5px] font-semibold whitespace-nowrap" style={{ color: 'var(--text)' }}>
+            {formatRange(fromMonth, toMonth)}
+          </span>
+        </button>
+        {!isSingleMonth && (
+          <button onClick={() => { const m = new Date().toISOString().slice(0, 7); setDateRange(m, m) }}
+            aria-label="Back to this month" className="px-1 h-full opacity-60 hover:opacity-100" style={{ color: 'var(--text3)' }}>
+            <X size={11} />
+          </button>
+        )}
+        <button onClick={() => shiftRange(1)} aria-label="Next period"
+          className="hidden sm:block px-1.5 h-full transition-colors hover:bg-slate-50" style={{ color: 'var(--text3)' }}>
+          <ChevronRight size={14} />
+        </button>
+      </div>
+      {pickerOpen && (
+        <MonthRangePicker from={fromMonth} to={toMonth}
+          onApply={(f, t) => setDateRange(f, t)} onClose={() => setPickerOpen(false)} />
+      )}
+    </div>
+  )
+
+  const viewSwitch = (
+    <div role="radiogroup" aria-label="Country view" className="flex p-0.5 rounded-lg flex-shrink-0"
+      style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+      {views.map(v => (
+        <button key={v.key} onClick={() => setView(v.key)} role="radio" aria-checked={view === v.key}
+          className="px-3 h-7 rounded-md text-[12px] whitespace-nowrap transition-all"
+          style={view === v.key
+            ? { background: '#fff', color: 'var(--text)', fontWeight: 600, boxShadow: '0 1px 2px rgba(15,23,42,0.12)' }
+            : { color: 'var(--text3)', fontWeight: 500 }}>
+          <span className="hidden xl:inline">{v.label}</span><span className="xl:hidden">{v.short}</span>
+        </button>
+      ))}
+    </div>
+  )
+
+  const askAi = (
+    <button onClick={() => advisorOpen ? closeAdvisor() : openAdvisor()} aria-pressed={advisorOpen}
+      className="h-[34px] px-3.5 rounded-lg text-[12.5px] font-semibold flex items-center gap-1 flex-shrink-0 transition-colors"
+      style={advisorOpen
+        ? { background: 'var(--accent2)', color: '#fff' }
+        : { background: 'var(--accent-bg)', color: 'var(--accent2)', border: '1px solid var(--accent-border)' }}>
+      ✦ <span className="hidden sm:inline">Ask AI</span>
+    </button>
+  )
+
   return (
     <>
-    <header className="px-3 sm:px-5 py-2.5 flex items-center gap-2 sm:gap-3 flex-wrap min-h-[60px] safe-top"
+    {/* Desktop */}
+    <header className="hidden md:flex items-center gap-3 flex-wrap px-6 py-3 min-h-[60px]"
       style={{ background: 'var(--card)', borderBottom: '1px solid var(--border)' }}>
-
-      {/* Mobile menu toggle */}
-      <button onClick={() => setSidebarOpen(true)}
-        className="md:hidden p-1.5 rounded-lg flex-shrink-0" style={{ color: 'var(--text2)', background: 'var(--bg2)' }}
-        aria-label="Open menu">
-        <Menu size={18} />
-      </button>
-
-      {/* Month Range Picker trigger */}
-      <div ref={wrapRef} className="relative flex items-center">
-        <div className="flex items-center rounded-lg border overflow-hidden h-9"
-          style={{ borderColor: 'var(--border)', background: '#fff' }}>
-          <button onClick={() => shiftRange(-1)} aria-label="Previous period"
-            className="px-2 h-full transition-colors hover:bg-slate-50"
-            style={{ color: 'var(--text3)' }}>
-            <ChevronLeft size={14} />
-          </button>
-
-          <button onClick={() => setPickerOpen(p => !p)}
-            className="flex items-center gap-1.5 px-2 h-full transition-colors hover:bg-slate-50 min-w-[118px] sm:min-w-[140px]"
-            style={{ borderLeft: '1px solid var(--border)', borderRight: '1px solid var(--border)' }}>
-            <Calendar size={13} style={{ color: 'var(--accent)' }} />
-            <span className="text-[12.5px] font-semibold" style={{ color: 'var(--text)' }}>
-              {formatRange(fromMonth, toMonth)}
-            </span>
-            {!isSingleMonth && (
-              <button onClick={e => { e.stopPropagation(); const m = new Date().toISOString().slice(0,7); setDateRange(m,m) }}
-                className="ml-0.5 opacity-50 hover:opacity-100" style={{ color: 'var(--text3)' }}>
-                <X size={10} />
-              </button>
-            )}
-          </button>
-
-          <button onClick={() => shiftRange(1)} aria-label="Next period"
-            className="px-2 h-full transition-colors hover:bg-slate-50"
-            style={{ color: 'var(--text3)' }}>
-            <ChevronRight size={14} />
-          </button>
-        </div>
-
-        {pickerOpen && (
-          <MonthRangePicker
-            from={fromMonth}
-            to={toMonth}
-            onApply={(f, t) => setDateRange(f, t)}
-            onClose={() => setPickerOpen(false)}
-          />
-        )}
-      </div>
-
-      {/* View toggle — segmented control; full-width on its own row on mobile */}
-      <div role="radiogroup" aria-label="Country view"
-        className="flex p-0.5 rounded-lg order-last w-full md:order-none md:w-auto h-9"
-        style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-        {views.map(v => (
-          <button key={v.key} onClick={() => setView(v.key)} role="radio" aria-checked={view === v.key}
-            className="flex-1 md:flex-none px-3.5 rounded-md text-[12.5px] font-semibold transition-all"
-            style={view === v.key ? {
-              background: '#fff',
-              color: 'var(--accent2)',
-              boxShadow: '0 1px 2px rgba(15,23,42,0.08), 0 0 0 1px var(--border)',
-            } : {
-              background: 'transparent',
-              color: 'var(--text3)',
-            }}>
-            {v.label}
-          </button>
+      <nav aria-label="Breadcrumb" className="text-[13px] flex items-center gap-2 min-w-0" style={{ color: 'var(--text3)' }}>
+        {crumbs.map((c, i) => (
+          <span key={i} className="flex items-center gap-2 whitespace-nowrap">
+            {i > 0 && <span aria-hidden>›</span>}
+            <span style={i === crumbs.length - 1 ? { color: 'var(--text)', fontWeight: 500 } : undefined}>{c}</span>
+          </span>
         ))}
+      </nav>
+      {monthPicker(deskRef)}
+      <div className="ml-auto flex items-center gap-2.5 flex-wrap justify-end">
+        <div className="pr-2.5" style={{ borderRight: '1px solid var(--border)' }}>
+          <HolderChips firstName={firstName} />
+        </div>
+        {viewSwitch}
+        <NotificationsPanel />
+        {askAi}
       </div>
+    </header>
 
-      <div className="hidden lg:flex items-center gap-1.5 rounded-lg px-3 h-9 text-[12px]"
-        style={{ background: '#fff', border: '1px solid var(--border)' }}
-        title="Live AED → INR rate used for the All view">
-        <ArrowLeftRight size={12} style={{ color: 'var(--text3)' }} />
-        <span style={{ color: 'var(--text3)' }}>1 AED</span>
-        <span className="font-semibold font-mono" style={{ color: 'var(--text)' }}>₹{fxRate.toFixed(2)}</span>
-        <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--income)' }} aria-label="Live rate" />
-      </div>
-
-      <div className="ml-auto flex items-center gap-2">
+    {/* Mobile */}
+    <header className="md:hidden safe-top" style={{ background: 'var(--card)', borderBottom: '1px solid var(--border)' }}>
+      <div className="flex items-center gap-2 px-4 h-14">
+        <div className="text-[17px] font-bold truncate flex-1 min-w-0" style={{ color: 'var(--text)' }}>
+          {section?.key === 'home' || !section ? 'WealthLens' : crumbs[crumbs.length - 1]}
+        </div>
+        {monthPicker(mobRef)}
         <button onClick={() => setPaletteOpen(true)} aria-label="Search"
-          className="md:hidden wl-btn" style={{ width: 36, height: 36, padding: 0 }}>
-          <Search size={15} />
-        </button>
-        {/* Universal Import Statement button — updates all sections */}
-        <button
-          onClick={() => setUploadOpen(true)}
-          className="wl-btn wl-btn-primary" style={{ height: 36 }}
-          title="Import bank statement — updates expenses, income, loans & fixed deposits">
-          <Upload size={14} /> <span className="hidden sm:inline">Import</span>
+          className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+          style={{ border: '1px solid var(--border)', color: 'var(--text2)' }}>
+          <Search size={16} />
         </button>
         <NotificationsPanel />
-        <div className="hidden sm:flex w-9 h-9 rounded-full items-center justify-center flex-shrink-0 text-[12px] font-bold"
-          style={{ background: 'var(--accent-bg)', color: 'var(--accent2)' }}
-          title={user?.full_name ?? user?.email ?? ''}>
-          {initials || <User size={14} />}
-        </div>
+        <button onClick={() => openAdvisor()} aria-label="Ask AI"
+          className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 text-[14px] font-semibold text-white"
+          style={{ background: 'var(--accent)' }}>✦</button>
+      </div>
+      <div className="flex items-center gap-2 px-4 pb-2.5 overflow-x-auto no-scrollbar">
+        {viewSwitch}
+        <HolderChips firstName={firstName} />
       </div>
     </header>
 

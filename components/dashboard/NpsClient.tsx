@@ -8,7 +8,6 @@ import { PdfUploadModal } from '@/components/forms/PdfUploadModal'
 import { VoiceInputModal } from '@/components/forms/VoiceInputModal'
 import { ExcelUploadModal } from '@/components/forms/ExcelUploadModal'
 import FilterBar from './FilterBar'
-import HolderFilter from './HolderFilter'
 import { Pencil, Trash2 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { useViewStore } from '@/store/viewStore'
@@ -80,7 +79,6 @@ export default function NpsClient({ data }: { data: any[] }) {
       onAdd={() => setShowAdd(true)} onPdf={() => setShowPdf(true)} onVoice={() => setShowVoice(true)}
       onExcel={() => setShowExcel(true)}>
 
-      <HolderFilter />
 
       <FilterBar
         search={search} onSearch={setSearch}

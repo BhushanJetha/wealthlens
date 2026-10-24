@@ -3,7 +3,6 @@ import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import InvPageShell from './InvPageShell'
-import HolderFilter from './HolderFilter'
 import { Pencil, Trash2, PiggyBank, X, Clock, AlertTriangle } from 'lucide-react'
 import { useViewStore } from '@/store/viewStore'
 import { useHolderStore } from '@/store/holderStore'
@@ -80,7 +79,6 @@ export default function PpfEpfClient({ data }: { data: any[] }) {
       totalValue={`₹${Math.round(totalBalance).toLocaleString('en-IN')}`}
       onAdd={openAdd}>
 
-      <HolderFilter />
 
       {/* Summary */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

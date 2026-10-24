@@ -8,7 +8,6 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { Plus, Building2, ChevronLeft, Pencil, Trash2, Loader2 } from 'lucide-react'
 import AddLoanModal from '@/components/forms/AddLoanModal'
 import FilterBar from './FilterBar'
-import HolderFilter from './HolderFilter'
 import Link from 'next/link'
 
 function toINR(amt: number, cur: string, fx: number) { return cur === 'AED' ? amt * fx : amt }
@@ -143,7 +142,6 @@ export default function LoanCategoryClient({ loans, title, loanType }: Props) {
         </button>
       </div>
 
-      <HolderFilter />
 
       <FilterBar
         search={search} onSearch={setSearch}

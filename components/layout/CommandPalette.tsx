@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, Upload, Globe, CornerDownLeft, type LucideIcon } from 'lucide-react'
+import { Search, Upload, Globe, CornerDownLeft, Sparkles, type LucideIcon } from 'lucide-react'
 import { useUiStore } from '@/store/uiStore'
 import { useViewStore } from '@/store/viewStore'
 import { allDestinations } from '@/lib/nav'
@@ -12,7 +12,7 @@ interface Item { id: string; label: string; hint: string; icon: LucideIcon; grou
 // through menus.
 export default function CommandPalette() {
   const router = useRouter()
-  const { paletteOpen, setPaletteOpen, setUploadOpen } = useUiStore()
+  const { paletteOpen, setPaletteOpen, setUploadOpen, openAdvisor } = useUiStore()
   const { setView } = useViewStore()
   const [q, setQ] = useState('')
   const [active, setActive] = useState(0)
@@ -39,6 +39,7 @@ export default function CommandPalette() {
   const items = useMemo<Item[]>(() => {
     const actions: Item[] = [
       { id: 'a-import', label: 'Import bank statement', hint: 'PDF or Excel — adds transactions', icon: Upload, group: 'Actions', run: () => setUploadOpen(true) },
+      { id: 'a-ai',     label: 'Ask AI advisor',        hint: 'Questions about your money',      icon: Sparkles, group: 'Actions', run: () => openAdvisor() },
       { id: 'a-uae',    label: 'Switch view to UAE',    hint: 'AED only',                 icon: Globe, group: 'Actions', run: () => setView('uae') },
       { id: 'a-india',  label: 'Switch view to India',  hint: 'INR only',                 icon: Globe, group: 'Actions', run: () => setView('india') },
       { id: 'a-all',    label: 'Switch view to All',    hint: 'Consolidated in INR',      icon: Globe, group: 'Actions', run: () => setView('consolidated') },
@@ -57,7 +58,7 @@ export default function CommandPalette() {
       return 0
     }
     return all.map(it => ({ it, s: score(it) })).filter(x => x.s > 0).sort((a, b) => b.s - a.s).map(x => x.it)
-  }, [q, router, setUploadOpen, setView])
+  }, [q, router, setUploadOpen, setView, openAdvisor])
 
   useEffect(() => { setActive(0) }, [q])
   useEffect(() => {

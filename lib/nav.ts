@@ -1,8 +1,10 @@
 // App navigation — one definition shared by the Sidebar, the section tab strip,
-// the mobile tab bar and the Ctrl+K command palette. URLs are unchanged; pages
-// are just grouped into five sections, each with tabs (and optional sub-tabs).
+// the mobile tab bar, the More hub and the Ctrl+K command palette. Grouping
+// follows the Claude Design spec (WealthLens UI.dc.html): Home / Money / Wealth
+// / Plan / Insights / Learn / Settings, each with tabs (and optional sub-tabs).
+// URLs are unchanged.
 import {
-  LayoutDashboard, Receipt, Wallet, Target, Sparkles, Settings, type LucideIcon,
+  House, Receipt, Wallet, Target, Sparkles, BookOpen, SlidersHorizontal, type LucideIcon,
 } from 'lucide-react'
 
 export interface NavLink { label: string; href: string; also?: string[] }   // also = extra paths that activate it
@@ -10,7 +12,7 @@ export interface NavTab extends NavLink { subs?: NavLink[] }
 export interface NavSection { key: string; label: string; desc: string; icon: LucideIcon; href: string; tabs: NavTab[] }
 
 export const SECTIONS: NavSection[] = [
-  { key: 'home', label: 'Home', desc: 'Overview and what needs attention', icon: LayoutDashboard, href: '/dashboard', tabs: [] },
+  { key: 'home', label: 'Home', desc: 'Overview and what needs attention', icon: House, href: '/dashboard', tabs: [] },
   { key: 'money', label: 'Money', desc: 'Spending, income and transfers', icon: Receipt, href: '/dashboard/expenses', tabs: [
     { label: 'Expenses',     href: '/dashboard/expenses' },
     { label: 'Income',       href: '/dashboard/income' },
@@ -23,10 +25,8 @@ export const SECTIONS: NavSection[] = [
     { label: 'FX optimizer', href: '/dashboard/fx' },
   ] },
   { key: 'wealth', label: 'Wealth', desc: 'Net worth, investments and debt', icon: Wallet, href: '/dashboard/net-worth', tabs: [
-    { label: 'Net worth', href: '/dashboard/net-worth', subs: [
-      { label: 'Overview',       href: '/dashboard/net-worth' },
-      { label: 'Debt vs equity', href: '/dashboard/debt-equity' },
-    ] },
+    { label: 'Net worth',      href: '/dashboard/net-worth' },
+    { label: 'Debt vs equity', href: '/dashboard/debt-equity' },
     { label: 'Investments', href: '/dashboard/investments', subs: [
       { label: 'Overview',           href: '/dashboard/investments' },
       { label: 'Market-linked',      href: '/dashboard/investments/market-linked' },
@@ -59,14 +59,19 @@ export const SECTIONS: NavSection[] = [
     { label: 'Goals',              href: '/dashboard/goals' },
     { label: 'Cash-flow forecast', href: '/dashboard/cashflow' },
   ] },
-  { key: 'insights', label: 'Insights', desc: 'Health checks, NRI tools and learning', icon: Sparkles, href: '/dashboard/financial-health', tabs: [
+  { key: 'insights', label: 'Insights', desc: 'Health checks and NRI tools', icon: Sparkles, href: '/dashboard/financial-health', tabs: [
     { label: 'Financial health', href: '/dashboard/financial-health' },
     { label: 'NRI toolkit',      href: '/dashboard/nri-toolkit' },
     { label: 'Money mindset',    href: '/dashboard/inspire' },
-    { label: 'Learn',            href: '/dashboard/learn' },
   ] },
-  { key: 'settings', label: 'Settings', desc: 'Profile, family and preferences', icon: Settings, href: '/dashboard/settings', tabs: [] },
+  { key: 'learn', label: 'Learn', desc: 'Courses and guides for every part of WealthLens', icon: BookOpen, href: '/dashboard/learn', tabs: [
+    { label: 'Courses', href: '/dashboard/learn', also: ['/dashboard/budgets/learn', '/dashboard/cards/learn', '/dashboard/expenses/learn', '/dashboard/goals/learn'] },
+  ] },
+  { key: 'settings', label: 'Settings', desc: 'Profile, family and preferences', icon: SlidersHorizontal, href: '/dashboard/settings', tabs: [] },
 ]
+
+// Bottom bar on phones: four sections + "More" (everything else, as a hub page)
+export const MOBILE_TABS = ['home', 'money', 'wealth', 'plan']
 
 const matches = (path: string, prefix: string) => path === prefix || path.startsWith(prefix + '/')
 const linkPaths = (l: NavLink) => [l.href, ...(l.also ?? [])]
