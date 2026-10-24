@@ -33,17 +33,18 @@ interface Props {
   onClose: () => void
   editData?: any
   allInvestments?: Record<string, any[]>
+  defaults?: { name?: string; category?: string }   // pre-fill for a new goal
 }
 
-export default function AddGoalModal({ onClose, editData, allInvestments }: Props) {
+export default function AddGoalModal({ onClose, editData, allInvestments, defaults }: Props) {
   const isEdit = !!editData
   const [form, setForm] = useState<Record<string, string>>({
-    name:          editData?.name          ?? '',
+    name:          editData?.name          ?? defaults?.name ?? '',
     description:   editData?.description   ?? '',
     target_amount: editData?.target_amount ?? '',
     currency:      editData?.currency      ?? 'INR',
     target_date:   editData?.target_date   ?? '',
-    category:      editData?.category      ?? 'general',
+    category:      editData?.category      ?? defaults?.category ?? 'general',
     color:         editData?.color         ?? '#16A34A',
     notes:         editData?.notes         ?? '',
   })

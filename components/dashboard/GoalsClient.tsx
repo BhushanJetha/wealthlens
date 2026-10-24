@@ -1,5 +1,5 @@
 'use client'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useViewStore } from '@/store/viewStore'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { getInvCurrentValue } from '@/lib/goalProgress'
+import { GOAL_INTEREST_CATEGORY } from '@/lib/goalInterests'
 
 
 const CAT_ICONS: Record<string, string> = {
@@ -65,8 +66,18 @@ export default function GoalsClient({ goals, goalInvestments, allInvestments }: 
   const router = useRouter()
   const supabase = createClient()
   const [showAdd, setShowAdd] = useState(false)
+  const [addDefaults, setAddDefaults] = useState<{ name: string; category: string } | undefined>()
   const [tab, setTab] = useState<'all' | Term>('all')
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+
+  // Home's "set up this goal" chips land here with ?new=<goal name>
+  useEffect(() => {
+    const name = new URLSearchParams(window.location.search).get('new')?.slice(0, 80)
+    if (!name) return
+    setAddDefaults({ name, category: GOAL_INTEREST_CATEGORY[name] ?? 'general' })
+    setShowAdd(true)
+    window.history.replaceState(null, '', window.location.pathname)
+  }, [])
 
   const toINR = (v: number, cur: string) => cur === 'AED' ? v * FX : v
   const conv = (v: number, cur: string) => view === 'consolidated' ? toINR(v, cur) : v
@@ -424,7 +435,7 @@ export default function GoalsClient({ goals, goalInvestments, allInvestments }: 
         </div>
       </div>
 
-      {showAdd && <AddGoalModal onClose={() => setShowAdd(false)} allInvestments={allInvestments} />}
+      {showAdd && <AddGoalModal onClose={() => { setShowAdd(false); setAddDefaults(undefined) }} allInvestments={allInvestments} defaults={addDefaults} />}
     </div>
   )
 }

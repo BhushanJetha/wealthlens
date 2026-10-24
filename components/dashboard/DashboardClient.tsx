@@ -13,6 +13,7 @@ import { buildHomeInsights, netWorthHistory, localToday, fmtDay, type Snapshot, 
 import { healthScore, type Tone } from '@/lib/healthScore'
 import { goalCurrentValue } from '@/lib/goalProgress'
 import { fmtMoney, fmtCompact } from '@/lib/format'
+import { newGoalHref } from '@/lib/goalInterests'
 import AddTransactionModal from '@/components/forms/AddTransactionModal'
 import TransactionVoiceModal from '@/components/forms/TransactionVoiceModal'
 
@@ -27,6 +28,7 @@ interface Props {
   goalInvestments: any[]
   snapshots: Snapshot[]
   historyReady: boolean
+  goalInterests: string[]
 }
 
 const MONTHS_LONG = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -51,6 +53,15 @@ export default function DashboardClient(p: Props) {
     const h = new Date().getHours()
     setGreeting(h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening')
   }, [])
+
+  // Onboarding hands off with ?start=upload|add so the chosen first step opens right away
+  useEffect(() => {
+    const start = new URLSearchParams(window.location.search).get('start')
+    if (!start) return
+    if (start === 'upload') setUploadOpen(true)
+    else if (start === 'add') setModal('add')
+    window.history.replaceState(null, '', window.location.pathname)
+  }, [setUploadOpen])
 
   // The Topbar month picker chooses the month Home describes (its end month)
   const focusMonth = toMonth > today.slice(0, 7) ? today.slice(0, 7) : toMonth
@@ -156,7 +167,7 @@ export default function DashboardClient(p: Props) {
         ))}
       </div>
 
-      {isEmpty ? <Onboarding onImport={() => setUploadOpen(true)} /> : (<>
+      {isEmpty ? <Onboarding onImport={() => setUploadOpen(true)} goalInterests={p.goalInterests} /> : (<>
       {/* Weekly review */}
       <section className="rounded-xl px-4 md:px-[22px] py-4 md:py-[18px] flex flex-col md:flex-row gap-3 md:gap-4 md:items-center"
         style={{ background: '#312E81', color: '#fff' }}>
@@ -181,7 +192,7 @@ export default function DashboardClient(p: Props) {
       {/* Row 2: Health, Goals, 30-day cash flow */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <HealthCard score={health.score} parts={health.parts} />
-        <GoalsCard goals={goals} short={short} />
+        <GoalsCard goals={goals} short={short} interests={p.goalInterests} />
         <CashFlowCard forecast={ins.forecast} short={short} money={money} />
       </div>
 
@@ -377,15 +388,31 @@ function HealthCard({ score, parts }: { score: number; parts: { label: string; v
 
 const GOAL_COLORS = ['#16A34A', '#E11D48', '#4F46E5']
 
-function GoalsCard({ goals, short }: { goals: any[]; short: (n: number) => string }) {
+// Goals picked during onboarding, offered as one-click "set up this goal"
+function InterestChips({ interests }: { interests: string[] }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {interests.map(g => (
+        <Link key={g} href={newGoalHref(g)} className="wl-chip gap-1" style={{ height: 28 }}><Plus size={12} />{g}</Link>
+      ))}
+    </div>
+  )
+}
+
+function GoalsCard({ goals, short, interests }: { goals: any[]; short: (n: number) => string; interests: string[] }) {
   return (
     <Card aria-labelledby="goals-title" className="flex flex-col">
       <CardTitle id="goals-title" right={goals.length > 0 && <MoreLink href="/dashboard/goals">All goals</MoreLink>}>Goals</CardTitle>
       {goals.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center text-center py-6 gap-2">
           <Target size={24} style={{ color: 'var(--text4)' }} />
-          <div className="text-[12.5px]" style={{ color: 'var(--text3)' }}>Set a goal and link investments to track it automatically.</div>
-          <Link href="/dashboard/goals" className="wl-btn wl-btn-sm mt-1">Create a goal</Link>
+          {interests.length > 0 ? (<>
+            <div className="text-[12.5px]" style={{ color: 'var(--text3)' }}>Set a target for what you&apos;re working towards — linked investments track it automatically.</div>
+            <div className="mt-1 flex justify-center"><InterestChips interests={interests} /></div>
+          </>) : (<>
+            <div className="text-[12.5px]" style={{ color: 'var(--text3)' }}>Set a goal and link investments to track it automatically.</div>
+            <Link href="/dashboard/goals" className="wl-btn wl-btn-sm mt-1">Create a goal</Link>
+          </>)}
         </div>
       ) : (
         <ul className="flex flex-col gap-3 mt-3">
@@ -527,7 +554,7 @@ function LearnCard({ ins, hasSip }: { ins: HomeInsights; hasSip: boolean }) {
   )
 }
 
-function Onboarding({ onImport }: { onImport: () => void }) {
+function Onboarding({ onImport, goalInterests }: { onImport: () => void; goalInterests: string[] }) {
   const steps: { icon: LucideIcon; title: string; body: string; cta: React.ReactNode }[] = [
     { icon: Upload, title: 'Import a bank statement', body: 'PDF or Excel from any UAE or Indian bank. Transactions are read and categorised for you.',
       cta: <button onClick={onImport} className="wl-btn wl-btn-primary wl-btn-sm"><Upload size={12} />Import</button> },
@@ -553,6 +580,12 @@ function Onboarding({ onImport }: { onImport: () => void }) {
           </li>
         )})}
       </ol>
+      {goalInterests.length > 0 && (
+        <div className="mt-4 pt-4 flex flex-col md:flex-row md:items-center gap-2 md:gap-3" style={{ borderTop: '1px solid #F1F5F9' }}>
+          <span className="text-[12.5px] font-semibold flex-shrink-0" style={{ color: 'var(--text2)' }}>Your goals — set a target:</span>
+          <InterestChips interests={goalInterests} />
+        </div>
+      )}
     </Card>
   )
 }

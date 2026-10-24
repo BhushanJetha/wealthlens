@@ -1,8 +1,10 @@
+import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import DashboardClient from '@/components/dashboard/DashboardClient'
 import { computeNetWorth, groupAssets, type Holdings } from '@/lib/netWorth'
 import { getAedInr } from '@/lib/fx'
 import { isMissingTable } from '@/lib/supabase/missingTable'
+import { goalInterestsOf } from '@/lib/goalInterests'
 
 // PostgREST caps a response at 1000 rows — page through so 13 months of
 // transactions are never silently truncated.
@@ -51,7 +53,7 @@ export default async function DashboardPage() {
     supabase.from('bond_investments').select('*').eq('user_id', uid),
     supabase.from('etf_investments').select('*').eq('user_id', uid),
     supabase.from('ppf_epf_accounts').select('*').eq('user_id', uid),
-    supabase.from('profiles').select('full_name').eq('id', uid).single(),
+    supabase.from('profiles').select('full_name,onboarded').eq('id', uid).single(),
     getAedInr(),
   ])
 
@@ -61,6 +63,11 @@ export default async function DashboardPage() {
     recurringDeposits: rdRes.data ?? [], ppfEpf: ppfRes.data ?? [], gold: goldRes.data ?? [],
     bonds: bondRes.data ?? [], lic: licRes.data ?? [], loans: loansRes.data ?? [],
   }
+
+  // Brand-new accounts start with the 4-step setup; anyone with data skips it
+  const hasData = txns.length > 0 || Object.values(holdings).some(rows => rows.length > 0)
+    || (goalsRes.data?.length ?? 0) > 0 || (insRes.data?.length ?? 0) > 0
+  if (profileRes.data?.onboarded === false && !hasData) redirect('/onboarding')
 
   // Record today's net worth (one row per day — re-opening Home updates it).
   // Needs migration 023; until it's run Home shows a "history starts once…" note.
@@ -97,6 +104,7 @@ export default async function DashboardPage() {
       goalInvestments={giRes.data ?? []}
       snapshots={snapsRes.data ?? []}
       historyReady={historyReady}
+      goalInterests={goalInterestsOf(user!.user_metadata)}
     />
   )
 }
