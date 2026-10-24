@@ -10,6 +10,7 @@ import {
   Trophy, Star, Zap, ChevronRight, Pause, Trash2, BookOpen,
 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
+import { getInvCurrentValue } from '@/lib/goalProgress'
 
 
 const CAT_ICONS: Record<string, string> = {
@@ -32,21 +33,6 @@ function getTerm(targetDate: string): Term {
 }
 function getDaysLeft(targetDate: string): number {
   return Math.ceil((new Date(targetDate).getTime() - Date.now()) / 86400000)
-}
-
-function getInvCurrentValue(type: string, rec: any): number {
-  if (type === 'stocks') return (rec.quantity ?? 0) * (rec.current_price ?? rec.avg_buy_price ?? 0)
-  if (type === 'mutual_funds') return (rec.units ?? 0) * (rec.current_nav ?? rec.avg_nav ?? 0)
-  if (type === 'fixed_deposits') return rec.principal ?? 0
-  if (type === 'recurring_deposits') {
-    const start = new Date(rec.start_date ?? rec.created_at)
-    const months = Math.max(0, (new Date().getFullYear() - start.getFullYear()) * 12 + new Date().getMonth() - start.getMonth())
-    return months * (rec.monthly_amount ?? 0)
-  }
-  if (type === 'nps_accounts') return rec.corpus_amount ?? rec.invested_amount ?? 0
-  if (type === 'lic_policies') return rec.total_paid ?? 0
-  if (type === 'gold_investments') return rec.quantity_grams && rec.current_price_per_gram ? rec.quantity_grams * rec.current_price_per_gram : rec.invested_amount ?? 0
-  return rec.invested_amount ?? 0
 }
 
 type AllInvestments = Record<string, any[]>

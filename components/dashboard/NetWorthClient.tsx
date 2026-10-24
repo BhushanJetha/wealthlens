@@ -6,6 +6,7 @@ import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip,
   CartesianGrid, ResponsiveContainer, Cell, ReferenceLine,
 } from 'recharts'
+import { computeNetWorth, viewAmount } from '@/lib/netWorth'
 
 interface Props {
   accounts: any[]; stocks: any[]; mutualFunds: any[]; etf: any[]; nps: any[]
@@ -20,15 +21,7 @@ export default function NetWorthClient(p: Props) {
   const sym = view === 'uae' ? 'AED ' : '₹'
 
   // View / FX aware value of one amount in a given currency
-  const disp = (amt: number, cur: string) => {
-    const a = Number(amt) || 0
-    const c = cur || 'INR'
-    if (view === 'consolidated') return c === 'AED' ? a * FX : a
-    if (view === 'uae')   return c === 'AED' ? a : 0
-    return c === 'INR' ? a : 0    // india
-  }
-  const sumRows = (rows: any[], key: string, curKey = 'currency') =>
-    rows.reduce((s, r) => s + disp(Number(r[key]) || 0, r[curKey] || 'INR'), 0)
+  const disp = (amt: number, cur: string) => viewAmount(amt, cur, view, FX)
 
   const money = (n: number) => `${sym}${Math.round(n).toLocaleString('en-IN')}`
   const short = (n: number) => {
@@ -38,61 +31,8 @@ export default function NetWorthClient(p: Props) {
   }
 
   const { assetRows, liabRows, totalAssets, totalInvested, totalLiab, netWorth, trend, netSavings } = useMemo(() => {
-    // Bank & cash = all non-credit-card accounts
-    const bankCash = p.accounts.filter(a => a.account_type !== 'credit_card')
-    const cards    = p.accounts.filter(a => a.account_type === 'credit_card')
-
-    // Current value of each holding — computed exactly as each category page does
-    // (these tables have no single "current_value" column; it's units × live price
-    // etc.), so we never fall back to 0 the way column-name reads did.
-    const sumBy = (rows: any[], val: (r: any) => number) =>
-      rows.reduce((s, r) => s + disp(val(r), r.currency || 'INR'), 0)
-
-    // Bank/cash balance lives in current_balance (outstanding_bal is 0 for these
-    // and holds the DEBT on credit cards). Use || so a 0 falls through, not ??.
-    const bankVal  = sumBy(bankCash,            a => Number(a.current_balance) || Number(a.outstanding_bal) || 0)
-    const stockVal = sumBy(p.stocks,            x => Number(x.quantity || 0) * Number(x.current_price ?? x.avg_buy_price ?? 0))
-    const mfVal    = sumBy(p.mutualFunds,       m => Number(m.units || 0) * Number(m.current_nav ?? m.avg_nav ?? 0))
-    const etfVal   = sumBy(p.etf,               e => Number(e.units || 0) * Number(e.current_price ?? e.avg_buy_price ?? 0))
-    const npsVal   = sumBy(p.nps,               n => Number(n.corpus_amount) || Number(n.invested_amount) || Number(n.current_value) || 0)
-    const fdVal    = sumBy(p.fixedDeposits,     f => Number(f.principal ?? f.principal_amount ?? 0))
-    const rdVal    = sumBy(p.recurringDeposits, r => r.current_amount != null ? Number(r.current_amount) : Number(r.monthly_amount || 0) * Number(r.months_paid || 0))
-    const ppfVal   = sumBy(p.ppfEpf,            x => Number(x.current_balance ?? x.balance ?? 0))
-    const goldVal  = sumBy(p.gold,              g => (g.current_price_per_gram && g.quantity_grams) ? Number(g.current_price_per_gram) * Number(g.quantity_grams) : Number(g.invested_amount ?? 0))
-    const bondVal  = sumBy(p.bonds,             b => Number(b.current_value ?? b.invested_amount ?? 0))
-    const licVal   = sumBy(p.lic,               l => Number(l.total_paid ?? 0))
-
-    // Invested (cost basis) per segment — for the invested-vs-current view
-    const stockInv = sumBy(p.stocks,            x => Number(x.quantity || 0) * Number(x.avg_buy_price ?? 0))
-    const mfInv    = sumBy(p.mutualFunds,       m => Number(m.invested_amount) || Number(m.units || 0) * Number(m.avg_nav ?? 0))
-    const etfInv   = sumBy(p.etf,               e => Number(e.invested_amount) || Number(e.units || 0) * Number(e.avg_buy_price ?? 0))
-    const npsInv   = sumBy(p.nps,               n => Number(n.invested_amount) || Number(n.corpus_amount ?? 0))
-    const goldInv  = sumBy(p.gold,              g => Number(g.invested_amount ?? 0))
-    const bondInv  = sumBy(p.bonds,             b => Number(b.invested_amount ?? b.current_value ?? 0))
-
-    const assetRows = [
-      { label: 'Bank & Cash',        value: bankVal,  invested: bankVal,  color: '#16A34A' },
-      { label: 'Stocks',             value: stockVal, invested: stockInv, color: '#E11D48' },
-      { label: 'Mutual Funds',       value: mfVal,    invested: mfInv,    color: '#2563EB' },
-      { label: 'ETF',                value: etfVal,   invested: etfInv,   color: '#0EA5E9' },
-      { label: 'NPS',                value: npsVal,   invested: npsInv,   color: '#7C3AED' },
-      { label: 'Fixed Deposits',     value: fdVal,    invested: fdVal,    color: '#0284C7' },
-      { label: 'Recurring Deposits', value: rdVal,    invested: rdVal,    color: '#0891B2' },
-      { label: 'PPF / EPF',          value: ppfVal,   invested: ppfVal,   color: '#059669' },
-      { label: 'Gold',               value: goldVal,  invested: goldInv,  color: '#D97706' },
-      { label: 'Bonds / SGB',        value: bondVal,  invested: bondInv,  color: '#9333EA' },
-      { label: 'LIC',                value: licVal,   invested: licVal,   color: '#DB2777' },
-    ].filter(r => r.value > 0).sort((a, b) => b.value - a.value)
-
-    const liabRows = [
-      { label: 'Home / Property Loan', value: sumRows(p.loans, 'outstanding_amt'), color: '#DC2626' },
-      { label: 'Credit Cards',         value: sumRows(cards, 'outstanding_bal'),   color: '#F97316' },
-    ].filter(r => r.value > 0).sort((a, b) => b.value - a.value)
-
-    const totalAssets   = assetRows.reduce((s, r) => s + r.value, 0)
-    const totalInvested = assetRows.reduce((s, r) => s + r.invested, 0)
-    const totalLiab     = liabRows.reduce((s, r) => s + r.value, 0)
-    const netWorth      = totalAssets - totalLiab
+    // Same calculation as Home and the daily snapshot (lib/netWorth.ts)
+    const { assetRows, liabRows, totalAssets, totalInvested, totalLiab, netWorth } = computeNetWorth(p, view, FX)
 
     // Real monthly net savings (income − expense), view/FX aware, last 12 months
     const now = new Date()

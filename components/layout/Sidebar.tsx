@@ -1,161 +1,44 @@
 'use client'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { useState } from 'react'
-import {
-  LayoutDashboard, Receipt, TrendingUp, Building2,
-  CreditCard, Shield, Target, LogOut, Settings,
-  ChevronDown, BarChart2, RefreshCw, Landmark, Briefcase,
-  FileText, Activity, Gem, Car, Home, User, CircleDollarSign,
-  ArrowDownCircle, ArrowUpCircle, PieChart, HeartPulse, Flag,
-  ArrowLeftRight, GraduationCap, PiggyBank, Wallet, Globe, CalendarClock, Sparkles
-} from 'lucide-react'
+import { usePathname, useRouter } from 'next/navigation'
+import { LogOut, Search } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
 import { useUiStore } from '@/store/uiStore'
+import { SECTIONS, resolveNav } from '@/lib/nav'
 
-// Grouped per the WealthLens asset model: Market-Linked / Fixed-Income / Alternative
-const INV_GROUPS: { label: string; items: { href: string; icon: any; label: string }[] }[] = [
-  { label: '', items: [
-    { href: '/dashboard/investments', icon: BarChart2, label: 'Overview' },
-  ] },
-  { label: 'Market-Linked', items: [
-    { href: '/dashboard/investments/market-linked', icon: PieChart,   label: 'Dashboard' },
-    { href: '/dashboard/investments/mutual-funds',  icon: TrendingUp, label: 'Mutual Funds' },
-    { href: '/dashboard/stocks',                    icon: Activity,   label: 'Stocks' },
-    { href: '/dashboard/investments/etf',           icon: BarChart2,  label: 'ETF' },
-  ] },
-  { label: 'Fixed-Income', items: [
-    { href: '/dashboard/investments/fixed-deposits',     icon: Landmark,  label: 'Fixed Deposits' },
-    { href: '/dashboard/investments/recurring-deposits', icon: RefreshCw, label: 'Recurring Deposits' },
-    { href: '/dashboard/investments/ppf-epf',            icon: PiggyBank, label: 'PPF / EPF' },
-  ] },
-  { label: 'Alternative / Long-Term', items: [
-    { href: '/dashboard/investments/gold',  icon: Gem,              label: 'Gold' },
-    { href: '/dashboard/investments/bonds', icon: CircleDollarSign, label: 'Bonds / SGB' },
-    { href: '/dashboard/investments/nps',   icon: Briefcase,        label: 'NPS' },
-    { href: '/dashboard/investments/lic',   icon: FileText,         label: 'LIC' },
-  ] },
-]
-
-const LOAN_SUBS = [
-  { href: '/dashboard/loans',          icon: BarChart2,  label: 'Overview'      },
-  { href: '/dashboard/loans/home',     icon: Home,       label: 'Home Loan'     },
-  { href: '/dashboard/loans/car',      icon: Car,        label: 'Car / Bike'    },
-  { href: '/dashboard/loans/personal', icon: User,       label: 'Personal Loan' },
-  { href: '/dashboard/loans/gold',     icon: Gem,        label: 'Gold Loan'     },
-  { href: '/dashboard/loans/card',     icon: CreditCard, label: 'Loan on Card'  },
-  { href: '/dashboard/loans/other',    icon: Building2,  label: 'Other Loans'   },
-]
-
-const TXN_SUBS = [
-  { href: '/dashboard/reports',         icon: FileText,        label: 'Money Report'    },
-  { href: '/dashboard/income',          icon: ArrowUpCircle,   label: 'Income'          },
-  { href: '/dashboard/income/report',   icon: PieChart,        label: 'Income Report'   },
-  { href: '/dashboard/expenses',        icon: ArrowDownCircle, label: 'Expenses'        },
-  { href: '/dashboard/expenses/report', icon: PieChart,        label: 'Expense Report'  },
-  { href: '/dashboard/transfers',       icon: ArrowLeftRight,  label: 'Transfers'       },
-  { href: '/dashboard/fx',              icon: ArrowLeftRight,  label: 'FX Optimizer'    },
-]
-
-const MAIN_NAV = [
-  { href: '/dashboard',            icon: LayoutDashboard, label: 'Dashboard'         },
-  { href: '/dashboard/net-worth',  icon: Wallet,          label: 'Net Worth'         },
-  { href: '/dashboard/cashflow',   icon: CalendarClock,   label: 'Cash-Flow Forecast' },
-  { href: '/dashboard/income',     icon: Receipt,         label: 'Transactions',     sub: 'txn'  },
-  { href: '/dashboard/investments',icon: TrendingUp,      label: 'Investments',      sub: 'inv'  },
-  { href: '/dashboard/loans',      icon: Building2,       label: 'Loans',            sub: 'loan' },
-  { href: '/dashboard/cards',      icon: CreditCard,      label: 'Credit Cards'      },
-  { href: '/dashboard/accounts',   icon: Landmark,        label: 'Bank Accounts'     },
-  { href: '/dashboard/budgets',    icon: Target,          label: 'Budgets'           },
-]
-
-const OTHER_NAV = [
-  { href: '/dashboard/goals',            icon: Flag,           label: 'Goals'              },
-  { href: '/dashboard/nri-toolkit',      icon: Globe,          label: 'NRI Toolkit'        },
-  { href: '/dashboard/financial-health', icon: HeartPulse,     label: 'Financial Health'   },
-  { href: '/dashboard/inspire',          icon: Sparkles,       label: 'Money Mindset'      },
-  { href: '/dashboard/insurance',        icon: Shield,         label: 'Insurance'          },
-  { href: '/dashboard/learn',            icon: GraduationCap,  label: 'Learn'              },
-]
-
+// Five sections (Home / Money / Wealth / Plan / Insights) + Settings. The pages
+// inside each section are tabs at the top of the page (SectionTabs).
 export default function Sidebar() {
   const pathname = usePathname()
   const router   = useRouter()
   const supabase = createClient()
-  const { sidebarOpen, setSidebarOpen } = useUiStore()
-  const isInvActive  = pathname.startsWith('/dashboard/investments') || pathname.startsWith('/dashboard/stocks')
-  const isLoanActive = pathname.startsWith('/dashboard/loans')
-  const isTxnActive  = pathname.startsWith('/dashboard/income') || pathname.startsWith('/dashboard/expenses') || pathname.startsWith('/dashboard/expenses/report') || pathname.startsWith('/dashboard/income/report') || pathname.startsWith('/dashboard/transfers') || pathname.startsWith('/dashboard/reports')
-  const [invOpen,  setInvOpen]  = useState(isInvActive)
-  const [loanOpen, setLoanOpen] = useState(isLoanActive)
-  const [txnOpen,  setTxnOpen]  = useState(isTxnActive)
+  const { sidebarOpen, setSidebarOpen, setPaletteOpen } = useUiStore()
+  const activeKey = resolveNav(pathname).section?.key
 
   async function signOut() {
     await supabase.auth.signOut()
     router.push('/auth/login')
   }
 
-  function NavItem({ href, icon: Icon, label, active }: { href: string; icon: any; label: string; active: boolean }) {
+  const main = SECTIONS.filter(s => s.key !== 'settings')
+  const settings = SECTIONS.find(s => s.key === 'settings')!
+
+  function Item({ s }: { s: typeof SECTIONS[number] }) {
+    const active = activeKey === s.key
+    const Icon = s.icon
     return (
-      <Link href={href} onClick={() => setSidebarOpen(false)}
-        className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all mx-2"
-        style={active ? {
-          background: 'var(--sage-bg)',
-          color: 'var(--sage)',
-        } : {
-          color: '#6B7280',
-        }}
+      <Link href={s.href} onClick={() => setSidebarOpen(false)}
+        aria-current={active ? 'page' : undefined}
+        className="group flex items-center gap-3 mx-2 px-3 h-10 rounded-lg text-[13.5px] transition-colors"
+        style={active
+          ? { background: 'var(--accent-bg)', color: 'var(--accent2)', fontWeight: 600 }
+          : { color: 'var(--text2)', fontWeight: 500 }}
         onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--bg2)' }}
         onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent' }}>
-        <Icon size={16} className="flex-shrink-0" />
-        {label}
+        <Icon size={17} strokeWidth={active ? 2.2 : 1.9} className="flex-shrink-0"
+          style={{ color: active ? 'var(--accent)' : 'var(--text3)' }} />
+        <span className="flex-1">{s.label}</span>
       </Link>
-    )
-  }
-
-  function ExpandItem({ label, icon: Icon, active, open, onToggle }: { label: string; icon: any; active: boolean; open: boolean; onToggle: () => void }) {
-    return (
-      <button onClick={onToggle}
-        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all mx-2"
-        style={{
-          width: 'calc(100% - 16px)',
-          background: active ? 'var(--sage-bg)' : 'transparent',
-          color: active ? 'var(--sage)' : '#6B7280',
-        }}
-        onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--bg2)' }}
-        onMouseLeave={e => { if (!active) e.currentTarget.style.background = active ? 'var(--sage-bg)' : 'transparent' }}>
-        <Icon size={16} className="flex-shrink-0" />
-        <span className="flex-1 text-left">{label}</span>
-        <ChevronDown size={13} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', opacity: 0.5 }} />
-      </button>
-    )
-  }
-
-  function SubItem({ href, icon: Icon, label }: { href: string; icon: any; label: string }) {
-    const active = pathname === href
-    return (
-      <Link href={href} onClick={() => setSidebarOpen(false)}
-        className="flex items-center gap-2.5 pl-9 pr-3 py-2 rounded-xl text-[12px] font-medium transition-all mx-2"
-        style={active ? {
-          background: 'var(--sage-bg)',
-          color: 'var(--sage)',
-        } : {
-          color: '#9CA3AF',
-        }}
-        onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--bg2)' }}
-        onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent' }}>
-        <Icon size={12} className="flex-shrink-0" />
-        {label}
-      </Link>
-    )
-  }
-
-  function SectionLabel({ children }: { children: React.ReactNode }) {
-    return (
-      <div className="px-5 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-widest" style={{ color: '#D1D5DB' }}>
-        {children}
-      </div>
     )
   }
 
@@ -163,103 +46,48 @@ export default function Sidebar() {
     <>
     {/* Mobile backdrop */}
     {sidebarOpen && (
-      <div className="md:hidden fixed inset-0 z-40" style={{ background: 'rgba(0,0,0,0.45)' }}
+      <div className="md:hidden fixed inset-0 z-40" style={{ background: 'rgba(15,23,42,0.45)' }}
         onClick={() => setSidebarOpen(false)} />
     )}
     <aside
-      className={`fixed md:static inset-y-0 left-0 z-50 w-[230px] min-w-[230px] flex flex-col overflow-y-auto transform transition-transform duration-200 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}
+      className={`fixed md:static inset-y-0 left-0 z-50 w-[232px] min-w-[232px] flex flex-col overflow-y-auto transform transition-transform duration-200 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 safe-top`}
       style={{ background: '#fff', borderRight: '1px solid var(--border)' }}>
 
       {/* Logo */}
-      <div className="px-5 py-4 flex items-center gap-2.5" style={{ borderBottom: '1px solid var(--border)' }}>
-        <div className="w-8 h-8 rounded-xl flex items-center justify-center font-bold text-sm text-white flex-shrink-0"
-          style={{ background: 'var(--sage)' }}>◈</div>
-        <div>
-          <div className="text-[14px] font-bold tracking-tight" style={{ color: 'var(--text)' }}>WealthLens</div>
-          <div className="text-[9px] uppercase tracking-widest" style={{ color: 'var(--text3)' }}>Finance OS</div>
+      <div className="px-5 h-[60px] flex items-center gap-2.5 flex-shrink-0">
+        <div className="w-8 h-8 rounded-[9px] flex items-center justify-center font-bold text-[15px] text-white flex-shrink-0"
+          style={{ background: 'linear-gradient(135deg, var(--accent) 0%, #6366F1 100%)' }}>◈</div>
+        <div className="leading-tight">
+          <div className="text-[15px] font-bold tracking-tight" style={{ color: 'var(--text)' }}>WealthLens</div>
+          <div className="text-[10.5px]" style={{ color: 'var(--text3)' }}>UAE · India finance</div>
         </div>
       </div>
 
-      {/* Main Menu */}
-      <div className="flex-1 py-2">
-        <SectionLabel>Main Menu</SectionLabel>
-        <div className="space-y-0.5">
-          {MAIN_NAV.map(item => {
-            if (item.sub === 'txn') {
-              return (
-                <div key={item.href}>
-                  <ExpandItem label={item.label} icon={item.icon} active={isTxnActive} open={txnOpen} onToggle={() => setTxnOpen(p => !p)} />
-                  {txnOpen && (
-                    <div className="space-y-0.5 py-0.5">
-                      {TXN_SUBS.map(sub => <SubItem key={sub.href} {...sub} />)}
-                    </div>
-                  )}
-                </div>
-              )
-            }
-            if (item.sub === 'inv') {
-              return (
-                <div key={item.href}>
-                  <ExpandItem label={item.label} icon={item.icon} active={isInvActive} open={invOpen} onToggle={() => setInvOpen(p => !p)} />
-                  {invOpen && (
-                    <div className="space-y-0.5 py-0.5">
-                      {INV_GROUPS.map(g => (
-                        <div key={g.label || 'top'}>
-                          {g.label && (
-                            <div className="pl-9 pr-3 pt-2 pb-0.5 text-[9px] font-semibold uppercase tracking-wider" style={{ color: '#C7CDD4' }}>{g.label}</div>
-                          )}
-                          {g.items.map(sub => <SubItem key={sub.href} {...sub} />)}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )
-            }
-            if (item.sub === 'loan') {
-              return (
-                <div key={item.href}>
-                  <ExpandItem label={item.label} icon={item.icon} active={isLoanActive} open={loanOpen} onToggle={() => setLoanOpen(p => !p)} />
-                  {loanOpen && (
-                    <div className="space-y-0.5 py-0.5">
-                      {LOAN_SUBS.map(sub => <SubItem key={sub.href} {...sub} />)}
-                    </div>
-                  )}
-                </div>
-              )
-            }
-            const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))
-            return <NavItem key={item.href} href={item.href} icon={item.icon} label={item.label} active={active} />
-          })}
-        </div>
-
-        <SectionLabel>Tools</SectionLabel>
-        <div className="space-y-0.5">
-          {OTHER_NAV.map(item => {
-            const active = pathname.startsWith(item.href)
-            return <NavItem key={item.href} href={item.href} icon={item.icon} label={item.label} active={active} />
-          })}
-        </div>
-
-        <SectionLabel>Account</SectionLabel>
-        <div className="space-y-0.5">
-          <NavItem href="/dashboard/settings" icon={Settings} label="Settings" active={pathname.startsWith('/dashboard/settings')} />
-          <button
-            onClick={signOut}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all mx-2"
-            style={{ width: 'calc(100% - 16px)', color: '#6B7280' }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'var(--rose-bg)'; e.currentTarget.style.color = 'var(--rose)' }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#6B7280' }}>
-            <LogOut size={16} className="flex-shrink-0" />
-            Sign Out
-          </button>
-        </div>
+      {/* Search / jump anywhere */}
+      <div className="px-3 pb-3">
+        <button onClick={() => { setSidebarOpen(false); setPaletteOpen(true) }}
+          className="w-full flex items-center gap-2 h-9 px-3 rounded-lg text-[12.5px] transition-colors"
+          style={{ background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text3)' }}>
+          <Search size={14} className="flex-shrink-0" />
+          <span className="flex-1 text-left whitespace-nowrap">Search…</span>
+          <span className="wl-kbd hidden md:inline-flex">Ctrl K</span>
+        </button>
       </div>
 
-      {/* Footer */}
-      <div className="px-5 py-3" style={{ borderTop: '1px solid var(--border)' }}>
-        <div className="text-[9px] font-medium" style={{ color: '#D1D5DB' }}>© WealthLens 2026</div>
-        <div className="text-[9px]" style={{ color: '#D1D5DB' }}>Personal Finance OS for UAE & India</div>
+      <nav className="flex-1 space-y-0.5" aria-label="Main">
+        {main.map(s => <Item key={s.key} s={s} />)}
+      </nav>
+
+      <div className="py-3 mt-3 space-y-0.5" style={{ borderTop: '1px solid var(--border)' }}>
+        <Item s={settings} />
+        <button onClick={signOut}
+          className="flex items-center gap-3 mx-2 px-3 h-10 rounded-lg text-[13.5px] font-medium transition-colors"
+          style={{ width: 'calc(100% - 16px)', color: 'var(--text2)' }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'var(--rose-bg)'; e.currentTarget.style.color = 'var(--rose)' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text2)' }}>
+          <LogOut size={17} strokeWidth={1.9} className="flex-shrink-0" style={{ color: 'inherit' }} />
+          Sign out
+        </button>
       </div>
     </aside>
     </>

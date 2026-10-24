@@ -1,7 +1,7 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
 import { useViewStore } from '@/store/viewStore'
-import { ArrowLeftRight, User, ChevronLeft, ChevronRight, Calendar, X, Upload, Menu } from 'lucide-react'
+import { ArrowLeftRight, User, ChevronLeft, ChevronRight, Calendar, X, Upload, Menu, Search } from 'lucide-react'
 import NotificationsPanel from './NotificationsPanel'
 import BankStatementUploadModal from '@/components/forms/BankStatementUploadModal'
 import { useUiStore } from '@/store/uiStore'
@@ -165,9 +165,8 @@ function MonthRangePicker({ from, to, onApply, onClose }: {
 
 export default function Topbar({ user }: { user: any }) {
   const { view, setView, fromMonth, toMonth, setDateRange, fxRate, setFxRate } = useViewStore()
-  const { setSidebarOpen } = useUiStore()
+  const { setSidebarOpen, uploadOpen, setUploadOpen, setPaletteOpen } = useUiStore()
   const [pickerOpen,  setPickerOpen]  = useState(false)
-  const [showUpload,  setShowUpload]  = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
 
   // Fetch live AED→INR rate once on mount; store in viewStore so all pages share it
@@ -189,10 +188,11 @@ export default function Topbar({ user }: { user: any }) {
   }, [pickerOpen])
 
   const views = [
-    { key: 'uae',          label: '🇦🇪 UAE' },
-    { key: 'india',        label: '🇮🇳 India' },
-    { key: 'consolidated', label: '🌐 All' },
+    { key: 'uae',          label: 'UAE' },
+    { key: 'india',        label: 'India' },
+    { key: 'consolidated', label: 'All' },
   ] as const
+  const initials = (user?.full_name || user?.email || 'U').split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((w: string) => w[0]?.toUpperCase()).join('')
 
   const isSingleMonth = fromMonth === toMonth
 
@@ -207,7 +207,7 @@ export default function Topbar({ user }: { user: any }) {
 
   return (
     <>
-    <header className="px-3 sm:px-5 py-3 flex items-center gap-2 sm:gap-3 flex-wrap min-h-[52px]"
+    <header className="px-3 sm:px-5 py-2.5 flex items-center gap-2 sm:gap-3 flex-wrap min-h-[60px] safe-top"
       style={{ background: 'var(--card)', borderBottom: '1px solid var(--border)' }}>
 
       {/* Mobile menu toggle */}
@@ -219,19 +219,19 @@ export default function Topbar({ user }: { user: any }) {
 
       {/* Month Range Picker trigger */}
       <div ref={wrapRef} className="relative flex items-center">
-        <div className="flex items-center rounded-lg border overflow-hidden"
-          style={{ borderColor: 'var(--border)', background: 'var(--bg2)' }}>
-          <button onClick={() => shiftRange(-1)}
-            className="px-2 py-1.5 transition-colors hover:bg-gray-100"
+        <div className="flex items-center rounded-lg border overflow-hidden h-9"
+          style={{ borderColor: 'var(--border)', background: '#fff' }}>
+          <button onClick={() => shiftRange(-1)} aria-label="Previous period"
+            className="px-2 h-full transition-colors hover:bg-slate-50"
             style={{ color: 'var(--text3)' }}>
-            <ChevronLeft size={13} />
+            <ChevronLeft size={14} />
           </button>
 
           <button onClick={() => setPickerOpen(p => !p)}
-            className="flex items-center gap-1.5 px-2 py-1.5 transition-colors hover:bg-gray-100"
-            style={{ minWidth: 130 }}>
-            <Calendar size={12} style={{ color: 'var(--sage)' }} />
-            <span className="text-[11px] font-semibold" style={{ color: 'var(--text)' }}>
+            className="flex items-center gap-1.5 px-2 h-full transition-colors hover:bg-slate-50 min-w-[118px] sm:min-w-[140px]"
+            style={{ borderLeft: '1px solid var(--border)', borderRight: '1px solid var(--border)' }}>
+            <Calendar size={13} style={{ color: 'var(--accent)' }} />
+            <span className="text-[12.5px] font-semibold" style={{ color: 'var(--text)' }}>
               {formatRange(fromMonth, toMonth)}
             </span>
             {!isSingleMonth && (
@@ -242,10 +242,10 @@ export default function Topbar({ user }: { user: any }) {
             )}
           </button>
 
-          <button onClick={() => shiftRange(1)}
-            className="px-2 py-1.5 transition-colors hover:bg-gray-100"
+          <button onClick={() => shiftRange(1)} aria-label="Next period"
+            className="px-2 h-full transition-colors hover:bg-slate-50"
             style={{ color: 'var(--text3)' }}>
-            <ChevronRight size={13} />
+            <ChevronRight size={14} />
           </button>
         </div>
 
@@ -259,18 +259,19 @@ export default function Topbar({ user }: { user: any }) {
         )}
       </div>
 
-      {/* View toggle — full-width segmented control on mobile (own row), inline on desktop */}
-      <div className="flex gap-1 order-last w-full md:order-none md:w-auto">
+      {/* View toggle — segmented control; full-width on its own row on mobile */}
+      <div role="radiogroup" aria-label="Country view"
+        className="flex p-0.5 rounded-lg order-last w-full md:order-none md:w-auto h-9"
+        style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
         {views.map(v => (
-          <button key={v.key} onClick={() => setView(v.key)}
-            className="flex-1 md:flex-none px-3 py-2 md:py-1.5 rounded-lg text-[11px] font-semibold transition-all border"
+          <button key={v.key} onClick={() => setView(v.key)} role="radio" aria-checked={view === v.key}
+            className="flex-1 md:flex-none px-3.5 rounded-md text-[12.5px] font-semibold transition-all"
             style={view === v.key ? {
-              background: 'var(--sage)',
-              borderColor: 'var(--sage)',
-              color: '#fff',
+              background: '#fff',
+              color: 'var(--accent2)',
+              boxShadow: '0 1px 2px rgba(15,23,42,0.08), 0 0 0 1px var(--border)',
             } : {
               background: 'transparent',
-              borderColor: 'var(--border)',
               color: 'var(--text3)',
             }}>
             {v.label}
@@ -278,36 +279,37 @@ export default function Topbar({ user }: { user: any }) {
         ))}
       </div>
 
-      <div className="hidden sm:flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px]"
-        style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-        <ArrowLeftRight size={11} style={{ color: 'var(--text3)' }} />
-        <span style={{ color: 'var(--text3)' }}>1 AED =</span>
-        <span className="font-bold font-mono" style={{ color: 'var(--gold)' }}>₹{fxRate.toFixed(2)}</span>
-        <span className="text-[9px] px-1 py-0.5 rounded font-semibold" style={{ background: '#D1FAE5', color: '#065F46' }}>Live</span>
+      <div className="hidden lg:flex items-center gap-1.5 rounded-lg px-3 h-9 text-[12px]"
+        style={{ background: '#fff', border: '1px solid var(--border)' }}
+        title="Live AED → INR rate used for the All view">
+        <ArrowLeftRight size={12} style={{ color: 'var(--text3)' }} />
+        <span style={{ color: 'var(--text3)' }}>1 AED</span>
+        <span className="font-semibold font-mono" style={{ color: 'var(--text)' }}>₹{fxRate.toFixed(2)}</span>
+        <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--income)' }} aria-label="Live rate" />
       </div>
 
-      <div className="ml-auto flex items-center gap-2 sm:gap-3">
+      <div className="ml-auto flex items-center gap-2">
+        <button onClick={() => setPaletteOpen(true)} aria-label="Search"
+          className="md:hidden wl-btn" style={{ width: 36, height: 36, padding: 0 }}>
+          <Search size={15} />
+        </button>
         {/* Universal Import Statement button — updates all sections */}
         <button
-          onClick={() => setShowUpload(true)}
-          className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all"
-          style={{ background: 'var(--sage-bg)', borderColor: 'var(--sage)', color: 'var(--sage)' }}
+          onClick={() => setUploadOpen(true)}
+          className="wl-btn wl-btn-primary" style={{ height: 36 }}
           title="Import bank statement — updates expenses, income, loans & fixed deposits">
-          <Upload size={12} /> <span className="hidden sm:inline">Import Statement</span>
+          <Upload size={14} /> <span className="hidden sm:inline">Import</span>
         </button>
         <NotificationsPanel />
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: 'var(--sage-bg)' }}>
-            <User size={13} style={{ color: 'var(--sage)' }} />
-          </div>
-          <span className="hidden sm:inline text-[12px] font-medium" style={{ color: 'var(--text2)' }}>
-            {user?.full_name?.split(' ')[0] ?? 'User'}
-          </span>
+        <div className="hidden sm:flex w-9 h-9 rounded-full items-center justify-center flex-shrink-0 text-[12px] font-bold"
+          style={{ background: 'var(--accent-bg)', color: 'var(--accent2)' }}
+          title={user?.full_name ?? user?.email ?? ''}>
+          {initials || <User size={14} />}
         </div>
       </div>
     </header>
 
-    {showUpload && <BankStatementUploadModal onClose={() => setShowUpload(false)} />}
+    {uploadOpen && <BankStatementUploadModal onClose={() => setUploadOpen(false)} />}
   </>
   )
 }

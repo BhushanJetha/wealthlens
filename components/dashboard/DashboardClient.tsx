@@ -1,544 +1,569 @@
 'use client'
-import { useMemo } from 'react'
-import { useViewStore } from '@/store/viewStore'
-import MetricCard from '@/components/dashboard/MetricCard'
-import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell
-} from 'recharts'
-import {
-  TrendingUp, TrendingDown, Wallet, Percent,
-  CheckCircle2, Clock, AlertCircle, Target, ArrowRight
-} from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import {
+  ArrowUpRight, ArrowDownRight, AlertCircle, Clock, Info, CheckCircle2, AlertTriangle,
+  Lightbulb, ChevronRight, Upload, Landmark, CreditCard, Shield, CalendarClock, Repeat,
+  Target, TrendingUp, Wallet, type LucideIcon,
+} from 'lucide-react'
+import { useViewStore } from '@/store/viewStore'
+import { useUiStore } from '@/store/uiStore'
+import { computeNetWorth, groupAssets, type Holdings } from '@/lib/netWorth'
+import { buildHomeInsights, netWorthHistory, localToday, fmtDay, type Snapshot, type Attention, type Insight, type Upcoming } from '@/lib/insights'
+import { goalCurrentValue } from '@/lib/goalProgress'
+import { fmtMoney, fmtCompact } from '@/lib/format'
 
-function toINR(amount: number, currency: string, fx: number) {
-  return currency === 'AED' ? amount * fx : amount
+interface Props {
+  firstName: string | null
+  today: string
+  holdings: Holdings
+  transactions: any[]
+  insurance: any[]
+  budgets: any[]
+  goals: any[]
+  goalInvestments: any[]
+  snapshots: Snapshot[]
+  historyReady: boolean
 }
-function fmt(n: number, sym: string) {
-  if (Math.abs(n) >= 10000000) return `${sym}${(n / 10000000).toFixed(2)}Cr`
-  if (Math.abs(n) >= 100000)   return `${sym}${(n / 100000).toFixed(2)}L`
-  return `${sym}${Math.round(n).toLocaleString('en-IN')}`
-}
 
-const DONUT_COLORS = ['#3D7A58','#D4920A','#3B7DD8','#C96A3A','#7C5CBF','#2E7D52']
-const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const MONTHS_LONG = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
-export default function DashboardClient({ transactions, loans, accounts, stocks, mutualFunds, fixedDeposits, insurance, goals, budgets,
-  recurringDeposits = [], npsAccounts = [], licPolicies = [], goldInvestments = [], bondInvestments = [], etfInvestments = [], ppfEpfAccounts = [] }: any) {
-  const { view, fromMonth, toMonth, fxRate: FX } = useViewStore()
+export default function DashboardClient(p: Props) {
+  const { view, toMonth, fxRate: FX } = useViewStore()
+  const { setUploadOpen } = useUiStore()
+  const cur = view === 'uae' ? 'AED' : 'INR'
+  const money = (n: number) => fmtMoney(n, cur)
+  const short = (n: number) => fmtCompact(n, cur)
 
-  const inRange = (txn_date: string) => {
-    const m = txn_date?.slice(0, 7) ?? ''
-    return m >= fromMonth && m <= toMonth
-  }
+  // Browser-local "today" + greeting (set after mount so SSR markup matches)
+  const [today, setToday] = useState(p.today)
+  const [greeting, setGreeting] = useState('Welcome back')
+  useEffect(() => {
+    setToday(localToday())
+    const h = new Date().getHours()
+    setGreeting(h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening')
+  }, [])
 
-  const metrics = useMemo(() => {
-    const creditCards = accounts.filter((a: any) => a.account_type === 'credit_card')
-    const filterByView = (arr: any[], currencyField = 'currency') =>
-      view === 'uae'   ? arr.filter((x: any) => x[currencyField] === 'AED' || x.country === 'UAE')
-      : view === 'india' ? arr.filter((x: any) => x[currencyField] === 'INR' || x.country === 'India')
-      : arr
+  // The Topbar month picker chooses the month Home describes (its end month)
+  const focusMonth = toMonth > today.slice(0, 7) ? today.slice(0, 7) : toMonth
 
-    const filteredLoans = filterByView(loans)
-    const filteredCards = filterByView(creditCards)
-    const filteredStocks = filterByView(stocks)
-    const filteredMF     = filterByView(mutualFunds)
-    const filteredFD     = filterByView(fixedDeposits)
+  const nw = useMemo(() => computeNetWorth(p.holdings, view, FX), [p.holdings, view, FX])
+  const groups = useMemo(() => groupAssets(nw.assetRows), [nw])
+  const hist = useMemo(() => netWorthHistory(p.snapshots, view, today), [p.snapshots, view, today])
 
-    const sym = view === 'uae' ? 'AED ' : '₹'
+  const ins = useMemo(() => buildHomeInsights({
+    view, fx: FX, today, focusMonth,
+    txns: p.transactions,
+    accounts: p.holdings.accounts, loans: p.holdings.loans, insurance: p.insurance,
+    fixedDeposits: p.holdings.fixedDeposits, budgets: p.budgets,
+    mutualFunds: p.holdings.mutualFunds, stocks: p.holdings.stocks,
+    cash: nw.cash,
+    invested: { value: nw.totalAssets - nw.cash, cost: nw.totalInvested - nw.cash },
+  }), [view, FX, today, focusMonth, p, nw])
 
-    const stockVal  = filteredStocks.reduce((a: number, s: any) => a + (view === 'consolidated' ? toINR(s.quantity*(s.current_price??s.avg_buy_price),s.currency,FX) : s.quantity*(s.current_price??s.avg_buy_price)), 0)
-    const mfVal     = filteredMF.reduce((a: number, m: any) => a + m.units*(m.current_nav??m.avg_nav), 0)
-    const fdVal     = filteredFD.reduce((a: number, f: any) => a + (view === 'consolidated' ? toINR(Number(f.principal),f.currency,FX) : Number(f.principal)), 0)
-    const totalAssets = stockVal + mfVal + fdVal
-
-    const loanLiab = filteredLoans.reduce((a: number, l: any) => a + (view === 'consolidated' ? toINR(Number(l.outstanding_amt),l.currency,FX) : Number(l.outstanding_amt)), 0)
-    const cardLiab = filteredCards.reduce((a: number, c: any) => a + (view === 'consolidated' ? toINR(Number(c.outstanding_bal??0),c.currency,FX) : Number(c.outstanding_bal??0)), 0)
-    const totalLiab = loanLiab + cardLiab
-
-    const txRange = filterByView(transactions.filter((t: any) => inRange(t.txn_date)))
-    const monthlyIncome  = txRange.filter((t:any)=>t.txn_type==='income').reduce((a:number,t:any)=>a+(view==='consolidated'?toINR(Number(t.amount),t.currency,FX):Number(t.amount)),0)
-    const monthlyExpense = txRange.filter((t:any)=>t.txn_type==='expense').reduce((a:number,t:any)=>a+(view==='consolidated'?toINR(Number(t.amount),t.currency,FX):Number(t.amount)),0)
-    const savingsRate    = monthlyIncome > 0 ? Math.round((monthlyIncome - monthlyExpense) / monthlyIncome * 100) : 0
-
-    const totalLimit = filteredCards.reduce((a:number,c:any)=>a+Number(c.credit_limit??0),0)
-    const totalBal   = filteredCards.reduce((a:number,c:any)=>a+Number(c.outstanding_bal??0),0)
-    const utilPct    = totalLimit > 0 ? Math.round(totalBal/totalLimit*100) : 0
-
-    // Full equity (all investment types) for D/E widget — view-filtered
-    const convV = (amt: number, cur: string) => view === 'consolidated' ? toINR(amt, cur, FX) : amt
-    // Bank & cash balances (non-credit-card accounts) — part of net worth
-    const bankVal  = filterByView(accounts.filter((a: any) => a.account_type !== 'credit_card')).reduce((a: number, x: any) => a + convV(Number(x.current_balance) || Number(x.outstanding_bal) || 0, x.currency ?? 'INR'), 0)
-    // RD current value = amount paid in so far (not the full committed total)
-    const rdVal    = filterByView(recurringDeposits ?? []).reduce((a: number, r: any) => a + convV(r.current_amount != null ? Number(r.current_amount) : Number(r.monthly_amount ?? 0) * Number(r.months_paid ?? 0), r.currency ?? 'INR'), 0)
-    const npsVal   = filterByView(npsAccounts ?? []).reduce((a: number, n: any) => a + Number(n.corpus_amount ?? 0), 0)
-    const licPaid  = filterByView(licPolicies ?? []).reduce((a: number, l: any) => a + Number(l.total_paid ?? 0), 0)
-    const ppfVal   = filterByView(ppfEpfAccounts ?? []).reduce((a: number, x: any) => a + convV(Number(x.current_balance ?? 0), x.currency ?? 'INR'), 0)
-    const goldVal  = filterByView(goldInvestments ?? []).reduce((a: number, g: any) => {
-      if (g.current_price_per_gram && g.quantity_grams) return a + Number(g.current_price_per_gram) * Number(g.quantity_grams)
-      return a + Number(g.invested_amount ?? 0)
-    }, 0)
-    const bondVal  = filterByView(bondInvestments ?? []).reduce((a: number, b: any) => a + Number(b.current_value ?? b.invested_amount ?? 0), 0)
-    const etfVal   = filterByView(etfInvestments ?? []).reduce((a: number, e: any) => a + Number(e.units ?? 0) * Number(e.current_price ?? e.avg_buy_price ?? 0), 0)
-    const fullEquity = totalAssets + rdVal + npsVal + licPaid + ppfVal + goldVal + bondVal + etfVal
-    // Invested (cost basis) — market-linked at cost; fixed-income at current
-    const stockInv = filteredStocks.reduce((a: number, s: any) => a + convV(Number(s.quantity || 0) * Number(s.avg_buy_price ?? 0), s.currency ?? 'INR'), 0)
-    const mfInv    = filteredMF.reduce((a: number, m: any) => a + (Number(m.invested_amount) || Number(m.units || 0) * Number(m.avg_nav ?? 0)), 0)
-    const npsInv   = filterByView(npsAccounts ?? []).reduce((a: number, n: any) => a + (Number(n.invested_amount) || Number(n.corpus_amount ?? 0)), 0)
-    const goldInv  = filterByView(goldInvestments ?? []).reduce((a: number, g: any) => a + Number(g.invested_amount ?? 0), 0)
-    const bondInv  = filterByView(bondInvestments ?? []).reduce((a: number, b: any) => a + Number(b.invested_amount ?? b.current_value ?? 0), 0)
-    const etfInv   = filterByView(etfInvestments ?? []).reduce((a: number, e: any) => a + (Number(e.invested_amount) || Number(e.units ?? 0) * Number(e.avg_buy_price ?? 0)), 0)
-    const fullInvested = stockInv + mfInv + fdVal + rdVal + npsInv + licPaid + ppfVal + goldInv + bondInv + etfInv
-    // Total net worth = all investments + bank cash − liabilities (matches the Net Worth tab)
-    const netWorth  = fullEquity + bankVal - totalLiab
-    const totalPortfolio = fullEquity + totalLiab
-    const debtPct = totalPortfolio > 0 ? Math.round(totalLiab / totalPortfolio * 100) : 0
-    const deZone  = debtPct > 60 ? 'high_debt' : debtPct > 30 ? 'moderate' : totalLiab === 0 && fullEquity > 0 ? 'debt_free' : 'healthy'
-
-    return { sym, totalAssets, totalLiab, netWorth, monthlyIncome, monthlyExpense, savingsRate, utilPct, filteredLoans, filteredCards, fullEquity, fullInvested, debtPct, deZone }
-  }, [view, fromMonth, toMonth, transactions, loans, accounts, stocks, mutualFunds, fixedDeposits, recurringDeposits, npsAccounts, licPolicies, goldInvestments, bondInvestments, etfInvestments])
-
-  const { sym } = metrics
-
-  // Build all months in selected range, cap display at 12 for charts
-  const rangeMonths = useMemo(() => {
-    const months: string[] = []
-    let cur = fromMonth
-    while (cur <= toMonth && months.length < 60) {
-      months.push(cur)
-      const [y, m] = cur.split('-').map(Number)
-      const d = new Date(y, m, 1)
-      cur = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  // Goals: progress from linked investments (same as the Goals tab)
+  const goals = useMemo(() => {
+    const conv = (v: number, c: string) => view === 'consolidated' && c === 'AED' ? v * FX : v
+    const all: Record<string, any[]> = {
+      stocks: p.holdings.stocks, mutual_funds: p.holdings.mutualFunds, fixed_deposits: p.holdings.fixedDeposits,
+      recurring_deposits: p.holdings.recurringDeposits, nps_accounts: p.holdings.nps, lic_policies: p.holdings.lic,
+      gold_investments: p.holdings.gold, bond_investments: p.holdings.bonds, etf_investments: p.holdings.etf,
     }
-    return months
-  }, [fromMonth, toMonth])
+    return (p.goals ?? [])
+      .filter(g => (g.status ?? 'active') === 'active' && Number(g.target_amount) > 0)
+      .filter(g => view === 'consolidated' || (view === 'uae' ? g.currency === 'AED' : g.currency !== 'AED'))
+      .map(g => {
+        const target = conv(Number(g.target_amount), g.currency ?? 'INR')
+        const current = goalCurrentValue(g.id, p.goalInvestments ?? [], all, conv)
+        return { ...g, target, current, pct: target > 0 ? Math.min(100, Math.round(current / target * 100)) : 0 }
+      })
+      .sort((a, b) => b.pct - a.pct).slice(0, 3)
+  }, [p.goals, p.goalInvestments, p.holdings, view, FX])
 
-  const displayMonths = rangeMonths.length > 12 ? rangeMonths.slice(-12) : rangeMonths
-
-  // True if selected range includes today's month
-  const todayMonth = new Date().toISOString().slice(0, 7)
-  const isLiveRange = fromMonth <= todayMonth && toMonth >= todayMonth
-
-  // Whether there's any transaction data in the selected range
-  const hasRangeData = transactions.some((t: any) => inRange(t.txn_date))
-
-  // Income/expense bar data — strictly for the selected range months
-  const incomeExpenseData = useMemo(() => {
-    return displayMonths.map(m => {
-      const monthTxns = transactions.filter((t: any) => t.txn_date?.startsWith(m))
-      const income  = monthTxns.filter((t:any)=>t.txn_type==='income').reduce((a:number,t:any)=>a+Number(t.amount),0)
-      const expense = monthTxns.filter((t:any)=>t.txn_type==='expense').reduce((a:number,t:any)=>a+Number(t.amount),0)
-      const savings = income - expense
-      return { month: MONTHS_SHORT[Number(m.slice(5))-1], income: Math.round(income), expense: Math.round(expense), savings: Math.max(0,Math.round(savings)) }
-    })
-  }, [transactions, displayMonths])
-
-  // NW trend — only shown for live range; simulated from current NW across range months
-  const nwTrend = useMemo(() => {
-    if (!isLiveRange) return []
-    return displayMonths.map((m, idx) => ({
-      month: MONTHS_SHORT[Number(m.slice(5))-1],
-      value: Math.round(metrics.netWorth * (0.78 + idx * (0.22 / Math.max(displayMonths.length - 1, 1))))
-    }))
-  }, [metrics.netWorth, displayMonths, isLiveRange])
-
-  // Budget donut data
-  const budgetData = useMemo(() => {
-    const spendMap: Record<string, number> = {}
-    transactions.filter((t:any)=>t.txn_type==='expense'&&inRange(t.txn_date)).forEach((t:any)=>{ spendMap[t.category]=(spendMap[t.category]??0)+Number(t.amount) })
-    return Object.entries(spendMap).map(([name, value]) => ({ name, value: Math.round(value) })).sort((a,b)=>b.value-a.value).slice(0,6)
-  }, [transactions, fromMonth, toMonth])
-
-  const budgetTotal = budgetData.reduce((a,d)=>a+d.value,0)
-
-  // Upcoming bills — only meaningful when viewing the current/future period
-  const upcomingBills = useMemo(() => {
-    if (!isLiveRange) return []
-    const today = new Date()
-    const items: Array<{ name: string; amount: string; date: string; daysLeft: number; status: 'paid' | 'upcoming' | 'urgent' }> = []
-    loans.forEach((l: any) => {
-      if (l.next_emi_date) {
-        const d = Math.ceil((new Date(l.next_emi_date).getTime() - today.getTime()) / 86400000)
-        if (d <= 45) items.push({ name: `${l.name} EMI`, amount: `${l.currency==='AED'?'AED ':'₹'}${Number(l.emi_amount).toLocaleString('en-IN')}`, date: l.next_emi_date, daysLeft: d, status: d < 0 ? 'paid' : d <= 7 ? 'urgent' : 'upcoming' })
-      }
-    })
-    insurance.forEach((p: any) => {
-      if (p.next_premium_date) {
-        const d = Math.ceil((new Date(p.next_premium_date).getTime() - today.getTime()) / 86400000)
-        if (d <= 45) items.push({ name: p.policy_name, amount: `${p.currency==='AED'?'AED ':'₹'}${Number(p.annual_premium).toLocaleString('en-IN')}`, date: p.next_premium_date, daysLeft: d, status: d < 0 ? 'paid' : d <= 7 ? 'urgent' : 'upcoming' })
-      }
-    })
-    return items.sort((a,b)=>a.daysLeft-b.daysLeft).slice(0,6)
-  }, [loans, insurance, isLiveRange])
-
-  // Debt payoff
-  const totalDebt = metrics.totalLiab
-  const monthlyPayments = loans.reduce((a:number,l:any)=>a+Number(l.emi_amount??0),0)
-  const debtFreeMonths = monthlyPayments > 0 ? Math.ceil(totalDebt / monthlyPayments) : 0
-  const debtFreeYear = debtFreeMonths > 0 ? new Date(Date.now() + debtFreeMonths*30*86400000).toLocaleDateString('en-GB',{month:'short',year:'numeric'}) : 'Debt Free'
-
-  // Savings goals
-  const topGoals = goals.filter((g:any)=>g.target_amount>0).slice(0,2)
+  const isEmpty = p.transactions.length === 0 && nw.totalAssets === 0 && nw.totalLiab === 0
+  const [y, m] = focusMonth.split('-').map(Number)
+  const periodLabel = ins.isCurrent
+    ? `${MONTHS_LONG[m - 1].slice(0, 3)} 1–${ins.dayCut} · this month so far`
+    : `${MONTHS_LONG[m - 1]} ${y}`
+  const dateLine = new Date(today + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
+  const viewLabel = view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'All · INR'
 
   return (
-    <div className="space-y-5 animate-fade-up">
+    <div className="max-w-[1280px] mx-auto space-y-4 sm:space-y-5 animate-fade-up">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-end justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text)' }}>Welcome back!</h1>
-          <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
-            Here&apos;s your financial overview · {view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'}
-          </p>
-        </div>
-        <div className="text-[12px] font-medium px-3 py-1.5 rounded-lg" style={{ background: 'var(--sage-bg)', color: 'var(--sage)' }}>
-          {fromMonth === toMonth
-            ? new Date(fromMonth + '-01').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
-            : `${new Date(fromMonth + '-01').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })} – ${new Date(toMonth + '-01').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}`}
+          <h1 className="text-[22px] sm:text-[24px] font-bold tracking-tight" style={{ color: 'var(--text)' }}>
+            {greeting}{p.firstName ? `, ${p.firstName}` : ''}
+          </h1>
+          <p className="text-[13px] mt-0.5" style={{ color: 'var(--text3)' }}>{dateLine} · {viewLabel}</p>
         </div>
       </div>
 
-      {/* No-data banner for historical periods */}
-      {!hasRangeData && (
-        <div className="rounded-xl p-4 flex items-center gap-3"
-          style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-          <AlertCircle size={16} style={{ color: 'var(--gold)', flexShrink: 0 }} />
-          <div className="text-[12px]" style={{ color: 'var(--text2)' }}>
-            No transaction data found for the selected period. Charts and metrics below reflect current portfolio values or are empty.
+      {isEmpty ? <Onboarding onImport={() => setUploadOpen(true)} /> : (<>
+      {/* Row 1: Net worth + Needs attention */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <NetWorthCard nw={nw} groups={groups} hist={hist} historyReady={p.historyReady} money={money} short={short} />
+        <AttentionCard items={ins.attention} onImport={() => setUploadOpen(true)} />
+      </div>
+
+      {/* Row 2: KPI tiles */}
+      <div>
+        <div className="flex items-baseline justify-between mb-2">
+          <h2 className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Cash flow</h2>
+          <span className="text-[12px]" style={{ color: 'var(--text3)' }}>{periodLabel}</span>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <StatTile label="Income" value={short(ins.income.value)} upIsGood
+            delta={ins.income.comparable ? pctDelta(ins.income.value, ins.income.baseline) : null}
+            sub={ins.income.baseline != null ? `Usual ${short(ins.income.baseline)} a month` : 'No earlier months yet'} />
+          <StatTile label="Spent" value={short(ins.spend.value)} delta={pctDelta(ins.spend.value, ins.spend.baseline)} upIsGood={false}
+            sub={ins.spend.baseline != null ? `Usual ${short(ins.spend.baseline)}${ins.isCurrent ? ' by now' : ''}` : 'No earlier months yet'} />
+          <StatTile label="Saved" value={short(ins.saved.value)} upIsGood
+            delta={ins.saved.comparable && ins.saved.rate != null && ins.saved.baselineRate != null ? { text: `${Math.abs(ins.saved.rate - ins.saved.baselineRate)} pts`, up: ins.saved.rate >= ins.saved.baselineRate } : null}
+            sub={savedSub(ins, short)} />
+          <RunwayTile months={ins.runway.months} cash={nw.cash} short={short} />
+        </div>
+      </div>
+
+      {/* Row 3: Insights + Spending */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <InsightsCard items={ins.insights} />
+        <SpendingCard rows={ins.categories} total={ins.spend.value} money={money} short={short} periodLabel={periodLabel} isCurrent={ins.isCurrent} />
+      </div>
+
+      {/* Row 4: Coming up + Goals */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <UpcomingCard items={ins.upcoming} today={today} />
+        <GoalsCard goals={goals} short={short} />
+      </div>
+      </>)}
+    </div>
+  )
+}
+
+// ─── Pieces ───────────────────────────────────────────────────────────────────
+
+// Mid-month, salary often hasn't landed yet — a savings % then is meaningless
+// (e.g. "−229% of income"), so say what's still to come instead.
+function savedSub(ins: ReturnType<typeof buildHomeInsights>, short: (n: number) => string) {
+  const { income, saved, isCurrent } = ins
+  const incomePending = isCurrent && income.baseline != null && income.value < 0.8 * income.baseline
+  if (incomePending) return `Income still to come · usual ${short(income.baseline!)}`
+  if (saved.rate == null) return 'No income recorded'
+  return `${saved.rate}% of income${isCurrent ? ' so far' : ''}`
+}
+
+function pctDelta(value: number, base: number | null) {
+  if (base == null || base <= 0) return null
+  const p = Math.round((value - base) / base * 100)
+  return { text: `${Math.abs(p)}%`, up: p >= 0 }
+}
+
+function Card({ children, className = '', ...rest }: React.HTMLAttributes<HTMLDivElement>) {
+  return <section className={`wl-card p-4 sm:p-5 ${className}`} {...rest}>{children}</section>
+}
+
+function CardHeader({ id, title, right }: { id?: string; title: string; right?: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-2 mb-3">
+      <h2 id={id} className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>{title}</h2>
+      {right}
+    </div>
+  )
+}
+
+function MoreLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link href={href} className="text-[12px] font-medium inline-flex items-center gap-0.5 hover:underline" style={{ color: 'var(--accent)' }}>
+      {children} <ChevronRight size={13} />
+    </Link>
+  )
+}
+
+function NetWorthCard({ nw, groups, hist, historyReady, money, short }: {
+  nw: ReturnType<typeof computeNetWorth>; groups: ReturnType<typeof groupAssets>
+  hist: ReturnType<typeof netWorthHistory>; historyReady: boolean
+  money: (n: number) => string; short: (n: number) => string
+}) {
+  const change = hist.ref ? nw.netWorth - hist.ref.value : null
+  const changePct = hist.ref && hist.ref.value !== 0 ? Math.round((nw.netWorth - hist.ref.value) / Math.abs(hist.ref.value) * 1000) / 10 : null
+  const up = (change ?? 0) >= 0
+  // The live number replaces today's stored point so the line ends where the hero does
+  const series = useMemo(() => {
+    const s = hist.series.slice(0, -1)
+    return [...s, { date: hist.series[hist.series.length - 1]?.date ?? 'today', value: Math.round(nw.netWorth) }]
+  }, [hist.series, nw.netWorth])
+  const total = groups.reduce((a, g) => a + g.value, 0)
+
+  return (
+    <Card className="lg:col-span-2" aria-labelledby="nw-title">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <div id="nw-title" className="text-[13px] font-medium" style={{ color: 'var(--text3)' }}>Net worth</div>
+          <div className="text-[34px] sm:text-[44px] leading-[1.1] font-bold tracking-tight mt-1" style={{ color: nw.netWorth < 0 ? 'var(--expense)' : 'var(--text)' }}>
+            {money(nw.netWorth)}
           </div>
+          <div className="mt-1.5 text-[13px] flex items-center gap-1.5 flex-wrap">
+            {change != null ? (<>
+              <span className="inline-flex items-center gap-0.5 font-semibold" style={{ color: up ? 'var(--income)' : 'var(--expense)' }}>
+                {up ? <ArrowUpRight size={15} /> : <ArrowDownRight size={15} />}
+                {short(Math.abs(change))}{changePct != null ? ` (${up ? '+' : '−'}${Math.abs(changePct)}%)` : ''}
+              </span>
+              <span style={{ color: 'var(--text3)' }}>since {fmtDay(hist.ref!.date)}</span>
+            </>) : (
+              <span style={{ color: 'var(--text3)' }}>
+                {historyReady ? 'Tracking started — your trend appears after a few days.' : 'Run migration 023 in Supabase to start tracking net-worth history.'}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="flex gap-5 text-[12px]">
+          <div><div style={{ color: 'var(--text3)' }}>Assets</div><div className="font-semibold font-mono text-[14px] mt-0.5" style={{ color: 'var(--text)' }}>{short(nw.totalAssets)}</div></div>
+          <div><div style={{ color: 'var(--text3)' }}>Liabilities</div><div className="font-semibold font-mono text-[14px] mt-0.5" style={{ color: 'var(--text)' }}>{short(nw.totalLiab)}</div></div>
+        </div>
+      </div>
+
+      {series.length >= 2 && (
+        <div className="h-[96px] -mx-1 mt-3" aria-label="Net worth over time">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
+              <defs>
+                <linearGradient id="nwFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#4F46E5" stopOpacity={0.14} />
+                  <stop offset="100%" stopColor="#4F46E5" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="date" hide />
+              <YAxis hide domain={['dataMin', 'dataMax']} />
+              <Tooltip cursor={{ stroke: 'var(--border2)', strokeWidth: 1 }}
+                contentStyle={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '6px 10px' }}
+                labelFormatter={(d: any) => d === 'today' ? 'Today' : fmtDay(String(d))}
+                formatter={(v: any) => [money(Number(v)), 'Net worth']} />
+              <Area type="monotone" dataKey="value" stroke="#4F46E5" strokeWidth={2} fill="url(#nwFill)" isAnimationActive={false}
+                dot={false} activeDot={{ r: 4, stroke: '#fff', strokeWidth: 2, fill: '#4F46E5' }} />
+            </AreaChart>
+          </ResponsiveContainer>
         </div>
       )}
 
-      {/* KPI Row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <MetricCard
-          label="Total Net Worth"
-          value={isLiveRange ? fmt(metrics.netWorth, sym) : '—'}
-          delta={isLiveRange ? 'Current value' : 'Live period only'}
-          positive={isLiveRange}
-          accent="sage"
-          icon={<TrendingUp size={14} />}
-        />
-        <MetricCard
-          label={fromMonth === toMonth ? 'Monthly Income' : 'Period Income'}
-          value={hasRangeData ? fmt(metrics.monthlyIncome, sym) : '—'}
-          accent="income"
-          icon={<Wallet size={14} />}
-        />
-        <MetricCard
-          label={fromMonth === toMonth ? 'Monthly Expenses' : 'Period Expenses'}
-          value={hasRangeData ? fmt(metrics.monthlyExpense, sym) : '—'}
-          accent="expense"
-          icon={<TrendingDown size={14} />}
-        />
-        <MetricCard
-          label="Savings Rate"
-          value={hasRangeData ? `${metrics.savingsRate}%` : '—'}
-          delta={hasRangeData ? (metrics.savingsRate >= 20 ? '✓ On Track' : '⚠ Low') : 'No data'}
-          positive={metrics.savingsRate >= 20}
-          accent="gold"
-          icon={<Percent size={14} />}
-        />
+      {/* What it's made of */}
+      {total > 0 && (
+        <div className="mt-4">
+          <div className="flex h-2.5 w-full gap-[2px]" role="img"
+            aria-label={`Assets: ${groups.map(g => `${g.label} ${Math.round(g.value / total * 100)}%`).join(', ')}`}>
+            {groups.map((g, i) => (
+              <div key={g.key} title={`${g.label} · ${money(g.value)} (${Math.round(g.value / total * 100)}%)`}
+                style={{ width: `${g.value / total * 100}%`, minWidth: 3, background: g.color,
+                  borderRadius: `${i === 0 ? 4 : 0}px ${i === groups.length - 1 ? 4 : 0}px ${i === groups.length - 1 ? 4 : 0}px ${i === 0 ? 4 : 0}px` }} />
+            ))}
+          </div>
+          <ul className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1.5">
+            {groups.map(g => (
+              <li key={g.key} className="flex items-center gap-2 text-[12px] min-w-0">
+                <span className="w-2.5 h-2.5 rounded-[3px] flex-shrink-0" style={{ background: g.color }} />
+                <span className="truncate" style={{ color: 'var(--text2)' }}>{g.label}</span>
+                <span className="ml-auto font-mono font-medium" style={{ color: 'var(--text)' }}>{Math.round(g.value / total * 100)}%</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <div className="mt-4 pt-3 flex justify-end" style={{ borderTop: '1px solid var(--border)' }}>
+        <MoreLink href="/dashboard/net-worth">Net worth breakdown</MoreLink>
       </div>
+    </Card>
+  )
+}
 
-      {/* D/E Ratio Widget */}
-      {(() => {
-        const { debtPct, deZone, fullEquity, fullInvested, totalLiab } = metrics
-        const eqGain = fullEquity - fullInvested
-        const eqGainPct = fullInvested > 0 ? Math.round(eqGain / fullInvested * 1000) / 10 : 0
-        const zoneColor   = deZone === 'high_debt' ? '#EF4444' : deZone === 'moderate' ? '#F59E0B' : '#10B981'
-        const zoneBg      = deZone === 'high_debt' ? '#FEF2F2' : deZone === 'moderate' ? '#FFFBEB' : '#ECFDF5'
-        const zoneLabel   = deZone === 'high_debt' ? 'High Debt' : deZone === 'moderate' ? 'Moderate' : deZone === 'debt_free' ? 'Debt Free' : 'Healthy'
-        const zoneMessage = deZone === 'high_debt'
-          ? 'Debt exceeds investments. Prioritise loan repayment.'
-          : deZone === 'moderate'
-          ? 'Balanced but room to improve. Grow investments steadily.'
-          : deZone === 'debt_free'
-          ? 'No debt! Focus on compounding your investments.'
-          : 'Investments outweigh debt. Keep growing your equity.'
-        return (
-          <div className="wl-card p-4 flex items-center gap-4" style={{ border: `1.5px solid ${zoneColor}30`, background: zoneBg }}>
-            {/* Mini gauge bar */}
-            <div className="flex-shrink-0">
-              <div className="w-16 h-16 rounded-full flex items-center justify-center font-black text-[18px]"
-                style={{ background: `conic-gradient(${zoneColor} ${debtPct * 3.6}deg, #E5E7EB ${debtPct * 3.6}deg)`, color: zoneColor }}>
-                <div className="w-11 h-11 bg-white rounded-full flex items-center justify-center text-[13px] font-black" style={{ color: zoneColor }}>
-                  {debtPct}%
+const SEV: Record<Attention['severity'], { icon: LucideIcon; color: string; bg: string; label: string }> = {
+  high:   { icon: AlertCircle, color: 'var(--expense)', bg: 'var(--expense-bg)', label: 'Urgent' },
+  medium: { icon: Clock,       color: 'var(--gold)',    bg: 'var(--gold-bg)',    label: 'Soon' },
+  low:    { icon: Info,        color: 'var(--accent)',  bg: 'var(--accent-bg)',  label: 'To do' },
+}
+
+function AttentionCard({ items, onImport }: { items: Attention[]; onImport: () => void }) {
+  const [all, setAll] = useState(false)
+  const shown = all ? items : items.slice(0, 5)
+  return (
+    <Card aria-labelledby="att-title">
+      <CardHeader id="att-title" title="Needs attention" right={items.length > 0 && (
+        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: 'var(--accent-bg)', color: 'var(--accent2)' }}>{items.length}</span>
+      )} />
+      {items.length === 0 ? (
+        <div className="flex flex-col items-center justify-center text-center py-8 gap-2">
+          <CheckCircle2 size={28} style={{ color: 'var(--income)' }} />
+          <div className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>You&apos;re all caught up</div>
+          <div className="text-[12px]" style={{ color: 'var(--text3)' }}>No bills, renewals or missing statements right now.</div>
+        </div>
+      ) : (
+        <ul className="-mx-1">
+          {shown.map(it => {
+            const s = SEV[it.severity]; const Icon = s.icon
+            const action = it.action === 'upload'
+              ? <button onClick={onImport} className="wl-btn wl-btn-sm"><Upload size={12} />{it.actionLabel}</button>
+              : it.href ? <Link href={it.href} className="wl-btn wl-btn-sm">{it.actionLabel ?? 'Open'}</Link> : null
+            return (
+              <li key={it.id} className="flex items-start gap-3 px-1 py-2.5" style={{ borderTop: '1px solid var(--border)' }}>
+                <span className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: s.bg }} aria-label={s.label}>
+                  <Icon size={14} style={{ color: s.color }} />
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-semibold leading-snug" style={{ color: 'var(--text)' }}>{it.title}</div>
+                  <div className="text-[12px] leading-snug mt-0.5" style={{ color: 'var(--text3)' }}>{it.detail}</div>
                 </div>
-              </div>
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-0.5">
-                <span className="text-[13px] font-bold" style={{ color: 'var(--text)' }}>Debt vs Equity</span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: zoneColor + '20', color: zoneColor }}>{zoneLabel}</span>
-              </div>
-              <div className="text-[11px] mb-2" style={{ color: 'var(--text3)' }}>{zoneMessage}</div>
-              <div className="flex gap-x-3 gap-y-1 text-[11px] flex-wrap">
-                <span><span style={{ color: '#10B981' }}>▲</span> Invested <span className="font-mono font-bold" style={{ color: 'var(--text)' }}>{fmt(fullInvested, sym)}</span> → <span className="font-mono font-bold" style={{ color: 'var(--text)' }}>{fmt(fullEquity, sym)}</span> <span className="font-mono font-bold" style={{ color: eqGain >= 0 ? 'var(--income)' : 'var(--rose)' }}>{eqGain >= 0 ? '+' : ''}{eqGainPct}%</span></span>
-                <span><span style={{ color: '#EF4444' }}>▼</span> Debt <span className="font-mono font-bold" style={{ color: 'var(--text)' }}>{fmt(totalLiab, sym)}</span></span>
-              </div>
-            </div>
-            <Link href="/dashboard/debt-equity"
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-semibold flex-shrink-0"
-              style={{ background: zoneColor, color: '#fff' }}>
-              Full Analysis <ArrowRight size={11} />
-            </Link>
-          </div>
-        )
-      })()}
+                <div className="flex-shrink-0">{action}</div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      {items.length > 5 && (
+        <button onClick={() => setAll(a => !a)} className="mt-1 text-[12px] font-medium" style={{ color: 'var(--accent)' }}>
+          {all ? 'Show fewer' : `Show all ${items.length}`}
+        </button>
+      )}
+    </Card>
+  )
+}
 
-      {/* Row 2: Budget | Income&Expense | Bills */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Budget Summary */}
-        <div className="wl-card p-4">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Budget Summary</span>
-            <Link href="/dashboard/budgets" className="text-[10px] flex items-center gap-0.5" style={{ color: 'var(--sage)' }}>
-              View Budget <ArrowRight size={10} />
-            </Link>
-          </div>
-          {budgetData.length > 0 ? (
-            <>
-              <div className="flex justify-center">
-                <div className="relative w-[150px] h-[150px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={budgetData} dataKey="value" cx="50%" cy="50%" innerRadius={44} outerRadius={68} paddingAngle={2}>
-                        {budgetData.map((_,i)=><Cell key={i} fill={DONUT_COLORS[i%DONUT_COLORS.length]} />)}
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <div className="text-[13px] font-bold font-mono" style={{ color: 'var(--text)' }}>{fmt(budgetTotal, sym)}</div>
-                    <div className="text-[9px]" style={{ color: 'var(--text3)' }}>Selected period</div>
-                  </div>
-                </div>
-              </div>
-              <div className="space-y-1.5 mt-2">
-                {budgetData.map((d,i)=>(
-                  <div key={i} className="flex items-center justify-between text-[11px]">
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-2.5 h-2.5 rounded-sm" style={{ background: DONUT_COLORS[i%DONUT_COLORS.length] }} />
-                      <span style={{ color: 'var(--text2)' }}>{d.name}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono" style={{ color: 'var(--text)' }}>{fmt(d.value, sym)}</span>
-                      <span style={{ color: 'var(--text3)' }}>{budgetTotal>0?Math.round(d.value/budgetTotal*100):0}%</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="flex items-center justify-center h-32 text-[12px]" style={{ color: 'var(--text3)' }}>
-              {hasRangeData ? 'Upload statements to see spending' : 'No data for selected period'}
-            </div>
-          )}
-        </div>
-
-        {/* Income & Expense Overview */}
-        <div className="wl-card p-4">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Income &amp; Expense Overview</span>
-            <Link href="/dashboard/expenses" className="text-[10px] flex items-center gap-0.5" style={{ color: 'var(--sage)' }}>
-              View Reports <ArrowRight size={10} />
-            </Link>
-          </div>
-          {hasRangeData ? (
-            <>
-              <div className="flex items-center gap-3 mb-3">
-                {[['Income','var(--income)'],['Expenses','var(--expense)'],['Savings','var(--gold)']].map(([l,c])=>(
-                  <div key={l} className="flex items-center gap-1 text-[10px]">
-                    <span className="w-2.5 h-2 rounded-sm" style={{ background: c as string }} />
-                    <span style={{ color: 'var(--text3)' }}>{l}</span>
-                  </div>
-                ))}
-              </div>
-              <ResponsiveContainer width="100%" height={160}>
-                <BarChart data={incomeExpenseData} barCategoryGap="25%">
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                  <XAxis dataKey="month" tick={{ fill:'var(--text3)', fontSize:10 }} axisLine={false} tickLine={false} />
-                  <YAxis hide />
-                  <Tooltip
-                    contentStyle={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:8, fontSize:11 }}
-                    formatter={(v:any,n:string)=>[fmt(v,sym), n.charAt(0).toUpperCase()+n.slice(1)]}
-                    labelStyle={{ color:'var(--text)' }}
-                  />
-                  <Bar dataKey="income"  fill="var(--income)"  radius={[3,3,0,0]} />
-                  <Bar dataKey="expense" fill="var(--expense)" radius={[3,3,0,0]} />
-                  <Line type="monotone" dataKey="savings" stroke="var(--gold)" strokeWidth={1.5} dot={{ r:2, fill:'var(--gold)' }} />
-                </BarChart>
-              </ResponsiveContainer>
-            </>
-          ) : (
-            <div className="flex items-center justify-center h-40 text-[12px]" style={{ color: 'var(--text3)' }}>
-              No income or expense data for selected period
-            </div>
-          )}
-        </div>
-
-        {/* Bill Tracker */}
-        <div className="wl-card p-4">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Bill Tracker</span>
-            <Link href="/dashboard/loans" className="text-[10px] flex items-center gap-0.5" style={{ color: 'var(--sage)' }}>
-              View All Bills <ArrowRight size={10} />
-            </Link>
-          </div>
-          {upcomingBills.length === 0 ? (
-            <div className="flex items-center justify-center h-32 text-center text-[12px] px-4" style={{ color: 'var(--text3)' }}>
-              {isLiveRange ? 'No upcoming bills in the next 45 days' : 'Select current or future period to see upcoming bills'}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {upcomingBills.map((b, i) => {
-                const StatusIcon = b.status === 'paid' ? CheckCircle2 : b.status === 'urgent' ? AlertCircle : Clock
-                const statusColor = b.status === 'paid' ? 'var(--income)' : b.status === 'urgent' ? 'var(--rose)' : 'var(--gold)'
-                return (
-                  <div key={i} className="flex items-center justify-between py-2" style={{ borderBottom: i < upcomingBills.length-1 ? '1px solid var(--border)' : 'none' }}>
-                    <div>
-                      <div className="text-[12px] font-semibold" style={{ color: 'var(--text)' }}>{b.name}</div>
-                      <div className="text-[10px]" style={{ color: 'var(--text3)' }}>{b.date}</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[12px] font-mono font-bold" style={{ color: 'var(--text)' }}>{b.amount}</span>
-                      <div className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: `color-mix(in srgb, ${statusColor} 10%, transparent)`, color: statusColor }}>
-                        <StatusIcon size={10} />
-                        {b.status === 'paid' ? 'Paid' : b.status === 'urgent' ? 'Urgent' : 'Upcoming'}
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
+function StatTile({ label, value, delta, upIsGood, sub }: {
+  label: string; value: string; delta: { text: string; up: boolean } | null; upIsGood: boolean; sub: string
+}) {
+  const good = delta ? delta.up === upIsGood : true
+  return (
+    <div className="wl-card p-4">
+      <div className="text-[12.5px] font-medium" style={{ color: 'var(--text3)' }}>{label}</div>
+      <div className="text-[22px] sm:text-[24px] font-bold tracking-tight mt-1 leading-tight" style={{ color: 'var(--text)' }}>{value}</div>
+      <div className="mt-1.5 flex items-center gap-1.5 text-[12px] flex-wrap">
+        {delta && (
+          <span className="inline-flex items-center gap-0.5 font-semibold" style={{ color: good ? 'var(--income)' : 'var(--expense)' }}
+            aria-label={`${delta.up ? 'Up' : 'Down'} ${delta.text} versus usual`}>
+            {delta.up ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}{delta.text}
+          </span>
+        )}
+        <span className="leading-snug" style={{ color: 'var(--text3)' }}>{sub}</span>
       </div>
-
-      {/* Row 3: Debt | Goals | Net Worth */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Debt Payoff Preview */}
-        <div className="wl-card p-4">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Debt Payoff Preview</span>
-            <Link href="/dashboard/loans" className="text-[10px] flex items-center gap-0.5" style={{ color: 'var(--sage)' }}>
-              View Debt Plan <ArrowRight size={10} />
-            </Link>
-          </div>
-          <div className="flex items-start gap-3 mb-3">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--blue-bg)' }}>
-              <TrendingDown size={18} style={{ color: 'var(--blue)' }} />
-            </div>
-            <div>
-              <div className="text-[10px]" style={{ color: 'var(--text3)' }}>Total Debt</div>
-              <div className="text-[20px] font-bold font-mono" style={{ color: 'var(--text)' }}>{fmt(totalDebt, sym)}</div>
-              <div className="text-[10px] mt-0.5" style={{ color: 'var(--text3)' }}>
-                Estimated Paid Off: <span className="font-semibold" style={{ color: 'var(--text)' }}>{debtFreeYear}</span>
-              </div>
-            </div>
-          </div>
-          {/* Simple payoff chart */}
-          <ResponsiveContainer width="100%" height={90}>
-            <LineChart data={Array.from({length:6},(_, i)=>({ m: i, v: Math.max(0, totalDebt - monthlyPayments*(i+1)*3) }))}>
-              <Line type="monotone" dataKey="v" stroke="var(--blue)" strokeWidth={2} dot={false} />
-              <Tooltip contentStyle={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:8, fontSize:10 }} formatter={(v:any)=>[fmt(v,sym),'Remaining']} labelStyle={{ display:'none' }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Savings Goals */}
-        <div className="wl-card p-4">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Savings Goals</span>
-            <Link href="/dashboard/budgets" className="text-[10px] flex items-center gap-0.5" style={{ color: 'var(--sage)' }}>
-              View All Goals <ArrowRight size={10} />
-            </Link>
-          </div>
-          {topGoals.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-32 gap-2 text-[12px]" style={{ color: 'var(--text3)' }}>
-              <Target size={24} style={{ color: 'var(--border2)' }} />
-              No goals set yet
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {topGoals.map((g:any, i:number) => {
-                const pct = Math.min(100, Math.round((Number(g.current_amount??0)/Number(g.target_amount))*100))
-                const colors = ['var(--sage)','var(--gold)']
-                return (
-                  <div key={i}>
-                    <div className="flex justify-between items-baseline mb-1.5">
-                      <div className="text-[12px] font-semibold" style={{ color: 'var(--text)' }}>{g.name}</div>
-                      <div className="text-[11px] font-mono" style={{ color: 'var(--text2)' }}>
-                        {fmt(Number(g.current_amount??0),sym)} of {fmt(Number(g.target_amount),sym)}
-                      </div>
-                    </div>
-                    <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}>
-                      <div className="h-full rounded-full transition-all" style={{ width:`${pct}%`, background: colors[i] }} />
-                    </div>
-                    <div className="text-[10px] mt-1 text-right font-semibold" style={{ color: colors[i] as string }}>{pct}%</div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Net Worth Over Time */}
-        <div className="wl-card p-4">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Net Worth Over Time</span>
-            <Link href="/dashboard/investments" className="text-[10px] flex items-center gap-0.5" style={{ color: 'var(--sage)' }}>
-              View Net Worth <ArrowRight size={10} />
-            </Link>
-          </div>
-          {isLiveRange && nwTrend.length > 0 ? (
-            <ResponsiveContainer width="100%" height={150}>
-              <LineChart data={nwTrend}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="month" tick={{ fill:'var(--text3)', fontSize:10 }} axisLine={false} tickLine={false} />
-                <YAxis hide />
-                <Tooltip
-                  contentStyle={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:8, fontSize:11 }}
-                  formatter={(v:any)=>[fmt(v,sym),'Net Worth']}
-                  labelStyle={{ color:'var(--text)' }}
-                />
-                <Line type="monotone" dataKey="value" stroke="var(--sage)" strokeWidth={2.5}
-                  dot={{ r:3, fill:'var(--sage)', strokeWidth:0 }}
-                  activeDot={{ r:5, fill:'var(--sage)' }} />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="flex items-center justify-center h-[150px] text-center text-[12px] px-4" style={{ color: 'var(--text3)' }}>
-              Net worth trend is available for the current period only
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Monthly Review Banner — only shown when there's data */}
-      {hasRangeData && <div className="wl-card p-4 flex items-center gap-4"
-        style={{ background: 'linear-gradient(135deg, var(--sage-bg) 0%, #fff 60%)' }}>
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--sage)', color: '#fff' }}>
-          <Target size={18} />
-        </div>
-        <div className="flex-1">
-          <div className="text-[13px] font-bold" style={{ color: 'var(--text)' }}>
-            {fromMonth === toMonth ? 'Monthly Review' : 'Period Review'} — {fromMonth === toMonth
-              ? new Date(fromMonth + '-01').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
-              : `${new Date(fromMonth + '-01').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })} – ${new Date(toMonth + '-01').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}`}
-          </div>
-          <div className="text-[11px] mt-0.5" style={{ color: 'var(--text2)' }}>
-            {metrics.monthlyExpense < metrics.monthlyIncome
-              ? `You saved ${fmt(metrics.monthlyIncome - metrics.monthlyExpense, sym)} this month. Savings rate: ${metrics.savingsRate}%. Keep it up!`
-              : `Expenses exceeded income by ${fmt(metrics.monthlyExpense - metrics.monthlyIncome, sym)}. Review your budget.`}
-          </div>
-        </div>
-        <Link href="/dashboard/budgets"
-          className="px-4 py-2 rounded-lg text-[12px] font-semibold text-white flex items-center gap-1.5"
-          style={{ background: 'var(--sage)' }}>
-          Review in Detail <ArrowRight size={12} />
-        </Link>
-      </div>}
     </div>
+  )
+}
+
+function RunwayTile({ months, cash, short }: { months: number | null; cash: number; short: (n: number) => string }) {
+  const pct = months != null ? Math.min(100, months / 6 * 100) : 0
+  const color = months == null ? 'var(--border2)' : months >= 6 ? 'var(--income)' : months >= 3 ? 'var(--gold)' : 'var(--expense)'
+  return (
+    <div className="wl-card p-4">
+      <div className="text-[12.5px] font-medium" style={{ color: 'var(--text3)' }}>Emergency fund</div>
+      <div className="text-[22px] sm:text-[24px] font-bold tracking-tight mt-1 leading-tight" style={{ color: 'var(--text)' }}>
+        {months != null ? `${months} mo` : '—'}
+      </div>
+      <div className="mt-2 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}
+        role="meter" aria-valuemin={0} aria-valuemax={6} aria-valuenow={months ?? 0} aria-label="Months of spending covered by cash, target 6">
+        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+      </div>
+      <div className="mt-1.5 text-[12px] leading-snug" style={{ color: 'var(--text3)' }}>{short(cash)} cash · target 6 months</div>
+    </div>
+  )
+}
+
+const TONE: Record<Insight['tone'], { icon: LucideIcon; color: string; bg: string }> = {
+  good:    { icon: CheckCircle2,  color: 'var(--income)', bg: 'var(--income-bg)' },
+  warn:    { icon: AlertTriangle, color: 'var(--gold)',   bg: 'var(--gold-bg)' },
+  neutral: { icon: Lightbulb,     color: 'var(--accent)', bg: 'var(--accent-bg)' },
+}
+
+function InsightsCard({ items }: { items: Insight[] }) {
+  return (
+    <Card aria-labelledby="ins-title">
+      <CardHeader id="ins-title" title="Insights" />
+      {items.length === 0 ? (
+        <div className="text-[12.5px] py-6 text-center" style={{ color: 'var(--text3)' }}>
+          Insights appear once there are a couple of months of transactions.
+        </div>
+      ) : (
+        <ul className="-mx-1">
+          {items.slice(0, 6).map(it => {
+            const t = TONE[it.tone]; const Icon = t.icon
+            const body = (<>
+              <span className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: t.bg }}>
+                <Icon size={14} style={{ color: t.color }} />
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="text-[13px] font-semibold leading-snug" style={{ color: 'var(--text)' }}>{it.title}</div>
+                {it.detail && <div className="text-[12px] leading-snug mt-0.5" style={{ color: 'var(--text3)' }}>{it.detail}</div>}
+              </div>
+              {it.href && <ChevronRight size={15} className="flex-shrink-0 mt-1.5" style={{ color: 'var(--text4)' }} />}
+            </>)
+            return (
+              <li key={it.id} style={{ borderTop: '1px solid var(--border)' }}>
+                {it.href
+                  ? <Link href={it.href} className="flex items-start gap-3 px-1 py-2.5 rounded-lg hover:bg-slate-50 transition-colors">{body}</Link>
+                  : <div className="flex items-start gap-3 px-1 py-2.5">{body}</div>}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </Card>
+  )
+}
+
+function SpendingCard({ rows, total, money, short, periodLabel, isCurrent }: {
+  rows: { cat: string; label: string; value: number; baseline: number | null }[]
+  total: number; money: (n: number) => string; short: (n: number) => string; periodLabel: string; isCurrent: boolean
+}) {
+  const max = Math.max(1, ...rows.map(r => Math.max(r.value, r.baseline ?? 0)))
+  const hasBase = rows.some(r => r.baseline != null && r.baseline > 0)
+  return (
+    <Card className="lg:col-span-2" aria-labelledby="sp-title">
+      <CardHeader id="sp-title" title="Where your money went" right={<MoreLink href="/dashboard/expenses/report">Expense report</MoreLink>} />
+      <div className="flex items-center gap-4 text-[12px] mb-3 flex-wrap" style={{ color: 'var(--text3)' }}>
+        <span>{periodLabel} · <span className="font-semibold font-mono" style={{ color: 'var(--text)' }}>{money(total)}</span></span>
+        {hasBase && (
+          <span className="flex items-center gap-3 ml-auto">
+            <span className="flex items-center gap-1.5"><span className="w-3 h-2 rounded-[2px]" style={{ background: '#4F46E5' }} />This month</span>
+            <span className="flex items-center gap-1.5"><span className="w-[2px] h-3" style={{ background: 'var(--text)' }} />Usual{isCurrent ? ' by today' : ''}</span>
+          </span>
+        )}
+      </div>
+      {rows.length === 0 ? (
+        <div className="text-[12.5px] py-8 text-center" style={{ color: 'var(--text3)' }}>No spending recorded for this period yet.</div>
+      ) : (
+        <ul className="space-y-3">
+          {rows.map(r => {
+            const diff = r.baseline != null && r.baseline > 0 ? Math.round((r.value - r.baseline) / r.baseline * 100) : null
+            return (
+              <li key={r.cat} className="grid grid-cols-[minmax(84px,140px)_1fr_auto] items-center gap-3"
+                title={`${r.label}: ${money(r.value)}${r.baseline != null ? ` · usual ${money(r.baseline)}` : ''}`}>
+                <span className="text-[12.5px] truncate" style={{ color: 'var(--text2)' }}>{r.label}</span>
+                <div className="relative h-3">
+                  <div className="absolute inset-y-0 left-0 rounded-r-[4px]" style={{ width: `${r.value / max * 100}%`, minWidth: 2, background: '#4F46E5' }} />
+                  {r.baseline != null && r.baseline > 0 && (
+                    <div className="absolute -top-[3px] -bottom-[3px] w-[2px] rounded-full" style={{ left: `calc(${r.baseline / max * 100}% - 1px)`, background: 'var(--text)' }} />
+                  )}
+                </div>
+                <span className="text-right whitespace-nowrap">
+                  <span className="text-[12.5px] font-semibold font-mono" style={{ color: 'var(--text)' }}>{short(r.value)}</span>
+                  {diff != null && Math.abs(diff) >= 5 && (
+                    <span className="ml-1.5 text-[11.5px] font-medium" style={{ color: diff > 0 ? 'var(--expense)' : 'var(--income)' }}>
+                      {diff > 0 ? '+' : '−'}{Math.abs(diff)}%
+                    </span>
+                  )}
+                </span>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </Card>
+  )
+}
+
+const KIND: Record<Upcoming['kind'], LucideIcon> = { emi: Landmark, card: CreditCard, premium: Shield, fd: CalendarClock, sip: Repeat }
+
+function UpcomingCard({ items, today }: { items: Upcoming[]; today: string }) {
+  const totals = items.filter(i => i.kind !== 'fd').reduce((acc, i) => { acc[i.currency] = (acc[i.currency] ?? 0) + i.amount; return acc }, {} as Record<string, number>)
+  return (
+    <Card className="lg:col-span-2" aria-labelledby="up-title">
+      <CardHeader id="up-title" title="Coming up · next 30 days" right={Object.keys(totals).length > 0 && (
+        <span className="text-[12px]" style={{ color: 'var(--text3)' }}>
+          Out: {Object.entries(totals).map(([c, v]) => <span key={c} className="font-semibold font-mono ml-1" style={{ color: 'var(--text)' }}>{fmtMoney(v, c)}</span>)}
+        </span>
+      )} />
+      {items.length === 0 ? (
+        <div className="text-[12.5px] py-8 text-center" style={{ color: 'var(--text3)' }}>
+          Nothing scheduled. EMIs, card bills, premiums, SIPs and FD maturities show up here.
+        </div>
+      ) : (
+        <ul className="-mx-1">
+          {items.slice(0, 8).map(it => {
+            const Icon = KIND[it.kind]
+            const d = new Date(it.date + 'T12:00:00')
+            const isToday = it.date === today
+            return (
+              <li key={it.id} className="flex items-center gap-3 px-1 py-2.5" style={{ borderTop: '1px solid var(--border)' }}>
+                <div className="w-11 text-center flex-shrink-0 rounded-lg py-1" style={{ background: isToday ? 'var(--accent-bg)' : 'var(--bg2)' }}>
+                  <div className="text-[10px] font-semibold uppercase" style={{ color: isToday ? 'var(--accent2)' : 'var(--text3)' }}>{d.toLocaleDateString('en-GB', { month: 'short' })}</div>
+                  <div className="text-[15px] font-bold leading-none mt-0.5" style={{ color: 'var(--text)' }}>{d.getDate()}</div>
+                </div>
+                <Icon size={15} className="flex-shrink-0" style={{ color: 'var(--text3)' }} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-medium truncate" style={{ color: 'var(--text)' }}>{it.label}</div>
+                  <div className="text-[12px] truncate" style={{ color: 'var(--text3)' }}>{it.sub}</div>
+                </div>
+                <div className="text-[13px] font-semibold font-mono whitespace-nowrap" style={{ color: it.kind === 'fd' ? 'var(--income)' : 'var(--text)' }}>
+                  {it.kind === 'fd' ? '+' : ''}{fmtMoney(it.amount, it.currency)}
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </Card>
+  )
+}
+
+function GoalsCard({ goals, short }: { goals: any[]; short: (n: number) => string }) {
+  return (
+    <Card aria-labelledby="goal-title">
+      <CardHeader id="goal-title" title="Goals" right={goals.length > 0 && <MoreLink href="/dashboard/goals">All goals</MoreLink>} />
+      {goals.length === 0 ? (
+        <div className="flex flex-col items-center text-center py-6 gap-2">
+          <Target size={26} style={{ color: 'var(--text4)' }} />
+          <div className="text-[12.5px]" style={{ color: 'var(--text3)' }}>Set a goal and link investments to track progress automatically.</div>
+          <Link href="/dashboard/goals" className="wl-btn wl-btn-sm mt-1">Create a goal</Link>
+        </div>
+      ) : (
+        <ul className="space-y-4">
+          {goals.map(g => (
+            <li key={g.id}>
+              <div className="flex items-baseline justify-between gap-2">
+                <Link href={`/dashboard/goals/${g.id}`} className="text-[13px] font-semibold truncate hover:underline" style={{ color: 'var(--text)' }}>{g.name}</Link>
+                <span className="text-[12px] font-semibold font-mono" style={{ color: 'var(--text)' }}>{g.pct}%</span>
+              </div>
+              <div className="mt-1.5 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--accent-bg)' }}
+                role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={g.pct} aria-label={`${g.name} progress`}>
+                <div className="h-full rounded-full" style={{ width: `${g.pct}%`, background: g.pct >= 100 ? 'var(--income)' : 'var(--accent)' }} />
+              </div>
+              <div className="mt-1 text-[11.5px] flex justify-between gap-2" style={{ color: 'var(--text3)' }}>
+                <span className="truncate">{short(g.current)} of {short(g.target)}</span>
+                {g.target_date && <span className="whitespace-nowrap">by {new Date(g.target_date + 'T12:00:00').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}</span>}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  )
+}
+
+function Onboarding({ onImport }: { onImport: () => void }) {
+  const steps: { icon: LucideIcon; title: string; body: string; cta: React.ReactNode }[] = [
+    { icon: Upload, title: 'Import a bank statement', body: 'PDF or Excel from any UAE or Indian bank. Transactions are read and categorised for you.',
+      cta: <button onClick={onImport} className="wl-btn wl-btn-primary wl-btn-sm"><Upload size={12} />Import</button> },
+    { icon: TrendingUp, title: 'Add your investments', body: 'Upload your CAMS / KFintech CAS to bring in every mutual fund with full history.',
+      cta: <Link href="/dashboard/investments/mutual-funds" className="wl-btn wl-btn-sm">Open mutual funds</Link> },
+    { icon: Wallet, title: 'Add accounts and cards', body: 'Balances and card limits power net worth, due-date reminders and utilisation alerts.',
+      cta: <Link href="/dashboard/accounts" className="wl-btn wl-btn-sm">Add accounts</Link> },
+  ]
+  return (
+    <Card>
+      <h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Let&apos;s set up WealthLens</h2>
+      <p className="text-[13px] mt-1" style={{ color: 'var(--text3)' }}>Three steps and Home fills in with your net worth, cash flow and what needs attention.</p>
+      <ol className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+        {steps.map((s, i) => { const Icon = s.icon; return (
+          <li key={s.title} className="rounded-xl p-4" style={{ border: '1px solid var(--border)' }}>
+            <div className="flex items-center gap-2">
+              <span className="w-7 h-7 rounded-lg flex items-center justify-center text-[12px] font-bold" style={{ background: 'var(--accent-bg)', color: 'var(--accent2)' }}>{i + 1}</span>
+              <Icon size={15} style={{ color: 'var(--text3)' }} />
+            </div>
+            <div className="text-[13.5px] font-semibold mt-3" style={{ color: 'var(--text)' }}>{s.title}</div>
+            <div className="text-[12px] mt-1 mb-3" style={{ color: 'var(--text3)' }}>{s.body}</div>
+            {s.cta}
+          </li>
+        )})}
+      </ol>
+    </Card>
   )
 }

@@ -4,6 +4,7 @@ import { useViewStore } from '@/store/viewStore'
 import { Download, ChevronLeft, ChevronRight, CalendarDays, CalendarRange, Target, CreditCard, Landmark, Wallet, Link2Off } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, Cell, Legend } from 'recharts'
 import TxnDrillModal from '@/components/dashboard/TxnDrillModal'
+import { CC_BILL, classify, labelOf, catOf } from '@/lib/money'
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 function momChange(curr: number, prev: number): number | null {
@@ -19,28 +20,8 @@ const CAT_COLORS: Record<string,string> = {
   'Credit Card Payment':'#9333EA', 'International Transfer':'#0EA5E9', 'NRE Received':'#0284C7',
   'NRE to NRO':'#7C5CBF', 'Self Transfer':'#0891B2', 'Loan on Card':'#F59E0B', 'Loan Received':'#F97316', Refund:'#10B981',
 }
-// Money coming in or moving between your own accounts — shown in the report but
-// never summed as spend (the same money is counted when it's actually spent).
-// Money SENT out (Transfer / International Transfer / Family Transfer) is spend.
-const MOVEMENT_CATS = new Set([
-  'NRE Received', 'Received from NRE', 'Received from UAE', 'NRI Transfer',
-  'NRE to NRO', 'NRE → NRO', 'NRO Settled', 'NRO to NRE', 'Self Transfer', 'Internal Transfer',
-  'Loan Received', 'Loan Taken', 'Loan Disbursement', 'ATM Withdrawal',
-])
-// Card bill payments settle spend already counted on the card (and loan-on-card
-// EMIs likewise), so they're shown but excluded from the total.
-const CC_BILL = 'Credit Card Payment'
-const classify = (c: string) =>
-  c === CC_BILL ? 'ccbill' : (MOVEMENT_CATS.has(c) || c === 'Loan on Card') ? 'excluded' : 'expense'
-// Manual transfers are stored as category "Transfer" + a sub_category — split
-// them so an own-account NRE → NRO move doesn't land in the money-sent row.
-const TRANSFER_SUB_ROW: Record<string, string> = {
-  Internal: 'NRE to NRO', International: 'International Transfer', Family: 'Family Transfer', 'ATM Withdrawal': 'ATM Withdrawal',
-}
-const ROW_LABEL: Record<string, string> = {
-  Transfer: 'Money Transfer', 'International Transfer': 'Transfer to India', [CC_BILL]: 'Credit Card Bill',
-}
-const labelOf = (cat: string) => ROW_LABEL[cat] ?? cat
+// Spend classification (movement / card-bill / spend) lives in lib/money.ts so
+// the Home dashboard counts spend exactly the way this report does.
 const CC_COLOR = '#9333EA'
 
 const FALLBACK_PALETTE = ['#6366F1','#DB2777','#0D9488','#CA8A04','#C2640A','#475569','#B45309','#7C3AED']
@@ -99,10 +80,6 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
   const disp = (t: any) => inView(t.currency) ? conv(Number(t.amount) || 0, t.currency) : 0
   const sym = view === 'uae' ? 'AED ' : '₹'
   const money = (n: number) => `${sym}${Math.round(n).toLocaleString('en-IN')}`
-  const catOf = (t: any) => {
-    const c = (t.category && String(t.category).trim()) || 'Other'
-    return c === 'Transfer' && TRANSFER_SUB_ROW[t.sub_category] ? TRANSFER_SUB_ROW[t.sub_category] : c
-  }
   const mLabel = (m: string) => new Date(m + '-01').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
 
   const [tab, setTab] = useState<Tab>('monthly')

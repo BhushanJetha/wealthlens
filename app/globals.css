@@ -8,23 +8,31 @@
   --bg2:       #F7F8FA;
   --card:      #FFFFFF;
   --card2:     #F7F8FA;
-  --border:    #E5E7EB;
-  --border2:   #D1D5DB;
+  --border:    #E2E8F0;
+  --border2:   #CBD5E1;
 
   /* Sidebar - deep forest green */
   --sidebar:   #1A3329;
   --sidebar2:  #22422F;
   --sidebar3:  #2B5239;
 
-  /* Primary sage green */
-  --sage:      #16A34A;
-  --sage2:     #15803D;
-  --sage-bg:   #F0FDF4;
+  /* Brand accent — indigo. Buttons, active nav, tabs, focus, links. */
+  --accent:        #4F46E5;
+  --accent2:       #4338CA;
+  --accent-bg:     #EEF2FF;
+  --accent-border: #C7D2FE;
 
-  /* Text */
-  --text:      #111827;
-  --text2:     #374151;
-  --text3:     #9CA3AF;
+  /* Legacy names: ~400 components use --sage* as "the accent", so they alias
+     the indigo accent. Gains / income stay green via --income. */
+  --sage:      var(--accent);
+  --sage2:     var(--accent2);
+  --sage-bg:   var(--accent-bg);
+
+  /* Text — slate. --text3 is the muted label colour (4.7:1 on white). */
+  --text:      #0F172A;
+  --text2:     #334155;
+  --text3:     #64748B;
+  --text4:     #94A3B8;
 
   /* Semantic */
   --income:    #16A34A;
@@ -46,8 +54,15 @@
 body {
   background: #FFFFFF;
   color: var(--text);
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: var(--font-sans), system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-feature-settings: 'cv11', 'ss01';
 }
+
+/* Numbers: `font-mono` is used app-wide for amounts. It now renders in Inter
+   with tabular (equal-width) figures so columns of money line up, instead of
+   a typewriter-style monospace face. */
+.font-mono { font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.tnum { font-variant-numeric: tabular-nums; }
 
 /* Custom scrollbar */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
@@ -92,7 +107,59 @@ body {
   background: #FFFFFF;
   border: 1px solid var(--border);
   border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+}
+
+/* Component classes live in Tailwind's components layer so utilities (hidden,
+   md:inline-flex, h-9 …) can still override them per breakpoint. */
+@layer components {
+/* Buttons */
+.wl-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 32px; padding: 0 12px; border-radius: 8px;
+  font-size: 12.5px; font-weight: 600; white-space: nowrap;
+  border: 1px solid var(--border); background: #fff; color: var(--text2);
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.wl-btn:hover { background: var(--bg2); border-color: var(--border2); color: var(--text); }
+.wl-btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.wl-btn-primary:hover { background: var(--accent2); border-color: var(--accent2); color: #fff; }
+.wl-btn-sm { height: 26px; padding: 0 9px; font-size: 11.5px; border-radius: 7px; }
+.wl-btn:focus-visible, .wl-tab:focus-visible, .wl-chip:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+
+/* Section tabs (underline) and sub-tabs (pills) */
+.wl-tab {
+  position: relative; display: inline-flex; align-items: center;
+  height: 40px; padding: 0 2px; margin-right: 22px;
+  font-size: 13px; font-weight: 500; color: var(--text3); white-space: nowrap;
+  transition: color 0.12s;
+}
+.wl-tab:hover { color: var(--text); }
+.wl-tab[aria-current='page'] { color: var(--text); font-weight: 600; }
+.wl-tab[aria-current='page']::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px;
+  border-radius: 2px; background: var(--accent);
+}
+.wl-chip {
+  display: inline-flex; align-items: center; height: 28px; padding: 0 11px;
+  border-radius: 999px; font-size: 12px; font-weight: 500; white-space: nowrap;
+  color: var(--text2); border: 1px solid var(--border); background: #fff;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.wl-chip:hover { border-color: var(--border2); color: var(--text); }
+.wl-chip[aria-current='page'] { background: var(--accent-bg); border-color: var(--accent-border); color: var(--accent2); font-weight: 600; }
+
+/* Keyboard hint */
+.wl-kbd {
+  display: inline-flex; align-items: center; height: 18px; padding: 0 5px;
+  border-radius: 4px; border: 1px solid var(--border); background: var(--bg2);
+  font-size: 10.5px; font-weight: 600; color: var(--text3); font-family: inherit;
+}
+
+/* Section label inside cards */
+.wl-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text3); }
 }
 
 /* Input base */
@@ -107,7 +174,7 @@ body {
   outline: none;
   width: 100%;
 }
-.wl-input:focus { border-color: var(--sage); }
+.wl-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
 
 /* Icon / prefix padding: .wl-input's own `padding` shorthand is declared after
    Tailwind's utilities, so a bare `pl-8`/`pl-12` loses and the icon overlaps the
