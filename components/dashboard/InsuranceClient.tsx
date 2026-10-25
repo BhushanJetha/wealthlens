@@ -7,18 +7,20 @@ import { createClient } from '@/lib/supabase/client'
 import MetricCard from '@/components/dashboard/MetricCard'
 import AddInsuranceModal from '@/components/forms/AddInsuranceModal'
 import { Shield, Upload, AlertCircle, Loader2, Plus, Pencil, Trash2 } from 'lucide-react'
-import { PageHeader, InsightBar, AiActions, LearnStrip } from '@/components/ui/kit'
+import { PageHeader, InsightBar, AiActions, LearnStrip, HeroStat, KpiTile, Bars, ProgressRow, EmptyState } from '@/components/ui/kit'
+import { ListCard, ListRow } from '@/components/ui/list'
+import { addMonths, fmtDay } from '@/lib/insights'
+import { fmtCompact } from '@/lib/format'
+import { CalendarClock, Layers, HeartPulse, Wallet } from 'lucide-react'
 
 function toINR(amt: number, cur: string, fx: number) { return cur === 'AED' ? amt * fx : amt }
 
 const TYPE_COLORS: Record<string, string> = {
-  term_life: 'var(--sage)',
-  health:    'var(--blue)',
-  property:  'var(--gold)',
-  vehicle:   'var(--purple)',
-  travel:    'var(--income)',
-  other:     'var(--text3)',
+  term_life: '#DC2626', health: '#16A34A', property: '#D97706',
+  vehicle: '#3B8EF0', travel: '#0891B2', other: '#64748B',
 }
+const PER_YEAR: Record<string, number> = { monthly: 12, quarterly: 4, semi_annual: 2, annual: 1 }
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 const TYPE_LABELS: Record<string, string> = {
   term_life: 'Term Life', health: 'Health', property: 'Property',
@@ -60,6 +62,30 @@ export default function InsuranceClient({ policies }: { policies: any[] }) {
     .sort((a, b) => new Date(a.next_premium_date).getTime() - new Date(b.next_premium_date).getTime())[0]
   const daysToNext = nextDue ? Math.ceil((new Date(nextDue.next_premium_date).getTime() - today.getTime()) / 86400000) : null
 
+  const short = (n: number) => fmtCompact(n, view === 'uae' ? 'AED' : 'INR')
+  const money = (n: number) => `${sym}${Math.round(n).toLocaleString('en-IN')}`
+
+  // Premiums falling due in each of the next 12 months (instalment = annual ÷ instalments a year)
+  const thisMonth = today.toISOString().slice(0, 7)
+  const months = Array.from({ length: 12 }, (_, i) => addMonths(thisMonth, i))
+  const dueBy: Record<string, number> = {}
+  filtered.forEach(p => {
+    if (!p.next_premium_date) return
+    const n = PER_YEAR[p.premium_frequency] ?? 1, step = 12 / n
+    const inst = conv(Number(p.annual_premium) || 0, p.currency) / n
+    let m = String(p.next_premium_date).slice(0, 7)
+    for (let k = 0; k < 24 && m <= months[11]; k++) {
+      if (m >= thisMonth) dueBy[m] = (dueBy[m] ?? 0) + inst
+      m = addMonths(m, step)
+    }
+  })
+  const premBars = months.map(m => ({ label: MON[Number(m.slice(5)) - 1], value: dueBy[m] ?? 0, hi: (dueBy[m] ?? 0) > 0,
+    tip: `${MON[Number(m.slice(5)) - 1]} ${m.slice(0, 4)}: ${money(dueBy[m] ?? 0)}` }))
+  const byType = Object.entries(filtered.reduce<Record<string, number>>((m, p) => {
+    m[p.policy_type] = (m[p.policy_type] ?? 0) + conv(Number(p.sum_assured ?? 0), p.currency); return m
+  }, {})).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1])
+  const renewSoon = filtered.filter(p => p.expiry_date && (new Date(p.expiry_date).getTime() - today.getTime()) / 86400000 <= 60).length
+
   async function handleDelete() {
     if (!deleteId) return
     setDeleting(true)
@@ -100,29 +126,50 @@ export default function InsuranceClient({ policies }: { policies: any[] }) {
   })
 
   return (
-    <div className="space-y-5 animate-fade-up">
-      <PageHeader title="Insurance" sub="Upload policy documents or add them by hand"
+    <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
+      <div className="max-md:order-1"><PageHeader title="Insurance" sub="Renewals, premiums and cover · read from your policy PDFs or added by hand"
         onAdd={() => setShowAdd(true)} addLabel="Add policy"
-        actions={<button onClick={() => setShowAdd(true)} className="wl-btn wl-btn-primary" style={{ height: 34 }}><Plus size={14} />Add policy</button>} />
-      {filtered.length > 0 && <InsightBar
+        actions={<button onClick={() => setShowAdd(true)} className="wl-btn wl-btn-primary" style={{ height: 34 }}><Plus size={14} />Add policy</button>} /></div>
+      {filtered.length > 0 && <div className="max-md:order-4"><InsightBar
         text={`You pay ${sym}${Math.round(totalPremium).toLocaleString('en-IN')} a year for ${sym}${(totalAssured / 100000).toFixed(1)}L of cover, including ${sym}${(lifeAssured / 10000000).toFixed(2)}Cr of term life.${daysToNext !== null ? ` Next premium is due in ${daysToNext} day${daysToNext === 1 ? '' : 's'}.` : ''} A common guide is term cover of about 10× your yearly income.`}
-        prompt={`Explain my insurance page. Annual premiums ${sym}${Math.round(totalPremium)}, total cover ${sym}${Math.round(totalAssured)}, term life ${sym}${Math.round(lifeAssured)}. Policies: ${filtered.map((p: any) => `${p.policy_name} (${p.policy_type}) cover ${p.currency} ${p.sum_assured}, premium ${p.annual_premium}${p.expiry_date ? `, renews ${p.expiry_date}` : ''}`).join('; ')}.`} />}
-      {filtered.length > 0 && <AiActions actions={['Check my cover gap']}
-        context={`Policies: ${filtered.map((p: any) => `${p.policy_name} (${p.policy_type}) cover ${p.currency} ${p.sum_assured}`).join('; ')}.`} />}
+        prompt={`Explain my insurance page. Annual premiums ${sym}${Math.round(totalPremium)}, total cover ${sym}${Math.round(totalAssured)}, term life ${sym}${Math.round(lifeAssured)}. Policies: ${filtered.map((p: any) => `${p.policy_name} (${p.policy_type}) cover ${p.currency} ${p.sum_assured}, premium ${p.annual_premium}${p.expiry_date ? `, renews ${p.expiry_date}` : ''}`).join('; ')}.`} /></div>}
+      {filtered.length > 0 && <div className="max-md:order-5"><AiActions actions={['Check my cover gap', 'Am I paying too much?']}
+        context={`Policies: ${filtered.map((p: any) => `${p.policy_name} (${p.policy_type}) cover ${p.currency} ${p.sum_assured}`).join('; ')}.`} /></div>}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <MetricCard label="Annual Premiums"   value={`${sym}${Math.round(totalPremium).toLocaleString('en-IN')}`} accent="gold" />
-        <MetricCard label="Total Sum Assured" value={`${sym}${Math.round(totalAssured / 100000).toLocaleString('en-IN')}L`} accent="teal" />
-        <MetricCard label="Life Cover"        value={`${sym}${(lifeAssured / 10000000).toFixed(1)}Cr`} accent="blue" />
-        <MetricCard label="Next Premium Due"
-          value={daysToNext !== null ? `${daysToNext}d` : '—'}
-          delta={daysToNext !== null && daysToNext <= 30 ? '⚠ Soon' : ''}
-          positive={false}
-          accent={daysToNext !== null && daysToNext <= 30 ? 'rose' : 'teal'} />
-      </div>
+      {filtered.length > 0 && (<>
+        <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4">
+          <HeroStat className="max-md:order-2" label="Total cover" value={money(totalAssured)}
+            delta={`${lifeAssured > 0 ? `${short(lifeAssured)} of it term life · ` : 'No term life cover · '}${short(totalPremium)} a year in premiums`}
+            tone={lifeAssured > 0 ? 'neutral' : 'bad'}
+            right={<span className="text-[11.5px]" style={{ color: 'var(--text3)' }}>Premiums due, next 12 months</span>}>
+            {premBars.some(b => b.value > 0)
+              ? <Bars data={premBars} className="h-[110px] md:h-auto md:flex-1 md:min-h-[170px] mt-3" label={`Premiums due by month: ${premBars.map(b => b.tip).join(', ')}`} />
+              : <p className="text-[12px] mt-3" style={{ color: 'var(--text3)' }}>Add next premium dates to see when premiums fall due.</p>}
+          </HeroStat>
+
+          <section className="wl-card max-md:order-6 px-4 md:px-5 py-4 md:py-[18px] flex flex-col gap-3">
+            <h2 className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Cover by type</h2>
+            {byType.map(([t, v]) => (
+              <ProgressRow key={t} name={TYPE_LABELS[t] ?? t} value={short(v)} right={`${totalAssured > 0 ? Math.round(v / totalAssured * 100) : 0}%`}
+                pct={totalAssured > 0 ? v / totalAssured * 100 : 0} color={TYPE_COLORS[t] ?? '#64748B'} />
+            ))}
+            <p className="text-[11.5px] mt-auto" style={{ color: 'var(--text4)' }}>A common guide is term cover of about 10× your yearly income.</p>
+          </section>
+        </div>
+
+        <div className="max-md:order-3 grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
+          <KpiTile label="Annual premium" value={short(totalPremium)} delta={`${filtered.length} polic${filtered.length === 1 ? 'y' : 'ies'}`} tint={2} icon={Wallet} />
+          <KpiTile label="Policies" value={String(filtered.length)} tint={0} icon={Layers}
+            delta={renewSoon ? `${renewSoon} renew${renewSoon === 1 ? 's' : ''} within 60 days` : 'None renewing soon'} tone={renewSoon ? 'bad' : 'neutral'} />
+          <KpiTile label="Life cover" value={lifeAssured > 0 ? short(lifeAssured) : '—'} tint={3} icon={HeartPulse}
+            delta={lifeAssured > 0 ? 'Term life sum assured' : 'No term life policy'} tone={lifeAssured > 0 ? 'neutral' : 'bad'} />
+          <KpiTile label="Next premium" value={nextDue ? fmtDay(nextDue.next_premium_date) : '—'} tint={1} icon={CalendarClock}
+            delta={nextDue ? `${nextDue.policy_name}${daysToNext != null ? ` · in ${daysToNext}d` : ''}` : 'No dates set'} />
+        </div>
+      </>)}
 
       {/* Upload zone: local reader fills the Add-policy form */}
-      <section className="wl-card px-4 md:px-5 py-3.5 md:py-[18px]">
+      <section className="wl-card max-md:order-8 px-4 md:px-5 py-3.5 md:py-[18px]">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <h2 className="text-[14px] md:text-[15px] font-semibold flex items-center gap-2" style={{ color: 'var(--text)' }}>
             <Upload size={15} style={{ color: 'var(--accent)' }} /> Fill in from a policy PDF
@@ -167,110 +214,32 @@ export default function InsuranceClient({ policies }: { policies: any[] }) {
         )}
       </section>
 
-      {/* Policy List */}
+      {/* Policies */}
       {filtered.length === 0 ? (
-        <div className="wl-card py-16 text-center" style={{ borderStyle: 'dashed' }}>
-          <Shield size={32} className="mx-auto mb-3" style={{ color: 'var(--border2)' }} />
-          <div className="text-[13px] mb-4" style={{ color: 'var(--text3)' }}>No policies yet. Upload a document or add manually.</div>
-          <button onClick={() => setShowAdd(true)}
-            className="px-4 py-2 rounded-lg text-white text-[12px] font-bold"
-            style={{ background: 'var(--sage)' }}>
-            Add Policy
-          </button>
-        </div>
+        <div className="max-md:order-2"><EmptyState message="No policies yet. Drop a policy PDF above to fill in the details, or add one by hand."
+          cta="Add policy" onCta={() => setShowAdd(true)} /></div>
       ) : (
-        <div className="space-y-3">
+        <ListCard className="max-md:order-7" title="Your policies" sub={`${filtered.length} polic${filtered.length === 1 ? 'y' : 'ies'}`}
+          head={['Policy', 'Type', 'Renews', 'Premium / yr']}>
           {filtered.map((p: any, i: number) => {
-            const lSym          = p.currency === 'AED' ? 'AED ' : '₹'
-            const daysToExpiry  = Math.ceil((new Date(p.expiry_date).getTime() - today.getTime()) / 86400000)
-            const daysToPremium = p.next_premium_date ? Math.ceil((new Date(p.next_premium_date).getTime() - today.getTime()) / 86400000) : null
-            const typeColor     = TYPE_COLORS[p.policy_type] ?? 'var(--text3)'
-            const isExpiringSoon = daysToExpiry <= 60
-            const isPremiumSoon  = daysToPremium !== null && daysToPremium <= 30
-
+            const lSym = p.currency === 'AED' ? 'AED ' : '₹'
+            const daysToExpiry = p.expiry_date ? Math.ceil((new Date(p.expiry_date).getTime() - today.getTime()) / 86400000) : null
             return (
-              <div key={p.id ?? i} className="wl-card p-5"
-                style={{ borderColor: isExpiringSoon ? 'var(--rose)' : 'var(--border)' }}>
-                <div className="flex items-start justify-between flex-wrap gap-3">
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <div className="w-9 h-9 rounded-lg flex items-center justify-center text-[11px] font-bold flex-shrink-0"
-                      style={{ background: typeColor + '18', color: typeColor }}>
-                      {TYPE_LABELS[p.policy_type]?.slice(0, 2).toUpperCase()}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-[14px] font-bold truncate" style={{ color: 'var(--text)' }}>{p.policy_name}</div>
-                      <div className="text-[11px]" style={{ color: 'var(--text3)' }}>{p.provider}</div>
-                      {p.policy_number && <div className="text-[10px] font-mono mt-0.5" style={{ color: 'var(--text3)' }}>#{p.policy_number}</div>}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className="px-2 py-1 rounded-lg text-[10px] font-bold"
-                      style={{ background: typeColor + '18', color: typeColor }}>
-                      {TYPE_LABELS[p.policy_type]}
-                    </span>
-                    {isExpiringSoon && (
-                      <span className="px-2 py-1 rounded-lg text-[10px] font-bold"
-                        style={{ background: 'var(--rose-bg)', color: 'var(--rose)' }}>
-                        ⚠ {daysToExpiry}d left
-                      </span>
-                    )}
-                    <button onClick={() => setEditPolicy(p)}
-                      className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
-                      style={{ background: 'var(--blue-bg)', color: 'var(--blue)' }}
-                      title="Edit policy">
-                      <Pencil size={12} />
-                    </button>
-                    <button onClick={() => setDeleteId(p.id)}
-                      className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
-                      style={{ background: 'var(--rose-bg)', color: 'var(--rose)' }}
-                      title="Delete policy">
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
-                  {[
-                    { label: 'Sum Assured',    val: `${lSym}${(Number(p.sum_assured ?? 0) / 100000).toFixed(0)}L`, color: 'var(--sage)' },
-                    { label: 'Annual Premium', val: `${lSym}${Number(p.annual_premium).toLocaleString('en-IN')}`,   color: 'var(--text)' },
-                    { label: 'Expiry Date',    val: p.expiry_date,                                                   color: isExpiringSoon ? 'var(--rose)' : 'var(--text)' },
-                    { label: 'Next Premium',   val: p.next_premium_date ?? '—',                                      color: isPremiumSoon ? 'var(--gold)' : 'var(--text)', extra: daysToPremium },
-                  ].map(item => (
-                    <div key={item.label} className="rounded-lg p-3"
-                      style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-                      <div className="text-[9px] uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>{item.label}</div>
-                      <div className="text-[13px] font-bold" style={{ color: item.color }}>
-                        {item.val}
-                        {'extra' in item && item.extra !== null && item.extra !== undefined &&
-                          <span className="text-[10px] ml-1" style={{ color: 'var(--text3)' }}>({item.extra}d)</span>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {p.insured_members?.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {p.insured_members.map((m: string, j: number) => (
-                      <span key={j} className="text-[10px] px-2 py-0.5 rounded-full"
-                        style={{ background: 'var(--bg2)', color: 'var(--text3)', border: '1px solid var(--border)' }}>
-                        {m}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {p.key_benefits?.length > 0 && (
-                  <div className="mt-2 text-[10px]" style={{ color: 'var(--text3)' }}>
-                    <strong style={{ color: 'var(--text2)' }}>Benefits: </strong>
-                    {p.key_benefits.slice(0, 3).join(' · ')}
-                    {p.key_benefits.length > 3 && ` +${p.key_benefits.length - 3} more`}
-                  </div>
-                )}
-              </div>
+              <ListRow key={p.id ?? i} color={TYPE_COLORS[p.policy_type] ?? '#64748B'} initial={<Shield size={16} />} title={p.policy_name}
+                sub={[p.provider, p.policy_number ? `#${p.policy_number}` : null, p.insured_members?.length ? p.insured_members.join(', ') : null].filter(Boolean).join(' · ')}
+                tag={TYPE_LABELS[p.policy_type] ?? 'Other'}
+                meta={p.expiry_date ? `${fmtDay(p.expiry_date)} ${String(p.expiry_date).slice(0, 4)}` : '—'}
+                metaColor={daysToExpiry != null && daysToExpiry <= 60 ? '#D97706' : undefined}
+                amount={`${lSym}${Number(p.annual_premium).toLocaleString('en-IN')}`}
+                amountSub={Number(p.sum_assured) > 0 ? `cover ${lSym}${Number(p.sum_assured).toLocaleString('en-IN')}` : undefined}
+                onOpen={() => setEditPolicy(p)}
+                actions={[
+                  { label: 'Edit', icon: Pencil, onClick: () => setEditPolicy(p) },
+                  { label: 'Delete', icon: Trash2, onClick: () => setDeleteId(p.id), danger: true },
+                ]} />
             )
           })}
-        </div>
+        </ListCard>
       )}
 
       {/* Add modal */}
@@ -318,7 +287,7 @@ export default function InsuranceClient({ policies }: { policies: any[] }) {
           </div>
         </div>
       )}
-      <LearnStrip title="Term insurance: how much is enough" href="/dashboard/learn" />
+      <div className="max-md:order-9"><LearnStrip title="Term insurance: how much is enough" href="/dashboard/learn" /></div>
     </div>
   )
 }
