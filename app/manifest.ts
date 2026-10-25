@@ -13,7 +13,7 @@ export default function manifest(): MetadataRoute.Manifest {
     display: 'standalone',
     orientation: 'portrait',
     background_color: '#FFFFFF',
-    theme_color: '#4F46E5',
+    theme_color: '#6A55E8',
     categories: ['finance', 'productivity'],
     // Android share sheet: "Share → WealthLens" a bank SMS/alert opens the
     // Expenses page with ?text=… and auto-opens the message parser.

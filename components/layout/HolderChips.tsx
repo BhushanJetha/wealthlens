@@ -5,7 +5,7 @@ import { useHolderStore } from '@/store/holderStore'
 import { useFamily } from '@/hooks/useFamily'
 import ManageFamilyModal from '@/components/forms/ManageFamilyModal'
 
-const AVATAR = ['#4F46E5', '#E11D48', '#D97706', '#16A34A', '#0891B2', '#7C3AED', '#DB2777']
+const AVATAR = ['#6A55E8', '#E11D48', '#D97706', '#16A34A', '#0891B2', '#A855D8', '#EC5B8C']
 
 // Family / holder switcher — "Family" shows everyone; each chip filters
 // investments and loans to that person (rows' holder_name).

@@ -32,7 +32,7 @@ export default function Topbar({ user }: { user: any }) {
   return (
     <>
     <header className="hidden md:flex items-center gap-3 flex-wrap px-6 py-3 min-h-[60px]"
-      style={{ background: 'var(--card)', borderBottom: '1px solid var(--border)' }}>
+      style={{ background: 'var(--card)', borderBottom: '1px solid var(--line)' }}>
       <nav aria-label="Breadcrumb" className="text-[13px] flex items-center gap-2 min-w-0" style={{ color: 'var(--text3)' }}>
         {crumbs.map((c, i) => (
           <span key={i} className="flex items-center gap-2 whitespace-nowrap">

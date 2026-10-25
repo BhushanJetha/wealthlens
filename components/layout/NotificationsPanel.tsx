@@ -115,10 +115,8 @@ export default function NotificationsPanel({ round }: { round?: boolean }) {
   return (
     <div ref={ref} className="relative">
       <button onClick={() => setOpen(o => !o)} aria-label="Notifications" aria-expanded={open}
-        className={round ? 'relative w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0' : 'relative p-1.5 rounded-lg transition-all'}
-        style={round
-          ? { background: open ? 'var(--accent-bg)' : '#fff', border: '1px solid var(--border)', color: open ? 'var(--accent)' : 'var(--text2)' }
-          : { color: open ? 'var(--sage)' : 'var(--text3)', background: open ? 'var(--sage-bg)' : 'transparent' }}>
+        className={`relative flex items-center justify-center flex-shrink-0 transition-colors ${round ? 'w-9 h-9 rounded-full' : 'w-[34px] h-[34px] rounded-lg'}`}
+        style={{ background: open ? 'var(--accent-bg)' : '#fff', border: '1px solid var(--border)', color: open ? 'var(--accent)' : 'var(--text2)' }}>
         <Bell size={16} />
         {fetched && items.length > 0 ? (
           <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full text-[9px] font-bold text-white flex items-center justify-center"
@@ -126,7 +124,7 @@ export default function NotificationsPanel({ round }: { round?: boolean }) {
             {items.length > 9 ? '9+' : items.length}
           </span>
         ) : (
-          <span className={`absolute rounded-full ${round ? 'top-[7px] right-2 w-[7px] h-[7px]' : 'top-0.5 right-0.5 w-2 h-2'}`} style={{ background: 'var(--rose)' }} />
+          <span className={`absolute rounded-full w-[7px] h-[7px] ${round ? 'top-[7px] right-2' : 'top-1.5 right-[7px]'}`} style={{ background: 'var(--rose)' }} />
         )}
       </button>
 

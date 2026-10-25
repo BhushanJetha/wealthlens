@@ -3,24 +3,45 @@
 @tailwind utilities;
 
 :root {
-  /* Pure white backgrounds */
+  /* Surfaces (design v2). --bg stays white: components use it for surfaces
+     inside cards. The page itself sits on the lavender canvas. */
   --bg:        #FFFFFF;
   --bg2:       #F7F8FA;
   --card:      #FFFFFF;
   --card2:     #F7F8FA;
-  --border:    #E2E8F0;
+  --canvas:    #F5F4FC;   /* desktop content area */
+  --canvas-m:  #F3F1FB;   /* phone content area */
+  --border:    #E2E8F0;   /* inputs, buttons, chips */
   --border2:   #CBD5E1;
+  --line:      #ECEEF6;   /* card + bar borders */
+  --track:     #F1F0F8;   /* progress / chart tracks */
+  --shadow-card: 0 1px 2px rgba(30,30,80,.04), 0 10px 26px rgba(60,60,140,.07);
+  --shadow-hero: 0 14px 34px rgba(76,60,190,.28);
 
-  /* Sidebar - deep forest green */
-  --sidebar:   #1A3329;
-  --sidebar2:  #22422F;
-  --sidebar3:  #2B5239;
+  /* Sidebar — navy */
+  --sidebar:   #141A3D;
+  --sidebar-text:  #B9C0E6;
+  --sidebar-muted: #9AA3D0;
 
-  /* Brand accent — indigo. Buttons, active nav, tabs, focus, links. */
-  --accent:        #4F46E5;
-  --accent2:       #4338CA;
-  --accent-bg:     #EEF2FF;
-  --accent-border: #C7D2FE;
+  /* Brand accent — violet (design v2). Buttons, active nav, tabs, focus, links. */
+  --accent:        #6A55E8;
+  --accent2:       #5640D6;
+  --accent-bg:     #F0EDFF;
+  --accent-border: #DAD3FF;
+  --accent-light:  #B9ABFF;
+  --grad-hero:   linear-gradient(135deg, #2A2370 0%, #5B47E0 62%, #8A6CF0 100%);
+  --grad-review: linear-gradient(120deg, #2E2470, #6A55E8);
+  --grad-nav:    linear-gradient(135deg, #7B63F5, #5B47E0);
+  --grad-promo:  linear-gradient(135deg, #7B63F5, #B06AF0);
+  --grad-ai:     linear-gradient(135deg, #F0EDFF, #E7F7EF);
+
+  /* Chart / tile palette (design v2) */
+  --pos:      #2FB67C;  --pos-text: #1E8F5F;  --pos-bg: #E7F7EF;
+  --neg:      #E4573D;  --neg-bg:   #FDECE8;
+  --amber:    #F29A2E;  --amber-text: #B96A0B; --amber-bg: #FFF2E2;
+  --sky:      #3B8EF0;  --sky-bg:   #E7F1FE;
+  --pink:     #EC5B8C;  --pink-bg:  #FDECF2;
+  --lav-bg:   #F1EEFF;
 
   /* Legacy names: ~400 components use --sage* as "the accent", so they alias
      the indigo accent. Gains / income stay green via --income. */
@@ -52,7 +73,7 @@
 * { box-sizing: border-box; }
 
 body {
-  background: #FFFFFF;
+  background: var(--canvas);
   color: var(--text);
   font-family: var(--font-sans), system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-feature-settings: 'cv11', 'ss01';
@@ -99,20 +120,26 @@ body {
 .animate-fade-up     { animation: fadeUp 0.15s ease-out; }
 .animate-slide-right { animation: slideInRight 0.2s ease-out; }
 
+/* Chart motion (design v2): progress bars grow, bars rise from the baseline */
+@keyframes wlGrow { from { width: 0; } }
+@keyframes wlRise { from { transform: scaleY(0); } to { transform: none; } }
+.wl-grow { animation: wlGrow .8s ease both; }
+.wl-rise { transform-origin: bottom; animation: wlRise .7s cubic-bezier(.2,.8,.2,1) both; }
+@media (prefers-reduced-motion: reduce) { .wl-grow, .wl-rise, .animate-fade-up { animation: none; } }
+
 /* Typing dots */
 .typing-dot { animation: pulse-dot 1.2s ease-in-out infinite; }
 .typing-dot:nth-child(2) { animation-delay: 0.2s; }
 .typing-dot:nth-child(3) { animation-delay: 0.4s; }
 
-/* Card base */
+/* Card base (design v2: 20px, soft violet-tinted shadow; 18px on phones) */
 .wl-card {
   background: #FFFFFF;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: var(--shadow-card);
 }
-/* Phones: slightly rounder cards on the #F7F8FA canvas (mobile design) */
-@media (max-width: 767px) { .wl-card { border-radius: 14px; } }
+@media (max-width: 767px) { .wl-card { border-radius: 18px; } }
 
 /* Component classes live in Tailwind's components layer so utilities (hidden,
    md:inline-flex, h-9 …) can still override them per breakpoint. */
@@ -268,10 +295,10 @@ main > * { will-change: opacity; }
    keeps the real <table> for desktop). Reuses the app card styling. */
 .wl-mcard {
   background: #fff;
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
   padding: 11px 13px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  box-shadow: var(--shadow-card);
 }
 .wl-mcard + .wl-mcard { margin-top: 8px; }
 

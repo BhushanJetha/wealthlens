@@ -30,7 +30,7 @@ export default function SectionTabs() {
 
       <div className="hidden md:block no-print -mx-7 -mt-6 mb-6">
         <nav aria-label={`${section.label} pages`} className="wl-tabs flex items-end px-7"
-          style={{ borderBottom: '1px solid var(--border)', background: '#fff' }}>
+          style={{ borderBottom: '1px solid var(--line)', background: '#fff' }}>
           {section.tabs.map(t => (
             <Link key={t.href} href={t.href} className="wl-tab"
               aria-current={tab?.href === t.href ? 'page' : undefined}>

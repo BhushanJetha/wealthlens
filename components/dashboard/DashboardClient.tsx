@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
-import { Plus, Upload, Mic, Sparkles, ChevronRight, TrendingUp, Wallet, Target, ExternalLink, type LucideIcon } from 'lucide-react'
+import { Plus, Upload, Mic, Sparkles, TrendingUp, Wallet, Target, ExternalLink, ArrowDownLeft, ArrowUpRight, PiggyBank, type LucideIcon } from 'lucide-react'
 import { useViewStore } from '@/store/viewStore'
 import { useUiStore } from '@/store/uiStore'
 import { useHolderStore } from '@/store/holderStore'
@@ -18,6 +18,7 @@ import AddTransactionModal from '@/components/forms/AddTransactionModal'
 import TransactionVoiceModal from '@/components/forms/TransactionVoiceModal'
 import NotificationsPanel from '@/components/layout/NotificationsPanel'
 import { MobileControls, SearchButton, AskAiButton } from '@/components/layout/MobileHeader'
+import { KpiTile, KpiGrid, PALETTE, type Tone as KTone } from '@/components/ui/kit'
 
 interface Props {
   firstName: string | null
@@ -35,7 +36,7 @@ interface Props {
 
 const MONTHS_LONG = ['January','February','March','April','May','June','July','August','September','October','November','December']
 const TONE_COLOR: Record<Tone, string> = { good: 'var(--income)', warn: 'var(--gold)', bad: 'var(--expense)', none: 'var(--text3)' }
-const SEV_DOT: Record<Attention['severity'], string> = { high: '#DC2626', medium: '#D97706', low: '#4F46E5' }
+const SEV_DOT: Record<Attention['severity'], string> = { high: '#DC2626', medium: '#D97706', low: '#6A55E8' }
 
 export default function DashboardClient(p: Props) {
   const router = useRouter()
@@ -134,12 +135,30 @@ export default function DashboardClient(p: Props) {
   const review = weeklyReview(ins, health.score)
   const reviewPrompt = 'Write my weekly money review: what went well, what needs attention, and the single best next action.'
 
+  // KPI deltas: income lands late in the month, so only compare it once the
+  // month is complete; spending compares against the usual pace to date.
+  const pctDiff = (v: number, b: number | null) => b && b > 0 ? Math.round((v - b) / b * 1000) / 10 : null
+  const incPct = ins.income.comparable ? pctDiff(ins.income.value, ins.income.baseline) : null
+  const spendPct = ins.spend.comparable ? pctDiff(ins.spend.value, ins.spend.baseline) : null
+  const kpis: { label: string; value: string; delta: string; tone: KTone; icon: LucideIcon; href: string }[] = [
+    { label: 'Total balance', value: money(nw.cash), delta: 'Across your bank accounts', tone: 'neutral', icon: Wallet, href: '/dashboard/accounts' },
+    { label: 'Income', value: money(ins.income.value),
+      delta: incPct != null ? `${incPct >= 0 ? '▲' : '▼'} ${Math.abs(incPct)}% vs usual` : ins.income.baseline ? `Usually ${short(ins.income.baseline)}` : 'This month',
+      tone: incPct == null ? 'neutral' : incPct >= 0 ? 'good' : 'bad', icon: ArrowDownLeft, href: '/dashboard/income' },
+    { label: 'Expenses', value: money(ins.spend.value),
+      delta: spendPct != null ? `${spendPct > 0 ? '▲' : '▼'} ${Math.abs(spendPct)}% vs usual pace` : 'This month',
+      tone: spendPct == null ? 'neutral' : spendPct > 0 ? 'bad' : 'good', icon: ArrowUpRight, href: '/dashboard/expenses' },
+    { label: 'Savings', value: money(ins.saved.value),
+      delta: ins.saved.rate != null ? `${ins.saved.rate}% of income · target 20%` : 'Waiting for this month’s income',
+      tone: ins.saved.rate == null ? 'neutral' : ins.saved.rate >= 20 ? 'good' : 'bad', icon: PiggyBank, href: '/dashboard/reports' },
+  ]
+
   return (
-    <div className="max-w-[1280px] mx-auto flex flex-col gap-4 md:gap-[18px] animate-fade-up">
+    <div className="max-w-[1280px] mx-auto flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
       {/* Header — desktop */}
       <div className="hidden md:flex items-end justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-[24px] font-bold tracking-tight" style={{ color: 'var(--text)' }}>
+          <h1 className="text-[24px] font-bold tracking-[-0.01em]" style={{ color: 'var(--text)' }}>
             {greeting}{p.firstName ? `, ${p.firstName}` : ''}
           </h1>
           <p className="text-[13px] mt-0.5" style={{ color: 'var(--text3)' }}>{viewLabel} · {holderLabel} · {rangeLabel}</p>
@@ -151,10 +170,10 @@ export default function DashboardClient(p: Props) {
         </div>
       </div>
 
-      {/* Phone layout follows the mobile design's order: greeting · net worth ·
-          view/period · weekly review · quick actions · attention · health ·
-          learn · news. Row wrappers become `contents` below md so each card can
-          take its own `order`; desktop is untouched. */}
+      {/* Phones follow the mobile design's order: greeting · net worth · view
+          and period · KPIs · weekly review · quick actions · attention · health
+          · learn · news. Row wrappers become `contents` below md so each card
+          takes its own `order`; desktop keeps the grid. */}
       <div className="md:hidden max-md:order-1 flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="text-[12.5px]" style={{ color: 'var(--text3)' }}>{greeting}</div>
@@ -167,44 +186,50 @@ export default function DashboardClient(p: Props) {
         </div>
       </div>
       <div className="md:hidden max-md:order-3"><MobileControls actions={false} /></div>
-      <div className="md:hidden max-md:order-5 grid grid-cols-4 gap-2">
+      <div className="md:hidden max-md:order-6 grid grid-cols-4 gap-2">
         {([
           ['Add', Plus, () => setModal('add')],
           ['Upload', Upload, () => setUploadOpen(true)],
           ['Speak', Mic, () => setModal('voice')],
           ['Ask AI', Sparkles, () => openAdvisor()],
         ] as [string, LucideIcon, () => void][]).map(([label, Icon, fn]) => (
-          <button key={label} onClick={fn} className="wl-card !rounded-xl py-2.5 px-1 flex flex-col items-center gap-1 text-[11px] font-medium" style={{ color: 'var(--text2)' }}>
+          <button key={label} onClick={fn} className="wl-card py-2.5 px-1 flex flex-col items-center gap-1 text-[11px] font-medium" style={{ color: 'var(--text2)' }}>
             <Icon size={18} style={{ color: 'var(--accent)' }} />{label}
           </button>
         ))}
       </div>
 
-      {isEmpty ? <Onboarding onImport={() => setUploadOpen(true)} goalInterests={p.goalInterests} className="max-md:order-6" /> : (<>
+      {isEmpty ? <Onboarding onImport={() => setUploadOpen(true)} goalInterests={p.goalInterests} className="max-md:order-7" /> : (<>
+      {/* Four tinted KPIs */}
+      <div className="max-md:order-4">
+        <KpiGrid>
+          {kpis.map((k, i) => <KpiTile key={k.label} label={k.label} value={k.value} delta={k.delta} tone={k.tone} tint={i} icon={k.icon} href={k.href} />)}
+        </KpiGrid>
+      </div>
+
       {/* Weekly review */}
-      <section className="max-md:order-4 rounded-[14px] md:rounded-xl px-4 md:px-[22px] py-3.5 md:py-[18px] flex flex-col md:flex-row gap-2.5 md:gap-4 md:items-center"
-        style={{ background: '#312E81', color: '#fff' }}>
+      <section className="max-md:order-5 rounded-[18px] md:rounded-[20px] bg-review text-white px-4 md:px-[22px] py-3.5 md:py-[18px] flex flex-col md:flex-row gap-2.5 md:gap-4 md:items-center">
         <div className="flex-1">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: '#C7D2FE' }}>✦ Your weekly review</div>
-          <p className="text-[12.5px] md:text-[14px] leading-[1.55] md:leading-relaxed mt-1 md:mt-1.5" style={{ color: '#E0E7FF' }}>{review}</p>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: '#DAD3FF' }}>✦ Your weekly review</div>
+          <p className="text-[12.5px] md:text-[14px] leading-[1.55] mt-1 md:mt-[5px]" style={{ color: '#E6E0FF' }}>{review}</p>
         </div>
         <button onClick={() => openAdvisor(reviewPrompt)}
           className="self-start md:self-auto flex-shrink-0 rounded-full px-4 py-2 text-[12.5px] font-semibold"
-          style={{ background: '#fff', color: '#312E81' }}>
+          style={{ background: '#fff', color: '#2E2470' }}>
           Ask AI for more
         </button>
       </section>
 
-      {/* Row 1: Net worth + Needs attention */}
+      {/* Row 1: Net worth hero + Needs attention */}
       <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4">
         <NetWorthCard nw={nw} hist={hist} historyReady={p.historyReady} holderLabel={holder ? holderLabel : null}
           savingsRate={ins.trend.savingsRate} money={money} short={short} className="max-md:order-2" />
-        <AttentionCard items={ins.attention} onImport={() => setUploadOpen(true)} className="max-md:order-6" />
+        <AttentionCard items={ins.attention} onImport={() => setUploadOpen(true)} className="max-md:order-7" />
       </div>
 
       {/* Row 2: Health, Goals, 30-day cash flow */}
       <div className="max-md:contents grid grid-cols-1 md:grid-cols-3 gap-4">
-        <HealthCard score={health.score} parts={health.parts} className="max-md:order-7" />
+        <HealthCard score={health.score} parts={health.parts} className="max-md:order-8" />
         {/* Not on the phone Home in the design — Goals and Cash flow live under Plan */}
         <GoalsCard goals={goals} short={short} interests={p.goalInterests} className="max-md:hidden" />
         <CashFlowCard forecast={ins.forecast} short={short} money={money} className="max-md:hidden" />
@@ -212,8 +237,8 @@ export default function DashboardClient(p: Props) {
 
       {/* Row 3: News + Learn */}
       <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.3fr_1fr] gap-4">
-        <NewsCard holdings={h} className="max-md:order-9" />
-        <LearnCard ins={ins} hasSip={h.mutualFunds.some(x => x.has_sip)} className="max-md:order-8" />
+        <NewsCard holdings={h} className="max-md:order-10" />
+        <LearnCard ins={ins} hasSip={h.mutualFunds.some(x => x.has_sip)} className="max-md:order-9" />
       </div>
       </>)}
 
@@ -226,7 +251,7 @@ export default function DashboardClient(p: Props) {
 // Rule-based weekly summary; "Ask AI for more" hands the same question to the advisor
 function weeklyReview(ins: HomeInsights, score: number) {
   const bits: string[] = []
-  if (ins.trend.savingsRate != null) bits.push(`You're saving ${Math.max(ins.trend.savingsRate, 0)}% of income${ins.trend.savingsRate < 20 ? ' against a 20% target' : ', above the 20% target'}.`)
+  if (ins.trend.savingsRate != null) bits.push(`Over the last 3 months you saved ${Math.max(ins.trend.savingsRate, 0)}% of income${ins.trend.savingsRate < 20 ? ' against a 20% target' : ', above the 20% target'}.`)
   const up = ins.insights.find(i => i.id === 'up')
   const pace = ins.insights.find(i => i.id === 'pace')
   if (up) bits.push(`${up.title}.`)
@@ -271,20 +296,22 @@ function NetWorthCard({ nw, hist, historyReady, holderLabel, savingsRate, money,
   const labels = series.length >= 3 ? [series[0], series[Math.floor(series.length / 2)], series[series.length - 1]] : []
 
   return (
-    <Card className={`!p-4 md:!px-[22px] md:!py-5 ${className}`} aria-labelledby="nw-title">
-      <div id="nw-title" className="wl-eyebrow">Net worth · {holderLabel ?? 'Family'}</div>
-      <div className="flex items-baseline gap-3 flex-wrap mt-1 mb-0.5">
-        <div className="text-[30px] md:text-[34px] font-bold tracking-tight font-mono" style={{ color: nw.netWorth < 0 ? 'var(--expense)' : 'var(--text)', letterSpacing: '-0.02em' }}>
-          {money(nw.netWorth)}
-        </div>
+    <section aria-labelledby="nw-title"
+      className={`rounded-[22px] bg-hero text-white p-4 md:px-6 md:py-[22px] ${className}`}
+      style={{ boxShadow: 'var(--shadow-hero)' }}>
+      <div id="nw-title" className="text-[10.5px] md:text-[11px] font-semibold uppercase tracking-[0.05em]" style={{ color: '#CFC8FA' }}>
+        Net worth · {holderLabel ?? 'Family'}
+      </div>
+      <div className="flex flex-col md:flex-row md:items-baseline md:gap-3 mt-0.5 md:mt-1 mb-0.5">
+        <div className="text-[30px] md:text-[34px] font-bold tabular-nums" style={{ letterSpacing: '-0.02em' }}>{money(nw.netWorth)}</div>
         {change != null && (
-          <div className="text-[13px] font-semibold" style={{ color: up ? 'var(--income)' : 'var(--expense)' }}>
+          <div className="text-[12.5px] md:text-[13px] font-semibold" style={{ color: up ? '#8EF0BF' : '#FFB4A6' }}>
             {up ? '▲' : '▼'} {short(Math.abs(change))}{changePct != null ? ` (${Math.abs(changePct)}%)` : ''} since {fmtDay(hist.ref!.date)}
           </div>
         )}
       </div>
       {change == null && (
-        <div className="text-[12.5px]" style={{ color: 'var(--text3)' }}>
+        <div className="text-[12.5px]" style={{ color: '#CFC8FA' }}>
           {holderLabel ? 'Trend shows the whole family — switch to Family to see it.'
             : historyReady ? 'Tracking started — your trend appears after a few days.'
             : 'Run migration 023 in Supabase to start tracking net-worth history.'}
@@ -293,42 +320,44 @@ function NetWorthCard({ nw, hist, historyReady, holderLabel, savingsRate, money,
 
       {series.length >= 2 && (
         <>
-          <div className="h-[90px] md:h-[150px] mt-2 md:mt-3 -mx-1" aria-label="Net worth over time">
+          <div className="h-[90px] md:h-[150px] mt-2 md:mt-2.5 -mx-1" aria-label="Net worth over time">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
                 <XAxis dataKey="date" hide />
                 <YAxis hide domain={['dataMin', 'dataMax']} />
-                <Tooltip cursor={{ stroke: 'var(--border2)', strokeWidth: 1 }}
-                  contentStyle={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '6px 10px' }}
+                <Tooltip cursor={{ stroke: 'rgba(255,255,255,.4)', strokeWidth: 1 }}
+                  contentStyle={{ background: '#fff', border: '1px solid var(--line)', borderRadius: 10, fontSize: 12, padding: '6px 10px', color: 'var(--text)' }}
                   labelFormatter={(d: any) => d === 'today' ? 'Today' : fmtDay(String(d))}
                   formatter={(v: any) => [money(Number(v)), 'Net worth']} />
-                <Area type="monotone" dataKey="value" stroke="#4F46E5" strokeWidth={2.5} fill="#EEF2FF" fillOpacity={1} isAnimationActive={false}
-                  dot={false} activeDot={{ r: 4, stroke: '#fff', strokeWidth: 2, fill: '#4F46E5' }} />
+                <Area type="monotone" dataKey="value" stroke="#fff" strokeWidth={2.5} fill="rgba(255,255,255,.14)" fillOpacity={1} isAnimationActive={false}
+                  dot={false} activeDot={{ r: 4, stroke: '#5B47E0', strokeWidth: 2, fill: '#fff' }} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
           {labels.length > 0 && (
-            <div className="hidden md:flex justify-between text-[11px] mt-1.5" style={{ color: 'var(--text4)' }}>
+            <div className="hidden md:flex justify-between text-[11px] mt-1.5" style={{ color: '#B7B2F0' }}>
               {labels.map((l, i) => <span key={i}>{l.date === 'today' ? 'Today' : fmtDay(l.date)}</span>)}
             </div>
           )}
         </>
       )}
 
-      <div className="hidden md:grid grid-cols-3 gap-3 mt-3.5 pt-3.5" style={{ borderTop: '1px solid #F1F5F9' }}>
+      <div className="hidden md:grid grid-cols-3 gap-3 mt-3.5 pt-3.5" style={{ borderTop: '1px solid rgba(255,255,255,.18)' }}>
         {([
-          ['Assets', short(nw.totalAssets), 'var(--text)'],
-          ['Liabilities', short(nw.totalLiab), nw.totalLiab > 0 ? 'var(--expense)' : 'var(--text)'],
-          ['Savings rate', savingsRate != null ? `${savingsRate}%` : '—', savingsRate == null ? 'var(--text3)' : savingsRate >= 20 ? 'var(--income)' : 'var(--gold)'],
+          ['Assets', short(nw.totalAssets), '#fff'],
+          ['Liabilities', short(nw.totalLiab), nw.totalLiab > 0 ? '#FFB4A6' : '#fff'],
+          ['Savings rate', savingsRate != null ? `${savingsRate}%` : '—', savingsRate == null ? '#CFC8FA' : savingsRate >= 20 ? '#8EF0BF' : '#FFD38A'],
         ] as const).map(([l, v, c]) => (
           <div key={l}>
-            <div className="text-[11.5px]" style={{ color: 'var(--text3)' }}>{l}</div>
-            <div className="text-[16px] font-semibold font-mono" style={{ color: c }}>{v}</div>
+            <div className="text-[11.5px]" style={{ color: '#CFC8FA' }}>{l}</div>
+            <div className="text-[16px] font-semibold tabular-nums" style={{ color: c }}>{v}</div>
           </div>
         ))}
       </div>
-      <div className="mt-3 hidden md:flex justify-end"><MoreLink href="/dashboard/net-worth">Net worth breakdown</MoreLink></div>
-    </Card>
+      <div className="mt-3 hidden md:flex justify-end">
+        <Link href="/dashboard/net-worth" className="text-[12.5px] font-semibold hover:underline" style={{ color: '#fff' }}>Net worth breakdown →</Link>
+      </div>
+    </section>
   )
 }
 
@@ -386,8 +415,8 @@ function Donut({ score, big }: { score: number; big?: boolean }) {
   return (
     <div className="relative flex-shrink-0" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={score} aria-label="Financial health score">
       <svg viewBox="0 0 36 36" className={`${big ? 'w-[92px] h-[92px]' : 'w-[72px] h-[72px]'} -rotate-90`}>
-        <circle cx="18" cy="18" r="15.9155" fill="none" stroke="#EEF2FF" strokeWidth="3.5" />
-        <circle cx="18" cy="18" r="15.9155" fill="none" stroke="#4F46E5" strokeWidth="3.5" strokeLinecap="round" strokeDasharray={`${score} ${100 - score}`} />
+        <circle cx="18" cy="18" r="15.9155" fill="none" stroke="var(--accent-bg)" strokeWidth="3.5" />
+        <circle cx="18" cy="18" r="15.9155" fill="none" stroke="var(--accent)" strokeWidth="3.5" strokeLinecap="round" strokeDasharray={`${score} ${100 - score}`} />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <div className={`${big ? 'text-[24px]' : 'text-[20px]'} font-bold leading-none`} style={{ color: 'var(--text)' }}>{score}</div>
@@ -432,7 +461,7 @@ function HealthCard({ score, parts, className = '' }: { score: number; parts: { 
   )
 }
 
-const GOAL_COLORS = ['#16A34A', '#E11D48', '#4F46E5']
+const GOAL_COLORS = PALETTE
 
 // Goals picked during onboarding, offered as one-click "set up this goal"
 function InterestChips({ interests }: { interests: string[] }) {
@@ -585,7 +614,7 @@ function LearnCard({ ins, hasSip, className = '' }: { ins: HomeInsights; hasSip:
   if (has('bud')) picks.push({ mod: 'Budgets', color: '#2563EB', title: 'Budgets are plans, not punishments', why: 'A category is over budget this month.', href: '/dashboard/budgets/learn' })
   if (hasSip) picks.push({ mod: 'Investments', color: '#16A34A', title: 'What a SIP really does', why: 'You invest through SIPs every month.', href: '/dashboard/learn' })
   if (ins.runway.months != null && ins.runway.months < 6) picks.push({ mod: 'Goals', color: '#7C3AED', title: 'Build a safety net first', why: `Your emergency fund covers ${ins.runway.months} months.`, href: '/dashboard/goals/learn' })
-  picks.push({ mod: 'Expenses', color: '#4F46E5', title: 'Why categories beat totals', why: 'See where every dirham and rupee goes.', href: '/dashboard/expenses/learn' })
+  picks.push({ mod: 'Expenses', color: '#6A55E8', title: 'Why categories beat totals', why: 'See where every dirham and rupee goes.', href: '/dashboard/expenses/learn' })
 
   return (
     <Card aria-labelledby="learn-title" className={`flex flex-col md:gap-2.5 ${className}`}>

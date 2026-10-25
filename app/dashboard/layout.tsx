@@ -29,14 +29,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .single()
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg)' }}>
+    <div className="flex h-screen overflow-hidden bg-canvas">
       <Sidebar user={profile} />
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <Topbar user={profile} />
         {/* Content + docked AI advisor (design: advisor sits right of the page) */}
         <div className="flex flex-1 min-h-0">
-          {/* Phones: no app bar, #F7F8FA canvas, content starts under the status bar */}
-          <main className="flex-1 min-w-0 overflow-y-auto px-4 md:px-7 pt-[calc(10px+env(safe-area-inset-top))] md:pt-6 pb-24 md:pb-8 bg-[var(--bg2)] md:bg-[var(--bg)]">
+          {/* Lavender canvas (v2). Phones: no app bar, content starts under the status bar */}
+          <main className="flex-1 min-w-0 overflow-y-auto px-4 md:px-7 pt-[calc(10px+env(safe-area-inset-top))] md:pt-6 pb-24 md:pb-8 bg-canvas-m md:bg-canvas">
             <MobileHeader firstName={(profile?.full_name ?? '').split(' ')[0] || null} />
             <SectionTabs />
             {children}

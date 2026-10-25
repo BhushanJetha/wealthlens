@@ -9,6 +9,9 @@ const config: Config = {
     extend: {
       colors: {
         bg:     { DEFAULT: 'var(--bg)', 2: 'var(--bg2)' },
+        canvas: { DEFAULT: 'var(--canvas)', m: 'var(--canvas-m)' },
+        line:   'var(--line)',
+        track:  'var(--track)',
         card:   { DEFAULT: 'var(--card)', 2: 'var(--card2)' },
         bdr:    { DEFAULT: 'var(--border)', 2: 'var(--border2)' },
         accent: { DEFAULT: 'var(--accent)', 2: 'var(--accent2)', bg: 'var(--accent-bg)', border: 'var(--accent-border)' },
@@ -20,6 +23,17 @@ const config: Config = {
         /* Legacy dark (kept for chat panel) */
         navy:  { DEFAULT: '#0D1B2A', 2: '#162032', 3: '#1E2D40' },
         teal:  { DEFAULT: '#00C9A7', 2: '#00A88A' },
+      },
+      boxShadow: {
+        card: 'var(--shadow-card)',
+        hero: 'var(--shadow-hero)',
+      },
+      backgroundImage: {
+        hero:   'var(--grad-hero)',
+        review: 'var(--grad-review)',
+        nav:    'var(--grad-nav)',
+        promo:  'var(--grad-promo)',
+        ai:     'var(--grad-ai)',
       },
       fontFamily: {
         // Amounts use `font-mono`; globals.css gives it tabular figures.
