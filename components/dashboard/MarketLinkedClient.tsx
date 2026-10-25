@@ -1,14 +1,15 @@
 'use client'
-import { PageHeader, InsightBar, AiActions } from '@/components/ui/kit'
+import { PageHeader, InsightBar, AiActions, HeroStat, KpiTile, Donut, ProgressRow } from '@/components/ui/kit'
+import { ListCard, ListRow } from '@/components/ui/list'
 import { useMemo, useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useViewStore } from '@/store/viewStore'
 import { createClient } from '@/lib/supabase/client'
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, AreaChart, Area, XAxis, YAxis, CartesianGrid, ReferenceLine } from 'recharts'
+import { ResponsiveContainer, Tooltip, AreaChart, Area, XAxis, YAxis, ReferenceLine } from 'recharts'
 import {
-  TrendingUp, TrendingDown, Wallet, Layers, Activity, BarChart2,
-  ArrowUpRight, ArrowDownRight, Trophy, AlertTriangle, Repeat, GraduationCap,
+  TrendingUp, TrendingDown, Wallet, Layers, BarChart2,
+  Trophy, AlertTriangle, GraduationCap,
   Lightbulb, CheckCircle2, RefreshCw, Loader2, Scale,
 } from 'lucide-react'
 
@@ -26,9 +27,9 @@ type Holding = {
   isElss: boolean
 }
 
-const INSTRUMENT_COLORS: Record<string, string> = { 'Mutual Fund': '#2563EB', Stock: '#7C3AED', ETF: '#0EA5E9' }
+const INSTRUMENT_COLORS: Record<string, string> = { 'Mutual Fund': '#6A55E8', Stock: '#3B8EF0', ETF: '#2FB67C' }
 const CLASS_COLORS: Record<string, string> = {
-  Equity: '#2563EB', Debt: '#0EA5E9', Hybrid: '#7C3AED', Gold: '#D97706', Index: '#16A34A', International: '#EA580C', Other: '#6B7280',
+  Equity: '#6A55E8', Debt: '#3B8EF0', Hybrid: '#2FB67C', Gold: '#F29A2E', Index: '#2FB67C', International: '#EC5B8C', Other: '#94A3B8',
 }
 
 function mfClass(t: string): string {
@@ -272,9 +273,9 @@ export default function MarketLinkedClient({ funds, stocks, etfs }: { funds: any
               : 'Add Mutual Funds, Stocks or ETFs to see your combined portfolio here.'}
           </p>
           <div className="flex gap-2 justify-center mt-4 flex-wrap">
-            <Link href="/dashboard/investments/mutual-funds" className="px-3 py-1.5 rounded-lg text-[12px] font-semibold border" style={{ borderColor: 'var(--border)', color: 'var(--text2)', background: 'var(--bg2)' }}>Mutual Funds</Link>
-            <Link href="/dashboard/stocks" className="px-3 py-1.5 rounded-lg text-[12px] font-semibold border" style={{ borderColor: 'var(--border)', color: 'var(--text2)', background: 'var(--bg2)' }}>Stocks</Link>
-            <Link href="/dashboard/investments/etf" className="px-3 py-1.5 rounded-lg text-[12px] font-semibold border" style={{ borderColor: 'var(--border)', color: 'var(--text2)', background: 'var(--bg2)' }}>ETF</Link>
+            <Link href="/dashboard/investments/mutual-funds" className="px-3 py-1.5 rounded-lg text-[12px] font-semibold border" style={{ borderColor: 'var(--line)', color: 'var(--text2)', background: 'var(--bg2)' }}>Mutual Funds</Link>
+            <Link href="/dashboard/stocks" className="px-3 py-1.5 rounded-lg text-[12px] font-semibold border" style={{ borderColor: 'var(--line)', color: 'var(--text2)', background: 'var(--bg2)' }}>Stocks</Link>
+            <Link href="/dashboard/investments/etf" className="px-3 py-1.5 rounded-lg text-[12px] font-semibold border" style={{ borderColor: 'var(--line)', color: 'var(--text2)', background: 'var(--bg2)' }}>ETF</Link>
           </div>
         </div>
       </div>
@@ -282,265 +283,198 @@ export default function MarketLinkedClient({ funds, stocks, etfs }: { funds: any
   }
 
   return (
-    <div className="space-y-5 animate-fade-up">
+    <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
       <Header view={view} onRefresh={refreshPrices} refreshing={refreshing} />
       {insights[0] && <InsightBar text={`${insights[0].title}. ${insights[0].detail}`}
         prompt={`Explain my market-linked portfolio: invested ${money(totalInvested)}, worth ${money(totalCurrent)} (${gainPct.toFixed(1)}%), SIPs ${money(monthlySip)} a month. ${insights.map(i => `${i.title}: ${i.detail}`).join(' ')}`} />}
       {holdings.length > 0 && <AiActions actions={['Rebalance my portfolio', 'Which holdings should I review?']}
         context={`Holdings: ${holdings.slice(0, 20).map(h => `${h.name} (${h.kind}, ${money(h.current)})`).join(', ')}.`} />}
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Kpi label="Invested"      value={money(totalInvested)} icon={Wallet}     color="var(--text2)" />
-        <Kpi label="Current Value" value={money(totalCurrent)}  icon={BarChart2}   color="var(--sage)" />
-        <Kpi label="Total Gain/Loss" value={`${totalGain >= 0 ? '+' : '−'}${money(Math.abs(totalGain))}`}
-          icon={totalGain >= 0 ? TrendingUp : TrendingDown}
-          color={totalGain >= 0 ? 'var(--income)' : 'var(--rose)'}
-          sub={`${totalGain >= 0 ? '+' : ''}${gainPct.toFixed(2)}%`} />
-        <Kpi label="Holdings" value={String(holdings.length)} icon={Layers} color="var(--blue)"
-          sub={`${gainers} up · ${losers} down${monthlySip > 0 ? ` · SIP ${money(monthlySip)}/mo` : ''}`} />
+      {/* Headline value + wealth curve (same card on desktop and phone), returns vs Nifty */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-3.5 md:gap-4">
+        <HeroStat label="Value today" value={money(totalCurrent)} tone={totalGain >= 0 ? 'good' : 'bad'}
+          delta={`${totalGain >= 0 ? '▲' : '▼'} ${money(Math.abs(totalGain))} (${totalGain >= 0 ? '+' : ''}${gainPct.toFixed(1)}%) on ${money(totalInvested)} put in`}
+          right={<span className="text-[11.5px] flex items-center gap-3" style={{ color: 'var(--text3)' }}>
+            <span className="flex items-center gap-1.5"><i className="w-[9px] h-[9px] rounded-sm" style={{ background: '#6A55E8' }} />Put in</span>
+            <span className="flex items-center gap-1.5"><i className="w-4 border-t-2 border-dashed" style={{ borderColor: '#16A34A' }} />Value today</span>
+          </span>}>
+          {wealthSeries.length > 0 && (
+            <div className="h-[130px] md:h-auto md:flex-1 md:min-h-[180px] mt-3 -mx-1">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={wealthSeries} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="wlInv" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#6A55E8" stopOpacity={0.25} />
+                      <stop offset="100%" stopColor="#6A55E8" stopOpacity={0.02} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94A3B8' }} axisLine={false} tickLine={false} minTickGap={30} />
+                  <YAxis hide domain={[0, (max: number) => Math.max(max, totalCurrent) * 1.05]} />
+                  <Tooltip formatter={(v: any) => [money(Number(v)), 'Put in']} contentStyle={{ fontSize: 12, borderRadius: 10, border: '1px solid var(--line)' }} />
+                  <ReferenceLine y={Math.round(totalCurrent)} stroke="#16A34A" strokeDasharray="4 3" />
+                  <Area type="monotone" dataKey="invested" name="Put in" stroke="#6A55E8" strokeWidth={2.5} fill="url(#wlInv)" isAnimationActive={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </HeroStat>
+
+        <section className="wl-card px-4 md:px-5 py-4 md:py-[18px] flex flex-col gap-3">
+          <h2 className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Yearly return (XIRR){nifty ? ' vs Nifty 50' : ''}</h2>
+          {portfolioXirr === null ? (
+            <p className="text-[12.5px]" style={{ color: 'var(--text3)' }}>Import dated purchases (a CAMS statement, or buys you record) to work out your yearly return.</p>
+          ) : (<>
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="rounded-xl px-3.5 py-2.5" style={{ background: '#FAFAFE', border: '1px solid var(--line)' }}>
+                <div className="text-[11.5px]" style={{ color: 'var(--text3)' }}>You</div>
+                <div className="text-[19px] font-bold tabular-nums" style={{ color: portfolioXirr >= 0 ? '#16A34A' : '#DC2626' }}>{portfolioXirr >= 0 ? '+' : ''}{portfolioXirr.toFixed(1)}%<span className="text-[11px] font-normal" style={{ color: 'var(--text4)' }}> a yr</span></div>
+              </div>
+              <div className="rounded-xl px-3.5 py-2.5" style={{ background: '#FAFAFE', border: '1px solid var(--line)' }}>
+                <div className="text-[11.5px]" style={{ color: 'var(--text3)' }}>Nifty 50</div>
+                <div className="text-[19px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{nifty ? `${nifty.cagr >= 0 ? '+' : ''}${nifty.cagr.toFixed(1)}%` : '…'}<span className="text-[11px] font-normal" style={{ color: 'var(--text4)' }}>{nifty ? ' a yr' : ''}</span></div>
+              </div>
+            </div>
+            {nifty && (() => { const d = portfolioXirr - nifty.cagr; return (
+              <div className="rounded-xl px-3.5 py-2.5 flex items-center justify-between" style={{ background: d >= 0 ? '#E7F7EF' : '#FDECE8' }}>
+                <span className="text-[12.5px] font-medium" style={{ color: d >= 0 ? '#1E8F5F' : '#D9482F' }}>{d >= 0 ? 'Ahead of the index by' : 'Behind the index by'}</span>
+                <span className="text-[16px] font-bold tabular-nums" style={{ color: d >= 0 ? '#1E8F5F' : '#D9482F' }}>{Math.abs(d).toFixed(1)}%</span>
+              </div>
+            ) })()}
+            <p className="text-[11.5px] leading-snug mt-auto" style={{ color: 'var(--text4)' }}>XIRR weighs each investment by when you made it, compared with the Nifty 50 over the same period.</p>
+          </>)}
+        </section>
       </div>
 
-      {/* Returns: XIRR vs Nifty */}
-      {portfolioXirr !== null && (
-        <div className="wl-card p-4">
-          <div className="text-[11px] font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5" style={{ color: 'var(--text3)' }}>
-            <TrendingUp size={12} /> Annualised Return (XIRR){nifty ? ' vs Nifty 50' : ''}
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            <div className="rounded-xl p-3" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-              <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>Your Portfolio</div>
-              <div className="text-[20px] font-bold font-mono" style={{ color: portfolioXirr >= 0 ? 'var(--income)' : 'var(--rose)' }}>{portfolioXirr >= 0 ? '+' : ''}{portfolioXirr.toFixed(1)}%<span className="text-[11px] font-normal" style={{ color: 'var(--text3)' }}>/yr</span></div>
-            </div>
-            <div className="rounded-xl p-3" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-              <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>Nifty 50</div>
-              <div className="text-[20px] font-bold font-mono" style={{ color: 'var(--text)' }}>{nifty ? `${nifty.cagr >= 0 ? '+' : ''}${nifty.cagr.toFixed(1)}%` : '…'}<span className="text-[11px] font-normal" style={{ color: 'var(--text3)' }}>{nifty ? '/yr' : ''}</span></div>
-            </div>
-            {nifty && (
-              <div className="rounded-xl p-3 col-span-2 sm:col-span-1" style={{ background: (portfolioXirr - nifty.cagr) >= 0 ? 'var(--income-bg)' : 'var(--rose-bg)', border: '1px solid var(--border)' }}>
-                <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>{(portfolioXirr - nifty.cagr) >= 0 ? 'Beating index by' : 'Trailing index by'}</div>
-                <div className="text-[20px] font-bold font-mono" style={{ color: (portfolioXirr - nifty.cagr) >= 0 ? 'var(--income)' : 'var(--rose)' }}>{Math.abs(portfolioXirr - nifty.cagr).toFixed(1)}%</div>
-              </div>
-            )}
-          </div>
-          <p className="text-[10px] mt-2" style={{ color: 'var(--text3)' }}>XIRR is your money-weighted return (accounts for when you invested). Compared against the Nifty 50 over the same period.</p>
-        </div>
-      )}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
+        <KpiTile label="Put in" value={money(totalInvested)} delta={`${holdings.length} holding${holdings.length === 1 ? '' : 's'}`} tint={0} icon={Wallet} />
+        <KpiTile label="Gain / loss" value={`${totalGain >= 0 ? '+' : '−'}${money(Math.abs(totalGain))}`} delta={`${totalGain >= 0 ? '+' : ''}${gainPct.toFixed(1)}% overall`} tone={totalGain >= 0 ? 'good' : 'bad'} tint={1} icon={totalGain >= 0 ? TrendingUp : TrendingDown} />
+        <KpiTile label="Up / down" value={`${gainers} / ${losers}`} delta="holdings in profit / at a loss" tint={3} icon={Layers} />
+        <KpiTile label="Monthly SIPs" value={monthlySip > 0 ? money(monthlySip) : '—'} delta={monthlySip > 0 ? 'auto-invested a month' : 'No SIP running'} tint={2} icon={BarChart2} />
+      </div>
 
-      {/* Actionable insights */}
+      {/* What stands out */}
       {insights.length > 0 && (
-        <div className="wl-card p-4">
-          <div className="text-[11px] font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5" style={{ color: 'var(--text3)' }}>
-            <Lightbulb size={12} style={{ color: 'var(--gold)' }} /> Insights &amp; Actions
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <section className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
+          <h2 className="text-[14px] md:text-[15px] font-semibold mb-3" style={{ color: 'var(--text)' }}>What stands out</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
             {insights.map((ins, i) => {
-              const c = ins.tone === 'warn' ? 'var(--rose)' : ins.tone === 'good' ? 'var(--income)' : 'var(--blue)'
+              const [c, bg] = ins.tone === 'warn' ? ['#D9482F', '#FDECE8'] : ins.tone === 'good' ? ['#1E8F5F', '#E7F7EF'] : ['#6A55E8', '#F0EDFF']
               const Icon = ins.tone === 'warn' ? AlertTriangle : ins.tone === 'good' ? CheckCircle2 : Lightbulb
               return (
-                <div key={i} className="flex gap-2.5 rounded-xl p-2.5" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: c + '18' }}>
-                    <Icon size={14} style={{ color: c }} />
-                  </div>
+                <div key={i} className="flex gap-3 rounded-xl px-3.5 py-3" style={{ background: '#FAFAFE', border: '1px solid var(--line)' }}>
+                  <span className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ background: bg, color: c }}><Icon size={15} /></span>
                   <div className="min-w-0">
-                    <div className="text-[12px] font-semibold" style={{ color: 'var(--text)' }}>{ins.title}</div>
-                    <div className="text-[11px] leading-snug mt-0.5" style={{ color: 'var(--text3)' }}>{ins.detail}</div>
+                    <div className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{ins.title}</div>
+                    <div className="text-[12px] leading-snug mt-0.5" style={{ color: 'var(--text3)' }}>{ins.detail}</div>
                   </div>
                 </div>
               )
             })}
           </div>
-        </div>
+        </section>
       )}
 
-      {/* Allocation */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="wl-card p-4">
-          <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>Allocation by Instrument</div>
-          <div className="flex items-center gap-4">
-            <div style={{ width: 150, height: 150 }} className="flex-shrink-0">
-              <ResponsiveContainer>
-                <PieChart>
-                  <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={45} outerRadius={70} paddingAngle={2}>
-                    {pieData.map((d, i) => <Cell key={i} fill={d.color} />)}
-                  </Pie>
-                  <Tooltip formatter={(v: any) => money(Number(v))} contentStyle={{ fontSize: 11, borderRadius: 10, border: '1px solid var(--border)' }} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="flex-1 space-y-2">
-              {byInstrument.map(([name, val]) => {
-                const pct = totalCurrent > 0 ? (val / totalCurrent) * 100 : 0
-                return (
-                  <div key={name} className="flex items-center gap-2 text-[12px]">
-                    <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: INSTRUMENT_COLORS[name] ?? '#6B7280' }} />
-                    <span className="flex-1" style={{ color: 'var(--text2)' }}>{name}</span>
-                    <span className="font-mono font-semibold" style={{ color: 'var(--text)' }}>{money(val)}</span>
-                    <span className="font-mono w-10 text-right" style={{ color: 'var(--text3)' }}>{pct.toFixed(0)}%</span>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-
-        <AllocBars title="Allocation by Asset Class" rows={byClass} total={totalCurrent} money={money} colors={CLASS_COLORS} />
-      </div>
-
-      {/* Wealth curve */}
-      {wealthSeries.length > 0 && (
-        <div className="wl-card p-4">
-          <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>Wealth Curve · invested over time vs current value</div>
-          <div style={{ width: '100%', height: 220 }}>
-            <ResponsiveContainer>
-              <AreaChart data={wealthSeries} margin={{ top: 8, right: 8, left: -10, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="wlInv" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#2563EB" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="#2563EB" stopOpacity={0.03} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="month" tick={{ fontSize: 10, fill: 'var(--text3)' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: 'var(--text3)' }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtK(Number(v))} />
-                <Tooltip formatter={(v: any) => money(Number(v))} contentStyle={{ fontSize: 11, borderRadius: 10, border: '1px solid var(--border)' }} />
-                <ReferenceLine y={Math.round(totalCurrent)} stroke="var(--income)" strokeDasharray="4 3"
-                  label={{ value: `Current ${money(totalCurrent)}`, position: 'insideTopRight', fontSize: 10, fill: 'var(--income)' }} />
-                <Area type="monotone" dataKey="invested" name="Invested" stroke="#2563EB" strokeWidth={2} fill="url(#wlInv)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-          <p className="text-[10px] mt-1" style={{ color: 'var(--text3)' }}>Blue = total invested over time. The dashed line is today's market value — the gap above the area is your unrealised gain ({money(totalGain)}).</p>
-        </div>
-      )}
-
-      {/* Tax view */}
-      {view !== 'uae' && (taxView.ltcg > 0 || taxView.stcg > 0 || taxView.elssLocked > 0 || taxView.debtGain !== 0) && (
-        <div className="wl-card p-4">
-          <div className="text-[11px] font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5" style={{ color: 'var(--text3)' }}>
-            <Scale size={12} /> Tax View · if you sold today
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <TaxStat label="LT gains (>1yr)" value={money(taxView.ltcg)} color="var(--text)" />
-            <TaxStat label="ST gains (<1yr)" value={money(taxView.stcg)} color="var(--text)" />
-            <TaxStat label="Est. tax now" value={money(taxView.total)} color="var(--rose)" />
-            <TaxStat label="Tax-free LT room" value={money(taxView.bookableFree)} color="var(--income)" />
-          </div>
-          {taxView.bookableFree > 1000 && (
-            <p className="text-[11px] mt-2 flex items-start gap-1.5" style={{ color: 'var(--text2)' }}>
-              <CheckCircle2 size={12} style={{ color: 'var(--income)' }} className="mt-0.5 flex-shrink-0" />
-              You can realise about <b className="mx-1">{money(taxView.bookableFree)}</b> of long-term equity gains tax-free this year (₹1.25L exemption) — consider harvesting.
-            </p>
-          )}
-          {taxView.elssLocked > 0 && (
-            <p className="text-[11px] mt-1.5 flex items-start gap-1.5" style={{ color: 'var(--text2)' }}>
-              <AlertTriangle size={12} style={{ color: 'var(--gold)' }} className="mt-0.5 flex-shrink-0" />
-              {taxView.elssLocked} ELSS fund{taxView.elssLocked > 1 ? 's are' : ' is'} under the 3-year lock-in{taxView.elssUnlock ? ` (earliest unlock ${taxView.elssUnlock})` : ''}.
-            </p>
-          )}
-          <p className="text-[10px] mt-2" style={{ color: 'var(--text3)' }}>
-            Estimate using India equity rules: LTCG 12.5% above ₹1.25L, STCG 20%. Debt gains ({money(taxView.debtGain)}) are taxed at your slab and excluded here. Holding period from purchase date.
-          </p>
-        </div>
-      )}
-
-      {/* Performance */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        <PerfCard title="Best Performer" h={best} money={money} ret={ret} good />
-        <PerfCard title="Needs Attention" h={worst} money={money} ret={ret} />
-        <div className="wl-card p-4">
-          <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>Gainers vs Losers</div>
-          <div className="flex items-center gap-4">
-            <div className="flex-1 text-center">
-              <div className="text-[24px] font-bold font-mono" style={{ color: 'var(--income)' }}>{gainers}</div>
-              <div className="text-[10px] flex items-center justify-center gap-1" style={{ color: 'var(--text3)' }}><ArrowUpRight size={11} /> in profit</div>
-            </div>
-            <div className="w-px self-stretch" style={{ background: 'var(--border)' }} />
-            <div className="flex-1 text-center">
-              <div className="text-[24px] font-bold font-mono" style={{ color: 'var(--rose)' }}>{losers}</div>
-              <div className="text-[10px] flex items-center justify-center gap-1" style={{ color: 'var(--text3)' }}><ArrowDownRight size={11} /> in loss</div>
-            </div>
-          </div>
-          {byHolder.length > 1 && (
-            <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
-              <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--text3)' }}>By Holder</div>
-              {byHolder.slice(0, 4).map(([name, val]) => (
-                <div key={name} className="flex justify-between text-[11px]">
-                  <span style={{ color: 'var(--text2)' }}>{name}</span>
-                  <span className="font-mono" style={{ color: 'var(--text)' }}>{money(val)}</span>
+      {/* Where the money sits */}
+      <section className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
+        <h2 className="text-[14px] md:text-[15px] font-semibold mb-3.5" style={{ color: 'var(--text)' }}>Where your money sits</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-10">
+          <div className="flex items-center gap-4 md:gap-5">
+            <Donut segments={pieData} size={112} label="Split by instrument">
+              <span className="text-[10.5px]" style={{ color: 'var(--text3)' }}>Holdings</span>
+              <span className="text-[17px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{holdings.length}</span>
+            </Donut>
+            <div className="flex-1 min-w-0 flex flex-col gap-2.5">
+              <div className="text-[11.5px] font-medium" style={{ color: 'var(--text3)' }}>By instrument</div>
+              {byInstrument.map(([name, val]) => (
+                <div key={name} className="flex items-center gap-2 text-[12.5px]">
+                  <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: INSTRUMENT_COLORS[name] ?? '#94A3B8' }} />
+                  <span className="flex-1 truncate" style={{ color: 'var(--text2)' }}>{name}</span>
+                  <span className="text-right">
+                    <span className="block tabular-nums font-semibold" style={{ color: 'var(--text)' }}>{money(val)}</span>
+                    <span className="md:hidden block text-[11px] tabular-nums" style={{ color: 'var(--text3)' }}>{totalCurrent > 0 ? Math.round(val / totalCurrent * 100) : 0}%</span>
+                  </span>
+                  <span className="max-md:hidden tabular-nums w-9 text-right" style={{ color: 'var(--text3)' }}>{totalCurrent > 0 ? Math.round(val / totalCurrent * 100) : 0}%</span>
                 </div>
               ))}
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* Holdings table */}
-      <div className="wl-card overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
-          <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>All Holdings ({holdings.length})</div>
-          <div className="flex gap-1">
-            {([['value', 'Value'], ['gain', 'Return %'], ['invested', 'Invested']] as const).map(([k, label]) => (
-              <button key={k} onClick={() => setSortBy(k)}
-                className="px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all"
-                style={sortBy === k ? { background: 'var(--sage-bg)', color: 'var(--sage)' } : { background: 'var(--bg2)', color: 'var(--text3)' }}>
-                {label}
-              </button>
-            ))}
+          </div>
+          <div className="flex flex-col gap-3">
+            <div className="text-[11.5px] font-medium" style={{ color: 'var(--text3)' }}>By asset class</div>
+            {byClass.map(([name, val]) => {
+              const pct = totalCurrent > 0 ? val / totalCurrent * 100 : 0
+              return <ProgressRow key={name} name={name} value={money(val)} right={`${pct.toFixed(0)}%`} pct={pct} color={CLASS_COLORS[name] ?? '#94A3B8'} />
+            })}
           </div>
         </div>
+      </section>
 
-        {/* Desktop */}
-        <div className="overflow-x-auto hidden md:block">
-          <table className="w-full text-[12px]">
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg2)' }}>
-                {['Holding', 'Type', 'Class', 'Invested', 'Current', 'Gain/Loss', 'Return'].map(h => (
-                  <th key={h} className="px-4 py-2.5 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--text3)' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((h, i) => {
-                const g = h.current - h.invested
-                const r = ret(h)
-                return (
-                  <tr key={i} style={{ borderBottom: '1px solid var(--border)' }} className="hover:bg-stone-50 transition-colors">
-                    <td className="px-4 py-2.5 font-semibold" style={{ color: 'var(--text)' }}>{h.name}</td>
-                    <td className="px-4 py-2.5"><span className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ background: (INSTRUMENT_COLORS[h.kind] ?? '#6B7280') + '18', color: INSTRUMENT_COLORS[h.kind] ?? '#6B7280' }}>{h.kind}</span></td>
-                    <td className="px-4 py-2.5 text-[11px]" style={{ color: 'var(--text3)' }}>{h.assetClass}</td>
-                    <td className="px-4 py-2.5 font-mono" style={{ color: 'var(--text3)' }}>{money(h.invested)}</td>
-                    <td className="px-4 py-2.5 font-mono font-semibold" style={{ color: 'var(--text)' }}>{money(h.current)}</td>
-                    <td className="px-4 py-2.5 font-mono" style={{ color: g >= 0 ? 'var(--income)' : 'var(--rose)' }}>{g >= 0 ? '+' : '−'}{money(Math.abs(g))}</td>
-                    <td className="px-4 py-2.5 font-mono font-bold" style={{ color: r >= 0 ? 'var(--income)' : 'var(--rose)' }}>{r >= 0 ? '+' : ''}{r.toFixed(1)}%</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+      {/* Tax view */}
+      {view !== 'uae' && (taxView.ltcg > 0 || taxView.stcg > 0 || taxView.elssLocked > 0 || taxView.debtGain !== 0) && (
+        <section className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
+          <div className="flex items-center gap-2.5 mb-3">
+            <span className="w-8 h-8 rounded-[10px] flex items-center justify-center" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}><Scale size={15} /></span>
+            <div>
+              <h2 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Tax if you sold today</h2>
+              <div className="text-[11.5px]" style={{ color: 'var(--text3)' }}>An estimate, before any losses you could set off</div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+            <TaxStat label="Long-term gains" value={money(taxView.ltcg)} color="var(--text)" />
+            <TaxStat label="Short-term gains" value={money(taxView.stcg)} color="var(--text)" />
+            <TaxStat label="Tax due (est.)" value={money(taxView.total)} color="#DC2626" />
+            <TaxStat label="Tax-free room left" value={money(taxView.bookableFree)} color="#16A34A" />
+          </div>
+          {taxView.bookableFree > 1000 && (
+            <div className="rounded-xl px-3.5 py-2.5 mt-2.5 text-[12.5px] leading-snug flex items-start gap-2" style={{ background: '#E7F7EF', color: '#1E8F5F' }}>
+              <CheckCircle2 size={14} className="mt-0.5 flex-shrink-0" />
+              <span>You can book about <b>{money(taxView.bookableFree)}</b> of long-term equity gains tax-free this year (the ₹1.25L exemption). Selling and buying back resets your cost.</span>
+            </div>
+          )}
+          {taxView.elssLocked > 0 && (
+            <div className="rounded-xl px-3.5 py-2.5 mt-2 text-[12.5px] leading-snug flex items-start gap-2" style={{ background: '#FFF2E2', color: '#B96A0B' }}>
+              <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
+              <span>{taxView.elssLocked} ELSS fund{taxView.elssLocked > 1 ? 's are' : ' is'} still in the 3-year lock-in{taxView.elssUnlock ? ` (the first unlocks ${taxView.elssUnlock})` : ''}.</span>
+            </div>
+          )}
+          <p className="text-[11px] mt-2.5 leading-snug" style={{ color: 'var(--text4)' }}>
+            India equity rules: long-term 12.5% above ₹1.25L, short-term 20%. Debt gains ({money(taxView.debtGain)}) are taxed at your slab and left out here. Holding period counts from the purchase date.
+          </p>
+        </section>
+      )}
 
-        {/* Mobile cards */}
-        <div className="md:hidden divide-y" style={{ borderColor: 'var(--border)' }}>
-          {sorted.map((h, i) => {
-            const g = h.current - h.invested
-            const r = ret(h)
-            return (
-              <div key={i} className="px-3 py-3">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-semibold text-[13px] truncate" style={{ color: 'var(--text)' }}>{h.name}</span>
-                  <span className="font-bold font-mono text-[13px] flex-shrink-0" style={{ color: 'var(--text)' }}>{money(h.current)}</span>
-                </div>
-                <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ background: (INSTRUMENT_COLORS[h.kind] ?? '#6B7280') + '18', color: INSTRUMENT_COLORS[h.kind] ?? '#6B7280' }}>{h.kind}</span>
-                  <span className="text-[10px]" style={{ color: 'var(--text3)' }}>{h.assetClass} · inv {money(h.invested)}</span>
-                  <span className="text-[10px] font-mono font-bold ml-auto" style={{ color: r >= 0 ? 'var(--income)' : 'var(--rose)' }}>{r >= 0 ? '+' : ''}{r.toFixed(1)}%</span>
-                </div>
-              </div>
-            )
-          })}
-        </div>
+      {/* Best and worst, and who holds what */}
+      <div className={`grid grid-cols-2 ${byHolder.length > 1 ? 'lg:grid-cols-3' : ''} gap-2.5 md:gap-3.5`}>
+        <PerfCard title="Best performer" h={best} money={money} ret={ret} good />
+        <PerfCard title="Needs a look" h={worst} money={money} ret={ret} />
+        {byHolder.length > 1 && (
+          <section className="wl-card px-4 md:px-5 py-4 max-lg:col-span-2 flex flex-col gap-2.5">
+            <h2 className="text-[13px] md:text-[14px] font-semibold" style={{ color: 'var(--text)' }}>By holder</h2>
+            {byHolder.slice(0, 4).map(([name, val]) => (
+              <ProgressRow key={name} name={name} value={money(val)} pct={totalCurrent > 0 ? val / totalCurrent * 100 : 0} />
+            ))}
+          </section>
+        )}
       </div>
+
+      {/* Holdings */}
+      <ListCard title="All holdings" sub={`${holdings.length} across mutual funds, stocks and ETFs`}
+        toolbar={<div className="flex flex-wrap gap-1.5" role="group" aria-label="Sort holdings">
+          {([['value', 'By value'], ['gain', 'By return'], ['invested', 'By amount put in']] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setSortBy(k)} aria-pressed={sortBy === k} className="wl-chip">{label}</button>
+          ))}
+        </div>}
+        head={['Holding', 'Type', 'Return', 'Value']}>
+        {sorted.map((h, i) => {
+          const r = ret(h)
+          const href = h.kind === 'Mutual Fund' ? '/dashboard/investments/mutual-funds' : h.kind === 'Stock' ? '/dashboard/investments/stocks' : '/dashboard/investments/etf'
+          return (
+            <ListRow key={`${h.kind}-${h.name}-${i}`} color={INSTRUMENT_COLORS[h.kind] ?? '#94A3B8'} title={h.name}
+              sub={`${h.assetClass}${h.holder ? ` · ${h.holder}` : ''}`} tag={h.kind}
+              meta={`${r >= 0 ? '+' : ''}${r.toFixed(1)}%`} metaColor={r >= 0 ? '#16A34A' : '#DC2626'}
+              amount={money(h.current)} amountSub={`put in ${money(h.invested)}`} href={href} />
+          )
+        })}
+      </ListCard>
     </div>
   )
 }
@@ -562,72 +496,33 @@ function Header({ view, onRefresh, refreshing }: { view: string; onRefresh?: () 
   )
 }
 
-function Kpi({ label, value, icon: Icon, color, sub }: { label: string; value: string; icon: any; color: string; sub?: string }) {
-  return (
-    <div className="wl-card p-3.5">
-      <div className="flex items-center gap-2 mb-1.5">
-        <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: color + '18' }}>
-          <Icon size={14} style={{ color }} />
-        </div>
-        <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: 'var(--text3)' }}>{label}</span>
-      </div>
-      <div className="text-[18px] font-bold font-mono" style={{ color }}>{value}</div>
-      {sub && <div className="text-[10px] mt-0.5 font-medium" style={{ color: 'var(--text3)' }}>{sub}</div>}
-    </div>
-  )
-}
-
-function AllocBars({ title, rows, total, money, colors }: { title: string; rows: [string, number][]; total: number; money: (n: number) => string; colors: Record<string, string> }) {
-  return (
-    <div className="wl-card p-4">
-      <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>{title}</div>
-      <div className="space-y-2.5">
-        {rows.map(([name, val]) => {
-          const pct = total > 0 ? (val / total) * 100 : 0
-          const color = colors[name] ?? '#6B7280'
-          return (
-            <div key={name} className="flex items-center gap-3">
-              <div className="text-[11px] font-medium w-24 flex-shrink-0 truncate" style={{ color: 'var(--text2)' }}>{name}</div>
-              <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}>
-                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
-              </div>
-              <div className="text-[10px] font-mono w-10 text-right" style={{ color: 'var(--text3)' }}>{pct.toFixed(0)}%</div>
-              <div className="text-[11px] font-mono font-semibold w-20 text-right" style={{ color: 'var(--text)' }}>{money(val)}</div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
 function TaxStat({ label, value, color }: { label: string; value: string; color: string }) {
   return (
-    <div className="rounded-xl p-3" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-      <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>{label}</div>
-      <div className="text-[16px] font-bold font-mono" style={{ color }}>{value}</div>
+    <div className="rounded-xl px-3.5 py-2.5" style={{ background: '#FAFAFE', border: '1px solid var(--line)' }}>
+      <div className="text-[11.5px] mb-0.5" style={{ color: 'var(--text3)' }}>{label}</div>
+      <div className="text-[15px] md:text-[16px] font-bold tabular-nums" style={{ color }}>{value}</div>
     </div>
   )
 }
 
 function PerfCard({ title, h, money, ret, good }: { title: string; h: Holding | null; money: (n: number) => string; ret: (h: Holding) => number; good?: boolean }) {
+  const r = h ? ret(h) : 0
   return (
-    <div className="wl-card p-4">
-      <div className="text-[11px] font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5" style={{ color: 'var(--text3)' }}>
-        {good ? <Trophy size={12} style={{ color: 'var(--gold)' }} /> : <AlertTriangle size={12} style={{ color: 'var(--rose)' }} />} {title}
+    <section className="wl-card px-4 md:px-5 py-4 min-w-0">
+      <div className="flex items-center gap-2 mb-2.5">
+        <span className="w-7 h-7 rounded-[9px] flex items-center justify-center flex-shrink-0" style={good ? { background: '#E7F7EF', color: '#1E8F5F' } : { background: '#FDECE8', color: '#D9482F' }}>
+          {good ? <Trophy size={14} /> : <AlertTriangle size={14} />}
+        </span>
+        <h2 className="text-[12.5px] md:text-[14px] font-semibold truncate" style={{ color: 'var(--text)' }}>{title}</h2>
       </div>
       {!h ? (
-        <div className="text-[12px] py-3" style={{ color: 'var(--text3)' }}>—</div>
-      ) : (
-        <>
-          <div className="text-[13px] font-semibold truncate" style={{ color: 'var(--text)' }}>{h.name}</div>
-          <div className="text-[10px] mb-1" style={{ color: 'var(--text3)' }}>{h.kind}</div>
-          <div className="text-[20px] font-bold font-mono" style={{ color: ret(h) >= 0 ? 'var(--income)' : 'var(--rose)' }}>
-            {ret(h) >= 0 ? '+' : ''}{ret(h).toFixed(1)}%
-          </div>
-          <div className="text-[11px] font-mono mt-0.5" style={{ color: 'var(--text3)' }}>{money(h.current)} now</div>
-        </>
-      )}
-    </div>
+        <div className="text-[12.5px]" style={{ color: 'var(--text3)' }}>Nothing to show yet</div>
+      ) : (<>
+        <div className="text-[13px] font-semibold truncate" style={{ color: 'var(--text)' }}>{h.name}</div>
+        <div className="text-[11.5px]" style={{ color: 'var(--text3)' }}>{h.kind}</div>
+        <div className="text-[20px] md:text-[22px] font-bold tabular-nums mt-1" style={{ color: r >= 0 ? '#16A34A' : '#DC2626' }}>{r >= 0 ? '+' : ''}{r.toFixed(1)}%</div>
+        <div className="text-[11.5px] tabular-nums" style={{ color: 'var(--text3)' }}>{money(h.current)} today</div>
+      </>)}
+    </section>
   )
 }
