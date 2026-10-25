@@ -1,4 +1,5 @@
 'use client'
+import { PageHeader, InsightBar, AiActions } from '@/components/ui/kit'
 import { useState, useEffect, useMemo } from 'react'
 import { useViewStore } from '@/store/viewStore'
 import { createClient } from '@/lib/supabase/client'
@@ -573,37 +574,22 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
         </Overlay>
       )}
 
-      {/* ── Header ────────────────────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em]" style={{ color: 'var(--text)' }}>Mutual Funds</h1>
-          <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
-            {navLoading ? 'Fetching live NAV…' : lastUpdated ? `NAV updated ${lastUpdated.toLocaleTimeString()}` : 'Live NAV ready'}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={fetchLiveNavs} disabled={navLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border"
-            style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>
-            <RefreshCw size={11} className={navLoading ? 'animate-spin' : ''} /> {navLoading ? 'Updating…' : 'Refresh NAV'}
-          </button>
-          <Link href="/dashboard/learn"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border"
-            style={{ borderColor: 'var(--sage)', color: 'var(--sage)', background: 'var(--sage-bg)' }}>
-            <GraduationCap size={12} /> Learn
-          </Link>
-          <button onClick={() => setShowImport(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border"
-            style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>
-            <FileUp size={12} /> Import PDF
-          </button>
-          <button onClick={() => setShowAdd(true)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-[12px] font-bold"
-            style={{ background: 'var(--sage)' }}>
-            <Plus size={13} /> Add Fund
-          </button>
-        </div>
+      <PageHeader title="Mutual funds" sub={navLoading ? 'Fetching live NAV…' : lastUpdated ? `NAV updated ${lastUpdated.toLocaleTimeString()}` : 'Live NAV ready'}
+        onAdd={() => setShowAdd(true)} addLabel="Add fund"
+        actions={<>
+          <button onClick={fetchLiveNavs} disabled={navLoading} className="wl-btn" style={{ height: 34 }}><RefreshCw size={13} className={navLoading ? 'animate-spin' : ''} />{navLoading ? 'Updating…' : 'Refresh NAV'}</button>
+          <button onClick={() => setShowImport(true)} className="wl-btn" style={{ height: 34 }}><FileUp size={13} />Import PDF</button>
+          <Link href="/dashboard/learn" className="wl-btn" style={{ height: 34 }}><GraduationCap size={13} />Learn</Link>
+          <button onClick={() => setShowAdd(true)} className="wl-btn wl-btn-primary" style={{ height: 34 }}><Plus size={14} />Add fund</button>
+        </>} />
+      {/* Phone: header actions are desktop-only */}
+      <div className="md:hidden flex gap-1.5 overflow-x-auto no-scrollbar -mx-4 px-4">
+        <button onClick={fetchLiveNavs} disabled={navLoading} className="wl-chip flex-shrink-0">{navLoading ? 'Updating…' : 'Refresh NAV'}</button>
+        <button onClick={() => setShowImport(true)} className="wl-chip flex-shrink-0">Import PDF</button>
+        <Link href="/dashboard/learn" className="wl-chip flex-shrink-0">Learn</Link>
       </div>
+      {funds.length > 0 && <InsightBar text={`${funds.length} fund${funds.length === 1 ? '' : 's'} worth ${fmt(currentValue)}${totalRet != null ? `, ${totalRet >= 0 ? 'up' : 'down'} ${Math.abs(totalRet).toFixed(1)}% on what you put in` : ''}. ${activeSIPs ? `${activeSIPs} SIP${activeSIPs === 1 ? '' : 's'} running.` : 'No SIPs running yet.'}`} prompt={`My mutual funds: ${funds.slice(0, 15).map(f => `${f.fund_name} (${f.fund_type})`).join(', ')}. Invested ${fmt(totalInvested)}, worth ${fmt(currentValue)}, ${activeSIPs} active SIPs.`} />}
+      {funds.length > 0 && <AiActions actions={['Check my fund overlap', 'Is my SIP enough for my goals?']} context={`My mutual funds: ${funds.slice(0, 15).map(f => `${f.fund_name} (${f.fund_type})`).join(', ')}. Invested ${fmt(totalInvested)}, worth ${fmt(currentValue)}, ${activeSIPs} active SIPs.`} />}
 
       {/* ── Summary Strip ─────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
@@ -611,7 +597,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
           { label: 'Invested',      value: fmt(totalInvested),                                                                                      accent: '#6B7280' },
           { label: 'Current Value', value: hasAnyNav ? fmt(currentValue) : `${fmt(totalInvested)}*`,                                              accent: hasAnyNav ? (absRet >= 0 ? '#3D7A58' : '#E11D48') : '#6B7280' },
           { label: 'Total Return',  value: totalRet !== null ? `${totalRet >= 0 ? '+' : ''}${totalRet.toFixed(2)}%` : '— Refresh NAV',           accent: totalRet !== null ? (totalRet >= 0 ? '#3D7A58' : '#E11D48') : '#6B7280' },
-          { label: 'Gain / Loss',   value: hasAnyNav ? `${absRet >= 0 ? '+' : ''}${fmt(Math.abs(absRet))}` : '—',                               accent: hasAnyNav ? (absRet >= 0 ? '#3D7A58' : '#E11D48') : '#6B7280' },
+          { label: 'Gain / Loss',   value: hasAnyNav ? `${absRet >= 0 ? '+' : '−'}${fmt(Math.abs(absRet))}` : '—',                               accent: hasAnyNav ? (absRet >= 0 ? '#3D7A58' : '#E11D48') : '#6B7280' },
           { label: 'Active SIPs',   value: `${activeSIPs} of ${funds.length}`,                                                                    accent: '#7C5CBF' },
         ].map(k => (
           <div key={k.label} className="wl-card px-4 py-3" style={{ borderLeft: `3px solid ${k.accent}` }}>

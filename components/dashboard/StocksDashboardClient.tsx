@@ -1,4 +1,5 @@
 'use client'
+import { PageHeader, InsightBar, AiActions } from '@/components/ui/kit'
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -324,37 +325,22 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
         </Overlay>
       )}
 
-      {/* Header */}
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em]" style={{ color: 'var(--text)' }}>Stock Portfolio</h1>
-          <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
-            {priceLoading ? 'Fetching live prices…' : lastUpdated ? `Prices updated ${lastUpdated.toLocaleTimeString()}` : 'NSE · Live prices'}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={fetchLivePrices} disabled={priceLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border"
-            style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>
-            <RefreshCw size={11} className={priceLoading ? 'animate-spin' : ''} /> {priceLoading ? 'Updating…' : 'Refresh Prices'}
-          </button>
-          <Link href="/dashboard/learn"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border"
-            style={{ borderColor: 'var(--sage)', color: 'var(--sage)', background: 'var(--sage-bg)' }}>
-            <GraduationCap size={12} /> Learn
-          </Link>
-          <button onClick={() => setShowImport(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border"
-            style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>
-            <FileUp size={12} /> Import PDF
-          </button>
-          <button onClick={() => setShowAdd(true)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-[12px] font-bold"
-            style={{ background: 'var(--sage)' }}>
-            <Plus size={13} /> Add Stock
-          </button>
-        </div>
+      <PageHeader title="Stocks" sub={priceLoading ? 'Fetching live prices…' : lastUpdated ? `Prices updated ${lastUpdated.toLocaleTimeString()}` : 'NSE · live prices'}
+        onAdd={() => setShowAdd(true)} addLabel="Add stock"
+        actions={<>
+          <button onClick={fetchLivePrices} disabled={priceLoading} className="wl-btn" style={{ height: 34 }}><RefreshCw size={13} className={priceLoading ? 'animate-spin' : ''} />{priceLoading ? 'Updating…' : 'Refresh prices'}</button>
+          <button onClick={() => setShowImport(true)} className="wl-btn" style={{ height: 34 }}><FileUp size={13} />Import PDF</button>
+          <Link href="/dashboard/learn" className="wl-btn" style={{ height: 34 }}><GraduationCap size={13} />Learn</Link>
+          <button onClick={() => setShowAdd(true)} className="wl-btn wl-btn-primary" style={{ height: 34 }}><Plus size={14} />Add stock</button>
+        </>} />
+      {/* Phone: header actions are desktop-only */}
+      <div className="md:hidden flex gap-1.5 overflow-x-auto no-scrollbar -mx-4 px-4">
+        <button onClick={fetchLivePrices} disabled={priceLoading} className="wl-chip flex-shrink-0">{priceLoading ? 'Updating…' : 'Refresh prices'}</button>
+        <button onClick={() => setShowImport(true)} className="wl-chip flex-shrink-0">Import PDF</button>
+        <Link href="/dashboard/learn" className="wl-chip flex-shrink-0">Learn</Link>
       </div>
+      {stocks.length > 0 && <InsightBar text={`${stocks.length} stock${stocks.length === 1 ? '' : 's'} worth ${fmt(currentValue)}, ${totalRet >= 0 ? 'up' : 'down'} ${Math.abs(totalRet).toFixed(1)}% overall.${bySector[0] ? ` ${bySector[0].sector} is ${bySector[0].pct}% of the portfolio.` : ''}`} prompt={`My stocks: ${stocks.slice(0, 20).map(s => `${s.symbol ?? s.name}${s.sector ? ` (${s.sector})` : ''}`).join(', ')}. Invested ${fmt(totalInvested)}, worth ${fmt(currentValue)}.`} />}
+      {stocks.length > 0 && <AiActions actions={['Am I too concentrated?', 'Which stocks should I review?']} context={`My stocks: ${stocks.slice(0, 20).map(s => `${s.symbol ?? s.name}${s.sector ? ` (${s.sector})` : ''}`).join(', ')}. Invested ${fmt(totalInvested)}, worth ${fmt(currentValue)}.`} />}
 
       {/* Summary strip */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
@@ -362,7 +348,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
           { label: 'Invested',        value: fmt(totalInvested),                                          accent: '#6B7280' },
           { label: 'Current Value',   value: fmt(currentValue),                                           accent: absRet >= 0 ? '#3D7A58' : '#E11D48' },
           { label: 'Total Return',    value: `${totalRet >= 0 ? '+' : ''}${totalRet.toFixed(2)}%`,       accent: totalRet >= 0 ? '#3D7A58' : '#E11D48' },
-          { label: 'Gain / Loss',     value: `${absRet >= 0 ? '+' : ''}${fmt(Math.abs(absRet))}`,       accent: absRet >= 0 ? '#3D7A58' : '#E11D48' },
+          { label: 'Gain / Loss',     value: `${absRet >= 0 ? '+' : '−'}${fmt(Math.abs(absRet))}`,       accent: absRet >= 0 ? '#3D7A58' : '#E11D48' },
           { label: 'Portfolio Health', value: `${health.score}/100`,                                      accent: health.score >= 75 ? '#3D7A58' : health.score >= 50 ? '#D4920A' : '#E11D48' },
         ].map(k => (
           <div key={k.label} className="wl-card px-4 py-3" style={{ borderLeft: `3px solid ${k.accent}` }}>

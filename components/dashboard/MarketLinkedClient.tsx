@@ -1,4 +1,5 @@
 'use client'
+import { PageHeader, InsightBar, AiActions } from '@/components/ui/kit'
 import { useMemo, useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -283,6 +284,10 @@ export default function MarketLinkedClient({ funds, stocks, etfs }: { funds: any
   return (
     <div className="space-y-5 animate-fade-up">
       <Header view={view} onRefresh={refreshPrices} refreshing={refreshing} />
+      {insights[0] && <InsightBar text={`${insights[0].title}. ${insights[0].detail}`}
+        prompt={`Explain my market-linked portfolio: invested ${money(totalInvested)}, worth ${money(totalCurrent)} (${gainPct.toFixed(1)}%), SIPs ${money(monthlySip)} a month. ${insights.map(i => `${i.title}: ${i.detail}`).join(' ')}`} />}
+      {holdings.length > 0 && <AiActions actions={['Rebalance my portfolio', 'Which holdings should I review?']}
+        context={`Holdings: ${holdings.slice(0, 20).map(h => `${h.name} (${h.kind}, ${money(h.current)})`).join(', ')}.`} />}
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -544,31 +549,16 @@ export default function MarketLinkedClient({ funds, stocks, etfs }: { funds: any
 
 function Header({ view, onRefresh, refreshing }: { view: string; onRefresh?: () => void; refreshing?: boolean }) {
   return (
-    <div className="flex items-start justify-between flex-wrap gap-2">
-      <div>
-        <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em] flex items-center gap-2" style={{ color: 'var(--text)' }}>
-          <Activity size={20} style={{ color: 'var(--sage)' }} /> Market-Linked Portfolio
-        </h1>
-        <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
-          Mutual Funds · Stocks · ETFs · {view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'}
-        </p>
-      </div>
-      <div className="flex items-center gap-2 no-print">
+    <PageHeader title="Market-linked portfolio"
+      sub={`Mutual funds · stocks · ETFs · ${view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'}`}
+      actions={<>
         {onRefresh && (
-          <button onClick={onRefresh} disabled={refreshing}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all disabled:opacity-60"
-            style={{ background: 'var(--bg2)', borderColor: 'var(--border)', color: 'var(--text3)' }}>
-            {refreshing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-            {refreshing ? 'Refreshing…' : 'Refresh prices'}
+          <button onClick={onRefresh} disabled={refreshing} className="wl-btn no-print" style={{ height: 34 }}>
+            {refreshing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}{refreshing ? 'Refreshing…' : 'Refresh prices'}
           </button>
         )}
-        <Link href="/dashboard/learn"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border"
-          style={{ background: 'var(--sage-bg)', borderColor: 'var(--sage)', color: 'var(--sage)' }}>
-          <GraduationCap size={12} /> Learn
-        </Link>
-      </div>
-    </div>
+        <Link href="/dashboard/learn" className="wl-btn no-print" style={{ height: 34 }}><GraduationCap size={13} />Learn</Link>
+      </>} />
   )
 }
 
