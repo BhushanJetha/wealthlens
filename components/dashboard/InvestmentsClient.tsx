@@ -13,6 +13,9 @@ import {
   Flag, Link as LinkIcon, Unlink, Users, GraduationCap,
 } from 'lucide-react'
 import AddInvestmentModal from '@/components/forms/AddInvestmentModal'
+import { PageHeader, KpiTile, Bars, Donut, Segmented } from '@/components/ui/kit'
+import { useUiStore } from '@/store/uiStore'
+import { Layers, CandlestickChart, BarChart3, Landmark, Repeat, Coins, ScrollText, PiggyBank, ShieldCheck, ArrowUpRight, Gauge, type LucideIcon } from 'lucide-react'
 import ManageFamilyModal from '@/components/forms/ManageFamilyModal'
 import { useHolderStore } from '@/store/holderStore'
 import Link from 'next/link'
@@ -97,6 +100,7 @@ export default function InvestmentsClient({
   const [showAdd, setShowAdd] = useState(false)
   const [showManageFamily, setShowManageFamily] = useState(false)
   const [tab, setTab] = useState<TabKey>('overview')
+  const { openAdvisor } = useUiStore()
   const sym = view === 'uae' ? 'AED' : '₹'
 
   const filter = (arr: any[]) =>
@@ -489,200 +493,261 @@ export default function InvestmentsClient({
     Hybrid: '#7C5CBF', Index: '#3D7A58', Liquid: '#0891B2',
   }
 
+  // ── Design v2 overview data ───────────────────────────────────────────────
+  // Fixed colour + icon per asset type (colour follows the type, never rank)
+  const TYPES: { key: string; label: string; href: string; icon: LucideIcon; color: string; bg: string; val: number; inv: number | null; count: number }[] = [
+    { key: 'mf',     label: 'Mutual funds',       href: '/dashboard/investments/mutual-funds',       icon: Layers,           color: '#6A55E8', bg: '#F0EDFF', val: mfCurr,  inv: mfInv,   count: fMF.length },
+    { key: 'stocks', label: 'Stocks',             href: '/dashboard/investments/stocks',             icon: CandlestickChart, color: '#3B8EF0', bg: '#E7F1FE', val: stCurr,  inv: stInv,   count: fSt.length },
+    { key: 'etf',    label: 'ETF',                href: '/dashboard/investments/etf',                icon: BarChart3,        color: '#A855D8', bg: '#F6ECFC', val: etfCurr, inv: etfInv,  count: fEtf.length },
+    { key: 'fd',     label: 'Fixed deposits',     href: '/dashboard/investments/fixed-deposits',     icon: Landmark,         color: '#F29A2E', bg: '#FFF2E2', val: fdVal,   inv: null,    count: fFD.length },
+    { key: 'rd',     label: 'Recurring deposits', href: '/dashboard/investments/recurring-deposits', icon: Repeat,           color: '#EC5B8C', bg: '#FDECF2', val: rdVal,   inv: null,    count: fRD.length },
+    { key: 'gold',   label: 'Gold',               href: '/dashboard/investments/gold',               icon: Coins,            color: '#C98A0B', bg: '#FFF6DB', val: goldVal, inv: goldInv, count: fGold.length },
+    { key: 'bonds',  label: 'Bonds',              href: '/dashboard/investments/bonds',              icon: ScrollText,       color: '#0891B2', bg: '#E0F4F8', val: bondVal, inv: bondInv, count: fBond.length },
+    { key: 'nps',    label: 'NPS',                href: '/dashboard/investments/nps',                icon: PiggyBank,        color: '#2FB67C', bg: '#E7F7EF', val: npsVal,  inv: npsInv,  count: fNPS.length },
+    { key: 'lic',    label: 'LIC',                href: '/dashboard/investments/lic',                icon: ShieldCheck,      color: '#64748B', bg: '#F1F5F9', val: licPaid, inv: null,    count: fLIC.length },
+  ]
+  const held = TYPES.filter(t => t.val > 0).sort((a, b) => b.val - a.val)
+  const SHORT: Record<string, string> = { mf: 'MFs', stocks: 'Stocks', etf: 'ETF', fd: 'FDs', rd: 'RDs', gold: 'Gold', bonds: 'Bonds', nps: 'NPS', lic: 'LIC' }
+  const retPct = (t: { val: number; inv: number | null }) => t.inv && t.inv > 0 ? (t.val - t.inv) / t.inv * 100 : null
+  const scopeLabel = view === 'uae' ? 'UAE' : view === 'india' ? 'India' : 'All'
+
+  // Next SIP date per fund (day-of-month, rolls to next month once passed)
+  const sips = fMF.filter((m: any) => m.has_sip && Number(m.sip_amount) > 0).map((m: any) => {
+    const now = new Date(), day = Math.min(Math.max(Number(m.sip_date) || 1, 1), 28)
+    const next = new Date(now.getFullYear(), now.getMonth() + (now.getDate() > day ? 1 : 0), day)
+    return { name: m.fund_name ?? 'SIP', amount: Number(m.sip_amount), next }
+  }).sort((a: any, b: any) => a.next.getTime() - b.next.getTime()).slice(0, 3)
+
+  const topRec = analytics?.recs?.[0]
+  const aiContext = `My portfolio (${scopeLabel}${selectedHolder ? `, ${selectedHolder} only` : ''}): value ${fmtV(totalCurr, sym)}, invested ${fmtV(totalInv, sym)}, returns ${totalRet.toFixed(1)}%. `
+    + `Allocation: ${held.map(t => `${t.label} ${Math.round(t.val / totalCurr * 100)}%`).join(', ') || 'none'}.`
+    + (analytics ? ` Profile: ${PROF_LABEL[analytics.profile]}. Equity ${analytics.equityPct.toFixed(0)}%.` : '')
+
+  const tabSwitch = (
+    <div className="overflow-x-auto no-scrollbar -mx-4 px-4 md:mx-0 md:px-0">
+      <Segmented violet label="Portfolio views" value={tab} onChange={setTab}
+        options={TABS.map(t => ({ value: t.key, label: t.label }))} />
+    </div>
+  )
+
   return (
-    <div className="space-y-5 animate-fade-up">
+    <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text)' }}>Investment Portfolio</h1>
-          <p className="text-[12px] mt-0.5 flex items-center gap-2" style={{ color: 'var(--text3)' }}>
-            {view === 'uae' ? 'UAE' : view === 'india' ? 'India' : 'All'} investments
+      <div>
+        <PageHeader title="Investments"
+          sub={<span className="inline-flex items-center gap-2 flex-wrap">{scopeLabel} investments · mutual funds, stocks, FD, gold, NPS, bonds, LIC
             {analytics && (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold"
-                style={{ background: PROF_BG[analytics.profile], color: PROF_COLOR[analytics.profile] }}>
-                {PROF_LABEL[analytics.profile]} Investor
+              <span className="px-2 py-0.5 rounded-full text-[10.5px] font-semibold" style={{ background: PROF_BG[analytics.profile], color: PROF_COLOR[analytics.profile] }}>
+                {PROF_LABEL[analytics.profile]} investor
               </span>
-            )}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link href="/dashboard/learn"
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold border"
-            style={{ borderColor: 'var(--sage)', color: 'var(--sage)', background: 'var(--sage-bg)' }}>
-            <GraduationCap size={14} /> Learn
-          </Link>
-          <button onClick={() => setShowAdd(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-[12px] font-bold"
-            style={{ background: 'var(--sage)' }}>
-            <Plus size={14} /> Add Investment
-          </button>
-        </div>
+            )}</span>}
+          onAdd={() => setShowAdd(true)} addLabel="Add investment"
+          actions={<>
+            <button onClick={() => setShowAdd(true)} className="wl-btn" style={{ height: 36, borderRadius: 10, fontSize: 13 }}><Plus size={14} />Add investment</button>
+            <button onClick={() => openAdvisor(`Compare investment options for me — funds, FDs and gold — given my risk level and goals. ${aiContext}`)}
+              className="wl-btn wl-btn-primary" style={{ height: 36, borderRadius: 10, fontSize: 13 }}>Explore options →</button>
+          </>} />
       </div>
 
-      {/* KPI Strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        <MetricCard label="Total Invested"  value={fmtV(totalInv, sym)}  accent="blue" icon={<TrendingUp size={14} />} />
-        <MetricCard label="Current Value"   value={fmtV(totalCurr, sym)} accent="sage" icon={<TrendingUp size={14} />} />
-        <MetricCard label="Total Returns"
-          value={fmtV(totalCurr - totalInv, sym)}
-          delta={`${totalRet >= 0 ? '+' : ''}${totalRet.toFixed(2)}%`}
-          positive={totalRet >= 0} accent="gold" />
-        <MetricCard label="Today&apos;s P&amp;L"
-          value={fmtV(Math.abs(dailyPnL), sym)}
-          delta={dailyPnL >= 0 ? '▲ Gain' : '▼ Loss'} positive={dailyPnL >= 0}
-          accent={dailyPnL >= 0 ? 'income' : 'rose'} />
-        <MetricCard label="Health Score"
-          value={analytics ? `${analytics.healthScore}/100` : '—'}
-          delta={analytics ? (analytics.healthScore >= 70 ? 'Excellent' : analytics.healthScore >= 45 ? 'Good' : 'Needs Work') : undefined}
-          positive={analytics ? analytics.healthScore >= 45 : false} accent="blue" />
-      </div>
-
-      {/* Member Filter */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-[10px] font-semibold uppercase tracking-wider flex-shrink-0" style={{ color: 'var(--text3)' }}>Portfolio of:</span>
-        {(['', 'Self', ...familyMembers.map((m: any) => m.name)] as string[]).map(name => (
-          <button key={name || '__all'} onClick={() => setSelectedHolder(name)}
-            className="px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all"
-            style={{
-              background: selectedHolder === name ? 'var(--sage)' : 'var(--bg2)',
-              color: selectedHolder === name ? '#fff' : 'var(--text3)',
-              border: `1px solid ${selectedHolder === name ? 'var(--sage)' : 'var(--border)'}`,
-            }}>
-            {name === '' ? 'All Members' : name}
-          </button>
-        ))}
-        <button onClick={() => setShowManageFamily(true)}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold ml-1"
-          style={{ background: 'var(--bg2)', color: 'var(--text3)', border: '1px solid var(--border)' }}>
-          <Users size={11} /> Manage
-        </button>
-        {selectedHolder && (
-          <span className="text-[10px] px-2.5 py-1.5 rounded-lg font-semibold"
-            style={{ background: 'var(--gold-bg)', color: 'var(--gold)', border: '1px solid var(--gold)30' }}>
-            Viewing: {selectedHolder}
-          </span>
-        )}
-      </div>
-
-      {/* Tab Navigation */}
-      <div className="flex gap-1 p-1 rounded-xl wl-tabs" style={{ background: 'var(--bg2)', width: 'fit-content' }}>
-        {TABS.map(t => {
-          const Icon = t.icon
-          const active = tab === t.key
-          return (
-            <button key={t.key} onClick={() => setTab(t.key)}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-[12px] font-semibold transition-all"
-              style={{
-                background: active ? '#fff' : 'transparent',
-                color: active ? 'var(--sage)' : 'var(--text3)',
-                boxShadow: active ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
-              }}>
-              <Icon size={13} />
-              {t.label}
-            </button>
-          )
-        })}
-      </div>
+      <div>{tabSwitch}</div>
 
       {/* ═══════════ OVERVIEW ═══════════ */}
-      {tab === 'overview' && (
+      {tab === 'overview' && (totalCurr === 0 ? (
+        <div className="max-md:order-3 rounded-[14px] px-6 py-12 text-center bg-white" style={{ border: '1.5px dashed var(--border2)' }}>
+          <div className="text-[18px] font-bold" style={{ color: 'var(--text)' }}>No investments yet</div>
+          <div className="text-[13.5px] mt-1.5 mb-[18px] mx-auto max-w-[400px]" style={{ color: 'var(--text3)' }}>
+            Add a holding, or upload your CAMS / KFintech CAS on Mutual funds to bring in every fund with its history.
+          </div>
+          <div className="flex gap-2.5 justify-center flex-wrap">
+            <button onClick={() => setShowAdd(true)} className="wl-btn wl-btn-primary" style={{ height: 40, padding: '0 18px' }}>Add investment</button>
+            <Link href="/dashboard/investments/mutual-funds" className="wl-btn" style={{ height: 40, padding: '0 18px' }}>Upload a CAS</Link>
+          </div>
+        </div>
+      ) : (
         <>
-          {/* Allocation + Type List */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="wl-card p-4">
-              <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>Asset Allocation</div>
-              {allocData.length > 0 ? (
-                <div className="flex items-center gap-4">
-                  <ResponsiveContainer width={160} height={160}>
-                    <PieChart>
-                      <Pie data={allocData} dataKey="value" cx="50%" cy="50%" innerRadius={45} outerRadius={72} paddingAngle={2}>
-                        {allocData.map((d, i) => <Cell key={i} fill={TYPE_COLORS[d.key] ?? COLORS[i]} />)}
-                      </Pie>
-                      <Tooltip contentStyle={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 8, fontSize: 11 }}
-                        formatter={(v: any) => [fmtV(v, sym), '']} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="flex flex-col gap-1.5 flex-1">
-                    {allocData.map((d, i) => (
-                      <div key={i} className="flex items-center justify-between text-[11px]">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: TYPE_COLORS[d.key] ?? COLORS[i] }} />
-                          <span style={{ color: 'var(--text2)' }}>{d.name}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono font-semibold" style={{ color: 'var(--text)' }}>{fmtV(d.value, sym)}</span>
-                          <span className="text-[9px] px-1 py-0.5 rounded" style={{ background: 'var(--bg2)', color: 'var(--text3)' }}>
-                            {totalCurr > 0 ? Math.round(d.value / totalCurr * 100) : 0}%
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+          {/* Value card + allocation */}
+          <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.7fr_1fr] gap-4">
+            <section className="wl-card max-md:order-3 p-4 md:px-6 md:py-[22px] flex flex-col">
+              <div className="text-[10.5px] md:text-[11px] font-semibold uppercase tracking-[0.05em]" style={{ color: 'var(--text3)' }}>Total investment value</div>
+              <div className="flex items-center md:items-baseline gap-2.5 md:gap-3 mt-1 flex-wrap">
+                <div className="text-[28px] md:text-[34px] font-bold tabular-nums tracking-[-0.02em]" style={{ color: 'var(--text)' }}>{fmtV(totalCurr, sym)}</div>
+                <span className="rounded-full px-2.5 py-1 text-[11.5px] md:text-[12.5px] font-semibold"
+                  style={totalRet >= 0 ? { background: 'var(--pos-bg)', color: 'var(--pos-text)' } : { background: 'var(--neg-bg)', color: '#D9482F' }}>
+                  {totalRet >= 0 ? '▲' : '▼'} {Math.abs(totalRet).toFixed(1)}% · {fmtV(Math.abs(totalCurr - totalInv), sym)} {totalCurr >= totalInv ? 'gain' : 'loss'}
+                </span>
+              </div>
+              <div className="hidden md:flex justify-between items-center mt-4">
+                <div className="text-[13px] font-semibold" style={{ color: 'var(--text2)' }}>Invested vs today, by type</div>
+                <div className="flex gap-3.5 text-[11.5px]" style={{ color: 'var(--text3)' }}>
+                  <span><i className="inline-block w-[9px] h-[9px] rounded-sm mr-1.5" style={{ background: '#C9C2F5' }} />Invested</span>
+                  <span><i className="inline-block w-[9px] h-[9px] rounded-sm mr-1.5" style={{ background: 'var(--accent)' }} />Value today</span>
                 </div>
-              ) : (
-                <div className="flex items-center justify-center h-32 text-[12px]" style={{ color: 'var(--text3)' }}>
-                  Add investments to see allocation
-                </div>
-              )}
-            </div>
+              </div>
+              <Bars className="h-[120px] md:h-auto md:flex-1 md:min-h-[200px] mt-3"
+                data={held.slice(0, 7).map(t => ({ label: SHORT[t.key] ?? t.label, value: t.val, before: t.inv ?? t.val,
+                  tip: `${t.label}: invested ${fmtV(t.inv ?? t.val, sym)}, today ${fmtV(t.val, sym)}` }))}
+                label={`Invested vs value today: ${held.map(t => `${t.label} ${fmtV(t.inv ?? t.val, sym)} to ${fmtV(t.val, sym)}`).join(', ')}`} />
+            </section>
 
-            <div className="wl-card p-4">
-              <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>By Investment Type</div>
-              <div className="space-y-1.5">
-                {[
-                  { label: 'Mutual Funds',       val: mfCurr,  count: fMF.length,   href: '/dashboard/investments/mutual-funds',       key: 'mf'     },
-                  { label: 'Stocks',             val: stCurr,  count: fSt.length,   href: '/dashboard/investments/stocks',             key: 'stocks' },
-                  { label: 'ETF',                val: etfCurr, count: fEtf.length,  href: '/dashboard/investments/etf',                key: 'etf'    },
-                  { label: 'Fixed Deposits',     val: fdVal,   count: fFD.length,   href: '/dashboard/investments/fixed-deposits',     key: 'fd'     },
-                  { label: 'Recurring Deposits', val: rdVal,   count: fRD.length,   href: '/dashboard/investments/recurring-deposits', key: 'rd'     },
-                  { label: 'Gold',               val: goldVal, count: fGold.length, href: '/dashboard/investments/gold',               key: 'gold'   },
-                  { label: 'Bonds',              val: bondVal, count: fBond.length, href: '/dashboard/investments/bonds',              key: 'bonds'  },
-                  { label: 'NPS',                val: npsVal,  count: fNPS.length,  href: '/dashboard/investments/nps',                key: 'nps'    },
-                  { label: 'LIC',                val: licPaid, count: fLIC.length,  href: '/dashboard/investments/lic',                key: 'lic'    },
-                ].map(t => (
-                  <Link key={t.href} href={t.href}
-                    className="flex items-center justify-between p-2.5 rounded-lg transition-all group"
-                    style={{ background: 'var(--bg2)' }}>
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: TYPE_COLORS[t.key] }} />
-                      <span className="text-[12px] font-semibold" style={{ color: 'var(--text)' }}>{t.label}</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: 'var(--border)', color: 'var(--text3)' }}>{t.count}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[12px] font-mono font-bold" style={{ color: 'var(--text)' }}>{fmtV(t.val, sym)}</span>
-                      <ChevronRight size={12} style={{ color: 'var(--text3)' }} className="group-hover:translate-x-0.5 transition-transform" />
-                    </div>
-                  </Link>
+            <section className="wl-card max-md:order-8 px-4 md:px-[22px] py-4 md:py-5 flex flex-col gap-3">
+              <h2 className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Allocation</h2>
+              <div className="flex justify-center">
+                <Donut segments={held.map(t => ({ value: t.val, color: t.color }))} size={150} stroke={5.5}
+                  label={`Allocation: ${held.map(t => `${t.label} ${Math.round(t.val / totalCurr * 100)}%`).join(', ')}`}>
+                  <div className="text-[11px]" style={{ color: 'var(--text3)' }}>Value</div>
+                  <div className="text-[18px] font-bold" style={{ color: 'var(--text)' }}>{fmtV(totalCurr, sym)}</div>
+                </Donut>
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-5 gap-y-2">
+                {held.map(t => (
+                  <div key={t.key} className="flex justify-between gap-2 text-[12.5px]">
+                    <span className="truncate" style={{ color: 'var(--text2)' }}><i className="inline-block w-[9px] h-[9px] rounded-[3px] mr-[7px]" style={{ background: t.color }} />{t.label}</span>
+                    <span className="tabular-nums font-semibold" style={{ color: 'var(--text)' }}>{Math.round(t.val / totalCurr * 100)}%</span>
+                  </div>
                 ))}
               </div>
+              {analytics && (
+                <div className="text-[11.5px] leading-snug pt-2 mt-0.5" style={{ color: 'var(--text3)', borderTop: '1px solid var(--track)' }}>
+                  Equity {analytics.equityPct.toFixed(0)}% · stable {analytics.stablePct.toFixed(0)}% · gold & other {analytics.altPct.toFixed(0)}%
+                </div>
+              )}
+            </section>
+          </div>
+
+          {/* KPIs */}
+          <div className="max-md:order-4 grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
+            <KpiTile label="Invested" value={fmtV(totalInv, sym)} delta={`${held.reduce((a, t) => a + t.count, 0)} holdings`} tint={0} icon={Layers} />
+            <KpiTile label="Value today" value={fmtV(totalCurr, sym)} delta={dailyPnL ? `${dailyPnL >= 0 ? '▲' : '▼'} ${fmtV(Math.abs(dailyPnL), sym)} today` : 'Latest prices'} tone={dailyPnL > 0 ? 'good' : dailyPnL < 0 ? 'bad' : 'neutral'} tint={1} icon={ArrowUpRight} />
+            <KpiTile label="Total returns" value={fmtV(totalCurr - totalInv, sym)} delta={`${totalRet >= 0 ? '+' : ''}${totalRet.toFixed(2)}%`} tone={totalRet >= 0 ? 'good' : 'bad'} tint={2} icon={TrendingUp} />
+            <KpiTile label="Health score" value={analytics ? `${analytics.healthScore}/100` : '—'} tint={3} icon={Gauge}
+              delta={analytics ? (analytics.healthScore >= 70 ? 'Excellent' : analytics.healthScore >= 45 ? 'Good' : 'Needs work') : undefined}
+              tone={analytics ? (analytics.healthScore >= 45 ? 'good' : 'bad') : 'neutral'} onClick={() => setTab('health')} />
+          </div>
+
+          {/* Portfolio rows + check-up / SIPs */}
+          <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.7fr_1fr] gap-4 items-start">
+            <section className="max-md:order-5 md:bg-white md:border md:border-[var(--line)] md:rounded-[20px] md:shadow-card md:px-[22px] md:py-[18px]">
+              <div className="flex justify-between items-baseline mb-2 md:mb-1.5">
+                <h2 className="text-[16px] md:text-[15px] font-bold md:font-semibold" style={{ color: 'var(--text)' }}>Your portfolio</h2>
+                <span className="text-[11.5px] md:text-[12px]" style={{ color: 'var(--text4)' }}>Tap a row to open it</span>
+              </div>
+              <div className="flex flex-col gap-2 md:gap-0">
+                {held.map(t => {
+                  const r = retPct(t), Icon = t.icon, w = t.val / totalCurr * 100
+                  return (
+                    <Link key={t.key} href={t.href}
+                      className="flex gap-3 md:gap-3.5 items-center py-3 md:py-[13px] max-md:bg-white max-md:border max-md:border-[var(--line)] max-md:rounded-[18px] max-md:shadow-card max-md:px-3.5 md:border-t md:border-[var(--track)] transition-colors md:hover:bg-[#FAF9FE]">
+                      <span className="w-10 h-10 md:w-11 md:h-11 rounded-xl md:rounded-[13px] flex items-center justify-center flex-shrink-0" style={{ background: t.bg, color: t.color }}>
+                        <Icon size={19} />
+                      </span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-[14px] font-semibold truncate" style={{ color: 'var(--text)' }}>{t.label}</span>
+                        <span className="block text-[11.5px] md:text-[12px]" style={{ color: 'var(--text4)' }}>{t.count} holding{t.count === 1 ? '' : 's'}</span>
+                      </span>
+                      <span className="hidden md:block w-[120px] flex-shrink-0">
+                        <span className="block h-1.5 rounded-full" style={{ background: 'var(--track)' }}>
+                          <span className="block h-full rounded-full wl-grow" style={{ width: `${w}%`, background: t.color }} />
+                        </span>
+                        <span className="block text-[11px] mt-1" style={{ color: 'var(--text4)' }}>{w.toFixed(0)}% of portfolio</span>
+                      </span>
+                      <span className="text-right md:w-[100px] flex-shrink-0">
+                        <span className="block text-[14px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{fmtV(t.val, sym)}</span>
+                        <span className="block text-[11.5px] md:text-[12px] font-semibold" style={{ color: r == null ? 'var(--text4)' : r >= 0 ? 'var(--pos-text)' : '#D9482F' }}>
+                          {r == null ? 'At cost' : `${r >= 0 ? '+' : ''}${r.toFixed(1)}%`}
+                        </span>
+                      </span>
+                      <ChevronRight size={16} className="hidden md:block flex-shrink-0" style={{ color: '#CBD5E1' }} />
+                    </Link>
+                  )
+                })}
+              </div>
+            </section>
+
+            <div className="max-md:contents flex flex-col gap-3.5">
+              <section className="max-md:order-6 rounded-[18px] md:rounded-[20px] bg-ai px-4 md:px-5 py-3.5 md:py-[18px]" style={{ border: '1px solid #E1DAFF' }}>
+                <div className="text-[10.5px] md:text-[11px] font-semibold uppercase tracking-[0.05em]" style={{ color: 'var(--accent2)' }}>✦ AI portfolio check-up</div>
+                <div className="text-[12.5px] md:text-[13px] leading-[1.55] mt-1.5 mb-2.5 md:mb-3" style={{ color: 'var(--text2)' }}>
+                  {topRec ? <><b style={{ color: 'var(--text)' }}>{topRec.title}.</b> {topRec.body}</> : 'Your mix looks balanced. Run a check-up for a second opinion on allocation, costs and overlap.'}
+                </div>
+                <button onClick={() => openAdvisor(`Run a portfolio check-up: allocation, concentration, costs and what to change first. ${aiContext}`)}
+                  className="rounded-full px-4 py-2 text-[12.5px] font-semibold text-white" style={{ background: 'var(--accent)' }}>
+                  Run check-up
+                </button>
+              </section>
+
+              {sips.length > 0 && (
+                <section className="wl-card max-md:order-7 px-4 md:px-5 py-3.5 md:py-[18px]">
+                  <h2 className="text-[14px] font-semibold mb-1" style={{ color: 'var(--text)' }}>Upcoming SIPs</h2>
+                  {sips.map((x: any, i: number) => (
+                    <div key={i} className="flex justify-between items-center gap-3 px-3 py-2.5 mt-2 rounded-xl text-[13px]" style={{ background: '#F7F6FD' }}>
+                      <span className="min-w-0">
+                        <span className="block font-semibold truncate" style={{ color: 'var(--text)' }}>{x.name}</span>
+                        <span className="block text-[11.5px]" style={{ color: 'var(--text4)' }}>{x.next.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+                      </span>
+                      <span className="font-semibold tabular-nums flex-shrink-0" style={{ color: 'var(--text)' }}>₹{Math.round(x.amount).toLocaleString('en-IN')}</span>
+                    </div>
+                  ))}
+                </section>
+              )}
             </div>
           </div>
 
+          {/* By family member */}
+          {!selectedHolder && memberPortfolios.length > 1 && (() => {
+            const COL = ['#6A55E8', '#E11D48', '#D97706', '#16A34A', '#0891B2', '#A855D8']
+            const tot = memberPortfolios.reduce((a, m) => a + m.val, 0) || 1
+            return (
+              <section className="wl-card max-md:order-9 px-4 md:px-5 py-3.5">
+                <div className="flex justify-between items-center gap-2">
+                  <h2 className="text-[13px] md:text-[14px] font-semibold" style={{ color: 'var(--text)' }}>By family member</h2>
+                  <span className="hidden md:inline text-[12px]" style={{ color: 'var(--text4)' }}>Pick a name to see one person’s view</span>
+                </div>
+                <div className="flex h-2 md:h-2.5 rounded-full overflow-hidden gap-0.5 mt-3 mb-2.5">
+                  {memberPortfolios.map((m, i) => <div key={m.name} style={{ width: `${m.val / tot * 100}%`, background: COL[i % COL.length] }} />)}
+                </div>
+                <div className="flex gap-x-6 gap-y-1.5 flex-wrap">
+                  {memberPortfolios.map((m, i) => (
+                    <button key={m.name} onClick={() => setSelectedHolder(m.name)} className="flex items-center gap-1.5 text-[12px] md:text-[12.5px]">
+                      <i className="w-[9px] h-[9px] rounded-full" style={{ background: COL[i % COL.length] }} />
+                      <b className="font-semibold" style={{ color: 'var(--text)' }}>{m.name}</b>
+                      <span style={{ color: 'var(--text4)' }}>{m.rel === 'self' ? 'You' : m.rel}</span>
+                      <b style={{ color: 'var(--text)' }}>{Math.round(m.val / tot * 100)}%</b>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )
+          })()}
+          {selectedHolder && (
+            <div className="max-md:order-9 rounded-xl px-4 py-[11px] flex justify-between items-center gap-3 text-[13px]" style={{ background: '#FEF3C7', border: '1px solid #FDE68A', color: '#92400E' }}>
+              <span>Showing <b>{selectedHolder}</b> only{totalCurr > 0 ? '' : ' — no holdings in this name yet'}.</span>
+              <button onClick={() => setSelectedHolder('')} className="text-[12.5px] font-semibold" style={{ color: 'var(--accent2)' }}>Back to everyone</button>
+            </div>
+          )}
+
           {/* Sector + MF Category */}
           {analytics && (analytics.sectorData.length > 0 || analytics.mfCatData.length > 0) && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="max-md:order-10 grid grid-cols-1 lg:grid-cols-2 gap-4">
               {analytics.sectorData.length > 0 && (
-                <div className="wl-card p-4">
-                  <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>
-                    Stock Sector Exposure · {fSt.length} stocks
-                  </div>
+                <div className="wl-card px-4 md:px-5 py-4">
+                  <h2 className="text-[14px] font-semibold mb-3" style={{ color: 'var(--text)' }}>Stock sectors · {fSt.length} stocks</h2>
                   <div className="space-y-2.5">
                     {analytics.sectorData.slice(0, 8).map((s, i) => {
                       const pct = stCurr > 0 ? s.value / stCurr * 100 : 0
                       const isHigh = pct > 40
                       return (
                         <div key={i}>
-                          <div className="flex justify-between text-[10px] mb-1">
+                          <div className="flex justify-between text-[12px] mb-1">
                             <span style={{ color: 'var(--text2)' }}>{s.name}</span>
                             <div className="flex items-center gap-1">
-                              {isHigh && <AlertTriangle size={9} style={{ color: '#F59E0B' }} />}
-                              <span className="font-bold" style={{ color: isHigh ? '#F59E0B' : 'var(--text)' }}>{pct.toFixed(0)}%</span>
+                              {isHigh && <AlertTriangle size={11} style={{ color: '#F29A2E' }} />}
+                              <span className="font-semibold" style={{ color: isHigh ? 'var(--amber-text)' : 'var(--text)' }}>{pct.toFixed(0)}%</span>
                               <span style={{ color: 'var(--text3)' }}>· {fmtV(s.value, sym)}</span>
                             </div>
                           </div>
-                          <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}>
-                            <div className="h-full rounded-full" style={{ width: `${pct}%`, background: isHigh ? '#F59E0B' : COLORS[i % COLORS.length] }} />
+                          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--track)' }}>
+                            <div className="h-full rounded-full wl-grow" style={{ width: `${pct}%`, background: isHigh ? '#F29A2E' : '#3B8EF0' }} />
                           </div>
                         </div>
                       )
@@ -692,10 +757,8 @@ export default function InvestmentsClient({
               )}
 
               {analytics.mfCatData.length > 0 && (
-                <div className="wl-card p-4">
-                  <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>
-                    Mutual Fund Categories · {fMF.length} funds
-                  </div>
+                <div className="wl-card px-4 md:px-5 py-4">
+                  <h2 className="text-[14px] font-semibold mb-3" style={{ color: 'var(--text)' }}>Mutual fund categories · {fMF.length} funds</h2>
                   <div className="space-y-2.5">
                     {analytics.mfCatData.map((c, i) => {
                       const pct   = mfCurr > 0 ? c.value / mfCurr * 100 : 0
@@ -703,19 +766,19 @@ export default function InvestmentsClient({
                       const isHigh = pct > 60
                       return (
                         <div key={i}>
-                          <div className="flex justify-between text-[10px] mb-1">
+                          <div className="flex justify-between text-[12px] mb-1">
                             <div className="flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: color }} />
+                              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: color }} />
                               <span style={{ color: 'var(--text2)' }}>{c.name}</span>
                             </div>
                             <div className="flex items-center gap-1">
-                              {isHigh && <AlertTriangle size={9} style={{ color: '#F59E0B' }} />}
-                              <span className="font-bold" style={{ color: 'var(--text)' }}>{pct.toFixed(0)}%</span>
+                              {isHigh && <AlertTriangle size={11} style={{ color: '#F29A2E' }} />}
+                              <span className="font-semibold" style={{ color: 'var(--text)' }}>{pct.toFixed(0)}%</span>
                               <span style={{ color: 'var(--text3)' }}>· {fmtV(c.value, sym)}</span>
                             </div>
                           </div>
-                          <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}>
-                            <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+                          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--track)' }}>
+                            <div className="h-full rounded-full wl-grow" style={{ width: `${pct}%`, background: color }} />
                           </div>
                         </div>
                       )
@@ -726,64 +789,20 @@ export default function InvestmentsClient({
             </div>
           )}
 
-          {/* By Member breakdown */}
-          {!selectedHolder && memberPortfolios.length > 1 && (
-            <div className="wl-card p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Portfolio by Family Member</div>
-                <button onClick={() => setShowManageFamily(true)}
-                  className="flex items-center gap-1 text-[10px] font-semibold"
-                  style={{ color: 'var(--sage)' }}>
-                  <Users size={11} /> Manage Members
-                </button>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                {memberPortfolios.map((m, i) => {
-                  const pct = totalCurr > 0 ? Math.round(m.val / totalCurr * 100) : 0
-                  const color = COLORS[i % COLORS.length]
-                  return (
-                    <button key={m.name} onClick={() => setSelectedHolder(selectedHolder === m.name ? '' : m.name)}
-                      className="p-4 rounded-xl text-left transition-all"
-                      style={{
-                        background: selectedHolder === m.name ? color + '18' : 'var(--bg2)',
-                        border: `1.5px solid ${selectedHolder === m.name ? color : 'var(--border)'}`,
-                      }}>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-[12px] font-bold" style={{ color: 'var(--text)' }}>{m.name}</span>
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                          style={{ background: color + '18', color }}>
-                          {pct}%
-                        </span>
-                      </div>
-                      <div className="text-[16px] font-black font-mono" style={{ color }}>{fmtV(m.val, sym)}</div>
-                      <div className="text-[10px] mt-1" style={{ color: 'var(--text3)' }}>{m.count} investments</div>
-                      <div className="mt-2 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
-                        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Category Grid */}
-          <div>
-            <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>Manage by Category</div>
-            <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2">
-              {INV_LINKS.map((t, i) => (
-                <Link key={t.href} href={t.href}
-                  className="wl-card p-3 flex flex-col items-center gap-1 text-center hover:shadow-md transition-shadow">
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: `${COLORS[i]}18`, color: COLORS[i] }}>
-                    <TrendingUp size={13} />
-                  </div>
-                  <div className="text-[10px] font-semibold leading-tight" style={{ color: 'var(--text)' }}>{t.label}</div>
-                </Link>
-              ))}
-            </div>
-          </div>
+          {/* Explore banner */}
+          <button onClick={() => openAdvisor(`Help me decide where to invest next — compare funds, FDs and gold for my risk level and goals. ${aiContext}`)}
+            className="max-md:order-11 text-left rounded-[14px] md:rounded-[20px] px-5 md:px-7 py-3.5 md:py-5 text-white flex justify-between items-center gap-4"
+            style={{ background: 'linear-gradient(110deg,#2A2370,#6A55E8 55%,#2FB67C)', boxShadow: '0 10px 22px rgba(76,60,190,.3)' }}>
+            <span>
+              <span className="block text-[15px] md:text-[18px] font-bold">Ready to grow further?</span>
+              <span className="hidden md:block text-[13px] mt-0.5" style={{ color: '#E4DEFF' }}>Compare funds, FDs and gold with your risk level and goals.</span>
+            </span>
+            <span className="flex-shrink-0 rounded-full px-4 md:px-5 py-2 md:py-2.5 text-[12.5px] md:text-[13.5px] font-semibold" style={{ background: '#fff', color: 'var(--accent2)' }}>
+              Explore options →
+            </span>
+          </button>
         </>
-      )}
+      ))}
 
       {/* ═══════════ TRENDS ═══════════ */}
       {tab === 'trends' && (

@@ -167,18 +167,23 @@ export function Ring({ pct, size = 92, stroke = 3.5, color = 'var(--accent)', tr
 }
 
 // Vertical bars that rise from the baseline (design: 0.7s, 50ms stagger).
-// `hi` bars take the accent; others the soft lavender. Hover shows the tip.
+// Single series: `hi` bars take the accent, others soft lavender. Paired
+// (`before` set): lavender "before" bar beside an accent "now" bar.
 export function Bars({ data, className = 'h-[220px]', label }: {
-  data: { label: string; value: number; tip: string; hi?: boolean }[]; className?: string; label: string
+  data: { label: string; value: number; before?: number; tip: string; hi?: boolean }[]; className?: string; label: string
 }) {
-  const max = Math.max(...data.map(d => d.value), 1)
+  const max = Math.max(...data.map(d => Math.max(d.value, d.before ?? 0)), 1)
+  const h = (v: number) => `${Math.max(v / max * 100, v > 0 ? 2 : 0)}%`
   return (
     <div className={`flex gap-1.5 md:gap-2.5 ${className}`} role="img" aria-label={label}>
       {data.map((d, i) => (
         <div key={i} className="flex-1 min-w-0 flex flex-col" title={d.tip}>
-          <div className="flex-1 flex items-end justify-center">
-            <div className="w-[44%] max-w-[26px] rounded-t-[5px] wl-rise"
-              style={{ height: `${Math.max(d.value / max * 100, d.value > 0 ? 2 : 0)}%`, background: d.hi ? 'var(--accent)' : '#C9C2F5', animationDelay: `${i * 50}ms` }} />
+          <div className="flex-1 flex items-end justify-center gap-[3px]">
+            {d.before != null && (
+              <div className="w-[38%] max-w-[24px] rounded-t-[5px] wl-rise" style={{ height: h(d.before), background: '#C9C2F5', animationDelay: `${i * 50}ms` }} />
+            )}
+            <div className={`${d.before != null ? 'w-[38%] max-w-[24px]' : 'w-[44%] max-w-[26px]'} rounded-t-[5px] wl-rise`}
+              style={{ height: h(d.value), background: d.hi || d.before != null ? 'var(--accent)' : '#C9C2F5', animationDelay: `${i * 50}ms` }} />
           </div>
           <div className="h-[16px] md:h-[22px] pt-1 md:pt-1.5 text-[9px] md:text-[11px] text-center truncate" style={{ color: 'var(--text4)' }}>{d.label}</div>
         </div>
