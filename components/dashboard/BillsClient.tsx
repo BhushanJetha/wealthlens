@@ -73,7 +73,7 @@ export default function BillsClient({ transactions, cards, loans, insurance }: {
     <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
       <PageHeader title="Bills & subscriptions" sub="Found in your statements, so you never miss a due date" />
       <EmptyState message="Bills show up here once a merchant charges you a steady amount in 3 of the last 4 months. Import a few months of bank or card statements, or add your cards, loans and policies."
-        cta="Import statements" onCta={() => router.push('/dashboard/ingest')} />
+        cta="Import statements" onCta={() => router.push('/dashboard/ingest?m=bank')} />
     </div>
   )
 
