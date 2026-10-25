@@ -1,4 +1,5 @@
 'use client'
+import { PageHeader, InsightBar, AiActions, LearnStrip } from '@/components/ui/kit'
 import { useState, useMemo, useEffect } from 'react'
 import { useViewStore } from '@/store/viewStore'
 import { ChevronRight, X, ArrowLeftRight } from 'lucide-react'
@@ -325,23 +326,15 @@ export default function TransfersClient({ transactions }: { transactions: Txn[] 
   return (
     <div className="space-y-5 animate-fade-up">
 
-      {/* ── Page header ─────────────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em] flex items-center gap-2" style={{ color: 'var(--text)' }}>
-            <ArrowLeftRight size={20} style={{ color: UAE_COLOR }} />
-            Money Transfer Pipeline
-          </h1>
-          <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
-            UAE → India transfers · {rangeLabel}
-            {liveRate && (
-              <span className="ml-2 font-mono" style={{ color: 'var(--gold)' }}>
-                · Live: 1 AED = ₹{liveRate.toFixed(2)}{rateDate ? ` (${rateDate})` : ''}
-              </span>
-            )}
-          </p>
-        </div>
-      </div>
+      <PageHeader title="Transfers"
+        sub={`UAE → India transfers · ${rangeLabel}${liveRate ? ` · 1 AED = ₹${liveRate.toFixed(2)}` : ''}`} />
+      <InsightBar
+        text={uaeOutgoing.length || nreReceived.length || nroSettled.length
+          ? `In ${rangeLabel} you sent AED ${fmt(Math.round(totalAED))} from the UAE (about ₹${fmt(Math.round(totalAED * rate))} at today's rate); ₹${fmt(Math.round(totalNRE))} reached NRE and ₹${fmt(Math.round(totalNRO))} settled into NRO.`
+          : `No transfers between the UAE and India in ${rangeLabel}.`}
+        prompt={`Explain my transfers page. In ${rangeLabel}: sent AED ${Math.round(totalAED)} from the UAE (${uaeOutgoing.length} transfers), NRE received ₹${Math.round(totalNRE)} (${nreReceived.length}), NRO settled ₹${Math.round(totalNRO)} (${nroSettled.length}). Rate 1 AED = ₹${rate.toFixed(2)}.`} />
+      <AiActions actions={['Find the cheapest way to send money home', 'NRE or NRO for my next transfer?']}
+        context={`Sent AED ${Math.round(totalAED)} in ${rangeLabel}; NRE ₹${Math.round(totalNRE)}; NRO ₹${Math.round(totalNRO)}; rate ₹${rate.toFixed(2)} per AED.`} />
 
       {/* ── Summary bar ─────────────────────────────────────────────────────── */}
       <div className="wl-card p-4">
@@ -500,6 +493,7 @@ export default function TransfersClient({ transactions }: { transactions: Txn[] 
           onClose={() => setOpenTxn(null)}
         />
       )}
+      <LearnStrip title="NRE, NRO and sending money home" href="/dashboard/learn" />
     </div>
   )
 }

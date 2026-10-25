@@ -1,4 +1,5 @@
 'use client'
+import { PageHeader, InsightBar, AiActions } from '@/components/ui/kit'
 import { useMemo, useState } from 'react'
 import { useViewStore } from '@/store/viewStore'
 import { normMerchant } from '@/lib/categoryMemory'
@@ -315,26 +316,19 @@ export default function MoneyReportClient({ transactions, budgets, accounts = []
   // ── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="space-y-5 animate-fade-up">
-      <div className="flex items-start justify-between flex-wrap gap-2">
-        <div>
-          <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em]" style={{ color: 'var(--text)' }}>Money Report</h1>
-          <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
-            {view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'} · {rangeLabel}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 no-print">
-          <button onClick={exportCSV}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all"
-            style={{ background: 'var(--bg2)', borderColor: 'var(--border)', color: 'var(--text3)' }}>
-            <Download size={12} /> CSV
-          </button>
-          <button onClick={() => window.print()}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all"
-            style={{ background: 'var(--sage-bg)', borderColor: 'var(--sage)', color: 'var(--sage)' }}>
-            <Printer size={12} /> Print / PDF
-          </button>
-        </div>
-      </div>
+      <PageHeader title="Money report"
+        sub={`${view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'} · ${rangeLabel}`}
+        actions={<span className="flex gap-2 no-print">
+          <button onClick={exportCSV} className="wl-btn" style={{ height: 34 }}><Download size={14} />CSV</button>
+          <button onClick={() => window.print()} className="wl-btn" style={{ height: 34 }}><Printer size={14} />Print / PDF</button>
+        </span>} />
+      <div className="no-print"><InsightBar
+        text={totalIncome > 0
+          ? `${money(totalIncome)} came in and ${money(totalLiving)} went on living costs; after ${money(totalLoans)} of loan payments you kept ${money(netSavings)} — a ${savingsRate.toFixed(0)}% savings rate${savingsRate >= 20 ? ', above' : ' against'} the 20% target.`
+          : `No income recorded for ${rangeLabel}; living costs were ${money(totalLiving)}.`}
+        prompt={`Explain my money report for ${rangeLabel}. Income ${money(totalIncome)}, living expenses ${money(totalLiving)}, loan payments ${money(totalLoans)}, invested ${money(totalInvest)}, card bills ${money(totalCC)}, transfers ${money(totalTransfer)}, net savings ${money(netSavings)}, savings rate ${savingsRate.toFixed(0)}%.`} /></div>
+      <div className="no-print"><AiActions actions={['Summarise my month', 'Where did my money go?']}
+        context={`For ${rangeLabel}: income ${money(totalIncome)}, living ${money(totalLiving)}, loans ${money(totalLoans)}, invested ${money(totalInvest)}, net savings ${money(netSavings)}.`} /></div>
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

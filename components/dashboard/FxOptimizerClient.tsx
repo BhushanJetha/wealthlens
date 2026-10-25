@@ -1,4 +1,5 @@
 'use client'
+import { PageHeader, AiActions, LearnStrip } from '@/components/ui/kit'
 import { useState, useEffect } from 'react'
 import { ArrowLeftRight, RefreshCw, Target, TrendingUp, TrendingDown, Loader2 } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, ReferenceLine } from 'recharts'
@@ -39,21 +40,12 @@ export default function FxOptimizerClient() {
 
   return (
     <div className="space-y-5 animate-fade-up">
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em] flex items-center gap-2" style={{ color: 'var(--text)' }}>
-            <ArrowLeftRight size={20} style={{ color: 'var(--sage)' }} /> Remittance / FX Optimizer
-          </h1>
-          <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
-            AED → INR · is now a good time to send money home?
-          </p>
-        </div>
-        <button onClick={load} disabled={loading}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border disabled:opacity-50"
-          style={{ borderColor: 'var(--border)', color: 'var(--sage)', background: 'var(--sage-bg)' }}>
-          {loading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
-        </button>
-      </div>
+      <PageHeader title="FX optimizer" sub="AED → INR · is now a good time to send money home?"
+        actions={<button onClick={load} disabled={loading} className="wl-btn" style={{ height: 34 }}>
+          {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}Refresh rates
+        </button>} />
+      <AiActions actions={['Is now a good time to send money home?', 'How do I cut transfer costs?']}
+        context="I send money from the UAE to India and want to time AED to INR transfers well." />
 
       {loading && !data ? (
         <div className="wl-card py-16 text-center text-[13px]" style={{ color: 'var(--text3)' }}>
@@ -179,6 +171,7 @@ export default function FxOptimizerClient() {
           </div>
         </>
       )}
+      <LearnStrip title="NRE, NRO and sending money home" href="/dashboard/learn" />
     </div>
   )
 }

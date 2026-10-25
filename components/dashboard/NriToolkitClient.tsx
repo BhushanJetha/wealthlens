@@ -1,4 +1,5 @@
 'use client'
+import { PageHeader, AiActions } from '@/components/ui/kit'
 import { useState, useEffect } from 'react'
 import { Globe, Briefcase, CalendarClock, Landmark, Info } from 'lucide-react'
 
@@ -21,14 +22,9 @@ const aed = (n: number) => `AED ${Math.round(n).toLocaleString('en-AE')}`
 export default function NriToolkitClient() {
   return (
     <div className="space-y-5 animate-fade-up">
-      <div>
-        <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em] flex items-center gap-2" style={{ color: 'var(--text)' }}>
-          <Globe size={20} style={{ color: 'var(--sage)' }} /> NRI Toolkit
-        </h1>
-        <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
-          UAE gratuity, India tax-residency and NRE/NRO essentials — the NRI things generic apps miss
-        </p>
-      </div>
+      <PageHeader title="NRI toolkit" sub="UAE gratuity, India tax residency and NRE/NRO essentials — the NRI things generic apps miss" />
+      <AiActions actions={['Am I an NRI for tax this year?', 'How much gratuity will I get?']}
+        context="I live in the UAE and have money in India; help me with NRI rules." />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <GratuityCard />

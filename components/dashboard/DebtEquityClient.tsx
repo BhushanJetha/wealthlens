@@ -1,4 +1,5 @@
 'use client'
+import { PageHeader, InsightBar, AiActions } from '@/components/ui/kit'
 import { useMemo } from 'react'
 import Link from 'next/link'
 import { useViewStore } from '@/store/viewStore'
@@ -140,13 +141,15 @@ export default function DebtEquityClient(props: {
 
   return (
     <div className="space-y-5 animate-fade-up">
-      <div>
-        <Link href="/dashboard" className="flex items-center gap-1 text-[11px] mb-2" style={{ color: 'var(--sage)' }}><ArrowLeft size={13} /> Dashboard</Link>
-        <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em] flex items-center gap-2" style={{ color: 'var(--text)' }}><Scale size={20} style={{ color: 'var(--sage)' }} /> Debt vs Equity</h1>
-        <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
-          {view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'} · how your investments stack up against your loans
-        </p>
-      </div>
+      <PageHeader title="Debt vs equity"
+        sub={`${view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'} · how your investments stack up against your loans`} />
+      <InsightBar
+        text={totalDebt === 0
+          ? `No debt — ${money(totalEquity)} of investments and savings, all yours.`
+          : `Debt is ${debtPct}% of everything (${money(totalDebt)} against ${money(totalEquity)} of investments) — ${zoneLabel.toLowerCase()}.${topLoan ? ` ${topLoan.name} at ${topLoan.interest_rate}% is your costliest loan.` : ''}`}
+        prompt={`Explain my debt vs equity page. Debt ${money(totalDebt)}, equity ${money(totalEquity)}, debt share ${debtPct}%, zone ${zoneLabel}, net ${money(netWorth)}.${topLoan ? ` Costliest loan ${topLoan.name} at ${topLoan.interest_rate}%.` : ''}`} />
+      <AiActions actions={['Pay down debt or invest?', 'Best prepayment plan']}
+        context={`Debt ${money(totalDebt)}, equity ${money(totalEquity)}, debt share ${debtPct}%.${topLoan ? ` Costliest loan ${topLoan.name} at ${topLoan.interest_rate}%, outstanding ${topLoan.outstanding_amt}.` : ''}`} />
 
       {/* Gauge + zone */}
       <div className="wl-card p-5 flex items-center gap-5 flex-wrap" style={{ border: `1.5px solid ${rawColor}40` }}>
