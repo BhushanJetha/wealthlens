@@ -6,16 +6,14 @@ import { useViewStore } from '@/store/viewStore'
 import { Building2, Plus, Pencil, Trash2, Loader2 } from 'lucide-react'
 import MetricCard from '@/components/dashboard/MetricCard'
 import AddAccountModal from '@/components/forms/AddAccountModal'
-import { PageHeader, InsightBar, AiActions, LearnStrip } from '@/components/ui/kit'
+import { PageHeader, InsightBar, AiActions, LearnStrip, HeroStat, KpiTile, Bars, Donut, ProgressRow, EmptyState, PALETTE } from '@/components/ui/kit'
+import { ListCard, ListRow } from '@/components/ui/list'
+import { fmtCompact } from '@/lib/format'
+import { Wallet, Landmark, Coins, Layers } from 'lucide-react'
 
 const TYPE_COLORS: Record<string, string> = {
-  savings:  'var(--sage)',
-  current:  'var(--blue)',
-  salary:   'var(--gold)',
-  wallet:   'var(--purple)',
-  nre:      'var(--income)',
-  nro:      'var(--rose)',
-  joint:    'var(--text2)',
+  savings: '#16A34A', current: '#3B8EF0', salary: '#D97706', wallet: '#7C3AED',
+  nre: '#0891B2', nro: '#EC5B8C', joint: '#64748B',
 }
 
 
@@ -42,6 +40,17 @@ export default function BankAccountsClient({ accounts }: { accounts: any[] }) {
   const totalBalance = filtered.reduce((a, acc) =>
     a + toConv((Number(acc.current_balance) || Number(acc.outstanding_bal) || 0), acc.currency), 0)
 
+  const short = (n: number) => fmtCompact(n, view === 'uae' ? 'AED' : 'INR')
+  const bal = (a: any) => Number(a.current_balance) || Number(a.outstanding_bal) || 0
+  const aed = filtered.filter(a => a.currency === 'AED').reduce((s, a) => s + bal(a), 0)
+  const inr = filtered.filter(a => a.currency !== 'AED').reduce((s, a) => s + bal(a), 0)
+  const current = filtered.filter(a => a.account_type === 'current').reduce((s, a) => s + toConv(bal(a), a.currency), 0)
+  const byBank = Object.entries(filtered.reduce<Record<string, number>>((m, a) => {
+    const k = a.bank_name || a.name; m[k] = (m[k] ?? 0) + toConv(bal(a), a.currency); return m
+  }, {})).sort((a, b) => b[1] - a[1])
+  const bars = [...filtered].sort((a, b) => toConv(bal(b), b.currency) - toConv(bal(a), a.currency)).slice(0, 8)
+    .map(a => ({ label: String(a.bank_name || a.name).split(' ')[0], value: toConv(bal(a), a.currency), hi: true, tip: `${a.name}: ${a.currency === 'AED' ? 'AED ' : '₹'}${bal(a).toLocaleString('en-IN')}` }))
+
   async function handleDelete() {
     if (!deleteId) return
     setDeleting(true)
@@ -52,129 +61,75 @@ export default function BankAccountsClient({ accounts }: { accounts: any[] }) {
   }
 
   return (
-    <div className="space-y-5 animate-fade-up">
-      <PageHeader title="Bank accounts"
+    <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
+      <div className="max-md:order-1"><PageHeader title="Bank accounts"
         sub={`${filtered.length} account${filtered.length !== 1 ? 's' : ''} · ${sym}${Math.round(totalBalance).toLocaleString('en-IN')} in total`}
         onAdd={() => setShowAdd(true)} addLabel="Add account"
-        actions={<button onClick={() => setShowAdd(true)} className="wl-btn wl-btn-primary" style={{ height: 34 }}><Plus size={14} />Add account</button>} />
+        actions={<button onClick={() => setShowAdd(true)} className="wl-btn wl-btn-primary" style={{ height: 34 }}><Plus size={14} />Add account</button>} /></div>
       {filtered.length > 0 && (() => {
         const top = [...filtered].sort((a: any, b: any) => toConv(Number(b.current_balance ?? 0), b.currency) - toConv(Number(a.current_balance ?? 0), a.currency))[0]
         const ctx = `Accounts: ${filtered.map((a: any) => `${a.name} (${a.account_type}) ${a.currency} ${a.current_balance}`).join('; ')}. Total ${sym}${Math.round(totalBalance)}.`
         return (<>
-          <InsightBar text={`${sym}${Math.round(totalBalance).toLocaleString('en-IN')} sits across ${filtered.length} account${filtered.length === 1 ? '' : 's'}${top ? `; ${top.name} holds the most` : ''}. Cash above your emergency fund could be earning more.`}
-            prompt={`Explain my bank accounts page. ${ctx}`} />
-          <AiActions actions={['Find idle cash', 'Where should my emergency fund sit?']} context={ctx} />
+          <div className="max-md:order-4"><InsightBar text={`${sym}${Math.round(totalBalance).toLocaleString('en-IN')} sits across ${filtered.length} account${filtered.length === 1 ? '' : 's'}${top ? `; ${top.name} holds the most` : ''}. Cash above your emergency fund could be earning more.`}
+            prompt={`Explain my bank accounts page. ${ctx}`} /></div>
+          <div className="max-md:order-5"><AiActions actions={['Find idle cash', 'Where should my emergency fund sit?']} context={ctx} /></div>
         </>)
       })()}
 
-      {/* KPI */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-        <MetricCard
-          label="Total Balance"
-          value={`${sym}${Math.round(totalBalance).toLocaleString('en-IN')}`}
-          accent="teal"
-        />
-        <MetricCard
-          label="Total Accounts"
-          value={String(filtered.length)}
-          accent="blue"
-        />
-        <MetricCard
-          label="Account Types"
-          value={String(new Set(filtered.map(a => a.account_type)).size)}
-          accent="gold"
-        />
-      </div>
-
-      {/* Accounts grid */}
       {filtered.length === 0 ? (
-        <div className="wl-card py-16 text-center" style={{ borderStyle: 'dashed' }}>
-          <Building2 size={32} className="mx-auto mb-3" style={{ color: 'var(--border2)' }} />
-          <div className="text-[13px] mb-4" style={{ color: 'var(--text3)' }}>No bank accounts added yet</div>
-          <button onClick={() => setShowAdd(true)}
-            className="px-4 py-2 rounded-lg text-white text-[12px] font-bold"
-            style={{ background: 'var(--sage)' }}>
-            Add Bank Account
-          </button>
+        <div className="max-md:order-2"><EmptyState message="No bank accounts yet. Add one, or import a bank statement to fill in the balance."
+          cta="Add account" onCta={() => setShowAdd(true)} onImport={() => router.push('/dashboard/ingest?m=bank')} /></div>
+      ) : (<>
+        <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4">
+          <HeroStat className="max-md:order-2" label="Total balance" value={`${sym}${Math.round(totalBalance).toLocaleString('en-IN')}`}
+            delta={`${filtered.length} account${filtered.length === 1 ? '' : 's'} · balances from your latest statements`}
+            right={<span className="text-[11.5px]" style={{ color: 'var(--text3)' }}>Balance by account</span>}>
+            {bars.length > 1 && <Bars data={bars} className="h-[110px] md:h-auto md:flex-1 md:min-h-[170px] mt-3" label={`Balance by account: ${bars.map(b => b.tip).join(', ')}`} />}
+          </HeroStat>
+
+          <section className="wl-card max-md:order-6 px-4 md:px-5 py-4 md:py-[18px] flex flex-col gap-3">
+            <h2 className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>By bank</h2>
+            <div className="hidden md:flex justify-center">
+              <Donut segments={byBank.map(([, v], i) => ({ value: v, color: PALETTE[i % PALETTE.length] }))} size={128}
+                label={`Balance by bank: ${byBank.map(([k, v]) => `${k} ${short(v)}`).join(', ')}`}>
+                <div className="text-[10.5px]" style={{ color: 'var(--text3)' }}>Total</div>
+                <div className="text-[16px] font-bold" style={{ color: 'var(--text)' }}>{short(totalBalance)}</div>
+              </Donut>
+            </div>
+            {byBank.map(([k, v], i) => (
+              <ProgressRow key={k} name={k} value={short(v)} right={`${totalBalance > 0 ? Math.round(v / totalBalance * 100) : 0}%`}
+                pct={totalBalance > 0 ? v / totalBalance * 100 : 0} color={PALETTE[i % PALETTE.length]} />
+            ))}
+          </section>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+
+        <div className="max-md:order-3 grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
+          <KpiTile label="UAE" value={`AED ${Math.round(aed).toLocaleString('en-US')}`} delta={`${filtered.filter(a => a.currency === 'AED').length} account(s)`} tint={0} icon={Landmark} />
+          <KpiTile label="India" value={`₹${Math.round(inr).toLocaleString('en-IN')}`} delta={`${filtered.filter(a => a.currency !== 'AED').length} account(s)`} tint={1} icon={Wallet} />
+          <KpiTile label="In current accounts" value={short(current)} delta={current > 0 ? 'Earns little or no interest' : 'None'} tint={2} icon={Coins} />
+          <KpiTile label="Accounts" value={String(filtered.length)} delta={`${new Set(filtered.map(a => a.account_type)).size} type(s)`} tint={3} icon={Layers} />
+        </div>
+
+        <ListCard className="max-md:order-7" title="Your accounts" sub={`${filtered.length} account${filtered.length === 1 ? '' : 's'}`}
+          head={['Account', 'Type', 'Country', 'Balance']}>
           {filtered.map((acc: any) => {
-            const bal      = (Number(acc.current_balance) || Number(acc.outstanding_bal) || 0)
-            const lSym     = acc.currency === 'AED' ? 'AED ' : '₹'
-            const typeCol  = TYPE_COLORS[acc.account_type] ?? 'var(--text2)'
+            const l = acc.currency === 'AED' ? 'AED ' : '₹'
+            const type = String(acc.account_type ?? 'savings').replace('_', ' ')
             return (
-              <div key={acc.id} className="wl-card p-5 relative">
-                <div className="absolute top-0 left-0 right-0 h-[3px] rounded-t-[inherit]"
-                  style={{ background: typeCol }} />
-
-                <div className="flex items-start justify-between gap-2 mb-4 mt-1">
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-                      style={{ background: typeCol + '18' }}>
-                      <Building2 size={16} style={{ color: typeCol }} />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-[14px] font-bold truncate" style={{ color: 'var(--text)' }}>
-                        {acc.name}
-                      </div>
-                      <div className="text-[11px]" style={{ color: 'var(--text3)' }}>
-                        {acc.bank_name} · {acc.country}
-                        {acc.last_four && ` · ••••${acc.last_four}`}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <button onClick={() => setEditAccount(acc)}
-                      className="w-7 h-7 rounded-lg flex items-center justify-center"
-                      style={{ background: 'var(--blue-bg)', color: 'var(--blue)' }}
-                      title="Edit account">
-                      <Pencil size={12} />
-                    </button>
-                    <button onClick={() => setDeleteId(acc.id)}
-                      className="w-7 h-7 rounded-lg flex items-center justify-center"
-                      style={{ background: 'var(--rose-bg)', color: 'var(--rose)' }}
-                      title="Remove account">
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="col-span-2 rounded-lg p-3"
-                    style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-                    <div className="text-[9px] uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>
-                      Balance
-                    </div>
-                    <div className="text-[18px] font-bold font-mono" style={{ color: typeCol }}>
-                      {lSym}{bal.toLocaleString('en-IN')}
-                    </div>
-                  </div>
-                  <div className="rounded-lg p-2.5"
-                    style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-                    <div className="text-[9px] uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>
-                      Type
-                    </div>
-                    <span className="text-[11px] font-semibold capitalize px-2 py-0.5 rounded"
-                      style={{ background: typeCol + '18', color: typeCol }}>
-                      {acc.account_type.replace('_', ' ')}
-                    </span>
-                  </div>
-                  <div className="rounded-lg p-2.5"
-                    style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-                    <div className="text-[9px] uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>
-                      Currency
-                    </div>
-                    <div className="text-[13px] font-bold font-mono" style={{ color: 'var(--text)' }}>
-                      {acc.currency}
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <ListRow key={acc.id} color={TYPE_COLORS[acc.account_type] ?? '#64748B'} initial={<Building2 size={16} />} title={acc.name}
+                sub={[acc.bank_name, acc.last_four ? `••••${acc.last_four}` : null].filter(Boolean).join(' · ')}
+                tag={type[0].toUpperCase() + type.slice(1)} meta={acc.country ?? (acc.currency === 'AED' ? 'UAE' : 'India')}
+                amount={`${l}${bal(acc).toLocaleString('en-IN')}`}
+                amountSub={view === 'consolidated' && acc.currency === 'AED' ? `≈ ₹${Math.round(toConv(bal(acc), 'AED')).toLocaleString('en-IN')}` : undefined}
+                onOpen={() => setEditAccount(acc)}
+                actions={[
+                  { label: 'Edit', icon: Pencil, onClick: () => setEditAccount(acc) },
+                  { label: 'Remove', icon: Trash2, onClick: () => setDeleteId(acc.id), danger: true },
+                ]} />
             )
           })}
-        </div>
-      )}
+        </ListCard>
+      </>)}
 
       {/* Modals */}
       {showAdd && (
@@ -219,7 +174,7 @@ export default function BankAccountsClient({ accounts }: { accounts: any[] }) {
           </div>
         </div>
       )}
-      <LearnStrip title="Build a safety net first" href="/dashboard/goals/learn" />
+      <div className="max-md:order-8"><LearnStrip title="Build a safety net first" href="/dashboard/goals/learn" /></div>
     </div>
   )
 }
