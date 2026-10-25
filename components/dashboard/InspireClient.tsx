@@ -567,7 +567,7 @@ export default function InspireClient({ pins: initialPins }: { pins: any[] }) {
     <div className="space-y-5 animate-fade-up pb-12">
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text)' }}>Money Mindset</h1>
+          <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em]" style={{ color: 'var(--text)' }}>Money Mindset</h1>
           <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>Ideas and reminders to keep you going on the road to financial freedom</p>
         </div>
         <div className="flex gap-2">

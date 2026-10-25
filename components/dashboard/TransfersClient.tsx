@@ -328,7 +328,7 @@ export default function TransfersClient({ transactions }: { transactions: Txn[] 
       {/* ── Page header ─────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold flex items-center gap-2" style={{ color: 'var(--text)' }}>
+          <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em] flex items-center gap-2" style={{ color: 'var(--text)' }}>
             <ArrowLeftRight size={20} style={{ color: UAE_COLOR }} />
             Money Transfer Pipeline
           </h1>

@@ -546,7 +546,7 @@ function Header({ view, onRefresh, refreshing }: { view: string; onRefresh?: () 
   return (
     <div className="flex items-start justify-between flex-wrap gap-2">
       <div>
-        <h1 className="text-xl font-bold flex items-center gap-2" style={{ color: 'var(--text)' }}>
+        <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em] flex items-center gap-2" style={{ color: 'var(--text)' }}>
           <Activity size={20} style={{ color: 'var(--sage)' }} /> Market-Linked Portfolio
         </h1>
         <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>

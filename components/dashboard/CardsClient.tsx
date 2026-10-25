@@ -7,6 +7,7 @@ import { useViewStore } from '@/store/viewStore'
 import MetricCard from '@/components/dashboard/MetricCard'
 import { CreditCard, Plus, AlertTriangle, Clock, Pencil, Trash2, BookOpen, Loader2 } from 'lucide-react'
 import AddAccountModal from '@/components/forms/AddAccountModal'
+import { PageHeader, InsightBar, AiActions, LearnStrip } from '@/components/ui/kit'
 
 function toINR(amt: number, cur: string, fx: number) { return cur === 'AED' ? amt * fx : amt }
 
@@ -44,29 +45,15 @@ export default function CardsClient({ cards }: { cards: any[] }) {
 
   return (
     <div className="space-y-5 animate-fade-up">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text)' }}>
-            Credit Cards &amp; Liabilities
-          </h1>
-          <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
-            {filtered.length} active card{filtered.length !== 1 ? 's' : ''}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link href="/dashboard/cards/learn"
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold border transition-all"
-            style={{ background: 'var(--blue-bg)', borderColor: 'var(--blue)30', color: 'var(--blue)' }}>
-            <BookOpen size={13} /> Learn
-          </Link>
-          <button onClick={() => setShowAdd(true)}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg text-white text-[12px] font-bold"
-            style={{ background: 'var(--sage)' }}>
-            <Plus size={14} /> Add Card
-          </button>
-        </div>
-      </div>
+      <PageHeader title="Credit cards"
+        sub={`${filtered.length} active card${filtered.length !== 1 ? 's' : ''} · ${overallUtil}% of your limit in use`}
+        onAdd={() => setShowAdd(true)} addLabel="Add card"
+        actions={<button onClick={() => setShowAdd(true)} className="wl-btn wl-btn-primary" style={{ height: 34 }}><Plus size={14} />Add card</button>} />
+      {filtered.length > 0 && <InsightBar
+        text={`You owe ${sym}${Math.round(totalBal).toLocaleString('en-IN')} on ${sym}${Math.round(totalLimit).toLocaleString('en-IN')} of limits — ${overallUtil}% used. ${overallUtil > 30 ? 'Bringing it under 30% helps your credit score.' : 'That is under the 30% that lenders like to see.'} Minimum due across cards: ${sym}${Math.round(totalMinDue).toLocaleString('en-IN')}.`}
+        prompt={`Explain my credit cards page. Outstanding ${sym}${Math.round(totalBal)}, limits ${sym}${Math.round(totalLimit)}, utilisation ${overallUtil}%, minimum due ${sym}${Math.round(totalMinDue)}. Cards: ${filtered.map((c: any) => `${c.name} ${c.currency} ${c.outstanding_bal} of ${c.credit_limit}${c.due_date ? ` due ${c.due_date}` : ''}`).join('; ')}.`} />}
+      {filtered.length > 0 && <AiActions actions={['Which card should I pay first?', 'How do I lower my utilisation?']}
+        context={`Cards: ${filtered.map((c: any) => `${c.name} ${c.currency} ${c.outstanding_bal} of ${c.credit_limit}${c.due_date ? ` due ${c.due_date}` : ''}`).join('; ')}.`} />}
 
       {/* Utilization alert */}
       {overallUtil > 30 && (
@@ -238,6 +225,7 @@ export default function CardsClient({ cards }: { cards: any[] }) {
           </div>
         </div>
       )}
+      <LearnStrip title="Statement date vs due date" href="/dashboard/cards/learn" />
     </div>
   )
 }

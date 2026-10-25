@@ -14,7 +14,7 @@ export default function FinancialHealthTabs({ check, score }: { check: React.Rea
     <div className="space-y-5 animate-fade-up">
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text)' }}>Financial Health</h1>
+          <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em]" style={{ color: 'var(--text)' }}>Financial Health</h1>
           <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>Where you stand today, and the next steps to financial freedom</p>
         </div>
         <div className="flex gap-1 p-1 rounded-xl w-fit wl-tabs" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>

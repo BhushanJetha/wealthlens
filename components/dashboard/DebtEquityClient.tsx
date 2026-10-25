@@ -142,7 +142,7 @@ export default function DebtEquityClient(props: {
     <div className="space-y-5 animate-fade-up">
       <div>
         <Link href="/dashboard" className="flex items-center gap-1 text-[11px] mb-2" style={{ color: 'var(--sage)' }}><ArrowLeft size={13} /> Dashboard</Link>
-        <h1 className="text-xl font-bold flex items-center gap-2" style={{ color: 'var(--text)' }}><Scale size={20} style={{ color: 'var(--sage)' }} /> Debt vs Equity</h1>
+        <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em] flex items-center gap-2" style={{ color: 'var(--text)' }}><Scale size={20} style={{ color: 'var(--sage)' }} /> Debt vs Equity</h1>
         <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
           {view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'} · how your investments stack up against your loans
         </p>

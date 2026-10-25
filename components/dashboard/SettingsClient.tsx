@@ -45,7 +45,7 @@ export default function SettingsClient({ profile, userId }: any) {
   return (
     <div className="max-w-2xl mx-auto space-y-5 animate-fade-up">
       <div>
-        <h1 className="text-xl font-bold" style={{ color: 'var(--text)' }}>Settings</h1>
+        <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em]" style={{ color: 'var(--text)' }}>Settings</h1>
         <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>Manage your account, preferences and security</p>
       </div>
 

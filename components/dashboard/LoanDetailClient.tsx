@@ -213,7 +213,7 @@ export default function LoanDetailClient({ loan, txns, plan = [] }: { loan: any;
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <Link href="/dashboard/loans" className="flex items-center gap-1 text-[11px] mb-2" style={{ color: 'var(--sage)' }}><ChevronLeft size={13} /> All Loans</Link>
-          <h1 className="text-xl font-bold flex items-center gap-2" style={{ color: 'var(--text)' }}><Building2 size={18} style={{ color: 'var(--blue)' }} /> {loan.name}</h1>
+          <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em] flex items-center gap-2" style={{ color: 'var(--text)' }}><Building2 size={18} style={{ color: 'var(--blue)' }} /> {loan.name}</h1>
           <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>{loan.bank_name} · {loan.interest_rate}% p.a. · {loan.tenure_months} mo tenure</p>
         </div>
         <div className="flex items-center gap-2">

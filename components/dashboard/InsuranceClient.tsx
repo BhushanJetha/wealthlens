@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import MetricCard from '@/components/dashboard/MetricCard'
 import AddInsuranceModal from '@/components/forms/AddInsuranceModal'
 import { Shield, Upload, CheckCircle, AlertCircle, Loader2, X, Plus, Pencil, Trash2 } from 'lucide-react'
+import { PageHeader, InsightBar, AiActions, LearnStrip } from '@/components/ui/kit'
 
 function toINR(amt: number, cur: string, fx: number) { return cur === 'AED' ? amt * fx : amt }
 
@@ -86,20 +87,14 @@ export default function InsuranceClient({ policies }: { policies: any[] }) {
 
   return (
     <div className="space-y-5 animate-fade-up">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text)' }}>Insurance Portfolio</h1>
-          <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
-            Upload policy documents or add manually
-          </p>
-        </div>
-        <button onClick={() => setShowAdd(true)}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg text-white text-[12px] font-bold"
-          style={{ background: 'var(--sage)' }}>
-          <Plus size={14} /> Add Policy
-        </button>
-      </div>
+      <PageHeader title="Insurance" sub="Upload policy documents or add them by hand"
+        onAdd={() => setShowAdd(true)} addLabel="Add policy"
+        actions={<button onClick={() => setShowAdd(true)} className="wl-btn wl-btn-primary" style={{ height: 34 }}><Plus size={14} />Add policy</button>} />
+      {filtered.length > 0 && <InsightBar
+        text={`You pay ${sym}${Math.round(totalPremium).toLocaleString('en-IN')} a year for ${sym}${(totalAssured / 100000).toFixed(1)}L of cover, including ${sym}${(lifeAssured / 10000000).toFixed(2)}Cr of term life.${daysToNext !== null ? ` Next premium is due in ${daysToNext} day${daysToNext === 1 ? '' : 's'}.` : ''} A common guide is term cover of about 10× your yearly income.`}
+        prompt={`Explain my insurance page. Annual premiums ${sym}${Math.round(totalPremium)}, total cover ${sym}${Math.round(totalAssured)}, term life ${sym}${Math.round(lifeAssured)}. Policies: ${filtered.map((p: any) => `${p.policy_name} (${p.policy_type}) cover ${p.currency} ${p.sum_assured}, premium ${p.annual_premium}${p.expiry_date ? `, renews ${p.expiry_date}` : ''}`).join('; ')}.`} />}
+      {filtered.length > 0 && <AiActions actions={['Check my cover gap']}
+        context={`Policies: ${filtered.map((p: any) => `${p.policy_name} (${p.policy_type}) cover ${p.currency} ${p.sum_assured}`).join('; ')}.`} />}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <MetricCard label="Annual Premiums"   value={`${sym}${Math.round(totalPremium).toLocaleString('en-IN')}`} accent="gold" />
@@ -304,6 +299,7 @@ export default function InsuranceClient({ policies }: { policies: any[] }) {
           </div>
         </div>
       )}
+      <LearnStrip title="Term insurance: how much is enough" href="/dashboard/learn" />
     </div>
   )
 }

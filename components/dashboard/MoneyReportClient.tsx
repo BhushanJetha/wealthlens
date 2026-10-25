@@ -317,7 +317,7 @@ export default function MoneyReportClient({ transactions, budgets, accounts = []
     <div className="space-y-5 animate-fade-up">
       <div className="flex items-start justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text)' }}>Money Report</h1>
+          <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em]" style={{ color: 'var(--text)' }}>Money Report</h1>
           <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
             {view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'} · {rangeLabel}
           </p>

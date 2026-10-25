@@ -7,6 +7,7 @@ import {
   CartesianGrid, ResponsiveContainer, Cell, ReferenceLine,
 } from 'recharts'
 import { computeNetWorth, viewAmount } from '@/lib/netWorth'
+import { PageHeader, InsightBar, AiActions, LearnStrip } from '@/components/ui/kit'
 
 interface Props {
   accounts: any[]; stocks: any[]; mutualFunds: any[]; etf: any[]; nps: any[]
@@ -71,17 +72,13 @@ export default function NetWorthClient(p: Props) {
 
   return (
     <div className="space-y-5 animate-fade-up">
-      {/* Header */}
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2" style={{ color: 'var(--text)' }}>
-            <Wallet size={20} style={{ color: 'var(--sage)' }} /> Net Worth
-          </h1>
-          <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
-            Everything you own minus everything you owe · {view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'}
-          </p>
-        </div>
-      </div>
+      <PageHeader title="Net worth"
+        sub={`Everything you own minus everything you owe · ${view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'}`} />
+      {!empty && <InsightBar
+        text={`Net worth ${short(netWorth)}: assets ${short(totalAssets)} minus liabilities ${short(totalLiab)} — debt is ${debtRatio}% of what you own. Investments are ${investGain >= 0 ? 'up' : 'down'} ${Math.abs(investGainPct)}% on what you put in.`}
+        prompt={`Explain my net worth page in plain language. Net worth ${money(netWorth)}, assets ${money(totalAssets)}, liabilities ${money(totalLiab)}, debt ratio ${debtRatio}%, investment gain ${investGainPct}%. Assets: ${assetRows.filter((r: any) => r.value > 0).map((r: any) => `${r.label} ${short(r.value)}`).join(', ')}. Liabilities: ${liabRows.filter((r: any) => r.value > 0).map((r: any) => `${r.label} ${short(r.value)}`).join(', ') || 'none'}.`} />}
+      {!empty && <AiActions actions={['What moved my net worth?', 'How do I grow it faster?']}
+        context={`Net worth ${money(netWorth)}, assets ${money(totalAssets)}, liabilities ${money(totalLiab)}, debt ratio ${debtRatio}%.`} />}
 
       {empty ? (
         <div className="wl-card py-16 text-center text-[13px]" style={{ borderStyle: 'dashed', color: 'var(--text3)' }}>
@@ -279,6 +276,7 @@ export default function NetWorthClient(p: Props) {
           </div>
         </>
       )}
+      <LearnStrip title="What net worth really tells you" href="/dashboard/learn" />
     </div>
   )
 }

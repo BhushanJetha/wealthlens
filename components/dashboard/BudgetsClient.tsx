@@ -4,6 +4,7 @@ import { useViewStore } from '@/store/viewStore'
 import { createClient } from '@/lib/supabase/client'
 import { Plus, BarChart2, BookOpen, CreditCard, TrendingUp, LayoutGrid, Sparkles, Lock, Unlock, Pencil, Trash2 } from 'lucide-react'
 import Link from 'next/link'
+import { PageHeader, InsightBar, AiActions, LearnStrip } from '@/components/ui/kit'
 
 const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -121,7 +122,11 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
       .filter((t: any) => t.txn_date?.slice(0, 7) === thisMonth)
       .reduce((a: number, t: any) => a + display(Number(t.amount), t.currency), 0)
   )
-  const budgetUsedPct  = totalBudgetCap > 0 ? Math.round(thisMonthSpend / totalBudgetCap * 100) : 0
+  // Budget used compares only categories that have a budget (each counted
+  // once, even with an AED and an INR cap) — same rule as Spending analysis.
+  const budgetedCats: string[] = Array.from(new Set<string>(viewBudgets.map((b: any) => String(b.category))))
+  const budgetedSpend  = Math.round(budgetedCats.reduce((a, c) => a + (spendMap[c] ?? 0), 0))
+  const budgetUsedPct  = totalBudgetCap > 0 ? Math.round(budgetedSpend / totalBudgetCap * 100) : 0
   const savedThisMonth = thisMonthIncome > 0 ? thisMonthIncome - thisMonthSpend : null
 
   // Average monthly income over the last 6 months that actually have income, so
@@ -419,23 +424,28 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
 
   const monthName = new Date().toLocaleString('default', { month: 'short' })
 
-  return (
-    <div className="p-6 space-y-6 animate-fade-up">
+  // Insight + AI context from this month's figures
+  const dayOfMonth = new Date().getDate()
+  const daysInThisMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate()
+  const overNames = viewBudgets.filter((b: any) => (spendMap[b.category] ?? 0) > budgetCapOf(b)).map((b: any) => b.category)
+  const budgetInsight = viewBudgets.length === 0
+    ? 'No budgets yet. Set caps for your biggest categories — Food, Shopping and Transport are a good start.'
+    : [
+        `You've used ${budgetUsedPct}% of your ${sym}${totalBudgetCap.toLocaleString('en-IN')} budget with ${daysInThisMonth - dayOfMonth} days left.`,
+        overNames.length ? `${overNames.slice(0, 3).join(', ')} ${overNames.length === 1 ? 'is' : 'are'} over.` : 'Every category is within its cap.',
+        savedThisMonth != null && `Saved so far: ${sym}${Math.round(savedThisMonth).toLocaleString('en-IN')}.`,
+      ].filter(Boolean).join(' ')
+  const budgetContext = `My budgets this month (${view}): total cap ${sym}${totalBudgetCap.toLocaleString('en-IN')}, spent ${sym}${thisMonthSpend.toLocaleString('en-IN')} (${budgetUsedPct}%), income ${sym}${thisMonthIncome.toLocaleString('en-IN')}, day ${dayOfMonth} of ${daysInThisMonth}. `
+    + `By category: ${viewBudgets.map((b: any) => `${b.category} ${Math.round(spendMap[b.category] ?? 0)} of ${Math.round(budgetCapOf(b))}`).join(', ') || 'none'}.`
 
-      {/* ─── Header ─── */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-[20px] font-bold" style={{ color: 'var(--text)' }}>Budgets</h1>
-          <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
-            {new Date().toLocaleString('default', { month: 'long', year: 'numeric' })} · {thisYear} Overview
-          </p>
-        </div>
-        <Link href="/dashboard/budgets/learn"
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold border transition-all"
-          style={{ background: 'var(--sage-bg)', borderColor: 'var(--sage)', color: 'var(--sage)' }}>
-          <BookOpen size={13} /> Learn to Budget
-        </Link>
-      </div>
+  return (
+    <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
+
+      <PageHeader title="Budgets"
+        sub={`${new Date().toLocaleString('default', { month: 'long', year: 'numeric' })} · ${thisYear} overview`}
+        actions={<Link href="/dashboard/analysis" className="wl-btn" style={{ height: 34 }}><BarChart2 size={14} />Spending analysis</Link>} />
+      <InsightBar text={budgetInsight} prompt={`Explain my budgets page in plain language. ${budgetContext}`} />
+      <AiActions actions={['Suggest a budget', 'Where can I cut back?']} context={budgetContext} />
 
       {/* ─── Monthly Budget vs Income KPI Strip ─── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
@@ -462,7 +472,7 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
             {sym}{thisMonthSpend.toLocaleString('en-IN')}
           </div>
           <div className="text-[9px] mt-0.5" style={{ color: 'var(--text3)' }}>
-            {totalBudgetCap > 0 ? `${budgetUsedPct}% of budget` : 'no budget set'}
+            {totalBudgetCap > 0 ? `budgeted categories: ${budgetUsedPct}% used` : 'no budget set'}
           </div>
         </div>
 
@@ -1019,6 +1029,7 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
         </div>
       </div>
 
+      <LearnStrip title="Budgets are plans, not punishments" href="/dashboard/budgets/learn" />
     </div>
   )
 }

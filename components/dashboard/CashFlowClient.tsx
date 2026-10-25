@@ -3,6 +3,7 @@ import { useMemo } from 'react'
 import { useViewStore } from '@/store/viewStore'
 import { CalendarClock, ArrowUpRight, ArrowDownRight, AlertTriangle, TrendingUp } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, ReferenceLine } from 'recharts'
+import { PageHeader, InsightBar, AiActions, LearnStrip } from '@/components/ui/kit'
 
 interface Props { accounts: any[]; loans: any[]; transactions: any[] }
 type Ev = { date: Date; label: string; kind: 'in' | 'out'; amount: number; type: string }
@@ -140,14 +141,13 @@ export default function CashFlowClient({ accounts, loans, transactions }: Props)
 
   return (
     <div className="space-y-5 animate-fade-up">
-      <div>
-        <h1 className="text-xl font-bold flex items-center gap-2" style={{ color: 'var(--text)' }}>
-          <CalendarClock size={20} style={{ color: 'var(--sage)' }} /> Cash-Flow Forecast
-        </h1>
-        <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
-          Next 45 days from your bank balance · salary, EMIs, card bills & recurring spend · {view === 'uae' ? 'AED' : view === 'india' ? 'INR' : 'Consolidated'}
-        </p>
-      </div>
+      <PageHeader title="Cash-flow forecast"
+        sub={`Next 45 days from your bank balance · salary, EMIs, card bills & recurring spend · ${view === 'uae' ? 'AED' : view === 'india' ? 'INR' : 'Consolidated'}`} />
+      {events.length > 0 && <InsightBar
+        text={`Over the next 45 days about ${short(expIn)} comes in and ${short(expOut)} goes out, so your balance ends near ${short(endBal)}. The lowest point is ${short(low.bal)} around ${low.date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}.`}
+        prompt={`Explain my cash-flow forecast. Start ${money(startCash)}, expected in ${money(expIn)}, out ${money(expOut)}, end ${money(endBal)}, lowest ${money(low.bal)} on ${low.date.toDateString()}. Upcoming: ${events.slice(0, 12).map((e: any) => `${e.date.toDateString()} ${e.label} ${money(e.amount)}`).join('; ')}.`} />}
+      {events.length > 0 && <AiActions actions={['Warn me about shortfalls', 'When can I invest a lump sum?']}
+        context={`Expected in ${money(expIn)}, out ${money(expOut)}, end ${money(endBal)}, lowest ${money(low.bal)} on ${low.date.toDateString()}.`} />}
 
       {events.length === 0 ? (
         <div className="wl-card py-16 text-center text-[13px]" style={{ borderStyle: 'dashed', color: 'var(--text3)' }}>
@@ -221,6 +221,7 @@ export default function CashFlowClient({ accounts, loans, transactions }: Props)
           </div>
         </>
       )}
+      <LearnStrip title="Why cash flow beats a single balance" href="/dashboard/learn" />
     </div>
   )
 }

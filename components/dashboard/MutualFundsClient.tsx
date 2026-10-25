@@ -576,7 +576,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
       {/* ── Header ────────────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text)' }}>Mutual Funds</h1>
+          <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em]" style={{ color: 'var(--text)' }}>Mutual Funds</h1>
           <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
             {navLoading ? 'Fetching live NAV…' : lastUpdated ? `NAV updated ${lastUpdated.toLocaleTimeString()}` : 'Live NAV ready'}
           </p>

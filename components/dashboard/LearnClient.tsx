@@ -389,7 +389,7 @@ export default function LearnClient({ funds }: Props) {
         className="wl-card p-6" style={{ borderLeft: '3px solid var(--sage)' }}>
         <div className="flex items-center gap-2.5 mb-1">
           <GraduationCap size={20} style={{ color: 'var(--sage)' }} />
-          <h1 className="text-[18px] font-bold" style={{ color: 'var(--text)' }}>Learn — personalized to your portfolio</h1>
+          <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em]" style={{ color: 'var(--text)' }}>Learn — personalized to your portfolio</h1>
         </div>
         <p className="text-[13px]" style={{ color: 'var(--text2)' }}>
           {hasFunds

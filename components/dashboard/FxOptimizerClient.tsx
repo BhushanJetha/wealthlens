@@ -41,7 +41,7 @@ export default function FxOptimizerClient() {
     <div className="space-y-5 animate-fade-up">
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold flex items-center gap-2" style={{ color: 'var(--text)' }}>
+          <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em] flex items-center gap-2" style={{ color: 'var(--text)' }}>
             <ArrowLeftRight size={20} style={{ color: 'var(--sage)' }} /> Remittance / FX Optimizer
           </h1>
           <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>

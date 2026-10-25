@@ -169,7 +169,7 @@ export default function IncomeReportClient({ transactions }: { transactions: any
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text)' }}>Income Report</h1>
+          <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em]" style={{ color: 'var(--text)' }}>Income Report</h1>
           <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
             Monthly breakdown by source · {view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'}
           </p>

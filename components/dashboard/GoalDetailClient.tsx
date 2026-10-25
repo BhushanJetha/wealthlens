@@ -225,7 +225,7 @@ export default function GoalDetailClient({ goal, linkedInvestments, allInvestmen
           <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0"
             style={{ background: `${goal.color}20`, border: `2px solid ${goal.color}40` }}>{goal.icon}</div>
           <div className="flex-1 pr-16">
-            <h1 className="text-[18px] font-bold" style={{ color: 'var(--text)' }}>{goal.name}</h1>
+            <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em]" style={{ color: 'var(--text)' }}>{goal.name}</h1>
             {goal.description && <p className="text-[12px] mt-1" style={{ color: 'var(--text3)' }}>{goal.description}</p>}
             <div className="flex items-center gap-3 mt-2 flex-wrap">
               <span className="text-[11px]" style={{ color: 'var(--text3)' }}>{CAT_LABELS[goal.category]}</span>

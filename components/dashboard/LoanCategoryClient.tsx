@@ -130,7 +130,7 @@ export default function LoanCategoryClient({ loans, title, loanType }: Props) {
           <Link href="/dashboard/loans" className="flex items-center gap-1 text-[11px] mb-2" style={{ color: 'var(--sage)' }}>
             <ChevronLeft size={13} /> All Loans
           </Link>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text)' }}>{title}</h1>
+          <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em]" style={{ color: 'var(--text)' }}>{title}</h1>
           <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
             {filtered.length} loan{filtered.length !== 1 ? 's' : ''} · EMI Tracker · Payoff Simulation
           </p>

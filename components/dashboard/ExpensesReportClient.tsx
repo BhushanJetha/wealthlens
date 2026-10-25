@@ -275,7 +275,7 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text)' }}>Expense Report</h1>
+          <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em]" style={{ color: 'var(--text)' }}>Expense Report</h1>
           <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
             {view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'}
             {scope !== 'both' && <> · <strong>{scope.toUpperCase()} account only</strong></>} · income, spend &amp; net

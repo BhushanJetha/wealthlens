@@ -327,7 +327,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
       {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text)' }}>Stock Portfolio</h1>
+          <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em]" style={{ color: 'var(--text)' }}>Stock Portfolio</h1>
           <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
             {priceLoading ? 'Fetching live prices…' : lastUpdated ? `Prices updated ${lastUpdated.toLocaleTimeString()}` : 'NSE · Live prices'}
           </p>

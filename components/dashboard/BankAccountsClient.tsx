@@ -6,6 +6,7 @@ import { useViewStore } from '@/store/viewStore'
 import { Building2, Plus, Pencil, Trash2, Loader2 } from 'lucide-react'
 import MetricCard from '@/components/dashboard/MetricCard'
 import AddAccountModal from '@/components/forms/AddAccountModal'
+import { PageHeader, InsightBar, AiActions, LearnStrip } from '@/components/ui/kit'
 
 const TYPE_COLORS: Record<string, string> = {
   savings:  'var(--sage)',
@@ -52,20 +53,19 @@ export default function BankAccountsClient({ accounts }: { accounts: any[] }) {
 
   return (
     <div className="space-y-5 animate-fade-up">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text)' }}>Bank Accounts</h1>
-          <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
-            {filtered.length} account{filtered.length !== 1 ? 's' : ''}
-          </p>
-        </div>
-        <button onClick={() => setShowAdd(true)}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg text-white text-[12px] font-bold"
-          style={{ background: 'var(--sage)' }}>
-          <Plus size={14} /> Add Account
-        </button>
-      </div>
+      <PageHeader title="Bank accounts"
+        sub={`${filtered.length} account${filtered.length !== 1 ? 's' : ''} · ${sym}${Math.round(totalBalance).toLocaleString('en-IN')} in total`}
+        onAdd={() => setShowAdd(true)} addLabel="Add account"
+        actions={<button onClick={() => setShowAdd(true)} className="wl-btn wl-btn-primary" style={{ height: 34 }}><Plus size={14} />Add account</button>} />
+      {filtered.length > 0 && (() => {
+        const top = [...filtered].sort((a: any, b: any) => toConv(Number(b.current_balance ?? 0), b.currency) - toConv(Number(a.current_balance ?? 0), a.currency))[0]
+        const ctx = `Accounts: ${filtered.map((a: any) => `${a.name} (${a.account_type}) ${a.currency} ${a.current_balance}`).join('; ')}. Total ${sym}${Math.round(totalBalance)}.`
+        return (<>
+          <InsightBar text={`${sym}${Math.round(totalBalance).toLocaleString('en-IN')} sits across ${filtered.length} account${filtered.length === 1 ? '' : 's'}${top ? `; ${top.name} holds the most` : ''}. Cash above your emergency fund could be earning more.`}
+            prompt={`Explain my bank accounts page. ${ctx}`} />
+          <AiActions actions={['Find idle cash', 'Where should my emergency fund sit?']} context={ctx} />
+        </>)
+      })()}
 
       {/* KPI */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
@@ -219,6 +219,7 @@ export default function BankAccountsClient({ accounts }: { accounts: any[] }) {
           </div>
         </div>
       )}
+      <LearnStrip title="Build a safety net first" href="/dashboard/goals/learn" />
     </div>
   )
 }
