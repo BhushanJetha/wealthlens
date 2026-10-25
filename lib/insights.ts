@@ -70,6 +70,7 @@ export interface HomeInsights {
   insights: Insight[]
   upcoming: Upcoming[]
   forecast: Forecast | null
+  savedByMonth: { month: string; saved: number; hasData: boolean }[]
 }
 
 const SEV_RANK = { high: 0, medium: 1, low: 2 }
@@ -430,7 +431,14 @@ export function buildHomeInsights(inp: InsightInput): HomeInsights {
     savingsRate: avgIncFull > 0 ? Math.round((avgIncFull - avgSpendFull) / avgIncFull * 100) : null,
   }
 
-  return { isCurrent, dayCut, income, spend, saved, runway, trend, categories, attention, insights, upcoming, forecast }
+  // Saved (income − spend) per month, newest first: this month so far, then
+  // the 12 before it. Feeds the estimated part of the net-worth line.
+  const savedByMonth = Array.from({ length: 13 }, (_, i) => {
+    const m = addMonths(thisMonth, -i), s = monthStats(m, null)
+    return { month: m, saved: s.income - s.spend, hasData: s.income > 0 || s.spend > 0 }
+  })
+
+  return { isCurrent, dayCut, income, spend, saved, runway, trend, categories, attention, insights, upcoming, forecast, savedByMonth }
 }
 
 function addDaysTo(date: string, n: number) {
@@ -460,4 +468,21 @@ export function netWorthHistory(snaps: Snapshot[], view: View, today: string) {
   const older = series.filter(p => daysBetween(p.date, today) >= 7)
   const ref = older.filter(p => p.date <= target).pop() ?? older[0] ?? null
   return { series, ref }
+}
+
+// Net worth at past month-ends before tracking began, estimated by walking
+// back from today's figure one month of savings at a time. Market moves and
+// loan principal aren't modelled, so callers must label these points as
+// estimated. Stops at the first month with no transactions.
+export function estimateNetWorthBack(nwToday: number, today: string, savedByMonth: HomeInsights['savedByMonth'], trackedFrom: string | null): ForecastPoint[] {
+  const out: ForecastPoint[] = []
+  let v = nwToday
+  for (const s of savedByMonth) {   // newest first
+    if (!s.hasData && s.month !== ymOf(today)) break
+    v -= s.saved
+    const prev = addMonths(s.month, -1)
+    const end = `${prev}-${String(daysInMonth(prev)).padStart(2, '0')}`
+    if (!trackedFrom || end < trackedFrom) out.push({ date: end, value: Math.round(v) })
+  }
+  return out.reverse()
 }

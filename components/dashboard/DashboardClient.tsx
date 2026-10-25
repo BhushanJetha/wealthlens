@@ -9,7 +9,7 @@ import { useUiStore } from '@/store/uiStore'
 import { useHolderStore } from '@/store/holderStore'
 import { holderMatches } from '@/hooks/useFamily'
 import { computeNetWorth, type Holdings } from '@/lib/netWorth'
-import { buildHomeInsights, netWorthHistory, localToday, fmtDay, type Snapshot, type Attention, type HomeInsights } from '@/lib/insights'
+import { buildHomeInsights, netWorthHistory, estimateNetWorthBack, localToday, fmtDay, type Snapshot, type Attention, type HomeInsights, type ForecastPoint } from '@/lib/insights'
 import { healthScore, type Tone } from '@/lib/healthScore'
 import { goalCurrentValue } from '@/lib/goalProgress'
 import { fmtMoney, fmtCompact } from '@/lib/format'
@@ -94,6 +94,9 @@ export default function DashboardClient(p: Props) {
     cash: nw.cash,
     invested: { value: nw.totalAssets - nw.cash, cost: nw.totalInvested - nw.cash },
   }), [view, FX, today, focusMonth, p, h, nw])
+  // Months before tracking began, estimated from monthly savings (family view only)
+  const nwEst = useMemo(() => holder ? [] : estimateNetWorthBack(nw.netWorth, today, ins.savedByMonth, hist.series[0]?.date ?? null),
+    [holder, nw.netWorth, today, ins.savedByMonth, hist.series])
 
   const health = useMemo(() => {
     const conv = (v: number, c: string) => view === 'consolidated' ? (c === 'AED' ? v * FX : v) : (view === 'uae' ? (c === 'AED' ? v : 0) : (c === 'AED' ? 0 : v))
@@ -222,7 +225,7 @@ export default function DashboardClient(p: Props) {
 
       {/* Row 1: Net worth hero + Needs attention */}
       <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4">
-        <NetWorthCard nw={nw} hist={hist} historyReady={p.historyReady} holderLabel={holder ? holderLabel : null}
+        <NetWorthCard nw={nw} hist={hist} est={nwEst} historyReady={p.historyReady} holderLabel={holder ? holderLabel : null}
           savingsRate={ins.trend.savingsRate} money={money} short={short} className="max-md:order-2" />
         <AttentionCard items={ins.attention} onImport={() => setUploadOpen(true)} className="max-md:order-7" />
       </div>
@@ -281,8 +284,8 @@ function MoreLink({ href, children }: { href: string; children: React.ReactNode 
   return <Link href={href} className="text-[12.5px] font-semibold hover:underline" style={{ color: 'var(--accent)' }}>{children} →</Link>
 }
 
-function NetWorthCard({ nw, hist, historyReady, holderLabel, savingsRate, money, short, className = '' }: {
-  nw: ReturnType<typeof computeNetWorth>; hist: ReturnType<typeof netWorthHistory>; historyReady: boolean
+function NetWorthCard({ nw, hist, est, historyReady, holderLabel, savingsRate, money, short, className = '' }: {
+  nw: ReturnType<typeof computeNetWorth>; hist: ReturnType<typeof netWorthHistory>; est: ForecastPoint[]; historyReady: boolean
   holderLabel: string | null; savingsRate: number | null; money: (n: number) => string; short: (n: number) => string; className?: string
 }) {
   const change = hist.ref ? nw.netWorth - hist.ref.value : null
@@ -293,7 +296,13 @@ function NetWorthCard({ nw, hist, historyReady, holderLabel, savingsRate, money,
     const s = hist.series.slice(0, -1)
     return [...s, { date: hist.series[hist.series.length - 1]?.date ?? 'today', value: Math.round(nw.netWorth) }]
   }, [hist.series, nw.netWorth])
-  const labels = series.length >= 3 ? [series[0], series[Math.floor(series.length / 2)], series[series.length - 1]] : []
+  // Estimated month-ends (dashed) run into the tracked line (solid); the first
+  // tracked point carries both so the two lines meet
+  const rows = useMemo(() => [
+    ...est.map(p => ({ date: p.date, est: p.value } as { date: string; value?: number; est?: number })),
+    ...series.map((p, i) => (i === 0 && est.length ? { ...p, est: p.value } : { ...p })),
+  ], [est, series])
+  const labels = rows.length >= 3 ? [rows[0], rows[Math.floor(rows.length / 2)], rows[rows.length - 1]] : []
 
   return (
     <section aria-labelledby="nw-title"
@@ -313,22 +322,32 @@ function NetWorthCard({ nw, hist, historyReady, holderLabel, savingsRate, money,
       {change == null && (
         <div className="text-[12.5px]" style={{ color: '#CFC8FA' }}>
           {holderLabel ? 'Trend shows the whole family — switch to Family to see it.'
+            : est.length ? "Earlier months are estimated from what you saved each month (dashed); market moves aren't included."
             : historyReady ? 'Tracking started — your trend appears after a few days.'
             : 'Run migration 023 in Supabase to start tracking net-worth history.'}
         </div>
       )}
 
-      {series.length >= 2 && (
+      {rows.length >= 2 && (
         <>
           <div className="h-[90px] md:h-[150px] mt-2 md:mt-2.5 -mx-1" aria-label="Net worth over time">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
+              <AreaChart data={rows} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
                 <XAxis dataKey="date" hide />
                 <YAxis hide domain={['dataMin', 'dataMax']} />
                 <Tooltip cursor={{ stroke: 'rgba(255,255,255,.4)', strokeWidth: 1 }}
-                  contentStyle={{ background: '#fff', border: '1px solid var(--line)', borderRadius: 10, fontSize: 12, padding: '6px 10px', color: 'var(--text)' }}
-                  labelFormatter={(d: any) => d === 'today' ? 'Today' : fmtDay(String(d))}
-                  formatter={(v: any) => [money(Number(v)), 'Net worth']} />
+                  content={({ active, payload }: any) => {
+                    const r = active && payload?.[0]?.payload
+                    if (!r) return null
+                    return (
+                      <div style={{ background: '#fff', border: '1px solid var(--line)', borderRadius: 10, fontSize: 12, padding: '6px 10px', color: 'var(--text)' }}>
+                        <div style={{ color: 'var(--text3)' }}>{r.date === 'today' ? 'Today' : fmtDay(String(r.date))}</div>
+                        <div className="font-semibold tabular-nums">{money(Number(r.value ?? r.est))}{r.value == null ? ' · estimated' : ''}</div>
+                      </div>
+                    )
+                  }} />
+                <Area type="monotone" dataKey="est" stroke="rgba(255,255,255,.7)" strokeWidth={2} strokeDasharray="5 4" fill="rgba(255,255,255,.07)" fillOpacity={1} isAnimationActive={false}
+                  dot={false} activeDot={{ r: 4, stroke: '#5B47E0', strokeWidth: 2, fill: '#fff' }} />
                 <Area type="monotone" dataKey="value" stroke="#fff" strokeWidth={2.5} fill="rgba(255,255,255,.14)" fillOpacity={1} isAnimationActive={false}
                   dot={false} activeDot={{ r: 4, stroke: '#5B47E0', strokeWidth: 2, fill: '#fff' }} />
               </AreaChart>
