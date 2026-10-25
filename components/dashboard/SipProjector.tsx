@@ -5,6 +5,7 @@ import {
 } from 'recharts'
 import { motion } from 'framer-motion'
 import { Sparkles, TrendingUp, TrendingDown } from 'lucide-react'
+import { Segmented } from '@/components/ui/kit'
 
 interface Props {
   currentValue: number      // corpus you already hold
@@ -38,7 +39,8 @@ function project(currentValue: number, sip0: number, ratePct: number, years: num
   return pts
 }
 
-const SC = { current: '#3D7A58', step5: '#2563EB', step10: '#7C3AED', invested: '#9CA3AF', swp: '#C026D3' }
+const SC = { current: '#6A55E8', step5: '#3B8EF0', step10: '#2FB67C', invested: '#94A3B8', swp: '#EC5B8C' }
+const TINT = { current: { bg: '#F1EEFF', bd: '#E1DAFF' }, step5: { bg: '#E7F1FE', bd: '#CDE0F8' }, step10: { bg: '#E7F7EF', bd: '#CBEBDA' } }
 
 export default function SipProjector({ currentValue, monthlySip, annualRate, currency = 'INR', subtitle }: Props) {
   const sym = currency === 'AED' ? 'AED ' : '₹'
@@ -104,184 +106,172 @@ export default function SipProjector({ currentValue, monthlySip, annualRate, cur
     return pts
   }, [swpCorpus, swpWithdraw, r])
 
-  const ctrlInput = "wl-input text-[13px] font-mono"
+  const ctrlInput = "wl-input text-[14px] tabular-nums"
+  const Label = ({ children }: { children: React.ReactNode }) => <label className="block text-[12px] font-medium mb-1" style={{ color: 'var(--text3)' }}>{children}</label>
+  const Row = ({ i, children }: { i: number; children: React.ReactNode }) => (
+    <div className="flex items-center gap-3 px-4 py-2.5" style={{ borderTop: i ? '1px solid var(--track)' : undefined }}>{children}</div>
+  )
+  const Chart = ({ children, title }: { children: React.ReactNode; title: string }) => (
+    <div className="rounded-2xl px-3 pt-3 pb-1" style={{ background: '#fff', border: '1px solid var(--line)' }}>
+      <div className="text-[13px] font-semibold mb-1.5 px-1" style={{ color: 'var(--text)' }}>{title}</div>
+      {children}
+    </div>
+  )
+  const tip = { background: '#fff', border: '1px solid var(--line)', borderRadius: 10, fontSize: 12, padding: '6px 10px' }
 
   return (
-    <div className="space-y-4">
-      {subtitle && <div className="text-[11px]" style={{ color: 'var(--text3)' }}>{subtitle}</div>}
+    <div className="flex flex-col gap-3.5">
+      {subtitle && <div className="text-[12px]" style={{ color: 'var(--text3)' }}>{subtitle}</div>}
 
-      {/* Make the starting point explicit (projection grows FROM your current corpus, not 0) */}
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] px-3 py-2 rounded-lg" style={{ background: 'var(--sage-bg)', color: 'var(--text2)' }}>
-        <span>Starting corpus today: <strong style={{ color: 'var(--text)' }}>{abbr(currentValue, sym)}</strong></span>
-        <span>Monthly SIP: <strong style={{ color: 'var(--text)' }}>{sip > 0 ? `${sym}${sip.toLocaleString('en-IN')}` : 'none — enter below'}</strong></span>
-        <span>Expected return: <strong style={{ color: 'var(--text)' }}>{rate}%/yr</strong></span>
-      </div>
-
-      {/* Mode toggle */}
-      <div className="flex gap-1 p-1 rounded-xl w-fit wl-tabs" style={{ background: 'var(--bg2)' }}>
-        {([['grow', 'Grow corpus', TrendingUp], ['swp', 'Withdraw (SWP)', TrendingDown]] as const).map(([k, label, Icon]) => (
-          <button key={k} onClick={() => setMode(k)}
-            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[12px] font-semibold transition-all"
-            style={mode === k ? { background: 'var(--card)', color: 'var(--sage)', boxShadow: '0 1px 4px rgba(0,0,0,0.1)' } : { color: 'var(--text3)' }}>
-            <Icon size={13} /> {label}
-          </button>
+      {/* Where the projection starts (it grows FROM your current corpus, not 0) */}
+      <div className="grid grid-cols-3 gap-2 rounded-xl px-3 py-2.5" style={{ background: 'var(--accent-bg)', border: '1px solid var(--accent-border)' }}>
+        {[['Today', abbr(currentValue, sym)], ['Monthly SIP', sip > 0 ? `${sym}${sip.toLocaleString('en-IN')}` : 'None'], ['Return', `${rate}% a yr`]].map(([l, v]) => (
+          <div key={l} className="min-w-0">
+            <div className="text-[11px]" style={{ color: 'var(--accent2)' }}>{l}</div>
+            <div className="text-[13.5px] font-semibold tabular-nums truncate" style={{ color: 'var(--text)' }}>{v}</div>
+          </div>
         ))}
       </div>
 
+      <Segmented label="Projection mode" violet value={mode} onChange={setMode}
+        options={[{ value: 'grow', label: <span className="inline-flex items-center gap-1.5"><TrendingUp size={13} />Grow corpus</span> }, { value: 'swp', label: <span className="inline-flex items-center gap-1.5"><TrendingDown size={13} />Withdraw (SWP)</span> }]} />
+
       {mode === 'grow' ? (
         <>
-          {/* Controls */}
-          <div className="flex flex-wrap gap-4 items-end">
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>Monthly SIP</label>
-              <div className="flex items-center gap-1"><span className="text-[13px]" style={{ color: 'var(--text3)' }}>{sym}</span>
-                <input type="number" value={sip} onChange={e => setSip(Math.max(0, Number(e.target.value)))} className={`${ctrlInput} w-28`} style={{ background: 'var(--bg2)' }} /></div>
+              <Label>Monthly SIP ({sym.trim()})</Label>
+              <input type="number" inputMode="numeric" value={sip} onChange={e => setSip(Math.max(0, Number(e.target.value)))} className={`${ctrlInput} w-full`} style={{ background: '#fff' }} />
             </div>
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>Expected return %/yr</label>
-              <input type="number" value={rate} step={0.5} onChange={e => setRate(Number(e.target.value))} className={`${ctrlInput} w-24`} style={{ background: 'var(--bg2)' }} />
+              <Label>Expected return % a year</Label>
+              <input type="number" inputMode="decimal" value={rate} step={0.5} onChange={e => setRate(Number(e.target.value))} className={`${ctrlInput} w-full`} style={{ background: '#fff' }} />
             </div>
-            <div className="flex-1 min-w-[160px]">
-              <label className="block text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>Horizon — {horizon} years</label>
-              <div className="flex gap-1">
-                {HORIZONS.map(h => (
-                  <button key={h} onClick={() => setHorizon(h)} className="flex-1 py-1.5 rounded-lg text-[11px] font-semibold transition-all"
-                    style={horizon === h ? { background: 'var(--sage)', color: '#fff' } : { background: 'var(--bg2)', color: 'var(--text3)', border: '1px solid var(--border)' }}>{h}y</button>
-                ))}
-              </div>
-            </div>
-            <label className="flex items-center gap-1.5 text-[11px] font-semibold cursor-pointer" style={{ color: 'var(--text2)' }}>
-              <input type="checkbox" checked={inflation} onChange={e => setInflation(e.target.checked)} style={{ accentColor: 'var(--sage)' }} />
-              Adjust for inflation ({inflRate}%)
-            </label>
           </div>
+          <div>
+            <Label>Horizon</Label>
+            <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
+              {HORIZONS.map(h => (
+                <button key={h} onClick={() => setHorizon(h)} aria-pressed={horizon === h} className="wl-chip flex-1 justify-center" style={{ height: 32 }}>{h} yrs</button>
+              ))}
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-[12.5px] font-medium cursor-pointer" style={{ color: 'var(--text2)' }}>
+            <input type="checkbox" checked={inflation} onChange={e => setInflation(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
+            Show in today&apos;s money (adjust for {inflRate}% inflation)
+          </label>
 
-          {/* Scenario cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* Scenario tiles */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
             {scenarios.map((s, i) => {
               const shown = inflation ? defl(s.value, horizon) : s.value
               const gain = shown - (inflation ? defl(sel.invested, horizon) : sel.invested)
               return (
-                <motion.div key={s.key} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08, duration: 0.35 }}
-                  className="rounded-xl p-4" style={{ background: 'var(--bg2)', border: `1px solid ${s.color}40`, borderTop: `3px solid ${s.color}` }}>
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: s.color }}>
-                    {s.key !== 'current' && <Sparkles size={11} />}{s.label}
+                <motion.div key={s.key} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06, duration: 0.3 }}
+                  className="rounded-2xl px-4 py-3" style={{ background: TINT[s.key].bg, border: `1px solid ${TINT[s.key].bd}` }}>
+                  <div className="flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: '#475569' }}>
+                    <i className="w-2 h-2 rounded-full" style={{ background: s.color }} />{s.label}{s.key !== 'current' && <Sparkles size={11} style={{ color: s.color }} />}
                   </div>
-                  <div className="text-[24px] font-bold font-mono leading-tight" style={{ color: s.color }}>{abbr(shown, sym)}</div>
-                  <div className="text-[10px] mt-1" style={{ color: 'var(--text3)' }}>
-                    in {horizon}y{inflation ? " (today's money)" : ''} · <span style={{ color: 'var(--income)' }}>+{abbr(gain, sym)} growth</span>
+                  <div className="text-[22px] font-bold tabular-nums leading-tight mt-1" style={{ color: 'var(--text)' }}>{abbr(shown, sym)}</div>
+                  <div className="text-[11.5px] mt-0.5" style={{ color: 'var(--text3)' }}>
+                    in {horizon} years{inflation ? " (today's money)" : ''} · <span style={{ color: '#16A34A' }}>+{abbr(gain, sym)}</span>
                   </div>
                 </motion.div>
               )
             })}
           </div>
 
-          {/* Growth chart */}
-          <div className="rounded-xl p-3" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
-            <div className="flex items-center gap-2 mb-2 px-1">
-              <TrendingUp size={13} style={{ color: 'var(--sage)' }} />
-              <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Projected corpus{inflation ? " (today's money)" : ''}</span>
-            </div>
-            <ResponsiveContainer width="100%" height={240}>
-              <AreaChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+          <Chart title={`Projected corpus${inflation ? " (today's money)" : ''}`}>
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={chartData} margin={{ top: 5, right: 8, left: 0, bottom: 0 }}>
                 <defs>
                   {(['current', 'step5', 'step10'] as const).map(k => (
                     <linearGradient key={k} id={`g-${k}`} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={SC[k]} stopOpacity={0.3} /><stop offset="100%" stopColor={SC[k]} stopOpacity={0.02} />
+                      <stop offset="0%" stopColor={SC[k]} stopOpacity={0.22} /><stop offset="100%" stopColor={SC[k]} stopOpacity={0} />
                     </linearGradient>
                   ))}
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="year" tickFormatter={(v: number) => `${v}y`} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis tickFormatter={(v: number) => abbr(v, sym)} tick={{ fontSize: 9 }} width={52} axisLine={false} tickLine={false} />
-                <Tooltip formatter={(v: any, n: any) => [abbr(Number(v), sym), n === 'current' ? 'Current SIP' : n === 'step5' ? '+5%/yr' : n === 'step10' ? '+10%/yr' : 'Invested']} labelFormatter={(l: any) => `Year ${l}`} />
-                <Area type="monotone" dataKey="step10" stroke={SC.step10} strokeWidth={2} fill="url(#g-step10)" />
-                <Area type="monotone" dataKey="step5" stroke={SC.step5} strokeWidth={2} fill="url(#g-step5)" />
-                <Area type="monotone" dataKey="current" stroke={SC.current} strokeWidth={2.5} fill="url(#g-current)" />
-                <Area type="monotone" dataKey="invested" stroke={SC.invested} strokeWidth={1} strokeDasharray="4 4" fill="none" />
+                <CartesianGrid stroke="var(--track)" vertical={false} />
+                <XAxis dataKey="year" tickFormatter={(v: number) => `${v}y`} tick={{ fontSize: 11, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
+                <YAxis tickFormatter={(v: number) => abbr(v, sym).replace(' ', '')} tick={{ fontSize: 10, fill: '#94A3B8' }} width={52} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={tip} formatter={(v: any, n: any) => [abbr(Number(v), sym), n === 'current' ? 'Current SIP' : n === 'step5' ? 'Step-up 5%' : n === 'step10' ? 'Step-up 10%' : 'Invested']} labelFormatter={(l: any) => `Year ${l}`} />
+                <Area type="monotone" dataKey="step10" stroke={SC.step10} strokeWidth={2} fill="url(#g-step10)" isAnimationActive={false} />
+                <Area type="monotone" dataKey="step5" stroke={SC.step5} strokeWidth={2} fill="url(#g-step5)" isAnimationActive={false} />
+                <Area type="monotone" dataKey="current" stroke={SC.current} strokeWidth={2.5} fill="url(#g-current)" isAnimationActive={false} />
+                <Area type="monotone" dataKey="invested" stroke={SC.invested} strokeWidth={1.5} strokeDasharray="4 4" fill="none" isAnimationActive={false} />
               </AreaChart>
             </ResponsiveContainer>
+          </Chart>
+
+          {/* Year by year */}
+          <div className="rounded-2xl overflow-hidden" style={{ background: '#fff', border: '1px solid var(--line)' }}>
+            <div className="px-4 py-2.5 text-[13px] font-semibold" style={{ color: 'var(--text)', borderBottom: '1px solid var(--line)' }}>Year by year</div>
+            {HORIZONS.map((h, i) => {
+              const rr = row(h)
+              const v = (x: number) => abbr(inflation ? defl(x, h) : x, sym)
+              return (
+                <Row key={h} i={i}>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>After {h} years</div>
+                    <div className="text-[11.5px] truncate" style={{ color: 'var(--text3)' }}>put in {v(rr.invested)} · step-up 5% {v(rr.step5)} · 10% {v(rr.step10)}</div>
+                  </div>
+                  <div className="text-[14px] font-bold tabular-nums flex-shrink-0" style={{ color: SC.current }}>{v(rr.current)}</div>
+                </Row>
+              )
+            })}
           </div>
 
-          {/* Horizon table */}
-          <div className="overflow-x-auto rounded-xl border" style={{ borderColor: 'var(--border)' }}>
-            <table className="w-full text-[11px]" style={{ borderCollapse: 'collapse' }}>
-              <thead><tr style={{ background: 'var(--bg2)' }}>
-                {['After', 'Invested', 'Current SIP', 'Step-up 5%/yr', 'Step-up 10%/yr'].map(h => (
-                  <th key={h} className="px-3 py-2 text-right first:text-left" style={{ color: 'var(--text3)', fontSize: 10, textTransform: 'uppercase', fontWeight: 700 }}>{h}</th>
-                ))}</tr></thead>
-              <tbody>
-                {HORIZONS.map(h => {
-                  const rr = row(h)
-                  return (
-                    <tr key={h} style={{ borderTop: '1px solid var(--border)' }}>
-                      <td className="px-3 py-2 font-bold" style={{ color: 'var(--text)' }}>{h} years</td>
-                      <td className="px-3 py-2 text-right font-mono" style={{ color: 'var(--text3)' }}>{abbr(inflation ? defl(rr.invested, h) : rr.invested, sym)}</td>
-                      <td className="px-3 py-2 text-right font-mono font-semibold" style={{ color: SC.current }}>{abbr(inflation ? defl(rr.current, h) : rr.current, sym)}</td>
-                      <td className="px-3 py-2 text-right font-mono font-semibold" style={{ color: SC.step5 }}>{abbr(inflation ? defl(rr.step5, h) : rr.step5, sym)}</td>
-                      <td className="px-3 py-2 text-right font-mono font-semibold" style={{ color: SC.step10 }}>{abbr(inflation ? defl(rr.step10, h) : rr.step10, sym)}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="text-[10px]" style={{ color: 'var(--text3)' }}>
-            Estimates only — assumes a steady {rate}% annual return on your current corpus of {abbr(currentValue, sym)}. Step-up raises the monthly SIP once a year{inflation ? '; values shown in today’s purchasing power' : ''}. Actual returns vary with the market.
-          </div>
+          <p className="text-[11.5px] leading-snug" style={{ color: 'var(--text4)' }}>
+            Estimates only: a steady {rate}% a year on your {abbr(currentValue, sym)} today. Step-up raises the monthly SIP once a year{inflation ? '; values are in today’s money' : ''}. Real returns go up and down.
+          </p>
         </>
       ) : (
-        /* ── SWP (withdrawal) ─────────────────────────────────────────────── */
         <>
-          <div className="flex flex-wrap gap-4 items-end">
+          <div className="grid grid-cols-3 gap-2.5">
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>Corpus</label>
-              <div className="flex items-center gap-1"><span className="text-[13px]" style={{ color: 'var(--text3)' }}>{sym}</span>
-                <input type="number" value={swpCorpus} onChange={e => setSwpCorpus(Math.max(0, Number(e.target.value)))} className={`${ctrlInput} w-32`} style={{ background: 'var(--bg2)' }} /></div>
+              <Label>Corpus ({sym.trim()})</Label>
+              <input type="number" inputMode="numeric" value={swpCorpus} onChange={e => setSwpCorpus(Math.max(0, Number(e.target.value)))} className={`${ctrlInput} w-full`} style={{ background: '#fff' }} />
             </div>
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>Withdraw / month</label>
-              <div className="flex items-center gap-1"><span className="text-[13px]" style={{ color: 'var(--text3)' }}>{sym}</span>
-                <input type="number" value={swpWithdraw} onChange={e => setSwpWithdraw(Math.max(0, Number(e.target.value)))} className={`${ctrlInput} w-28`} style={{ background: 'var(--bg2)' }} /></div>
+              <Label>Take out / month</Label>
+              <input type="number" inputMode="numeric" value={swpWithdraw} onChange={e => setSwpWithdraw(Math.max(0, Number(e.target.value)))} className={`${ctrlInput} w-full`} style={{ background: '#fff' }} />
             </div>
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>Return %/yr</label>
-              <input type="number" value={rate} step={0.5} onChange={e => setRate(Number(e.target.value))} className={`${ctrlInput} w-20`} style={{ background: 'var(--bg2)' }} />
+              <Label>Return % a year</Label>
+              <input type="number" inputMode="decimal" value={rate} step={0.5} onChange={e => setRate(Number(e.target.value))} className={`${ctrlInput} w-full`} style={{ background: '#fff' }} />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
             {[
-              { label: 'This withdrawal lasts', value: lastsLabel, color: lastMonths === Infinity ? 'var(--income)' : 'var(--text)' },
-              { label: 'Safe forever (₹/mo)',   value: abbr(safeForever, sym), color: 'var(--income)', note: 'withdraw only the growth' },
-              { label: 'For 20 yrs (₹/mo)',     value: abbr(for20y, sym), color: SC.step5, note: 'fully uses the corpus' },
+              { label: 'This withdrawal lasts', value: lastsLabel.replace(' ✓', ''), color: lastMonths === Infinity ? '#16A34A' : 'var(--text)', note: '', ...TINT.current },
+              { label: 'Safe forever, per month', value: abbr(safeForever, sym), color: 'var(--text)', note: 'takes out only the growth', ...TINT.step10 },
+              { label: 'Lasts 20 years, per month', value: abbr(for20y, sym), color: 'var(--text)', note: 'uses up the corpus', ...TINT.step5 },
             ].map(c => (
-              <div key={c.label} className="rounded-xl p-4" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-                <div className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>{c.label}</div>
-                <div className="text-[22px] font-bold font-mono mt-0.5" style={{ color: c.color }}>{c.value}</div>
-                {c.note && <div className="text-[10px] mt-0.5" style={{ color: 'var(--text3)' }}>{c.note}</div>}
+              <div key={c.label} className="rounded-2xl px-4 py-3" style={{ background: c.bg, border: `1px solid ${c.bd}` }}>
+                <div className="text-[12px] font-semibold" style={{ color: '#475569' }}>{c.label}</div>
+                <div className="text-[22px] font-bold tabular-nums mt-0.5" style={{ color: c.color }}>{c.value}</div>
+                {c.note && <div className="text-[11.5px]" style={{ color: 'var(--text3)' }}>{c.note}</div>}
               </div>
             ))}
           </div>
 
-          <div className="rounded-xl p-3" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
-            <div className="text-[11px] font-bold uppercase tracking-wider mb-2 px-1" style={{ color: 'var(--text3)' }}>Corpus while withdrawing {sym}{swpWithdraw.toLocaleString('en-IN')}/mo</div>
-            <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={swpSeries} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-                <defs><linearGradient id="g-swp" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={SC.swp} stopOpacity={0.3} /><stop offset="100%" stopColor={SC.swp} stopOpacity={0.02} /></linearGradient></defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="year" tickFormatter={(v: number) => `${v}y`} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis tickFormatter={(v: number) => abbr(v, sym)} tick={{ fontSize: 9 }} width={52} axisLine={false} tickLine={false} />
-                <Tooltip formatter={(v: any) => [abbr(Number(v), sym), 'Corpus']} labelFormatter={(l: any) => `Year ${l}`} />
-                <Area type="monotone" dataKey="value" stroke={SC.swp} strokeWidth={2.5} fill="url(#g-swp)" />
+          <Chart title={`Corpus while taking out ${sym}${swpWithdraw.toLocaleString('en-IN')} a month`}>
+            <ResponsiveContainer width="100%" height={210}>
+              <AreaChart data={swpSeries} margin={{ top: 5, right: 8, left: 0, bottom: 0 }}>
+                <defs><linearGradient id="g-swp" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={SC.swp} stopOpacity={0.22} /><stop offset="100%" stopColor={SC.swp} stopOpacity={0} /></linearGradient></defs>
+                <CartesianGrid stroke="var(--track)" vertical={false} />
+                <XAxis dataKey="year" tickFormatter={(v: number) => `${v}y`} tick={{ fontSize: 11, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
+                <YAxis tickFormatter={(v: number) => abbr(v, sym).replace(' ', '')} tick={{ fontSize: 10, fill: '#94A3B8' }} width={52} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={tip} formatter={(v: any) => [abbr(Number(v), sym), 'Corpus']} labelFormatter={(l: any) => `Year ${l}`} />
+                <Area type="monotone" dataKey="value" stroke={SC.swp} strokeWidth={2.5} fill="url(#g-swp)" isAnimationActive={false} />
               </AreaChart>
             </ResponsiveContainer>
-          </div>
+          </Chart>
 
-          <div className="text-[10px]" style={{ color: 'var(--text3)' }}>
-            SWP = Systematic Withdrawal Plan. If you withdraw at most <strong>{abbr(safeForever, sym)}/mo</strong> the corpus keeps growing; beyond that it slowly depletes. Assumes a steady {rate}% return — actual market returns vary.
-          </div>
+          <p className="text-[11.5px] leading-snug" style={{ color: 'var(--text4)' }}>
+            SWP is a systematic withdrawal plan. Take out at most {abbr(safeForever, sym)} a month and the corpus keeps growing; more than that and it slowly runs down. Assumes a steady {rate}% a year.
+          </p>
         </>
       )}
     </div>

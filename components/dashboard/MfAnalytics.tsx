@@ -1,6 +1,7 @@
 'use client'
 import { useMemo, useState, useEffect } from 'react'
-import { Sparkles, TrendingUp, Receipt, Lock, PieChart as PieIcon, Layers } from 'lucide-react'
+import { Sparkles, TrendingUp, Receipt, Lock, PieChart as PieIcon, Layers, CheckCircle2, AlertTriangle, Info, type LucideIcon } from 'lucide-react'
+import { Donut } from '@/components/ui/kit'
 
 interface Props {
   funds:       any[]
@@ -13,9 +14,9 @@ interface Props {
 // Category benchmarks (typical annual %) — heuristic, not an agency figure
 const BENCH: Record<string, number> = { equity: 12, debt: 7, hybrid: 10, elss: 12, index: 11, liquid: 6 }
 const CAP_COLORS: Record<string, string> = {
-  'Large Cap': '#2563EB', 'Mid Cap': '#7C3AED', 'Small Cap': '#DB2777', 'Large & Mid': '#0891B2',
-  'Multi Cap': '#0D9488', 'Flexi Cap': '#3D7A58', 'ELSS': '#D4920A', 'Index/ETF': '#6366F1',
-  'Hybrid': '#C2640A', 'Debt': '#64748B', 'Gold/Silver': '#CA8A04', 'Other Equity': '#9333EA',
+  'Large Cap': '#3B8EF0', 'Mid Cap': '#7C3AED', 'Small Cap': '#EC5B8C', 'Large & Mid': '#0891B2',
+  'Multi Cap': '#14B8A6', 'Flexi Cap': '#2FB67C', 'ELSS': '#F29A2E', 'Index/ETF': '#6A55E8',
+  'Hybrid': '#D97706', 'Debt': '#64748B', 'Gold/Silver': '#CA8A04', 'Other Equity': '#9333EA',
 }
 const INFLOW = new Set(['purchase', 'sip', 'switch_in'])
 const OUTFLOW = new Set(['redemption', 'switch_out'])
@@ -109,7 +110,7 @@ export default function MfAnalytics({ funds, navOf, txnsByFund, allTxns, currenc
   const byAsset = useMemo(() => {
     const m: Record<string, number> = {}
     rows.forEach(r => { m[r.asset] = (m[r.asset] ?? 0) + r.current })
-    const colors: Record<string, string> = { Equity: '#3D7A58', Debt: '#64748B', 'Gold/Silver': '#CA8A04', Hybrid: '#C2640A' }
+    const colors: Record<string, string> = { Equity: '#2FB67C', Debt: '#64748B', 'Gold/Silver': '#CA8A04', Hybrid: '#D97706' }
     return Object.entries(m).map(([asset, v]) => ({ asset, value: v, pct: totalCurrent > 0 ? v / totalCurrent * 100 : 0, color: colors[asset] ?? '#6B7280' })).sort((a, b) => b.value - a.value)
   }, [rows, totalCurrent])
 
@@ -153,177 +154,174 @@ export default function MfAnalytics({ funds, navOf, txnsByFund, allTxns, currenc
 
   // ── readout / insights ──────────────────────────────────────────────────
   const insights = useMemo(() => {
-    const out: { icon: string; text: string }[] = []
+    const out: { icon: LucideIcon; c: string; bg: string; text: string }[] = []
+    const good = { icon: CheckCircle2, c: '#1E8F5F', bg: '#E7F7EF' }, warn = { icon: AlertTriangle, c: '#B96A0B', bg: '#FFF2E2' }, info = { icon: Info, c: '#5640D6', bg: '#F0EDFF' }
     const cats = byCap.length
-    out.push(cats >= 4 ? { icon: '✅', text: `Nicely spread across ${cats} fund categories.` } : { icon: '💡', text: `You're in ${cats} categor${cats === 1 ? 'y' : 'ies'} — adding a different cap/style improves diversification.` })
+    out.push(cats >= 4 ? { ...good, text: `Nicely spread across ${cats} fund categories.` } : { ...info, text: `You're in ${cats} categor${cats === 1 ? 'y' : 'ies'}. Adding a different cap or style improves diversification.` })
     const top = byCap[0]
-    if (top && top.pct > 50) out.push({ icon: '⚠️', text: `${Math.round(top.pct)}% sits in ${top.cap} — fairly concentrated.` })
+    if (top && top.pct > 50) out.push({ ...warn, text: `${Math.round(top.pct)}% sits in ${top.cap}, which is fairly concentrated.` })
     const eq = byAsset.find(a => a.asset === 'Equity')
-    if (eq) out.push({ icon: '📊', text: `${Math.round(eq.pct)}% of your money is in equity.` })
+    if (eq) out.push({ ...info, icon: PieIcon, text: `${Math.round(eq.pct)}% of your money is in equity.` })
     out.push(beatsBench >= 0
-      ? { icon: '🎉', text: `Your ${overallXirr != null ? 'XIRR' : 'return'} of ${xirrShown.toFixed(1)}% is beating the category benchmark (~${blendedBench.toFixed(0)}%) by ${beatsBench.toFixed(1)}%. Keep it up!` }
-      : { icon: '👀', text: `You're at ${xirrShown.toFixed(1)}% vs a ~${blendedBench.toFixed(0)}% category benchmark — trailing by ${Math.abs(beatsBench).toFixed(1)}%. Worth reviewing the laggards.` })
+      ? { ...good, icon: TrendingUp, text: `Your ${overallXirr != null ? 'XIRR' : 'return'} of ${xirrShown.toFixed(1)}% is ahead of the ~${blendedBench.toFixed(0)}% category benchmark by ${beatsBench.toFixed(1)}%.` }
+      : { ...warn, text: `You're at ${xirrShown.toFixed(1)}% against a ~${blendedBench.toFixed(0)}% category benchmark, ${Math.abs(beatsBench).toFixed(1)}% behind. Worth reviewing the laggards.` })
     const lockedTotal = elss.reduce((a, e) => a + e.lockedAmt, 0)
-    if (lockedTotal > 0) out.push({ icon: '🔒', text: `${abbr(lockedTotal, sym)} in ELSS is within its 3-yr lock-in.` })
-    if (tax.total > 0) out.push({ icon: '🧾', text: `Redeeming everything today would attract roughly ${abbr(tax.total, sym)} in tax.` })
+    if (lockedTotal > 0) out.push({ ...info, icon: Lock, text: `${abbr(lockedTotal, sym)} in ELSS is still inside its 3-year lock-in.` })
+    if (tax.total > 0) out.push({ ...info, icon: Receipt, text: `Redeeming everything today would cost roughly ${abbr(tax.total, sym)} in tax.` })
     return out
   }, [byCap, byAsset, beatsBench, xirrShown, overallXirr, blendedBench, elss, tax, sym])
 
   if (rows.length === 0) return <div className="wl-card p-8 text-center text-[13px]" style={{ color: 'var(--text3)' }}>Add or import mutual funds to see analytics.</div>
 
-  const Section = ({ icon: Icon, title, children }: { icon: any; title: string; children: React.ReactNode }) => (
-    <div className="wl-card p-5">
-      <div className="flex items-center gap-2 mb-4"><Icon size={15} style={{ color: 'var(--sage)' }} /><div className="text-[13px] font-bold" style={{ color: 'var(--text)' }}>{title}</div></div>
+  const Section = ({ icon: Icon, title, children, note }: { icon: LucideIcon; title: string; children: React.ReactNode; note?: string }) => (
+    <section className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
+      <div className="flex items-center gap-2.5 mb-3.5">
+        <span className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}><Icon size={15} /></span>
+        <h3 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>{title}</h3>
+      </div>
       {children}
+      {note && <p className="text-[11.5px] mt-3 leading-snug" style={{ color: 'var(--text4)' }}>{note}</p>}
+    </section>
+  )
+  const Stat = ({ label, value, color = 'var(--text)', note }: { label: string; value: string; color?: string; note?: string }) => (
+    <div className="rounded-xl px-2.5 md:px-3.5 py-2.5 min-w-0" style={{ background: '#FAFAFE', border: '1px solid var(--line)' }}>
+      <div className="text-[11.5px] truncate" style={{ color: 'var(--text3)' }}>{label}</div>
+      <div className="text-[15px] md:text-[18px] font-bold tabular-nums mt-0.5 truncate" style={{ color }}>{value}</div>
+      {note && <div className="text-[11px] truncate" style={{ color: 'var(--text4)' }}>{note}</div>}
     </div>
+  )
+  const Pill = ({ ok, children }: { ok: boolean | null; children: React.ReactNode }) => (
+    <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap"
+      style={ok == null ? { background: 'var(--track)', color: 'var(--text3)' } : ok ? { background: '#E7F7EF', color: '#1E8F5F' } : { background: '#FDECE8', color: '#D9482F' }}>{children}</span>
+  )
+  const Row = ({ i, children }: { i: number; children: React.ReactNode }) => (
+    <div className="flex items-center gap-3 px-4 md:px-5 py-2.5" style={{ borderTop: i ? '1px solid var(--track)' : '1px solid var(--line)' }}>{children}</div>
   )
 
   return (
-    <div className="space-y-4">
-      {/* Readout */}
-      <div className="wl-card p-5" style={{ borderLeft: '3px solid var(--sage)' }}>
-        <div className="flex items-center gap-2 mb-3"><Sparkles size={15} style={{ color: 'var(--sage)' }} /><div className="text-[13px] font-bold" style={{ color: 'var(--text)' }}>Your portfolio at a glance</div></div>
-        <div className="space-y-2">
+    <div className="flex flex-col gap-3.5 md:gap-4">
+      <Section icon={Sparkles} title="Your portfolio at a glance">
+        <div className="flex flex-col gap-2.5">
           {insights.map((ins, i) => (
-            <div key={i} className="flex items-start gap-2 text-[12px]"><span>{ins.icon}</span><span style={{ color: 'var(--text2)' }}>{ins.text}</span></div>
-          ))}
-        </div>
-      </div>
-
-      {/* Category allocation */}
-      <Section icon={PieIcon} title="Allocation by category (cap & style)">
-        <div className="space-y-2.5">
-          {byCap.map(c => (
-            <div key={c.cap}>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[12px] font-semibold" style={{ color: 'var(--text)' }}>{c.cap}</span>
-                <span className="text-[11px] font-mono" style={{ color: 'var(--text3)' }}>{abbr(c.value, sym)} · <strong style={{ color: c.color }}>{c.pct.toFixed(1)}%</strong></span>
-              </div>
-              <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}><div className="h-full rounded-full" style={{ width: `${c.pct}%`, background: c.color }} /></div>
-            </div>
-          ))}
-        </div>
-        <div className="text-[10px] mt-3" style={{ color: 'var(--text3)' }}>Category is inferred from each fund's name &amp; type.</div>
-      </Section>
-
-      {/* Asset split */}
-      <Section icon={Layers} title="Equity vs Debt vs Gold/Silver vs Hybrid">
-        <div className="flex h-4 rounded-full overflow-hidden mb-3" style={{ background: 'var(--bg2)' }}>
-          {byAsset.map(a => <div key={a.asset} style={{ width: `${a.pct}%`, background: a.color }} title={`${a.asset} ${a.pct.toFixed(0)}%`} />)}
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {byAsset.map(a => (
-            <div key={a.asset} className="rounded-lg px-3 py-2" style={{ background: 'var(--bg2)' }}>
-              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider" style={{ color: a.color }}><span className="w-2 h-2 rounded-sm" style={{ background: a.color }} />{a.asset}</div>
-              <div className="text-[14px] font-bold font-mono mt-0.5" style={{ color: 'var(--text)' }}>{a.pct.toFixed(0)}%</div>
-              <div className="text-[10px]" style={{ color: 'var(--text3)' }}>{abbr(a.value, sym)}</div>
+            <div key={i} className="flex items-start gap-2.5">
+              <span className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: ins.bg, color: ins.c }}><ins.icon size={14} /></span>
+              <span className="text-[13px] leading-snug pt-1" style={{ color: 'var(--text2)' }}>{ins.text}</span>
             </div>
           ))}
         </div>
       </Section>
 
-      {/* Returns vs benchmark */}
-      <Section icon={TrendingUp} title="Returns vs benchmark">
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
-          {[
-            { label: overallXirr != null ? 'Your XIRR' : 'Your return', value: `${xirrShown >= 0 ? '+' : ''}${xirrShown.toFixed(1)}%`, color: xirrShown >= 0 ? 'var(--income)' : 'var(--rose)' },
-            { label: 'Category benchmark', value: `~${blendedBench.toFixed(1)}%`, color: 'var(--text2)' },
-            { label: beatsBench >= 0 ? 'Beating by' : 'Trailing by', value: `${beatsBench >= 0 ? '+' : ''}${beatsBench.toFixed(1)}%`, color: beatsBench >= 0 ? 'var(--income)' : 'var(--rose)' },
-          ].map(c => (
-            <div key={c.label} className="rounded-lg px-3 py-2" style={{ background: 'var(--bg2)' }}>
-              <div className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>{c.label}</div>
-              <div className="text-[18px] font-bold font-mono mt-0.5" style={{ color: c.color }}>{c.value}</div>
-            </div>
-          ))}
-        </div>
-        {nifty && (
-          <div className="flex items-center justify-between p-3 rounded-lg mb-4" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-            <div className="text-[11px]" style={{ color: 'var(--text2)' }}>
-              vs <strong>Nifty 50</strong> over the same period: <strong style={{ color: 'var(--text)' }}>{nifty.cagr >= 0 ? '+' : ''}{nifty.cagr.toFixed(1)}%/yr</strong>
-            </div>
-            {(() => { const d = xirrShown - nifty.cagr; return (
-              <span className="text-[12px] font-bold font-mono" style={{ color: d >= 0 ? 'var(--income)' : 'var(--rose)' }}>
-                {d >= 0 ? `Beating index by +${d.toFixed(1)}%` : `Trailing index by ${d.toFixed(1)}%`}
-              </span>
-            ) })()}
-          </div>
-        )}
-        <div className="space-y-1.5">
-          {rows.filter(r => r.retPct != null).sort((a, b) => (b.retPct ?? 0) - (a.retPct ?? 0)).map(r => {
-            const bench = BENCH[r.f.fund_type] ?? 10
-            const diff = (r.retPct ?? 0) - bench
-            return (
-              <div key={r.f.id} className="flex items-center gap-2 text-[11px]">
-                <span className="flex-1 truncate" style={{ color: 'var(--text2)' }}>{r.f.fund_name}</span>
-                <span className="font-mono w-14 text-right" style={{ color: (r.retPct ?? 0) >= 0 ? 'var(--income)' : 'var(--rose)' }}>{(r.retPct ?? 0) >= 0 ? '+' : ''}{(r.retPct ?? 0).toFixed(1)}%</span>
-                <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold w-20 text-center flex-shrink-0" style={{ background: diff >= 0 ? '#D1FAE5' : '#FEE2E2', color: diff >= 0 ? '#065F46' : '#991B1B' }}>
-                  {diff >= 0 ? 'beats' : 'below'} {diff >= 0 ? '+' : ''}{diff.toFixed(1)}%
-                </span>
-              </div>
-            )
-          })}
-        </div>
-        <div className="text-[10px] mt-3" style={{ color: 'var(--text3)' }}>Benchmark = a typical category return (WealthLens estimate), not an index feed.</div>
-      </Section>
-
-      {/* Tax */}
-      <Section icon={Receipt} title="Tax if you redeem today (estimate)">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
-          {[
-            { label: 'Est. total tax', value: abbr(tax.total, sym), color: 'var(--rose)' },
-            { label: 'Equity LTCG tax', value: abbr(tax.eqLTCGtax, sym), color: 'var(--text2)', note: '12.5% over ₹1.25L' },
-            { label: 'Equity STCG tax', value: abbr(tax.eqSTCGtax, sym), color: 'var(--text2)', note: '20%' },
-            { label: 'Net in hand', value: abbr(tax.net, sym), color: 'var(--income)', note: 'after tax + exit load' },
-          ].map(c => (
-            <div key={c.label} className="rounded-lg px-3 py-2" style={{ background: 'var(--bg2)' }}>
-              <div className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>{c.label}</div>
-              <div className="text-[15px] font-bold font-mono mt-0.5" style={{ color: c.color }}>{c.value}</div>
-              {c.note && <div className="text-[9px]" style={{ color: 'var(--text3)' }}>{c.note}</div>}
-            </div>
-          ))}
-        </div>
-        <div className="overflow-x-auto rounded-lg border" style={{ borderColor: 'var(--border)' }}>
-          <table className="w-full text-[11px]" style={{ borderCollapse: 'collapse' }}>
-            <thead><tr style={{ background: 'var(--bg2)' }}>{['Fund', 'Held', 'Gain', 'Term'].map(h => <th key={h} className="px-3 py-2 text-left first:text-left" style={{ color: 'var(--text3)', fontSize: 10, textTransform: 'uppercase', fontWeight: 700, textAlign: h === 'Fund' ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
-            <tbody>
-              {rows.map(r => {
-                const hm = monthsSince(r.firstBuy)
-                const eqTaxed = r.asset === 'Equity' || r.asset === 'Hybrid'
-                const term = !eqTaxed ? 'Debt (slab)' : hm >= 12 ? 'LTCG' : 'STCG'
-                return (
-                  <tr key={r.f.id} style={{ borderTop: '1px solid var(--border)' }}>
-                    <td className="px-3 py-2 truncate" style={{ color: 'var(--text)', maxWidth: 200 }}>{r.f.fund_name}</td>
-                    <td className="px-3 py-2 text-right font-mono" style={{ color: 'var(--text3)' }}>{hm >= 12 ? `${Math.floor(hm / 12)}y ${hm % 12}m` : `${hm}m`}</td>
-                    <td className="px-3 py-2 text-right font-mono" style={{ color: r.gain >= 0 ? 'var(--income)' : 'var(--rose)' }}>{r.gain >= 0 ? '+' : ''}{abbr(r.gain, sym)}</td>
-                    <td className="px-3 py-2 text-right"><span className="text-[9px] px-1.5 py-0.5 rounded font-semibold" style={{ background: term === 'LTCG' ? '#D1FAE5' : term === 'STCG' ? '#FEF3C7' : 'var(--bg2)', color: term === 'LTCG' ? '#065F46' : term === 'STCG' ? '#92400E' : 'var(--text3)' }}>{term}</span></td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-        <div className="text-[10px] mt-2" style={{ color: 'var(--text3)' }}>
-          Estimate using current rules (equity LTCG 12.5% above ₹1.25L, STCG 20%; debt &amp; gold at slab, assumed 30%). Hybrid treated as equity. Holding period from your earliest purchase. Not tax advice — confirm with your advisor.
-        </div>
-      </Section>
-
-      {/* ELSS lock-in */}
-      {elss.length > 0 && (
-        <Section icon={Lock} title="ELSS lock-in (3 years)">
-          <div className="space-y-2">
-            {elss.map((e, i) => (
-              <div key={i} className="flex items-center justify-between p-3 rounded-lg" style={{ background: 'var(--bg2)' }}>
-                <div className="min-w-0"><div className="text-[12px] font-semibold truncate" style={{ color: 'var(--text)' }}>{e.name}</div>
-                  <div className="text-[10px]" style={{ color: 'var(--text3)' }}>{e.lockedAmt > 0 ? `${abbr(e.lockedAmt, sym)} locked` : 'Fully unlocked'}</div></div>
-                <div className="text-right flex-shrink-0">
-                  {e.lockedAmt > 0 && e.unlock
-                    ? <><div className="text-[10px]" style={{ color: 'var(--text3)' }}>unlocks by</div><div className="text-[12px] font-semibold font-mono" style={{ color: 'var(--gold)' }}>{e.unlock.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}</div></>
-                    : <span className="text-[10px] px-2 py-0.5 rounded font-semibold" style={{ background: '#D1FAE5', color: '#065F46' }}>✓ Free to redeem</span>}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 md:gap-4">
+        <Section icon={PieIcon} title="Allocation by category" note="Category is inferred from each fund's name and type.">
+          <div className="flex items-center gap-4">
+            <Donut segments={byCap.map(c => ({ value: c.value, color: c.color }))} size={104} label={`By category: ${byCap.map(c => `${c.cap} ${c.pct.toFixed(0)}%`).join(', ')}`}>
+              <div className="text-[10.5px]" style={{ color: 'var(--text3)' }}>Funds</div>
+              <div className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>{abbr(totalCurrent, sym)}</div>
+            </Donut>
+            <div className="flex-1 min-w-0 flex flex-col gap-2">
+              {byCap.map(c => (
+                <div key={c.cap}>
+                  <div className="flex items-center justify-between gap-2 text-[12.5px] mb-1">
+                    <span className="font-semibold truncate" style={{ color: 'var(--text)' }}>{c.cap}</span>
+                    <span className="tabular-nums whitespace-nowrap" style={{ color: 'var(--text3)' }}>{c.pct.toFixed(0)}%</span>
+                  </div>
+                  <div className="h-1.5 rounded-full" style={{ background: 'var(--track)' }}><div className="h-full rounded-full wl-grow" style={{ width: `${c.pct}%`, background: c.color }} /></div>
                 </div>
+              ))}
+            </div>
+          </div>
+        </Section>
+
+        <Section icon={Layers} title="Equity, debt, gold and hybrid">
+          <div className="flex h-3 rounded-full overflow-hidden gap-[2px] mb-3.5" style={{ background: 'var(--track)' }}>
+            {byAsset.map(a => <div key={a.asset} style={{ width: `${a.pct}%`, background: a.color }} title={`${a.asset} ${a.pct.toFixed(0)}%`} />)}
+          </div>
+          <div className="grid grid-cols-2 gap-2.5">
+            {byAsset.map(a => (
+              <div key={a.asset} className="rounded-xl px-3.5 py-2.5" style={{ background: '#FAFAFE', border: '1px solid var(--line)' }}>
+                <div className="flex items-center gap-1.5 text-[12px] font-medium" style={{ color: 'var(--text3)' }}><i className="w-2 h-2 rounded-full" style={{ background: a.color }} />{a.asset}</div>
+                <div className="text-[18px] font-bold tabular-nums mt-0.5" style={{ color: 'var(--text)' }}>{a.pct.toFixed(0)}%</div>
+                <div className="text-[11.5px] tabular-nums" style={{ color: 'var(--text4)' }}>{abbr(a.value, sym)}</div>
               </div>
             ))}
           </div>
-          <div className="text-[10px] mt-2" style={{ color: 'var(--text3)' }}>Each ELSS investment is locked for 3 years from its purchase date.</div>
+        </Section>
+      </div>
+
+      <Section icon={TrendingUp} title="Returns vs benchmark" note="Benchmark is a typical category return (a WealthLens estimate), not an index feed.">
+        <div className="grid grid-cols-3 gap-2.5 mb-3">
+          <Stat label={overallXirr != null ? 'Your XIRR' : 'Your return'} value={`${xirrShown >= 0 ? '+' : ''}${xirrShown.toFixed(1)}%`} color={xirrShown >= 0 ? '#16A34A' : '#DC2626'} />
+          <Stat label="Benchmark" value={`~${blendedBench.toFixed(1)}%`} />
+          <Stat label={beatsBench >= 0 ? 'Ahead by' : 'Behind by'} value={`${beatsBench >= 0 ? '+' : ''}${beatsBench.toFixed(1)}%`} color={beatsBench >= 0 ? '#16A34A' : '#DC2626'} />
+        </div>
+        {nifty && (
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl mb-3" style={{ background: 'var(--accent-bg)', border: '1px solid var(--accent-border)' }}>
+            <span className="text-[12.5px]" style={{ color: 'var(--accent2)' }}>Nifty 50 over the same period: <b>{nifty.cagr >= 0 ? '+' : ''}{nifty.cagr.toFixed(1)}% a year</b></span>
+            {(() => { const d = xirrShown - nifty.cagr; return <Pill ok={d >= 0}>{d >= 0 ? `Ahead by ${d.toFixed(1)}%` : `Behind by ${Math.abs(d).toFixed(1)}%`}</Pill> })()}
+          </div>
+        )}
+        <div className="-mx-4 md:-mx-5 -mb-1">
+          {rows.filter(r => r.retPct != null).sort((a, b) => (b.retPct ?? 0) - (a.retPct ?? 0)).map((r, i) => {
+            const diff = (r.retPct ?? 0) - (BENCH[r.f.fund_type] ?? 10)
+            return (
+              <Row key={r.f.id} i={i}>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-semibold truncate" style={{ color: 'var(--text)' }}>{r.f.fund_name}</div>
+                  <div className="text-[11.5px]" style={{ color: 'var(--text3)' }}>{r.cap} · benchmark ~{BENCH[r.f.fund_type] ?? 10}%</div>
+                </div>
+                <div className="text-right flex-shrink-0 flex flex-col items-end gap-0.5">
+                  <span className="text-[13px] font-semibold tabular-nums" style={{ color: (r.retPct ?? 0) >= 0 ? '#16A34A' : '#DC2626' }}>{(r.retPct ?? 0) >= 0 ? '+' : ''}{(r.retPct ?? 0).toFixed(1)}%</span>
+                  <Pill ok={diff >= 0}>{diff >= 0 ? '+' : ''}{diff.toFixed(1)}% vs bench</Pill>
+                </div>
+              </Row>
+            )
+          })}
+        </div>
+      </Section>
+
+      <Section icon={Receipt} title="Tax if you redeem today" note="Estimate using current rules: equity LTCG 12.5% above ₹1.25L, STCG 20%; debt and gold at your slab (assumed 30%). Hybrid treated as equity; holding period from your earliest purchase. Not tax advice.">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-3">
+          <Stat label="Estimated tax" value={abbr(tax.total, sym)} color="#DC2626" />
+          <Stat label="Equity LTCG tax" value={abbr(tax.eqLTCGtax, sym)} note="12.5% over ₹1.25L" />
+          <Stat label="Equity STCG tax" value={abbr(tax.eqSTCGtax, sym)} note="20%" />
+          <Stat label="Net in hand" value={abbr(tax.net, sym)} color="#16A34A" note="after tax and exit load" />
+        </div>
+        <div className="-mx-4 md:-mx-5 -mb-1">
+          {rows.map((r, i) => {
+            const hm = monthsSince(r.firstBuy)
+            const eqTaxed = r.asset === 'Equity' || r.asset === 'Hybrid'
+            const term = !eqTaxed ? 'Debt (slab)' : hm >= 12 ? 'Long term' : 'Short term'
+            return (
+              <Row key={r.f.id} i={i}>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-semibold truncate" style={{ color: 'var(--text)' }}>{r.f.fund_name}</div>
+                  <div className="text-[11.5px] flex items-center gap-1.5 mt-0.5" style={{ color: 'var(--text3)' }}>
+                    held {hm >= 12 ? `${Math.floor(hm / 12)}y ${hm % 12}m` : `${hm}m`}
+                    <Pill ok={term === 'Long term' ? true : term === 'Short term' ? false : null}>{term}</Pill>
+                  </div>
+                </div>
+                <div className="text-[13px] font-semibold tabular-nums flex-shrink-0" style={{ color: r.gain >= 0 ? '#16A34A' : '#DC2626' }}>{r.gain >= 0 ? '+' : '−'}{abbr(Math.abs(r.gain), sym)}</div>
+              </Row>
+            )
+          })}
+        </div>
+      </Section>
+
+      {elss.length > 0 && (
+        <Section icon={Lock} title="ELSS lock-in (3 years)" note="Each ELSS investment is locked for 3 years from its purchase date.">
+          <div className="-mx-4 md:-mx-5 -mb-1">
+            {elss.map((e, i) => (
+              <Row key={i} i={i}>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-semibold truncate" style={{ color: 'var(--text)' }}>{e.name}</div>
+                  <div className="text-[11.5px]" style={{ color: 'var(--text3)' }}>{e.lockedAmt > 0 ? `${abbr(e.lockedAmt, sym)} locked` : 'Fully unlocked'}</div>
+                </div>
+                {e.lockedAmt > 0 && e.unlock
+                  ? <div className="text-right"><div className="text-[11px]" style={{ color: 'var(--text4)' }}>unlocks by</div><div className="text-[13px] font-semibold" style={{ color: '#B96A0B' }}>{e.unlock.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}</div></div>
+                  : <Pill ok>Free to redeem</Pill>}
+              </Row>
+            ))}
+          </div>
         </Section>
       )}
     </div>

@@ -134,9 +134,9 @@ export default function InvestmentTimeline({ txns, invested, currentValue, curre
           value: annualised != null ? `${annualised >= 0 ? '+' : ''}${annualised.toFixed(1)}%` : `${gain >= 0 ? '+' : ''}${abbr(Math.abs(gain), sym)}`,
           color: gainColor },
       ].map(c => (
-        <div key={c.label} className="rounded-lg px-3 py-2" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-          <div className="text-[9px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>{c.label}</div>
-          <div className="text-[14px] font-bold font-mono mt-0.5" style={{ color: c.color }}>{c.value}</div>
+        <div key={c.label} className="rounded-xl px-3.5 py-2.5 min-w-0" style={{ background: '#FAFAFE', border: '1px solid var(--line)' }}>
+          <div className="text-[11.5px] truncate" style={{ color: 'var(--text3)' }}>{c.label}</div>
+          <div className="text-[16px] md:text-[17px] font-bold tabular-nums mt-0.5 truncate" style={{ color: c.color }}>{c.value}</div>
         </div>
       ))}
     </div>
@@ -146,8 +146,8 @@ export default function InvestmentTimeline({ txns, invested, currentValue, curre
     return (
       <div className="space-y-3">
         {summary}
-        <div className="text-[11px] text-center py-4 rounded-lg" style={{ color: 'var(--text3)', background: 'var(--bg2)' }}>
-          No dated investment history yet. Import a CAMS statement (Mutual Funds) or record buys to see month-on-month & year-on-year trends.
+        <div className="text-[12.5px] text-center px-4 py-5 rounded-xl leading-snug" style={{ color: 'var(--text3)', background: '#FAFAFE', border: '1.5px dashed var(--border2)' }}>
+          No dated history yet. Import a CAMS statement or record your buys to see month-by-month and year-by-year trends.
         </div>
       </div>
     )
@@ -157,15 +157,15 @@ export default function InvestmentTimeline({ txns, invested, currentValue, curre
   const yearChart = (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Invested per Year</span>
-        <span className="text-[10px]" style={{ color: 'var(--text3)' }}>YoY % = change vs previous year</span>
+        <span className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Invested each year</span>
+        <span className="text-[11px]" style={{ color: 'var(--text4)' }}>% = change on the year before</span>
       </div>
       <ResponsiveContainer width="100%" height={compact ? 140 : 190}>
         <BarChart data={yearly} margin={{ top: 18, right: 8, left: 0, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+          <CartesianGrid stroke="var(--track)" vertical={false} />
           <XAxis dataKey="year" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
           <YAxis tickFormatter={(v: number) => abbr(v, sym)} tick={{ fontSize: 9 }} width={48} axisLine={false} tickLine={false} />
-          <Tooltip formatter={(v: any) => [abbr(Number(v), sym), 'Invested']} cursor={{ fill: 'var(--bg2)' }} />
+          <Tooltip formatter={(v: any) => [abbr(Number(v), sym), 'Invested']} cursor={{ fill: 'var(--accent-bg)' }} />
           <Bar dataKey="invested" radius={[5, 5, 0, 0]} fill="var(--sage)">
             <LabelList dataKey="yoy" position="top" style={{ fontSize: 10, fontWeight: 700 }}
               formatter={(v: any) => (v == null ? '' : `${v >= 0 ? '+' : ''}${Number(v).toFixed(0)}%`)} />
@@ -179,16 +179,16 @@ export default function InvestmentTimeline({ txns, invested, currentValue, curre
   // ── Month-on-month bars + cumulative ──────────────────────────────────
   const monthChart = (
     <div>
-      <div className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text3)' }}>
-        Month-on-Month {monthly.length === 24 ? '(last 24 months)' : ''}
+      <div className="text-[14px] md:text-[15px] font-semibold mb-2" style={{ color: 'var(--text)' }}>
+        Invested each month{monthly.length === 24 ? ' (last 24 months)' : ''}
       </div>
       <ResponsiveContainer width="100%" height={compact ? 130 : 180}>
         <BarChart data={monthly} margin={{ top: 5, right: 8, left: 0, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+          <CartesianGrid stroke="var(--track)" vertical={false} />
           <XAxis dataKey="label" tick={{ fontSize: 8 }} interval={monthly.length > 12 ? 1 : 0} axisLine={false} tickLine={false} angle={-30} textAnchor="end" height={36} />
           <YAxis tickFormatter={(v: number) => abbr(v, sym)} tick={{ fontSize: 9 }} width={48} axisLine={false} tickLine={false} />
-          <Tooltip formatter={(v: any) => [abbr(Number(v), sym), 'Invested']} cursor={{ fill: 'var(--bg2)' }} />
-          <Bar dataKey="invested" radius={[3, 3, 0, 0]} fill="var(--blue)" />
+          <Tooltip formatter={(v: any) => [abbr(Number(v), sym), 'Invested']} cursor={{ fill: 'var(--accent-bg)' }} />
+          <Bar dataKey="invested" radius={[4, 4, 0, 0]} fill="#B9ABFF" />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -196,7 +196,7 @@ export default function InvestmentTimeline({ txns, invested, currentValue, curre
 
   const cumulativeChart = (
     <div>
-      <div className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text3)' }}>Cumulative Invested</div>
+      <div className="text-[14px] md:text-[15px] font-semibold mb-2" style={{ color: 'var(--text)' }}>Total put in over time</div>
       <ResponsiveContainer width="100%" height={160}>
         <AreaChart data={monthly} margin={{ top: 5, right: 8, left: 0, bottom: 0 }}>
           <defs>
@@ -205,10 +205,10 @@ export default function InvestmentTimeline({ txns, invested, currentValue, curre
               <stop offset="100%" stopColor="var(--sage)" stopOpacity={0.02} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+          <CartesianGrid stroke="var(--track)" vertical={false} />
           <XAxis dataKey="label" tick={{ fontSize: 8 }} interval={monthly.length > 12 ? 2 : 0} axisLine={false} tickLine={false} angle={-30} textAnchor="end" height={36} />
           <YAxis tickFormatter={(v: number) => abbr(v, sym)} tick={{ fontSize: 9 }} width={48} axisLine={false} tickLine={false} />
-          <Tooltip formatter={(v: any) => [abbr(Number(v), sym), 'Cumulative']} cursor={{ fill: 'var(--bg2)' }} />
+          <Tooltip formatter={(v: any) => [abbr(Number(v), sym), 'Cumulative']} cursor={{ fill: 'var(--accent-bg)' }} />
           <Area type="monotone" dataKey="cumulative" stroke="var(--sage)" strokeWidth={2} fill="url(#cumGrad)" />
         </AreaChart>
       </ResponsiveContainer>

@@ -89,15 +89,22 @@ function sipFV(monthly: number, annualRate: number, months: number): number {
   return monthly * ((Math.pow(1 + r, months) - 1) / r) * (1 + r)
 }
 
+// Long-run expectation per category: 4% floor, at most 4 points above the category default
+function saneRate(r: number, fundType: string): number {
+  const def = ({ equity: 13, debt: 7, hybrid: 10, elss: 13, index: 12, liquid: 6 } as Record<string, number>)[fundType] ?? 10
+  return Math.round(Math.min(Math.max(r, 4, def - 4), def + 4) * 10) / 10
+}
+
 // Expected annual return rate from fund type and actual returns
 function expectedRate(fundType: string, actualRetPct: number | null): number {
   const defaults: Record<string, number> = { equity: 13, debt: 7, hybrid: 10, elss: 13, index: 12, liquid: 6 }
+  const def = defaults[fundType] ?? 10
   if (actualRetPct !== null && actualRetPct > -30 && actualRetPct < 100) {
-    // Blend actual (60%) with category default (40%) for more realistic projection
-    const def = defaults[fundType] ?? 10
-    return Math.max(4, actualRetPct * 0.6 + def * 0.4)
+    // Blend actual (60%) with category default (40%), then keep it within 4
+    // points of the category's long-run return: past gains rarely repeat
+    return saneRate(actualRetPct * 0.6 + def * 0.4, fundType)
   }
-  return defaults[fundType] ?? 10
+  return def
 }
 
 type Tab = 'portfolio' | 'analytics' | 'growth' | 'projection' | 'news'
@@ -447,7 +454,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
           <Plus size={14} className="inline mr-1.5" /> Add Mutual Fund
         </button>
         <button onClick={() => setShowImport(true)} className="px-6 py-2.5 rounded-xl font-semibold border"
-          style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>
+          style={{ borderColor: 'var(--line)', color: 'var(--text3)', background: 'var(--bg2)' }}>
           <FileUp size={14} className="inline mr-1.5" /> Import from PDF
         </button>
       </div>
@@ -461,7 +468,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
     <div className="fixed inset-0 wl-sheet z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>{children}</div>
   )
   const Modal = ({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) => (
-    <div className="wl-sheet-panel rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+    <div className="wl-sheet-panel rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
       <div className="flex items-center justify-between">
         <div className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>{title}</div>
         <button onClick={onClose} style={{ color: 'var(--text3)' }}><X size={16} /></button>
@@ -480,7 +487,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
             <div className="p-4 rounded-xl" style={{ background: 'var(--sage-bg)', border: '1px solid var(--sage)30' }}>
               <div className="text-[12px]" style={{ color: 'var(--text3)' }}>Monthly SIP due today</div>
               <div className="text-[14px] font-bold mt-1" style={{ color: 'var(--text)' }}>{sipReminder.fund_name}</div>
-              <div className="text-[22px] font-bold font-mono mt-1" style={{ color: 'var(--sage)' }}>
+              <div className="text-[22px] font-bold tabular-nums mt-1" style={{ color: 'var(--sage)' }}>
                 {sym}{Number(sipReminder.sip_amount).toLocaleString('en-IN')}
               </div>
               <div className="text-[11px] mt-1" style={{ color: 'var(--text3)' }}>SIP date: {sipReminder.sip_date}th of every month</div>
@@ -493,7 +500,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
               </button>
               <button onClick={() => markSipPaid(sipReminder, 'skipped')} disabled={markingPaid}
                 className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-[13px] font-semibold border"
-                style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>
+                style={{ borderColor: 'var(--line)', color: 'var(--text3)', background: 'var(--bg2)' }}>
                 <XCircle size={15} /> Not Yet
               </button>
             </div>
@@ -513,18 +520,18 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
             {sipForm.has_sip && (
               <div className="space-y-3">
                 <div>
-                  <label className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Monthly SIP Amount (₹)</label>
+                  <label className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Monthly SIP Amount (₹)</label>
                   <input type="number" value={sipForm.sip_amount} onChange={e => setSipForm(p => ({ ...p, sip_amount: e.target.value }))} placeholder="5000" className="wl-input mt-1 w-full" style={{ background: 'var(--bg2)' }} />
                 </div>
                 <div>
-                  <label className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>SIP Date (1–28)</label>
+                  <label className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>SIP Date (1–28)</label>
                   <input type="number" min={1} max={28} value={sipForm.sip_date} onChange={e => setSipForm(p => ({ ...p, sip_date: e.target.value }))} className="wl-input mt-1 w-full" style={{ background: 'var(--bg2)' }} />
                   <div className="text-[10px] mt-1" style={{ color: 'var(--text3)' }}>You'll see a reminder on this day each month</div>
                 </div>
               </div>
             )}
             <div className="flex gap-2">
-              <button onClick={() => setSipModal(null)} className="flex-1 py-2.5 rounded-xl border text-[12px] font-semibold" style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>Cancel</button>
+              <button onClick={() => setSipModal(null)} className="flex-1 py-2.5 rounded-xl border text-[12px] font-semibold" style={{ borderColor: 'var(--line)', color: 'var(--text3)', background: 'var(--bg2)' }}>Cancel</button>
               <button onClick={saveSip} disabled={sipSaving} className="flex-1 py-2.5 rounded-xl text-white text-[12px] font-bold" style={{ background: 'var(--sage)' }}>{sipSaving ? 'Saving…' : 'Save SIP'}</button>
             </div>
           </Modal>
@@ -538,23 +545,23 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
             <div className="text-[11px] font-semibold truncate" style={{ color: 'var(--text3)' }}>{lumpsumFund.fund_name}</div>
             <div className="p-3 rounded-xl space-y-1" style={{ background: 'var(--bg2)' }}>
               <div className="text-[11px]" style={{ color: 'var(--text3)' }}>Current NAV</div>
-              <div className="text-[20px] font-bold font-mono" style={{ color: 'var(--text)' }}>
+              <div className="text-[20px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>
                 {sym}{(liveNavs[lumpsumFund.id] ?? Number(lumpsumFund.current_nav ?? lumpsumFund.avg_nav)).toFixed(2)}
                 {liveNavs[lumpsumFund.id] && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded font-semibold" style={{ background: '#D1FAE5', color: '#065F46' }}>Live</span>}
               </div>
             </div>
             <div>
-              <label className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Purchase Date</label>
+              <label className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Purchase Date</label>
               <input type="date" value={lumpsumDate} max={new Date().toISOString().slice(0, 10)} onChange={e => setLumpsumDate(e.target.value)} className="wl-input mt-1 w-full" style={{ background: 'var(--bg2)' }} />
               <div className="text-[10px] mt-1" style={{ color: 'var(--text3)' }}>Pick a past date to log a historical purchase for your investment history.</div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Amount (₹)</label>
+                <label className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Amount (₹)</label>
                 <input type="number" value={lumpsumAmt} onChange={e => setLumpsumAmt(e.target.value)} placeholder="25000" className="wl-input mt-1 w-full" style={{ background: 'var(--bg2)' }} />
               </div>
               <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>NAV on that date</label>
+                <label className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>NAV on that date</label>
                 <input type="number" value={lumpsumNav} onChange={e => setLumpsumNav(e.target.value)}
                   placeholder={(liveNavs[lumpsumFund.id] ?? Number(lumpsumFund.current_nav ?? lumpsumFund.avg_nav)).toFixed(2)}
                   className="wl-input mt-1 w-full" style={{ background: 'var(--bg2)' }} />
@@ -569,7 +576,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
               )
             })()}
             <div className="flex gap-2">
-              <button onClick={() => { setLumpsumFund(null); setLumpsumAmt(''); setLumpsumNav(''); setLumpsumDate(new Date().toISOString().slice(0, 10)) }} className="flex-1 py-2.5 rounded-xl border text-[12px] font-semibold" style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>Cancel</button>
+              <button onClick={() => { setLumpsumFund(null); setLumpsumAmt(''); setLumpsumNav(''); setLumpsumDate(new Date().toISOString().slice(0, 10)) }} className="flex-1 py-2.5 rounded-xl border text-[12px] font-semibold" style={{ borderColor: 'var(--line)', color: 'var(--text3)', background: 'var(--bg2)' }}>Cancel</button>
               <button onClick={saveLumpsum} disabled={lumpsumSaving || !lumpsumAmt} className="flex-1 py-2.5 rounded-xl text-white text-[12px] font-bold" style={{ background: 'var(--sage)', opacity: !lumpsumAmt ? 0.5 : 1 }}>{lumpsumSaving ? 'Saving…' : 'Invest'}</button>
             </div>
           </Modal>
@@ -620,7 +627,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
       })()}
 
       {/* ── Tabs ─────────────────────────────────────────────────────────────── */}
-      <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-4 px-4 md:mx-0 md:px-0" role="tablist" aria-label="Mutual fund views">
+      <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-4 px-4 md:mx-0 md:px-0 max-md:sticky max-md:top-0 max-md:z-20 max-md:py-2 max-md:bg-[var(--canvas-m)]" role="tablist" aria-label="Mutual fund views">
         {([['portfolio', 'Portfolio', ListFilter], ['analytics', 'Analytics', BarChart2], ['growth', 'Growth', TrendingUp], ['projection', 'Projection', Rocket], ['news', 'News', Newspaper]] as const).map(([key, label, Icon]) => (
           <button key={key} onClick={() => setTab(key as Tab)} role="tab" aria-selected={tab === key} aria-pressed={tab === key}
             className="wl-chip flex-shrink-0 gap-1.5" style={{ height: 32 }}>
@@ -738,7 +745,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center gap-1 justify-end">
                           <div className="w-1.5 h-1.5 rounded-full" style={{ background: hasLive ? '#10B981' : 'var(--text3)', flexShrink: 0 }} />
-                          <span className="font-mono font-semibold" style={{ color: 'var(--text)' }}>
+                          <span className="tabular-nums font-semibold" style={{ color: 'var(--text)' }}>
                             {navLoading && !hasLive ? '…' : `₹${nav.toFixed(2)}`}
                           </span>
                         </div>
@@ -747,22 +754,22 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
 
                       {/* Return */}
                       <td className="px-4 py-3 text-right">
-                        <div className="font-bold font-mono" style={{ color: retColor, fontSize: 13 }}>
+                        <div className="font-bold tabular-nums" style={{ color: retColor, fontSize: 13 }}>
                           {retPct === null ? '— (fetch NAV)' : `${retPct >= 0 ? '+' : ''}${retPct.toFixed(2)}%`}
                         </div>
-                        <div className="text-[10px] font-mono" style={{ color: retColor }}>
+                        <div className="text-[10px] tabular-nums" style={{ color: retColor }}>
                           {retPct !== null ? `${absRt >= 0 ? '+' : ''}₹${Math.abs(Math.round(absRt)).toLocaleString('en-IN')}` : ''}
                         </div>
                       </td>
 
                       {/* Invested */}
-                      <td className="px-4 py-3 text-right font-mono font-semibold" style={{ color: 'var(--text2)' }}>
+                      <td className="px-4 py-3 text-right tabular-nums font-semibold" style={{ color: 'var(--text2)' }}>
                         {fmt(invested)}
                       </td>
 
                       {/* Current Value */}
                       <td className="px-4 py-3 text-right">
-                        <div className="font-mono font-bold" style={{ color: retColor, fontSize: 13 }}>{fmt(currVal)}</div>
+                        <div className="tabular-nums font-bold" style={{ color: retColor, fontSize: 13 }}>{fmt(currVal)}</div>
                         <div className="text-[10px] mt-0.5" style={{ color: 'var(--text3)' }}>
                           {(currentValue > 0 ? currVal / currentValue * 100 : 0).toFixed(1)}% of portfolio
                         </div>
@@ -772,7 +779,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
                       </td>
 
                       {/* Units */}
-                      <td className="px-4 py-3 text-right font-mono text-[11px]" style={{ color: 'var(--text3)' }}>
+                      <td className="px-4 py-3 text-right tabular-nums text-[11px]" style={{ color: 'var(--text3)' }}>
                         {Number(f.units).toFixed(3)}
                       </td>
 
@@ -794,7 +801,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
 
                             {/* Fund details */}
                             <div className="space-y-3">
-                              <div className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Fund Details</div>
+                              <div className="text-[11px] font-medium" style={{ color: 'var(--text3)' }}>Fund Details</div>
                               <div className="grid grid-cols-3 gap-3">
                                 {[
                                   ['Type',         TYPE_LABELS[f.fund_type] ?? f.fund_type],
@@ -816,9 +823,9 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
                                 const bench = BENCH[f.fund_type] ?? 10
                                 const beats = retPct != null ? retPct - bench : null
                                 return (
-                                  <div className="rounded-xl p-3 flex items-center justify-between" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+                                  <div className="rounded-xl p-3 flex items-center justify-between" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
                                     <div>
-                                      <div className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>vs Category Benchmark (~{bench}% p.a.)</div>
+                                      <div className="text-[11px] font-medium" style={{ color: 'var(--text3)' }}>vs Category Benchmark (~{bench}% p.a.)</div>
                                       <div className="text-[11px] mt-0.5" style={{ color: 'var(--text3)' }}>
                                         Your return: <strong style={{ color: 'var(--text2)' }}>{retPct != null ? `${retPct >= 0 ? '+' : ''}${retPct.toFixed(1)}%` : '— refresh NAV'}</strong>
                                       </div>
@@ -826,7 +833,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
                                     <div className="text-right">
                                       {beats == null ? <span className="text-[12px]" style={{ color: 'var(--text3)' }}>—</span> : (
                                         <>
-                                          <div className="text-[15px] font-bold font-mono" style={{ color: beats >= 0 ? 'var(--income)' : 'var(--rose)' }}>{beats >= 0 ? '+' : ''}{beats.toFixed(1)}%</div>
+                                          <div className="text-[15px] font-bold tabular-nums" style={{ color: beats >= 0 ? 'var(--income)' : 'var(--rose)' }}>{beats >= 0 ? '+' : ''}{beats.toFixed(1)}%</div>
                                           <div className="text-[10px] font-semibold" style={{ color: beats >= 0 ? 'var(--income)' : 'var(--rose)' }}>{beats >= 0 ? '✓ Beating benchmark' : 'Below benchmark'}</div>
                                         </>
                                       )}
@@ -839,14 +846,14 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
                               </div>
 
                               {/* SIP status */}
-                              <div className="rounded-xl p-3" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+                              <div className="rounded-xl p-3" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
                                 <div className="flex items-center justify-between">
                                   <div className="text-[11px] font-semibold flex items-center gap-1.5" style={{ color: 'var(--text)' }}>
                                     <CalendarClock size={12} style={{ color: 'var(--sage)' }} /> SIP Status
                                   </div>
                                   <button onClick={() => openSipModal(f)}
                                     className="text-[10px] px-2 py-1 rounded border"
-                                    style={{ borderColor: 'var(--border)', color: 'var(--text3)' }}>
+                                    style={{ borderColor: 'var(--line)', color: 'var(--text3)' }}>
                                     <Pencil size={9} className="inline" /> Edit
                                   </button>
                                 </div>
@@ -863,7 +870,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
 
                             {/* Investment history */}
                             <div className="space-y-2">
-                              <div className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Investment History</div>
+                              <div className="text-[11px] font-medium" style={{ color: 'var(--text3)' }}>Investment History</div>
                               {(() => {
                                 const lots = txnsByFund[f.id] ?? []
                                 const recorded = lots.reduce((a: number, t: any) => a + Number(t.units || 0), 0)
@@ -878,40 +885,28 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
                                   <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
                                     {opening > 0.001 && (
                                       <div className="flex items-center justify-between text-[11px] rounded-lg px-3 py-1.5" style={{ background: 'var(--card)', border: '1px dashed var(--border2)' }}>
-                                        <div style={{ color: 'var(--text3)' }}>Initial holding · <span className="font-mono">{+opening.toFixed(3)}</span> u @ ₹{openingNav.toFixed(2)}</div>
-                                        <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(openingInvested).toLocaleString('en-IN')}</div>
+                                        <div style={{ color: 'var(--text3)' }}>Initial holding · <span className="tabular-nums">{+opening.toFixed(3)}</span> u @ ₹{openingNav.toFixed(2)}</div>
+                                        <div className="tabular-nums font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(openingInvested).toLocaleString('en-IN')}</div>
                                       </div>
                                     )}
                                     {lots.map((t: any, i: number) => (
-                                      <div key={t.id ?? i} className="flex items-center gap-2 text-[11px] rounded-lg px-3 py-1.5" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
-                                        <div className="flex-1" style={{ color: 'var(--text2)' }}>{t.txn_date} · <span className="font-mono">{Number(t.units).toFixed(3)}</span> u @ ₹{Number(t.nav).toFixed(2)}</div>
-                                        <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(Number(t.amount)).toLocaleString('en-IN')}</div>
+                                      <div key={t.id ?? i} className="flex items-center gap-2 text-[11px] rounded-lg px-3 py-1.5" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
+                                        <div className="flex-1" style={{ color: 'var(--text2)' }}>{t.txn_date} · <span className="tabular-nums">{Number(t.units).toFixed(3)}</span> u @ ₹{Number(t.nav).toFixed(2)}</div>
+                                        <div className="tabular-nums font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(Number(t.amount)).toLocaleString('en-IN')}</div>
                                         <button onClick={() => setEditLot({ fund: f, lot: t })} className="p-1 rounded hover:bg-blue-50" style={{ color: 'var(--blue)' }} aria-label="Edit purchase"><Pencil size={11} /></button>
                                       </div>
                                     ))}
                                   </div>
                                 )
                               })()}
-                              <button onClick={() => setAddLotsFund(f)}
-                                className="text-[11px] font-semibold px-3 py-1.5 rounded-lg border w-full text-center"
-                                style={{ borderColor: 'var(--sage)', color: 'var(--sage)', background: 'var(--sage-bg)' }}>
-                                <IndianRupee size={10} className="inline mr-1" /> Add purchases / SIP</button>
-                              <div className="flex gap-2">
-                                <button onClick={() => setEditFund(f)}
-                                  className="flex-1 text-[11px] font-semibold px-3 py-1.5 rounded-lg border text-center"
-                                  style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>
-                                  <Pencil size={10} className="inline mr-1" /> Edit
-                                </button>
-                                <button onClick={() => setDeleteFund(f)}
-                                  className="flex-1 text-[11px] font-semibold px-3 py-1.5 rounded-lg border text-center"
-                                  style={{ borderColor: 'var(--rose)', color: 'var(--rose)', background: 'transparent' }}>
-                                  <Trash2 size={10} className="inline mr-1" /> Delete
-                                </button>
+                              <div className="grid grid-cols-3 gap-2 pt-1">
+                                <button onClick={() => setAddLotsFund(f)} className="wl-btn wl-btn-primary justify-center" style={{ height: 34 }}><IndianRupee size={13} />Buy more</button>
+                                <button onClick={() => setEditFund(f)} className="wl-btn justify-center" style={{ height: 34, background: '#fff' }}><Pencil size={13} />Edit</button>
+                                <button onClick={() => setDeleteFund(f)} className="wl-btn justify-center" style={{ height: 34, background: '#fff', color: '#DC2626' }}><Trash2 size={13} />Delete</button>
                               </div>
                               <button onClick={() => { setRepickFund(f); setRepickQuery(f.fund_name); setRepickResults([]); searchSchemes(f.fund_name) }}
-                                className="text-[11px] font-semibold px-3 py-1.5 rounded-lg border w-full text-center"
-                                style={{ borderColor: 'var(--blue)', color: 'var(--blue)', background: 'transparent' }}>
-                                <RefreshCw size={10} className="inline mr-1" /> Wrong NAV / returns? Re-pick fund
+                                className="flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: 'var(--accent)' }}>
+                                <RefreshCw size={12} /> Wrong NAV or returns? Re-pick the fund
                               </button>
                             </div>
 
@@ -962,22 +957,47 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
                   </div>
 
                   {isExpanded && (
-                    <div className="mt-3 mx-4 rounded-xl p-3 space-y-3" style={{ background: 'var(--canvas)', border: '1px solid var(--line)' }}>
-                      <div className="grid grid-cols-3 gap-y-2 gap-x-2">
+                    <div className="mt-2.5 mx-4 mb-1 rounded-2xl p-3 flex flex-col gap-3" style={{ background: 'var(--canvas)', border: '1px solid var(--line)' }}>
+                      <div className="grid grid-cols-3 gap-2">
                         {([
                           ['Units', Number(f.units).toFixed(3)],
                           ['Avg NAV', `₹${Number(f.avg_nav).toFixed(2)}`],
-                          ['Abs P/L', `${absRt >= 0 ? '+' : ''}₹${Math.abs(Math.round(absRt)).toLocaleString('en-IN')}`],
+                          ['NAV now', `₹${nav.toFixed(2)}`],
+                          ['Gain', `${absRt >= 0 ? '+' : '−'}${fmt(Math.abs(absRt))}`],
                           ['Folio', f.folio_number || '—'],
-                          ['WL Rating', '★'.repeat(rating) + '☆'.repeat(5 - rating)],
-                          ['Type', TYPE_LABELS[f.fund_type] ?? f.fund_type],
+                          ['Rating', '★'.repeat(rating) + '☆'.repeat(5 - rating)],
                         ] as [string, string][]).map(([l, v]) => (
-                          <div key={l}>
-                            <div className="text-[9px]" style={{ color: 'var(--text3)' }}>{l}</div>
-                            <div className="text-[11px] font-semibold truncate" style={{ color: 'var(--text)' }}>{v}</div>
+                          <div key={l} className="rounded-xl px-2.5 py-2 min-w-0" style={{ background: '#fff', border: '1px solid var(--line)' }}>
+                            <div className="text-[11px]" style={{ color: 'var(--text4)' }}>{l}</div>
+                            <div className="text-[12.5px] font-semibold tabular-nums truncate" style={{ color: l === 'Gain' ? (absRt >= 0 ? '#16A34A' : '#DC2626') : 'var(--text)' }}>{v}</div>
                           </div>
                         ))}
                       </div>
+
+                      {(() => {
+                        const bench = BENCH[f.fund_type] ?? 10
+                        const beats = retPct != null ? retPct - bench : null
+                        return (
+                          <div className="flex items-center justify-between gap-2 rounded-xl px-3 py-2.5" style={{ background: '#fff', border: '1px solid var(--line)' }}>
+                            <div className="min-w-0">
+                              <div className="text-[12.5px] font-semibold" style={{ color: 'var(--text)' }}>vs category (~{bench}% a year)</div>
+                              <div className="text-[11.5px]" style={{ color: 'var(--text3)' }}>WealthLens estimate, not an agency rating</div>
+                            </div>
+                            {beats == null ? <span className="text-[12px]" style={{ color: 'var(--text3)' }}>Refresh NAV</span>
+                              : <span className="rounded-full px-2.5 py-1 text-[12px] font-semibold whitespace-nowrap" style={beats >= 0 ? { background: '#E7F7EF', color: '#1E8F5F' } : { background: '#FDECE8', color: '#D9482F' }}>{beats >= 0 ? '+' : ''}{beats.toFixed(1)}%</span>}
+                          </div>
+                        )
+                      })()}
+
+                      <button onClick={() => openSipModal(f)} className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-left" style={{ background: '#fff', border: '1px solid var(--line)' }}>
+                        <span className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}><CalendarClock size={15} /></span>
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-[12.5px] font-semibold" style={{ color: 'var(--text)' }}>{f.has_sip && f.sip_amount ? `SIP ₹${Number(f.sip_amount).toLocaleString('en-IN')} a month` : 'No SIP set'}</span>
+                          <span className="block text-[11.5px]" style={{ color: 'var(--text3)' }}>{f.has_sip && f.sip_amount ? `on the ${f.sip_date}th · tap to change` : 'Tap to add a monthly SIP and reminders'}</span>
+                        </span>
+                        <Pencil size={14} style={{ color: 'var(--text4)' }} />
+                      </button>
+
                       {(() => {
                         const lots = txnsByFund[f.id] ?? []
                         const recorded = lots.reduce((a: number, t: any) => a + Number(t.units || 0), 0)
@@ -986,53 +1006,41 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
                         const lotsInvested = lots.reduce((a: number, t: any) => a + Number(t.amount || 0), 0)
                         const openingInvested = Math.max(0, Number(f.invested_amount || 0) - lotsInvested)
                         const openingNav = opening > 0.001 ? openingInvested / opening : 0
+                        const dt = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
                         return (
-                          <div>
-                            <div className="text-[9px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>Purchase History</div>
-                            <div className="space-y-1 max-h-40 overflow-y-auto">
+                          <div className="rounded-xl overflow-hidden" style={{ background: '#fff', border: '1px solid var(--line)' }}>
+                            <div className="px-3 py-2 text-[12.5px] font-semibold" style={{ color: 'var(--text)', borderBottom: '1px solid var(--line)' }}>Purchases</div>
+                            <div className="max-h-52 overflow-y-auto">
                               {opening > 0.001 && (
-                                <div className="flex items-center justify-between text-[11px] rounded-lg px-2.5 py-1.5" style={{ background: 'var(--card)', border: '1px dashed var(--border2)' }}>
-                                  <div style={{ color: 'var(--text3)' }}>Initial · {+opening.toFixed(3)} u @ ₹{openingNav.toFixed(2)}</div>
-                                  <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(openingInvested).toLocaleString('en-IN')}</div>
+                                <div className="flex items-center gap-2 px-3 py-2" style={{ borderBottom: '1px solid var(--track)' }}>
+                                  <div className="flex-1 min-w-0 text-[12px]" style={{ color: 'var(--text3)' }}>Opening holding · {+opening.toFixed(3)} units at ₹{openingNav.toFixed(2)}</div>
+                                  <div className="text-[12.5px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>₹{Math.round(openingInvested).toLocaleString('en-IN')}</div>
                                 </div>
                               )}
                               {lots.map((t: any, i: number) => (
-                                <div key={t.id ?? i} className="flex items-center gap-2 text-[11px] rounded-lg px-2.5 py-1.5" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
-                                  <div className="flex-1" style={{ color: 'var(--text2)' }}>{t.txn_date} · {Number(t.units).toFixed(3)} u @ ₹{Number(t.nav).toFixed(2)}</div>
-                                  <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(Number(t.amount)).toLocaleString('en-IN')}</div>
-                                  <button onClick={() => setEditLot({ fund: f, lot: t })} className="p-1.5 rounded" style={{ color: 'var(--blue)' }} aria-label="Edit purchase"><Pencil size={12} /></button>
+                                <div key={t.id ?? i} className="flex items-center gap-2 px-3 py-2" style={{ borderTop: i || opening > 0.001 ? '1px solid var(--track)' : undefined }}>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-[12.5px] font-medium" style={{ color: 'var(--text)' }}>{dt(t.txn_date)}</div>
+                                    <div className="text-[11.5px] tabular-nums" style={{ color: 'var(--text3)' }}>{Number(t.units).toFixed(3)} units at ₹{Number(t.nav).toFixed(2)}</div>
+                                  </div>
+                                  <div className="text-[12.5px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>₹{Math.round(Number(t.amount)).toLocaleString('en-IN')}</div>
+                                  <button onClick={() => setEditLot({ fund: f, lot: t })} className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ color: 'var(--text3)' }} aria-label="Edit purchase"><Pencil size={13} /></button>
                                 </div>
                               ))}
                             </div>
                           </div>
                         )
                       })()}
+
                       <div className="grid grid-cols-2 gap-2">
-                        <button onClick={() => openSipModal(f)}
-                          className="wl-tap flex items-center justify-center gap-1 px-3 rounded-lg border text-[11px] font-semibold"
-                          style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>
-                          {f.has_sip ? '✏ Edit SIP' : '+ Add SIP'}
-                        </button>
-                        <button onClick={() => setAddLotsFund(f)}
-                          className="wl-tap flex items-center justify-center gap-1 px-3 rounded-lg border text-[11px] font-semibold"
-                          style={{ borderColor: 'var(--sage)', color: 'var(--sage)', background: 'var(--sage-bg)' }}>
-                          <IndianRupee size={11} /> Add Lumpsum
-                        </button>
-                        <button onClick={() => setEditFund(f)}
-                          className="wl-tap flex items-center justify-center gap-1 px-3 rounded-lg border text-[11px] font-semibold"
-                          style={{ borderColor: 'var(--border)', color: 'var(--text2)', background: 'var(--bg2)' }}>
-                          <Pencil size={11} /> Edit
-                        </button>
-                        <button onClick={() => setDeleteFund(f)}
-                          className="wl-tap flex items-center justify-center gap-1 px-3 rounded-lg border text-[11px] font-semibold"
-                          style={{ borderColor: 'var(--rose)', color: 'var(--rose)', background: 'transparent' }}>
-                          <Trash2 size={11} /> Delete
-                        </button>
+                        <button onClick={() => setAddLotsFund(f)} className="wl-btn wl-btn-primary justify-center" style={{ height: 40 }}><IndianRupee size={14} />Buy more</button>
+                        <button onClick={() => openSipModal(f)} className="wl-btn justify-center" style={{ height: 40, background: '#fff' }}><CalendarClock size={14} />{f.has_sip ? 'Edit SIP' : 'Add SIP'}</button>
+                        <button onClick={() => setEditFund(f)} className="wl-btn justify-center" style={{ height: 40, background: '#fff' }}><Pencil size={14} />Edit</button>
+                        <button onClick={() => setDeleteFund(f)} className="wl-btn justify-center" style={{ height: 40, background: '#fff', color: '#DC2626' }}><Trash2 size={14} />Delete</button>
                       </div>
                       <button onClick={() => { setRepickFund(f); setRepickQuery(f.fund_name); setRepickResults([]); searchSchemes(f.fund_name) }}
-                        className="wl-tap w-full flex items-center justify-center gap-1 px-3 rounded-lg border text-[11px] font-semibold"
-                        style={{ borderColor: 'var(--blue)', color: 'var(--blue)', background: 'transparent' }}>
-                        <RefreshCw size={11} /> Wrong NAV / returns? Re-pick fund
+                        className="flex items-center justify-center gap-1.5 text-[12.5px] font-semibold py-1" style={{ color: 'var(--accent)' }}>
+                        <RefreshCw size={13} /> Wrong NAV or returns? Re-pick the fund
                       </button>
                     </div>
                   )}
@@ -1058,37 +1066,30 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
       {/* TAB 3: NEWS                                                           */}
       {/* ══════════════════════════════════════════════════════════════════════ */}
       {tab === 'news' && (
-        <div className="wl-card p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <Newspaper size={14} style={{ color: 'var(--sage)' }} />
-            <div className="text-[13px] font-bold" style={{ color: 'var(--text)' }}>Mutual Fund Market News</div>
+        <div className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
+          <div className="flex items-center gap-2.5 mb-3">
+            <span className="w-8 h-8 rounded-[10px] flex items-center justify-center" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}><Newspaper size={15} /></span>
+            <h3 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Mutual fund news</h3>
           </div>
           {newsLoading ? (
             <div className="space-y-3">
-              {[1,2,3,4,5].map(i => <div key={i} className="h-14 rounded-xl animate-pulse" style={{ background: 'var(--bg2)' }} />)}
+              {[1,2,3,4,5].map(i => <div key={i} className="h-14 rounded-xl animate-pulse" style={{ background: '#E8EBF0' }} />)}
             </div>
           ) : news.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="text-3xl mb-2">📰</div>
-              <div className="text-[13px]" style={{ color: 'var(--text3)' }}>News feed unavailable. Check your connection.</div>
-            </div>
+            <div className="text-center py-10 text-[13px]" style={{ color: 'var(--text3)' }}>News is unavailable right now. Try again in a moment.</div>
           ) : (
-            <div className="space-y-2">
+            <div className="-mx-4 md:-mx-5 -mb-1">
               {news.map((article, i) => (
                 <a key={i} href={article.link} target="_blank" rel="noopener noreferrer"
-                  className="flex items-start gap-4 p-4 rounded-xl transition-all hover:shadow-md block"
-                  style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-                  <div className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-[16px]"
-                    style={{ background: 'var(--sage-bg)' }}>
-                    📊
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[13px] font-semibold leading-snug" style={{ color: 'var(--text)' }}>{article.title}</div>
-                    <div className="text-[11px] mt-1" style={{ color: 'var(--text3)' }}>
+                  className="flex items-start gap-3 px-4 md:px-5 py-3 hover:bg-[#FAFAFE] transition-colors"
+                  style={{ borderTop: i ? '1px solid var(--track)' : '1px solid var(--line)' }}>
+                  <span className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}><Newspaper size={14} /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[13.5px] font-semibold leading-snug" style={{ color: 'var(--text)' }}>{article.title}</span>
+                    <span className="block text-[11.5px] mt-1" style={{ color: 'var(--text4)' }}>
                       {article.source} · {article.pubDate ? new Date(article.pubDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
-                    </div>
-                  </div>
-                  <TrendingUp size={14} style={{ color: 'var(--sage)', flexShrink: 0 }} />
+                    </span>
+                  </span>
                 </a>
               ))}
             </div>
@@ -1101,23 +1102,22 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
       {/* ══════════════════════════════════════════════════════════════════════ */}
       {tab === 'growth' && (
         <div className="space-y-4">
-          <div className="wl-card p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <TrendingUp size={15} style={{ color: 'var(--sage)' }} />
-              <div className="text-[13px] font-bold" style={{ color: 'var(--text)' }}>Overall Mutual Fund Growth</div>
+          <div className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
+            <div className="flex items-center gap-2.5 mb-3.5">
+              <span className="w-8 h-8 rounded-[10px] flex items-center justify-center" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}><TrendingUp size={15} /></span>
+              <h3 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>How your funds have grown</h3>
             </div>
             <InvestmentTimeline txns={allMfTxns} invested={totalInvested} currentValue={currentValue} />
           </div>
 
           {allMfTxns.length === 0 && (
-            <div className="wl-card p-4 text-[12px] flex items-start gap-2" style={{ color: 'var(--text3)' }}>
-              <span>💡</span>
-              <span>Import a CAMS statement (the <strong>Import PDF</strong> button) to load your full month-on-month and year-on-year investment history with returns.</span>
+            <div className="rounded-xl px-4 py-3 text-[12.5px] leading-snug" style={{ background: 'var(--accent-bg)', border: '1px solid var(--accent-border)', color: 'var(--accent2)' }}>
+              Import a CAMS statement (<b>Import PDF</b> above) to load your full history and see growth month by month and year by year.
             </div>
           )}
 
-          <div className="wl-card p-5">
-            <div className="text-[13px] font-bold mb-3" style={{ color: 'var(--text)' }}>Invested per Year — by Fund</div>
+          <div className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
+            <h3 className="text-[14px] md:text-[15px] font-semibold mb-3" style={{ color: 'var(--text)' }}>Invested each year, by fund</h3>
             <InvestmentMatrix
               assets={sorted.map(f => {
                 const eff = getEffectiveNav(f)
@@ -1153,40 +1153,36 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
 
         return (
           <div className="space-y-4">
-            <div className="wl-card p-5">
-              <div className="flex items-center gap-2 mb-1">
-                <Rocket size={16} style={{ color: 'var(--sage)' }} />
-                <div className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>Overall — where your SIPs are headed</div>
+            <div className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
+              <div className="flex items-center gap-2.5 mb-2">
+                <span className="w-8 h-8 rounded-[10px] flex items-center justify-center" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}><Rocket size={15} /></span>
+                <h3 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Where all your funds are headed</h3>
               </div>
               {sipTotal === 0 ? (
-                <div className="text-[12px] py-3" style={{ color: 'var(--text3)' }}>
-                  No active SIPs detected. Import a CAMS statement (SIPs are auto-detected) or set a SIP on a fund — then adjust the slider below to project any amount.
-                </div>
+                <p className="text-[12.5px] pb-2" style={{ color: 'var(--text3)' }}>
+                  No SIPs running yet. Import a CAMS statement (SIPs are detected) or set a SIP on a fund, or type any amount below to try it.
+                </p>
               ) : null}
               <SipProjector key={`ov-${Math.round(overallCorpus)}-${sipTotal}-${blended}`}
                 currentValue={overallCorpus} monthlySip={sipTotal} annualRate={blended}
                 subtitle={`${activeSIPs} active SIP${activeSIPs !== 1 ? 's' : ''} · ₹${sipTotal.toLocaleString('en-IN')}/mo · blended expected return ${blended}%/yr`} />
             </div>
 
-            <div className="wl-card p-5">
-              <div className="mb-4">
-                <div className="flex items-center gap-2 mb-2 justify-center">
-                  <Rocket size={15} style={{ color: 'var(--sage)' }} />
-                  <div className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>Individual fund projection</div>
+            <div className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
+              <div className="mb-3.5">
+                <div className="flex items-center gap-2.5 mb-2.5">
+                  <span className="w-8 h-8 rounded-[10px] flex items-center justify-center" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}><Rocket size={15} /></span>
+                  <h3 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>One fund</h3>
                 </div>
-                <div className="flex justify-center">
-                  <select value={selFund?.id ?? ''} onChange={e => setProjFund(e.target.value)}
-                    className="wl-input text-[13px] font-semibold" style={{ background: 'var(--bg2)', maxWidth: 460, width: '100%', textAlign: 'center' }}>
-                    {sorted.map(f => <option key={f.id} value={f.id}>{f.fund_name}</option>)}
-                  </select>
-                </div>
-                <div className="text-[10px] text-center mt-1" style={{ color: 'var(--text3)' }}>
-                  Pick a fund — projection starts from its current value &amp; uses its expected return automatically.
-                </div>
+                <select value={selFund?.id ?? ''} onChange={e => setProjFund(e.target.value)} aria-label="Fund to project"
+                  className="wl-input text-[13.5px] font-semibold w-full md:max-w-[460px]" style={{ background: '#fff' }}>
+                  {sorted.map(f => <option key={f.id} value={f.id}>{f.fund_name}</option>)}
+                </select>
+                <p className="text-[11.5px] mt-1.5" style={{ color: 'var(--text4)' }}>Starts from the fund&apos;s value today and uses its expected return.</p>
               </div>
               {selFund && (() => {
-                const selRate = navCagr[selFund.id] ?? fundRate(selFund)
-                const basis = navCagr[selFund.id] != null ? "fund's ~3-yr NAV history" : 'its category + your realised return'
+                const selRate = saneRate(navCagr[selFund.id] ?? fundRate(selFund), selFund.fund_type)
+                const basis = navCagr[selFund.id] != null ? "its 3-year NAV history, kept within its category's long-run range" : 'its category and your realised return'
                 return (
                   <SipProjector key={`${selFund.id}-${selRate}`}
                     currentValue={fundVal(selFund)} monthlySip={selFund.has_sip && selFund.sip_amount ? Number(selFund.sip_amount) : 0}
@@ -1223,7 +1219,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
               ) : repickResults.map((s: any) => (
                 <button key={s.schemeCode} onClick={() => applyScheme(repickFund, s)}
                   className="w-full text-left px-3 py-2 rounded-lg border text-[11px] transition-colors hover:brightness-95"
-                  style={{ borderColor: 'var(--border)', background: 'var(--bg2)', color: 'var(--text)' }}>
+                  style={{ borderColor: 'var(--line)', background: 'var(--bg2)', color: 'var(--text)' }}>
                   {s.schemeName}
                   <div className="text-[9px]" style={{ color: 'var(--text3)' }}>Code {s.schemeCode}</div>
                 </button>
@@ -1239,7 +1235,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
               Remove <strong style={{ color: 'var(--text)' }}>{deleteFund.fund_name}</strong> and its imported transaction history? This can't be undone.
             </div>
             <div className="flex gap-2">
-              <button onClick={() => setDeleteFund(null)} className="flex-1 py-2.5 rounded-xl border text-[12px] font-semibold" style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>Cancel</button>
+              <button onClick={() => setDeleteFund(null)} className="flex-1 py-2.5 rounded-xl border text-[12px] font-semibold" style={{ borderColor: 'var(--line)', color: 'var(--text3)', background: 'var(--bg2)' }}>Cancel</button>
               <button onClick={confirmDelete} disabled={deleting} className="flex-1 py-2.5 rounded-xl text-white text-[12px] font-bold" style={{ background: 'var(--rose)' }}>{deleting ? 'Deleting…' : 'Delete'}</button>
             </div>
           </Modal>
