@@ -1,4 +1,6 @@
 'use client'
+import InvHoldings, { fullDate, pctText, pctColor } from './InvHoldings'
+import { Landmark as IcBank, TrendingUp as IcUp, Percent as IcPct, Wallet as IcWallet, Layers as IcLayers, CalendarClock as IcCal } from 'lucide-react'
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -80,86 +82,28 @@ export default function NpsClient({ data }: { data: any[] }) {
       onExcel={() => setShowExcel(true)}>
 
 
-      <FilterBar
-        search={search} onSearch={setSearch}
-        sort={sort} onSort={setSort} sortOptions={SORT_OPTS}
-        chips={TIER_CHIPS} activeChip={typeFilter} onChip={setTypeFilter}
-        resultCount={filtered.length} totalCount={base.length}
-        searchPlaceholder="Search by name or fund manager…"
-      />
-
-      {/* Summary */}
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          { label: 'Total Corpus',   value: `₹${Math.round(totalCorpus).toLocaleString('en-IN')}`,   color: 'var(--sage)' },
-          { label: 'Total Invested', value: `₹${Math.round(totalInvested).toLocaleString('en-IN')}`, color: 'var(--blue)' },
-          { label: 'Returns',        value: `${Number(returnPct)>=0?'+':''}${returnPct}%`,            color: Number(returnPct)>=0?'var(--income)':'var(--rose)' },
-        ].map(c => (
-          <div key={c.label} className="wl-card p-3">
-            <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>{c.label}</div>
-            <div className="text-[18px] font-bold font-mono" style={{ color: c.color }}>{c.value}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* NPS Account cards */}
-      {filtered.length === 0 ? <InvEmptyState msg="No NPS accounts match your filters." /> : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {filtered.map((n, i) => {
-            const allocData = [
-              { name: 'Equity', value: Number(n.equity_allocation) },
-              { name: 'Corp Bond', value: Number(n.corporate_bond_allocation) },
-              { name: 'Govt Sec', value: Number(n.govt_securities_allocation) },
-            ].filter(d => d.value > 0)
-            const retAmt = Number(n.corpus_amount) - Number(n.invested_amount)
-            const retP   = Number(n.invested_amount) > 0 ? ((retAmt / Number(n.invested_amount)) * 100).toFixed(1) : '0.0'
-            return (
-              <div key={n.id ?? i} className="wl-card p-4">
-                <div className="flex justify-between items-start mb-3">
-                  <div>
-                    <div className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>{n.name}</div>
-                    <div className="text-[10px]" style={{ color: 'var(--text3)' }}>
-                      {n.tier} · {n.fund_manager ?? 'Fund Manager'} {n.pran_number ? `· PRAN: ${n.pran_number}` : ''}
-                    </div>
-                    {n.holder_name && n.holder_name !== 'Self' && (
-                      <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold mt-0.5 inline-block"
-                        style={{ background: 'var(--blue-bg)', color: 'var(--blue)' }}>{n.holder_name}</span>
-                    )}
-                  </div>
-                  <div className="flex gap-1">
-                    <button onClick={() => setEditItem({ ...n, _type: 'nps' })} className="p-1.5 rounded" style={{ color: 'var(--text3)' }}><Pencil size={13} /></button>
-                    <button onClick={() => deleteItem(n.id)} className="p-1.5 rounded" style={{ color: 'var(--rose)' }}><Trash2 size={13} /></button>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-2 text-[11px] mb-3">
-                  <div><div style={{ color:'var(--text3)' }}>Corpus</div><div className="font-mono font-bold" style={{ color:'var(--sage)' }}>₹{Number(n.corpus_amount).toLocaleString('en-IN')}</div></div>
-                  <div><div style={{ color:'var(--text3)' }}>Invested</div><div className="font-mono font-bold" style={{ color:'var(--text)' }}>₹{Number(n.invested_amount).toLocaleString('en-IN')}</div></div>
-                  <div><div style={{ color:'var(--text3)' }}>Returns</div><div className="font-mono font-bold" style={{ color: Number(retP)>=0?'var(--income)':'var(--rose)' }}>{Number(retP)>=0?'+':''}{retP}%</div></div>
-                </div>
-                {allocData.length > 0 && (
-                  <div className="flex items-center gap-3">
-                    <ResponsiveContainer width={80} height={80}>
-                      <PieChart>
-                        <Pie data={allocData} dataKey="value" cx="50%" cy="50%" innerRadius={22} outerRadius={36} paddingAngle={2}>
-                          {allocData.map((_,j) => <Cell key={j} fill={ALLOC_COLORS[j%ALLOC_COLORS.length]} />)}
-                        </Pie>
-                      </PieChart>
-                    </ResponsiveContainer>
-                    <div className="text-[10px] space-y-0.5">
-                      {allocData.map((d,j)=>(
-                        <div key={j} className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-sm" style={{ background: ALLOC_COLORS[j%ALLOC_COLORS.length] }} />
-                          <span style={{ color:'var(--text2)' }}>{d.name}: {d.value}%</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
+      <InvHoldings listTitle="Your NPS accounts" head={['Account', 'Tier', 'Return', 'Corpus']} chartLabel="Corpus by account"
+        emptyMsg="No NPS accounts match your search." totalCount={base.length}
+        search={search} onSearch={setSearch} searchPlaceholder="Search name or fund manager…" sort={sort} onSort={setSort} sortOptions={SORT_OPTS}
+        hero={{ label: 'Total corpus', value: `₹${Math.round(totalCorpus).toLocaleString('en-IN')}`, tone: Number(returnPct) >= 0 ? 'good' : 'bad',
+          delta: `${Number(returnPct) >= 0 ? '▲' : '▼'} ${Math.abs(Number(returnPct))}% on ₹${Math.round(totalInvested).toLocaleString('en-IN')} invested` }}
+        tiles={[
+          { label: 'Invested', value: `₹${Math.round(totalInvested).toLocaleString('en-IN')}`, delta: `${filtered.length} account${filtered.length === 1 ? '' : 's'}`, icon: IcWallet },
+          { label: 'Gain', value: `₹${Math.round(totalCorpus - totalInvested).toLocaleString('en-IN')}`, delta: `${returnPct}% overall`, tone: Number(returnPct) >= 0 ? 'good' : 'bad', icon: IcUp },
+        ]}
+        items={filtered.map((x, i) => {
+          const inv = Number(x.invested_amount), corpus = Number(x.corpus_amount)
+          const ret = inv > 0 ? (corpus - inv) / inv * 100 : 0
+          const alloc = [['Equity', x.equity_allocation], ['Corp', x.corporate_bond_allocation], ['Govt', x.govt_securities_allocation]]
+            .filter(([, v]) => Number(v) > 0).map(([k, v]) => `${k} ${Number(v)}%`).join(' / ')
+          return {
+            key: x.id ?? String(i), name: x.name, color: '#16A34A',
+            sub: [x.fund_manager, alloc || null, x.holder_name && x.holder_name !== 'Self' ? x.holder_name : null].filter(Boolean).join(' · ') || undefined,
+            tag: x.tier ?? 'Tier I', meta: pctText(ret), metaColor: pctColor(ret),
+            value: corpus, valueText: `₹${Math.round(corpus).toLocaleString('en-IN')}`, valueSub: `₹${Math.round(inv).toLocaleString('en-IN')} invested`,
+            onEdit: () => setEditItem({ ...x, _type: 'nps' }), onDelete: () => deleteItem(x.id),
+          }
+        })} />
 
       {showAdd   && <AddInvestmentModal onClose={() => setShowAdd(false)} defaultType="nps" />}
       {editItem  && <AddInvestmentModal onClose={() => setEditItem(null)} defaultType="nps" editData={editItem} />}

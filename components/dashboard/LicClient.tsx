@@ -1,4 +1,6 @@
 'use client'
+import InvHoldings, { fullDate, pctText, pctColor } from './InvHoldings'
+import { Landmark as IcBank, TrendingUp as IcUp, Percent as IcPct, Wallet as IcWallet, Layers as IcLayers, CalendarClock as IcCal } from 'lucide-react'
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -81,98 +83,28 @@ export default function LicClient({ data }: { data: any[] }) {
       onExcel={() => setShowExcel(true)}>
 
 
-      <FilterBar
-        search={search} onSearch={setSearch}
-        sort={sort} onSort={setSort} sortOptions={SORT_OPTS}
-        chips={FREQ_CHIPS} activeChip={typeFilter} onChip={setTypeFilter}
-        resultCount={filtered.length} totalCount={base.length}
-        searchPlaceholder="Search by policy name or plan…"
-      />
-
-      {/* Summary */}
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          { label: 'Total Sum Assured', value: `₹${Math.round(totalSumAssured).toLocaleString('en-IN')}`, color: 'var(--sage)' },
-          { label: 'Annual Premium',    value: `₹${Math.round(totalPremium).toLocaleString('en-IN')}/yr`,  color: 'var(--blue)' },
-          { label: 'Total Paid',        value: `₹${Math.round(totalPaid).toLocaleString('en-IN')}`,        color: 'var(--income)' },
-        ].map(c => (
-          <div key={c.label} className="wl-card p-3">
-            <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>{c.label}</div>
-            <div className="text-[18px] font-bold font-mono" style={{ color: c.color }}>{c.value}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* LIC Policy cards */}
-      {filtered.length === 0 ? <InvEmptyState msg="No LIC policies match your filters." /> : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {filtered.map((l, i) => {
-            const daysToMaturity = l.maturity_date ? Math.ceil((new Date(l.maturity_date).getTime() - Date.now()) / 86400000) : null
-            const daysToNext = l.next_premium_date ? Math.ceil((new Date(l.next_premium_date).getTime() - Date.now()) / 86400000) : null
-            return (
-              <div key={l.id ?? i} className="wl-card p-4">
-                <div className="flex justify-between items-start mb-3">
-                  <div className="flex items-start gap-2">
-                    <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background:'var(--sage-bg)' }}>
-                      <Shield size={16} style={{ color:'var(--sage)' }} />
-                    </div>
-                    <div>
-                      <div className="text-[13px] font-bold" style={{ color:'var(--text)' }}>{l.name}</div>
-                      <div className="text-[10px]" style={{ color:'var(--text3)' }}>{l.plan_name ?? 'LIC Policy'} {l.policy_number ? `· ${l.policy_number}` : ''}</div>
-                      {l.holder_name && l.holder_name !== 'Self' && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold mt-0.5 inline-block"
-                          style={{ background: 'var(--blue-bg)', color: 'var(--blue)' }}>{l.holder_name}</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex gap-1">
-                    <button onClick={() => setEditItem({ ...l, _type: 'lic' })} className="p-1.5 rounded" style={{ color:'var(--text3)' }}><Pencil size={13} /></button>
-                    <button onClick={() => deleteItem(l.id)} className="p-1.5 rounded" style={{ color:'var(--rose)' }}><Trash2 size={13} /></button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 text-[11px] mb-3">
-                  <div>
-                    <div style={{ color:'var(--text3)' }}>Sum Assured</div>
-                    <div className="font-mono font-bold" style={{ color:'var(--sage)' }}>₹{Number(l.sum_assured).toLocaleString('en-IN')}</div>
-                  </div>
-                  <div>
-                    <div style={{ color:'var(--text3)' }}>Annual Premium</div>
-                    <div className="font-mono font-bold" style={{ color:'var(--text)' }}>₹{Number(l.annual_premium).toLocaleString('en-IN')}</div>
-                  </div>
-                  <div>
-                    <div style={{ color:'var(--text3)' }}>Total Paid</div>
-                    <div className="font-mono font-bold" style={{ color:'var(--income)' }}>₹{Number(l.total_paid??0).toLocaleString('en-IN')}</div>
-                  </div>
-                  <div>
-                    <div style={{ color:'var(--text3)' }}>Bonus Accrued</div>
-                    <div className="font-mono font-bold" style={{ color:'var(--gold)' }}>₹{Number(l.bonus_accrued??0).toLocaleString('en-IN')}</div>
-                  </div>
-                </div>
-
-                <div className="text-[11px] space-y-1">
-                  <div className="flex items-center gap-1.5" style={{ color: 'var(--text3)' }}>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background:'var(--sage-bg)', color:'var(--sage)' }}>{l.premium_frequency}</span>
-                    <span>· {Number(l.premium_paid_years).toFixed(0)} yrs paid of {l.policy_term_years} yrs</span>
-                  </div>
-                  {daysToNext != null && (
-                    <div className="flex items-center gap-1" style={{ color: daysToNext <= 15 ? 'var(--rose)' : 'var(--text3)' }}>
-                      <Calendar size={10} />
-                      Next premium: {l.next_premium_date} {daysToNext >= 0 ? `(in ${daysToNext} days)` : '(overdue)'}
-                    </div>
-                  )}
-                  {daysToMaturity != null && (
-                    <div className="flex items-center gap-1" style={{ color: 'var(--text3)' }}>
-                      <Calendar size={10} />
-                      Matures: {l.maturity_date} {daysToMaturity > 0 ? `(${Math.round(daysToMaturity/365.25)} yrs)` : '(matured)'}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
+      <InvHoldings listTitle="Your LIC policies" head={['Policy', 'Premium mode', 'Next premium', 'Sum assured']} chartLabel="Sum assured by policy"
+        emptyMsg="No LIC policies match your search." totalCount={base.length}
+        search={search} onSearch={setSearch} searchPlaceholder="Search policy or plan…" sort={sort} onSort={setSort} sortOptions={SORT_OPTS}
+        hero={{ label: 'Total sum assured', value: `₹${Math.round(totalSumAssured).toLocaleString('en-IN')}`,
+          delta: `₹${Math.round(totalPremium).toLocaleString('en-IN')} a year in premiums` }}
+        tiles={[
+          { label: 'Annual premium', value: `₹${Math.round(totalPremium).toLocaleString('en-IN')}`, delta: `${filtered.length} polic${filtered.length === 1 ? 'y' : 'ies'}`, icon: IcCal },
+          { label: 'Paid so far', value: `₹${Math.round(totalPaid).toLocaleString('en-IN')}`, delta: 'across all policies', icon: IcWallet },
+        ]}
+        items={filtered.map((x, i) => {
+          const daysToNext = x.next_premium_date ? Math.ceil((new Date(x.next_premium_date).getTime() - Date.now()) / 86400000) : null
+          return {
+            key: x.id ?? String(i), name: x.name, color: '#0891B2',
+            sub: [x.plan_name, x.policy_number, x.maturity_date ? `matures ${fullDate(x.maturity_date)}` : null, x.holder_name && x.holder_name !== 'Self' ? x.holder_name : null].filter(Boolean).join(' · ') || undefined,
+            tag: x.premium_frequency ?? 'Annually',
+            meta: daysToNext == null ? '—' : daysToNext < 0 ? 'Overdue' : `${fullDate(x.next_premium_date)}`,
+            metaColor: daysToNext != null && daysToNext < 0 ? '#DC2626' : daysToNext != null && daysToNext <= 15 ? '#D97706' : undefined,
+            value: Number(x.sum_assured), valueText: `₹${Number(x.sum_assured).toLocaleString('en-IN')}`,
+            valueSub: `₹${Number(x.annual_premium).toLocaleString('en-IN')}/yr`,
+            onEdit: () => setEditItem({ ...x, _type: 'lic' }), onDelete: () => deleteItem(x.id),
+          }
+        })} />
 
       {showAdd   && <AddInvestmentModal onClose={() => setShowAdd(false)} defaultType="lic" />}
       {editItem  && <AddInvestmentModal onClose={() => setEditItem(null)} defaultType="lic" editData={editItem} />}

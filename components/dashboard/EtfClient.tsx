@@ -1,4 +1,6 @@
 'use client'
+import InvHoldings, { fullDate, pctText, pctColor } from './InvHoldings'
+import { Landmark as IcBank, TrendingUp as IcUp, Percent as IcPct, Wallet as IcWallet, Layers as IcLayers, CalendarClock as IcCal } from 'lucide-react'
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useViewStore } from '@/store/viewStore'
@@ -100,102 +102,28 @@ export default function EtfClient({ data }: { data: any[] }) {
       onExcel={() => setShowExcel(true)}>
 
 
-      <FilterBar
-        search={search} onSearch={setSearch}
-        sort={sort} onSort={setSort} sortOptions={SORT_OPTS}
-        chips={TYPE_CHIPS} activeChip={typeFilter} onChip={setTypeFilter}
-        resultCount={filtered.length} totalCount={base.length}
-        searchPlaceholder="Search by ETF name, symbol or type…"
-      />
-
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          { label: 'Total Invested', value: `${sym}${Math.round(totalInvested).toLocaleString('en-IN')}`, color: 'var(--blue)' },
-          { label: 'Current Value',  value: `${sym}${Math.round(totalCurrent).toLocaleString('en-IN')}`,  color: 'var(--sage)' },
-          { label: 'Returns',        value: `${Number(totalReturn)>=0?'+':''}${totalReturn}%`,             color: Number(totalReturn)>=0?'var(--income)':'var(--rose)' },
-        ].map(c => (
-          <div key={c.label} className="wl-card p-3">
-            <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>{c.label}</div>
-            <div className="text-[17px] font-bold font-mono" style={{ color: c.color }}>{c.value}</div>
-          </div>
-        ))}
-      </div>
-
-      {pieData.length > 0 && (
-        <div className="wl-card p-4">
-          <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>Allocation by ETF Type</div>
-          <div className="flex items-center gap-6">
-            <ResponsiveContainer width={140} height={140}>
-              <PieChart>
-                <Pie data={pieData} dataKey="value" cx="50%" cy="50%" innerRadius={38} outerRadius={62} paddingAngle={2}>
-                  {pieData.map((_,i) => <Cell key={i} fill={COLORS[i%COLORS.length]} />)}
-                </Pie>
-                <Tooltip contentStyle={{ background:'#fff', border:'1px solid var(--border)', borderRadius:8, fontSize:11 }}
-                  formatter={(v:any)=>[`${sym}${Number(v).toLocaleString('en-IN')}`,'']} />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="flex flex-col gap-2">
-              {pieData.map((d,i) => (
-                <div key={i} className="flex items-center gap-2 text-[11px]">
-                  <span className="w-2.5 h-2.5 rounded-sm" style={{ background: COLORS[i%COLORS.length] }} />
-                  <span style={{ color:'var(--text2)' }}>{d.name}</span>
-                  <span className="font-mono" style={{ color:'var(--text)' }}>{sym}{d.value.toLocaleString('en-IN')}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {filtered.length === 0 ? <InvEmptyState msg="No ETFs match your filters." /> : (
-        <div className="wl-card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-[12px]">
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg2)' }}>
-                  {['ETF Name','Symbol','Type','Units','Avg Price','Current Price','Invested','Current Value','Returns',''].map(h=>(
-                    <th key={h} className="px-3 py-3 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color:'var(--text3)' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((e, i) => {
-                  const price = Number(e.current_price || e.avg_buy_price || 0)
-                  const cur   = Number(e.units || 0) * price
-                  const inv   = Number(e.invested_amount || 0)
-                  const ret   = inv > 0 ? ((cur-inv)/inv*100).toFixed(1) : '0.0'
-                  const col   = TYPE_COLORS[e.etf_type] || 'var(--sage)'
-                  return (
-                    <tr key={e.id ?? i} style={{ borderBottom:'1px solid var(--border)' }} className="hover:bg-stone-50">
-                      <td className="px-3 py-3 font-semibold" style={{ color:'var(--text)' }}>
-                        {e.etf_name}
-                        {e.holder_name && e.holder_name !== 'Self' && (
-                          <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded font-semibold"
-                            style={{ background: 'var(--blue-bg)', color: 'var(--blue)' }}>{e.holder_name}</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-3 font-mono text-[11px]" style={{ color:'var(--text3)' }}>{e.symbol}</td>
-                      <td className="px-3 py-3"><span className="px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold" style={{ background: col+'18', color: col }}>{e.etf_type}</span></td>
-                      <td className="px-3 py-3 font-mono" style={{ color:'var(--text2)' }}>{Number(e.units||0).toFixed(2)}</td>
-                      <td className="px-3 py-3 font-mono" style={{ color:'var(--text2)' }}>{sym}{Number(e.avg_buy_price||0).toFixed(2)}</td>
-                      <td className="px-3 py-3 font-mono" style={{ color:'var(--text2)' }}>{e.current_price ? `${sym}${Number(e.current_price).toFixed(2)}` : '—'}</td>
-                      <td className="px-3 py-3 font-mono" style={{ color:'var(--text3)' }}>{sym}{Math.round(inv).toLocaleString('en-IN')}</td>
-                      <td className="px-3 py-3 font-mono font-bold" style={{ color:'var(--text)' }}>{sym}{Math.round(cur).toLocaleString('en-IN')}</td>
-                      <td className="px-3 py-3 font-bold" style={{ color: Number(ret)>=0?'var(--income)':'var(--rose)' }}>{Number(ret)>=0?'+':''}{ret}%</td>
-                      <td className="px-3 py-3">
-                        <div className="flex gap-1">
-                          <button onClick={() => setEditItem({ ...e, _type: 'etf' })} style={{ color:'var(--text3)' }}><Pencil size={13}/></button>
-                          <button onClick={() => deleteItem(e.id)} style={{ color:'var(--rose)' }}><Trash2 size={13}/></button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      <InvHoldings listTitle="Your ETFs" head={['ETF', 'Type', 'Return', 'Value']} chartLabel="Value by ETF"
+        emptyMsg="No ETFs match your search." totalCount={base.length}
+        search={search} onSearch={setSearch} searchPlaceholder="Search ETF, symbol or type…" sort={sort} onSort={setSort} sortOptions={SORT_OPTS}
+        hero={{ label: 'Value today', value: `${sym}${Math.round(totalCurrent).toLocaleString('en-IN')}`, tone: Number(totalReturn) >= 0 ? 'good' : 'bad',
+          delta: `${Number(totalReturn) >= 0 ? '▲' : '▼'} ${Math.abs(Number(totalReturn))}% on ${sym}${Math.round(totalInvested).toLocaleString('en-IN')} invested` }}
+        tiles={[
+          { label: 'Invested', value: `${sym}${Math.round(totalInvested).toLocaleString('en-IN')}`, delta: `${filtered.length} ETF${filtered.length === 1 ? '' : 's'}`, icon: IcWallet },
+          { label: 'Gain', value: `${sym}${Math.round(totalCurrent - totalInvested).toLocaleString('en-IN')}`, delta: `${totalReturn}% overall`, tone: Number(totalReturn) >= 0 ? 'good' : 'bad', icon: IcUp },
+        ]}
+        items={filtered.map((x, i) => {
+          const cur = Number(x.units || 0) * Number(x.current_price || x.avg_buy_price || 0)
+          const inv = Number(x.invested_amount || 0)
+          const ret = inv > 0 ? (cur - inv) / inv * 100 : 0
+          const type = String(x.etf_type ?? 'equity')
+          return {
+            key: x.id ?? String(i), name: x.etf_name, color: ({ equity: '#16A34A', debt: '#3B8EF0', gold: '#D97706', index: '#7C3AED', international: '#DC2626' } as Record<string, string>)[x.etf_type] ?? '#16A34A',
+            sub: [x.symbol, `${Number(x.units || 0).toFixed(2)} units`, x.holder_name && x.holder_name !== 'Self' ? x.holder_name : null].filter(Boolean).join(' · '),
+            tag: type[0].toUpperCase() + type.slice(1), meta: pctText(ret), metaColor: pctColor(ret),
+            value: cur, valueText: `${sym}${Math.round(cur).toLocaleString('en-IN')}`, valueSub: `${sym}${Math.round(inv).toLocaleString('en-IN')} invested`,
+            onEdit: () => setEditItem({ ...x, _type: 'etf' }), onDelete: () => deleteItem(x.id),
+          }
+        })} />
 
       {showAdd   && <AddInvestmentModal onClose={() => setShowAdd(false)} defaultType="etf" />}
       {editItem  && <AddInvestmentModal onClose={() => setEditItem(null)} defaultType="etf" editData={editItem} />}

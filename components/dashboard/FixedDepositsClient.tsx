@@ -1,4 +1,6 @@
 'use client'
+import InvHoldings, { fullDate, pctText, pctColor } from './InvHoldings'
+import { Landmark as IcBank, TrendingUp as IcUp, Percent as IcPct, Wallet as IcWallet, Layers as IcLayers, CalendarClock as IcCal } from 'lucide-react'
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -71,87 +73,30 @@ export default function FixedDepositsClient({ data }: { data: any[] }) {
       onExcel={() => setShowExcel(true)}>
 
 
-      <FilterBar
-        search={search} onSearch={setSearch}
-        sort={sort} onSort={setSort} sortOptions={SORT_OPTS}
-        resultCount={filtered.length} totalCount={base.length}
-        searchPlaceholder="Search by FD name or bank…"
-      />
-
-      {/* Summary */}
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          { label: 'Total Principal', value: `₹${Math.round(totalPrincipal).toLocaleString('en-IN')}`, color: 'var(--blue)' },
-          { label: 'Total Interest', value: `+₹${Math.round(totalInterest).toLocaleString('en-IN')}`, color: 'var(--income)' },
-          { label: 'Avg Rate', value: `${avgRate}% p.a.`, color: 'var(--gold)' },
-        ].map(c => (
-          <div key={c.label} className="wl-card p-3">
-            <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>{c.label}</div>
-            <div className="text-[18px] font-bold font-mono" style={{ color: c.color }}>{c.value}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Chart */}
-      {chartData.length > 0 && (
-        <div className="wl-card p-4">
-          <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>Principal by FD (₹ thousands)</div>
-          <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-              <XAxis dataKey="name" tick={{ fill:'var(--text3)', fontSize:10 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill:'var(--text3)', fontSize:10 }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:8, fontSize:11 }} formatter={(v:any)=>[`₹${v}K`,'Principal']} />
-              <Bar dataKey="principal" fill="var(--blue)" radius={[4,4,0,0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
-      {/* FD Cards */}
-      {filtered.length === 0 ? <InvEmptyState msg="No fixed deposits match your filters." /> : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {filtered.map((f, i) => {
-            const matAmt = f.maturity_amt ?? (Number(f.principal)*(1+Number(f.interest_rate)/100))
-            const earned = matAmt - Number(f.principal)
-            const daysLeft = Math.ceil((new Date(f.maturity_date).getTime() - Date.now()) / 86400000)
-            const s = f.currency === 'AED' ? 'AED ' : '₹'
-            return (
-              <div key={f.id ?? i} className="wl-card p-4">
-                <div className="flex justify-between items-start mb-2">
-                  <div>
-                    <div className="text-[13px] font-bold" style={{ color: 'var(--text)' }}>{f.name}</div>
-                    <div className="text-[10px]" style={{ color: 'var(--text3)' }}>{f.bank_name} · {f.currency}</div>
-                    {f.holder_name && f.holder_name !== 'Self' && (
-                      <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold mt-0.5 inline-block"
-                        style={{ background: 'var(--blue-bg)', color: 'var(--blue)' }}>{f.holder_name}</span>
-                    )}
-                  </div>
-                  <div className="flex gap-1">
-                    <button onClick={() => setEditItem({ ...f, _type: 'fixed_deposit' })} className="p-1 rounded" style={{ color: 'var(--text3)' }}><Pencil size={12} /></button>
-                    <button onClick={() => deleteItem(f.id)} className="p-1 rounded" style={{ color: 'var(--rose)' }}><Trash2 size={12} /></button>
-                  </div>
-                </div>
-                <div className="text-[11px] font-bold mb-2 px-2 py-0.5 rounded-full inline-block" style={{ background:'var(--gold-bg)', color:'var(--gold)' }}>{f.interest_rate}% p.a.</div>
-                <div className="grid grid-cols-2 gap-2 text-[11px]">
-                  <div>
-                    <div style={{ color:'var(--text3)' }}>Principal</div>
-                    <div className="font-mono font-bold" style={{ color:'var(--text)' }}>{s}{Number(f.principal).toLocaleString('en-IN')}</div>
-                  </div>
-                  <div>
-                    <div style={{ color:'var(--text3)' }}>Interest</div>
-                    <div className="font-mono font-bold" style={{ color:'var(--income)' }}>+{s}{Math.round(earned).toLocaleString('en-IN')}</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 mt-2 text-[10px]" style={{ color: daysLeft < 30 ? 'var(--rose)' : 'var(--text3)' }}>
-                  <Clock size={10} />
-                  {daysLeft > 0 ? `Matures in ${daysLeft} days (${f.maturity_date})` : `Matured on ${f.maturity_date}`}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
+      <InvHoldings listTitle="Your deposits" head={['Deposit', 'Rate', 'Matures', 'Principal']} chartLabel="Principal by deposit"
+        emptyMsg="No fixed deposits match your search." totalCount={base.length}
+        search={search} onSearch={setSearch} searchPlaceholder="Search FD or bank…" sort={sort} onSort={setSort} sortOptions={SORT_OPTS}
+        hero={{ label: 'Value at maturity', value: `₹${Math.round(totalPrincipal + totalInterest).toLocaleString('en-IN')}`, tone: 'good',
+          delta: `+₹${Math.round(totalInterest).toLocaleString('en-IN')} interest on ₹${Math.round(totalPrincipal).toLocaleString('en-IN')}` }}
+        tiles={[
+          { label: 'Principal', value: `₹${Math.round(totalPrincipal).toLocaleString('en-IN')}`, delta: `${filtered.length} deposit${filtered.length === 1 ? '' : 's'}`, icon: IcBank },
+          { label: 'Interest to earn', value: `+₹${Math.round(totalInterest).toLocaleString('en-IN')}`, delta: 'by maturity', tone: 'good', icon: IcUp },
+          { label: 'Average rate', value: `${avgRate}%`, delta: 'per year', icon: IcPct },
+        ]}
+        items={filtered.map((x, i) => {
+          const matAmt = x.maturity_amt ?? (Number(x.principal) * (1 + Number(x.interest_rate) / 100))
+          const daysLeft = Math.ceil((new Date(x.maturity_date).getTime() - Date.now()) / 86400000)
+          const s = x.currency === 'AED' ? 'AED ' : '₹'
+          return {
+            key: x.id ?? String(i), name: x.name, color: '#3B8EF0',
+            sub: [x.bank_name, x.holder_name && x.holder_name !== 'Self' ? x.holder_name : null].filter(Boolean).join(' · '),
+            tag: `${x.interest_rate}% p.a.`,
+            meta: daysLeft > 0 ? fullDate(x.maturity_date) : 'Matured', metaColor: daysLeft > 0 && daysLeft <= 30 ? '#D97706' : undefined,
+            value: Number(x.principal), valueText: `${s}${Number(x.principal).toLocaleString('en-IN')}`,
+            valueSub: `+${s}${Math.round(matAmt - Number(x.principal)).toLocaleString('en-IN')} interest`,
+            onEdit: () => setEditItem({ ...x, _type: 'fixed_deposit' }), onDelete: () => deleteItem(x.id),
+          }
+        })} />
 
       {showAdd   && <AddInvestmentModal onClose={() => setShowAdd(false)} defaultType="fixed_deposit" />}
       {editItem  && <AddInvestmentModal onClose={() => setEditItem(null)} defaultType="fixed_deposit" editData={editItem} />}

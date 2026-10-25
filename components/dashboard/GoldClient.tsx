@@ -1,4 +1,6 @@
 'use client'
+import InvHoldings, { fullDate, pctText, pctColor } from './InvHoldings'
+import { Landmark as IcBank, TrendingUp as IcUp, Percent as IcPct, Wallet as IcWallet, Layers as IcLayers, CalendarClock as IcCal } from 'lucide-react'
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useViewStore } from '@/store/viewStore'
@@ -93,75 +95,29 @@ export default function GoldClient({ data }: { data: any[] }) {
       onExcel={() => setShowExcel(true)}>
 
 
-      <FilterBar
-        search={search} onSearch={setSearch}
-        sort={sort} onSort={setSort} sortOptions={SORT_OPTS}
-        chips={TYPE_CHIPS} activeChip={typeFilter} onChip={setTypeFilter}
-        resultCount={filtered.length} totalCount={base.length}
-        searchPlaceholder="Search gold name or type…"
-      />
-
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { label: 'Total Invested', value: `${sym}${Math.round(totalInvested).toLocaleString('en-IN')}`, color: 'var(--blue)' },
-          { label: 'Current Value',  value: `${sym}${Math.round(totalCurrent).toLocaleString('en-IN')}`,  color: 'var(--gold)' },
-          { label: 'Returns',        value: `${Number(totalReturn)>=0?'+':''}${totalReturn}%`,             color: Number(totalReturn)>=0?'var(--income)':'var(--rose)' },
-          { label: 'Total Grams',    value: `${totalGrams.toFixed(2)}g`,                                   color: 'var(--text)' },
-        ].map(c => (
-          <div key={c.label} className="wl-card p-3">
-            <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>{c.label}</div>
-            <div className="text-[17px] font-bold font-mono" style={{ color: c.color }}>{c.value}</div>
-          </div>
-        ))}
-      </div>
-
-      {filtered.length === 0 ? <InvEmptyState msg="No gold investments match your filters." /> : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {filtered.map((g, i) => {
-            const cur = g.current_price_per_gram && g.quantity_grams
-              ? Number(g.current_price_per_gram) * Number(g.quantity_grams)
-              : Number(g.invested_amount || 0)
-            const inv = Number(g.invested_amount || 0)
-            const ret = inv > 0 ? ((cur-inv)/inv*100).toFixed(1) : '0.0'
-            const col = TYPE_COLORS[g.gold_type] || 'var(--gold)'
-            return (
-              <div key={g.id ?? i} className="wl-card p-4">
-                <div className="flex justify-between items-start mb-2">
-                  <div className="flex items-start gap-2">
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: col + '18' }}>
-                      <Gem size={14} style={{ color: col }} />
-                    </div>
-                    <div>
-                      <div className="text-[13px] font-bold" style={{ color: 'var(--text)' }}>{g.name}</div>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase" style={{ background: col + '18', color: col }}>{g.gold_type?.replace('_',' ')}</span>
-                      {g.holder_name && g.holder_name !== 'Self' && (
-                        <span className="ml-1 text-[9px] px-1.5 py-0.5 rounded font-semibold"
-                          style={{ background: 'var(--blue-bg)', color: 'var(--blue)' }}>{g.holder_name}</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex gap-1">
-                    <button onClick={() => setEditItem({ ...g, _type: 'gold' })} style={{ color:'var(--text3)' }}><Pencil size={12} /></button>
-                    <button onClick={() => deleteItem(g.id)} style={{ color:'var(--rose)' }}><Trash2 size={12} /></button>
-                  </div>
-                </div>
-                <div className="text-[20px] font-bold font-mono mb-1" style={{ color: 'var(--text)' }}>
-                  {sym}{Math.round(cur).toLocaleString('en-IN')}
-                </div>
-                <div className="flex justify-between text-[10px]" style={{ color: 'var(--text3)' }}>
-                  <span>Invested: {sym}{Math.round(inv).toLocaleString('en-IN')}</span>
-                  <span className="font-bold" style={{ color: Number(ret)>=0?'var(--income)':'var(--rose)' }}>{Number(ret)>=0?'+':''}{ret}%</span>
-                </div>
-                {g.quantity_grams && (
-                  <div className="text-[10px] mt-1" style={{ color: 'var(--text3)' }}>
-                    {g.quantity_grams}g @ {sym}{g.buy_price_per_gram}/g
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
+      <InvHoldings listTitle="Your gold" head={['Holding', 'Type', 'Return', 'Value']} chartLabel="Value by holding"
+        emptyMsg="No gold investments match your search." totalCount={base.length}
+        search={search} onSearch={setSearch} searchPlaceholder="Search gold…" sort={sort} onSort={setSort} sortOptions={SORT_OPTS}
+        hero={{ label: 'Value today', value: `${sym}${Math.round(totalCurrent).toLocaleString('en-IN')}`, tone: Number(totalReturn) >= 0 ? 'good' : 'bad',
+          delta: `${Number(totalReturn) >= 0 ? '▲' : '▼'} ${Math.abs(Number(totalReturn))}% on ${sym}${Math.round(totalInvested).toLocaleString('en-IN')} invested` }}
+        tiles={[
+          { label: 'Invested', value: `${sym}${Math.round(totalInvested).toLocaleString('en-IN')}`, delta: `${filtered.length} holding${filtered.length === 1 ? '' : 's'}`, icon: IcWallet },
+          { label: 'Total weight', value: `${totalGrams.toFixed(2)} g`, delta: 'physical, SGB and funds', icon: IcLayers },
+        ]}
+        items={filtered.map((x, i) => {
+          const cur = x.current_price_per_gram && x.quantity_grams ? Number(x.current_price_per_gram) * Number(x.quantity_grams) : Number(x.invested_amount || 0)
+          const inv = Number(x.invested_amount || 0)
+          const ret = inv > 0 ? (cur - inv) / inv * 100 : 0
+          const type = String(x.gold_type ?? 'gold').replace('_', ' ')
+          return {
+            key: x.id ?? String(i), name: x.name, color: ({ physical: '#D97706', sgb: '#16A34A', gold_etf: '#3B8EF0', gold_mf: '#7C3AED' } as Record<string, string>)[x.gold_type] ?? '#D97706',
+            sub: [x.quantity_grams ? `${x.quantity_grams} g at ${sym}${x.buy_price_per_gram}/g` : null, x.holder_name && x.holder_name !== 'Self' ? x.holder_name : null].filter(Boolean).join(' · ') || undefined,
+            tag: type.toUpperCase() === 'SGB' ? 'SGB' : type[0].toUpperCase() + type.slice(1),
+            meta: pctText(ret), metaColor: pctColor(ret),
+            value: cur, valueText: `${sym}${Math.round(cur).toLocaleString('en-IN')}`, valueSub: `${sym}${Math.round(inv).toLocaleString('en-IN')} invested`,
+            onEdit: () => setEditItem({ ...x, _type: 'gold' }), onDelete: () => deleteItem(x.id),
+          }
+        })} />
 
       {showAdd   && <AddInvestmentModal onClose={() => setShowAdd(false)} defaultType="gold" />}
       {editItem  && <AddInvestmentModal onClose={() => setEditItem(null)} defaultType="gold" editData={editItem} />}

@@ -1,4 +1,6 @@
 'use client'
+import InvHoldings, { fullDate, pctText, pctColor } from './InvHoldings'
+import { Landmark as IcBank, TrendingUp as IcUp, Percent as IcPct, Wallet as IcWallet, Layers as IcLayers, CalendarClock as IcCal } from 'lucide-react'
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -80,87 +82,25 @@ export default function PpfEpfClient({ data }: { data: any[] }) {
       onAdd={openAdd}>
 
 
-      {/* Summary */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { label: 'Total Balance', value: `₹${Math.round(totalBalance).toLocaleString('en-IN')}`, color: 'var(--blue)' },
-          { label: 'Annual Contribution', value: `₹${Math.round(totalAnnual).toLocaleString('en-IN')}`, color: 'var(--income)' },
-          { label: 'Avg Interest', value: `${avgRate}% p.a.`, color: 'var(--gold)' },
-          { label: 'Accounts', value: `${filtered.length}`, color: 'var(--text)' },
-        ].map(c => (
-          <div key={c.label} className="wl-card p-3">
-            <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>{c.label}</div>
-            <div className="text-[17px] font-bold font-mono" style={{ color: c.color }}>{c.value}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Account cards */}
-      {filtered.length === 0 ? (
-        <div className="wl-card py-16 text-center" style={{ borderStyle: 'dashed' }}>
-          <div className="flex justify-center mb-3">
-            <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: 'var(--sage-bg)' }}>
-              <PiggyBank size={22} style={{ color: 'var(--sage)' }} />
-            </div>
-          </div>
-          <div className="text-[13px] mb-3" style={{ color: 'var(--text3)' }}>No PPF or EPF accounts yet.</div>
-          <button onClick={openAdd}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-bold text-white transition-all"
-            style={{ background: 'var(--sage)' }}>
-            <PiggyBank size={14} /> Add PPF/EPF account
-          </button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {filtered.map((x, i) => {
-            const isPpf = (x.kind ?? 'ppf') === 'ppf'
-            return (
-              <div key={x.id ?? i} className="wl-card p-4">
-                <div className="flex justify-between items-start mb-2">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <div className="text-[13px] font-bold" style={{ color: 'var(--text)' }}>{x.name}</div>
-                      <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wide"
-                        style={isPpf
-                          ? { background: 'var(--sage-bg)', color: 'var(--sage)' }
-                          : { background: 'var(--blue-bg)', color: 'var(--blue)' }}>
-                        {isPpf ? 'PPF' : 'EPF'}
-                      </span>
-                    </div>
-                    <div className="text-[10px]" style={{ color: 'var(--text3)' }}>A/C {maskAccount(x.account_number)}</div>
-                    {x.holder_name && x.holder_name !== 'Self' && (
-                      <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold mt-0.5 inline-block"
-                        style={{ background: 'var(--blue-bg)', color: 'var(--blue)' }}>{x.holder_name}</span>
-                    )}
-                  </div>
-                  <div className="flex gap-1">
-                    <button onClick={() => openEdit(x)} className="p-1 rounded" style={{ color: 'var(--text3)' }}><Pencil size={12} /></button>
-                    <button onClick={() => deleteItem(x.id)} className="p-1 rounded" style={{ color: 'var(--rose)' }}><Trash2 size={12} /></button>
-                  </div>
-                </div>
-                {Number(x.interest_rate ?? 0) > 0 && (
-                  <div className="text-[11px] font-bold mb-2 px-2 py-0.5 rounded-full inline-block" style={{ background: 'var(--gold-bg)', color: 'var(--gold)' }}>{Number(x.interest_rate)}% p.a.</div>
-                )}
-                <div className="grid grid-cols-2 gap-2 text-[11px]">
-                  <div>
-                    <div style={{ color: 'var(--text3)' }}>Balance</div>
-                    <div className="font-mono font-bold" style={{ color: 'var(--text)' }}>₹{Number(x.current_balance ?? 0).toLocaleString('en-IN')}</div>
-                  </div>
-                  <div>
-                    <div style={{ color: 'var(--text3)' }}>Annual</div>
-                    <div className="font-mono font-bold" style={{ color: 'var(--income)' }}>₹{Number(x.annual_contribution ?? 0).toLocaleString('en-IN')}</div>
-                  </div>
-                </div>
-                {x.maturity_date && (
-                  <div className="flex items-center gap-1 mt-2 text-[10px]" style={{ color: 'var(--text3)' }}>
-                    <Clock size={10} /> Matures on {x.maturity_date}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
+      <InvHoldings listTitle="Your accounts" head={['Account', 'Type', 'Rate', 'Balance']} chartLabel="Balance by account"
+        emptyMsg="No PPF or EPF accounts yet. Use Add new above to add one." totalCount={filtered.length}
+        hero={{ label: 'Total balance', value: `₹${Math.round(totalBalance).toLocaleString('en-IN')}`, delta: `₹${Math.round(totalAnnual).toLocaleString('en-IN')} going in each year` }}
+        tiles={[
+          { label: 'Yearly contribution', value: `₹${Math.round(totalAnnual).toLocaleString('en-IN')}`, delta: 'counts towards 80C', icon: IcCal },
+          { label: 'Average interest', value: `${avgRate}%`, delta: 'per year', icon: IcPct },
+          { label: 'Accounts', value: String(filtered.length), delta: 'PPF and EPF', icon: IcLayers },
+        ]}
+        items={filtered.map((x, i) => {
+          const isPpf = (x.kind ?? 'ppf') === 'ppf'
+          return {
+            key: x.id ?? String(i), name: x.name, color: isPpf ? '#16A34A' : '#3B8EF0',
+            sub: [`A/C ${maskAccount(x.account_number)}`, x.maturity_date ? `matures ${fullDate(x.maturity_date)}` : null, x.holder_name && x.holder_name !== 'Self' ? x.holder_name : null].filter(Boolean).join(' · '),
+            tag: isPpf ? 'PPF' : 'EPF', meta: Number(x.interest_rate ?? 0) > 0 ? `${Number(x.interest_rate)}% p.a.` : '—',
+            value: Number(x.current_balance ?? 0), valueText: `₹${Number(x.current_balance ?? 0).toLocaleString('en-IN')}`,
+            valueSub: `₹${Number(x.annual_contribution ?? 0).toLocaleString('en-IN')}/yr`,
+            onEdit: () => openEdit(x), onDelete: () => deleteItem(x.id),
+          }
+        })} />
 
       {showModal && (
         <PpfEpfModal

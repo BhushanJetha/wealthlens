@@ -1,4 +1,6 @@
 'use client'
+import InvHoldings, { fullDate, pctText, pctColor } from './InvHoldings'
+import { Landmark as IcBank, TrendingUp as IcUp, Percent as IcPct, Wallet as IcWallet, Layers as IcLayers, CalendarClock as IcCal } from 'lucide-react'
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -69,64 +71,27 @@ export default function RecurringDepositsClient({ data }: { data: any[] }) {
       onExcel={() => setShowExcel(true)}>
 
 
-      <FilterBar
-        search={search} onSearch={setSearch}
-        sort={sort} onSort={setSort} sortOptions={SORT_OPTS}
-        resultCount={filtered.length} totalCount={base.length}
-        searchPlaceholder="Search by name or bank…"
-      />
-
-      {/* Summary */}
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          { label: 'Monthly Commitment', value: `₹${Math.round(totalMonthly).toLocaleString('en-IN')}/mo`, color: 'var(--blue)' },
-          { label: 'Total Committed', value: `₹${Math.round(totalCommitted).toLocaleString('en-IN')}`, color: 'var(--text)' },
-          { label: 'Amount Paid', value: `₹${Math.round(totalPaid).toLocaleString('en-IN')}`, color: 'var(--income)' },
-        ].map(c => (
-          <div key={c.label} className="wl-card p-3">
-            <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>{c.label}</div>
-            <div className="text-[17px] font-bold font-mono" style={{ color: c.color }}>{c.value}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* RD cards */}
-      {filtered.length === 0 ? <InvEmptyState msg="No recurring deposits match your filters." /> : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {filtered.map((r, i) => {
-            const pct = Math.min(100, Math.round(((r.months_paid ?? 0) / r.tenure_months) * 100))
-            const s = r.currency === 'AED' ? 'AED ' : '₹'
-            return (
-              <div key={r.id ?? i} className="wl-card p-4">
-                <div className="flex justify-between items-start mb-2">
-                  <div>
-                    <div className="text-[13px] font-bold" style={{ color: 'var(--text)' }}>{r.name}</div>
-                    <div className="text-[10px]" style={{ color: 'var(--text3)' }}>{r.bank_name} · {s}{Number(r.monthly_amount).toLocaleString()}/mo · {r.interest_rate}%</div>
-                    {r.holder_name && r.holder_name !== 'Self' && (
-                      <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold mt-0.5 inline-block"
-                        style={{ background: 'var(--blue-bg)', color: 'var(--blue)' }}>{r.holder_name}</span>
-                    )}
-                  </div>
-                  <div className="flex gap-1">
-                    <button onClick={() => setEditItem({ ...r, _type: 'recurring_deposit' })} className="p-1 rounded" style={{ color: 'var(--text3)' }}><Pencil size={12} /></button>
-                    <button onClick={() => deleteItem(r.id)} className="p-1 rounded" style={{ color: 'var(--rose)' }}><Trash2 size={12} /></button>
-                  </div>
-                </div>
-                <div className="flex justify-between text-[10px] mb-1.5" style={{ color: 'var(--text3)' }}>
-                  <span>{r.months_paid ?? 0}/{r.tenure_months} months</span>
-                  <span className="font-semibold" style={{ color: 'var(--sage)' }}>{pct}%</span>
-                </div>
-                <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}>
-                  <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: 'var(--sage)' }} />
-                </div>
-                <div className="text-[10px] mt-1.5" style={{ color: 'var(--text3)' }}>
-                  Matures: {r.maturity_date}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
+      <InvHoldings listTitle="Your recurring deposits" head={['Deposit', 'Rate', 'Progress', 'Paid in']} chartLabel="Paid in by deposit"
+        emptyMsg="No recurring deposits match your search." totalCount={base.length}
+        search={search} onSearch={setSearch} searchPlaceholder="Search name or bank…" sort={sort} onSort={setSort} sortOptions={SORT_OPTS}
+        hero={{ label: 'Paid in so far', value: `₹${Math.round(totalPaid).toLocaleString('en-IN')}`,
+          delta: `of ₹${Math.round(totalCommitted).toLocaleString('en-IN')} committed (${totalCommitted > 0 ? Math.round(totalPaid / totalCommitted * 100) : 0}%)` }}
+        tiles={[
+          { label: 'Monthly commitment', value: `₹${Math.round(totalMonthly).toLocaleString('en-IN')}`, delta: 'a month', icon: IcCal },
+          { label: 'Total committed', value: `₹${Math.round(totalCommitted).toLocaleString('en-IN')}`, delta: 'over the full tenure', icon: IcLayers },
+        ]}
+        items={filtered.map((x, i) => {
+          const s = x.currency === 'AED' ? 'AED ' : '₹'
+          const paid = x.current_amount != null ? Number(x.current_amount) : Number(x.monthly_amount) * (x.months_paid ?? 0)
+          return {
+            key: x.id ?? String(i), name: x.name, color: '#16A34A',
+            sub: [x.bank_name, x.maturity_date ? `matures ${fullDate(x.maturity_date)}` : null, x.holder_name && x.holder_name !== 'Self' ? x.holder_name : null].filter(Boolean).join(' · '),
+            tag: `${x.interest_rate}% p.a.`, meta: `${x.months_paid ?? 0}/${x.tenure_months} months`,
+            value: paid, valueText: `${s}${Math.round(paid).toLocaleString('en-IN')}`,
+            valueSub: `${s}${Number(x.monthly_amount).toLocaleString('en-IN')}/mo`,
+            onEdit: () => setEditItem({ ...x, _type: 'recurring_deposit' }), onDelete: () => deleteItem(x.id),
+          }
+        })} />
 
       {showAdd   && <AddInvestmentModal onClose={() => setShowAdd(false)} defaultType="recurring_deposit" />}
       {editItem  && <AddInvestmentModal onClose={() => setEditItem(null)} defaultType="recurring_deposit" editData={editItem} />}
