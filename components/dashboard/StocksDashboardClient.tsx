@@ -1,4 +1,6 @@
 'use client'
+import { Ring } from '@/components/ui/kit'
+import { ShieldCheck, PieChart as PieChartIcon, Layers, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { PageHeader, InsightBar, AiActions, HeroStat, KpiTile, Bars } from '@/components/ui/kit'
 import { ListSearch } from '@/components/ui/list'
 import { Wallet as IcWallet, TrendingUp as IcUp, HeartPulse as IcHealth } from 'lucide-react'
@@ -247,7 +249,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
           <Plus size={14} className="inline mr-1.5" /> Add Stock
         </button>
         <button onClick={() => setShowImport(true)} className="px-6 py-2.5 rounded-xl font-semibold border"
-          style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>
+          style={{ borderColor: 'var(--line)', color: 'var(--text3)', background: 'var(--bg2)' }}>
           <FileUp size={14} className="inline mr-1.5" /> Import from PDF
         </button>
       </div>
@@ -266,7 +268,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
       {/* Lumpsum modal */}
       {lumpsumStock && (
         <Overlay>
-          <div className="wl-sheet-panel rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+          <div className="wl-sheet-panel rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
             <div className="flex items-center justify-between">
               <div className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>Buy More Shares</div>
               <button onClick={() => { setLumpsumStock(null); setLumpsumQty(''); setLumpsumPrice(''); setLumpsumDate(new Date().toISOString().slice(0, 10)) }} style={{ color: 'var(--text3)' }}><X size={16} /></button>
@@ -277,23 +279,23 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
             </div>
             <div className="p-3 rounded-xl" style={{ background: 'var(--bg2)' }}>
               <div className="text-[10px]" style={{ color: 'var(--text3)' }}>Current Price</div>
-              <div className="text-[20px] font-bold font-mono" style={{ color: 'var(--text)' }}>
+              <div className="text-[20px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>
                 ₹{(livePrices[lumpsumStock.id] ?? Number(lumpsumStock.current_price ?? lumpsumStock.avg_buy_price)).toFixed(2)}
                 {livePrices[lumpsumStock.id] && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded font-semibold" style={{ background: '#D1FAE5', color: '#065F46' }}>Live</span>}
               </div>
             </div>
             <div>
-              <label className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Purchase Date</label>
+              <label className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Purchase Date</label>
               <input type="date" value={lumpsumDate} max={new Date().toISOString().slice(0, 10)} onChange={e => setLumpsumDate(e.target.value)} className="wl-input mt-1 w-full" style={{ background: 'var(--bg2)' }} />
               <div className="text-[10px] mt-1" style={{ color: 'var(--text3)' }}>Pick a past date to log a historical purchase for your investment history.</div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Shares to Buy</label>
+                <label className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Shares to Buy</label>
                 <input type="number" value={lumpsumQty} onChange={e => setLumpsumQty(e.target.value)} placeholder="10" className="wl-input mt-1 w-full" style={{ background: 'var(--bg2)' }} />
               </div>
               <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Price per Share (₹)</label>
+                <label className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Price per Share (₹)</label>
                 <input type="number" value={lumpsumPrice} onChange={e => setLumpsumPrice(e.target.value)}
                   placeholder={(livePrices[lumpsumStock.id] ?? Number(lumpsumStock.current_price ?? lumpsumStock.avg_buy_price)).toFixed(2)}
                   className="wl-input mt-1 w-full" style={{ background: 'var(--bg2)' }} />
@@ -302,7 +304,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
             {lumpsumQty && lumpsumPrice && (
               <div className="p-3 rounded-xl" style={{ background: 'var(--sage-bg)' }}>
                 <div className="text-[11px]" style={{ color: 'var(--text3)' }}>Total Cost</div>
-                <div className="text-[18px] font-bold font-mono" style={{ color: 'var(--sage)' }}>
+                <div className="text-[18px] font-bold tabular-nums" style={{ color: 'var(--sage)' }}>
                   ₹{(Number(lumpsumQty) * Number(lumpsumPrice)).toLocaleString('en-IN')}
                 </div>
                 <div className="text-[10px] mt-0.5" style={{ color: 'var(--text3)' }}>
@@ -316,7 +318,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
             <div className="flex gap-2">
               <button onClick={() => { setLumpsumStock(null); setLumpsumQty(''); setLumpsumPrice(''); setLumpsumDate(new Date().toISOString().slice(0, 10)) }}
                 className="flex-1 py-2.5 rounded-xl border text-[12px] font-semibold"
-                style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>Cancel</button>
+                style={{ borderColor: 'var(--line)', color: 'var(--text3)', background: 'var(--bg2)' }}>Cancel</button>
               <button onClick={saveLumpsum} disabled={lumpsumSaving || !lumpsumQty || !lumpsumPrice}
                 className="flex-1 py-2.5 rounded-xl text-white text-[12px] font-bold"
                 style={{ background: 'var(--sage)', opacity: (!lumpsumQty || !lumpsumPrice) ? 0.5 : 1 }}>
@@ -369,7 +371,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
       })()}
 
       {/* Tabs */}
-      <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-4 px-4 md:mx-0 md:px-0" role="tablist" aria-label="Stock views">
+      <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-4 px-4 md:mx-0 md:px-0 max-md:sticky max-md:top-0 max-md:z-20 max-md:py-2 max-md:bg-[var(--canvas-m)]" role="tablist" aria-label="Stock views">
         {([['portfolio', 'Portfolio', ListFilter], ['analytics', 'Analytics', BarChart2], ['growth', 'Growth', TrendingUp], ['news', 'News', Newspaper]] as const).map(([key, label, Icon]) => (
           <button key={key} onClick={() => setTab(key as Tab)} role="tab" aria-selected={tab === key} aria-pressed={tab === key}
             className="wl-chip flex-shrink-0 gap-1.5" style={{ height: 32 }}>
@@ -469,12 +471,12 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center gap-1 justify-end">
                           <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: hasLive ? '#10B981' : 'var(--text3)' }} />
-                          <span className="font-mono font-bold" style={{ color: 'var(--text)' }}>
+                          <span className="tabular-nums font-bold" style={{ color: 'var(--text)' }}>
                             {priceLoading && !hasLive ? '…' : `₹${price.toFixed(2)}`}
                           </span>
                         </div>
                         {todayChg && (
-                          <div className="text-[10px] font-mono flex items-center justify-end gap-0.5"
+                          <div className="text-[10px] tabular-nums flex items-center justify-end gap-0.5"
                             style={{ color: todayChg.changePct >= 0 ? 'var(--income)' : 'var(--rose)' }}>
                             {todayChg.changePct >= 0 ? <TrendingUp size={9} /> : <TrendingDown size={9} />}
                             {todayChg.changePct >= 0 ? '+' : ''}{todayChg.changePct.toFixed(2)}%
@@ -484,23 +486,23 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
 
                       {/* Return */}
                       <td className="px-4 py-3 text-right">
-                        <div className="font-bold font-mono" style={{ color: retColor, fontSize: 13 }}>
+                        <div className="font-bold tabular-nums" style={{ color: retColor, fontSize: 13 }}>
                           {retPct >= 0 ? '+' : ''}{retPct.toFixed(2)}%
                         </div>
-                        <div className="text-[10px] font-mono" style={{ color: retColor }}>
+                        <div className="text-[10px] tabular-nums" style={{ color: retColor }}>
                           {absRt >= 0 ? '+' : ''}₹{Math.abs(Math.round(absRt)).toLocaleString('en-IN')}
                         </div>
                       </td>
 
                       {/* Invested */}
-                      <td className="px-4 py-3 text-right font-mono font-semibold" style={{ color: 'var(--text2)' }}>
+                      <td className="px-4 py-3 text-right tabular-nums font-semibold" style={{ color: 'var(--text2)' }}>
                         {fmt(invested)}
                         <div className="text-[10px]" style={{ color: 'var(--text3)' }}>@ ₹{Number(s.avg_buy_price).toFixed(2)}</div>
                       </td>
 
                       {/* Current value */}
                       <td className="px-4 py-3 text-right">
-                        <div className="font-mono font-bold" style={{ color: retColor, fontSize: 13 }}>{fmt(currVal)}</div>
+                        <div className="tabular-nums font-bold" style={{ color: retColor, fontSize: 13 }}>{fmt(currVal)}</div>
                         <div className="text-[10px] mt-0.5" style={{ color: 'var(--text3)' }}>
                           {(currentValue > 0 ? currVal / currentValue * 100 : 0).toFixed(1)}% of portfolio
                         </div>
@@ -510,7 +512,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                       </td>
 
                       {/* Qty */}
-                      <td className="px-4 py-3 text-right font-mono text-[11px]" style={{ color: 'var(--text3)' }}>
+                      <td className="px-4 py-3 text-right tabular-nums text-[11px]" style={{ color: 'var(--text3)' }}>
                         {Number(s.quantity).toFixed(s.exchange === 'NSE' ? 0 : 3)}
                       </td>
 
@@ -557,18 +559,18 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                             const openingPrice = opening > 0.001 ? openingInvested / opening : 0
                             return (
                               <div className="mt-4">
-                                <div className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text3)' }}>Purchase History</div>
+                                <div className="text-[11px] font-medium mb-2" style={{ color: 'var(--text3)' }}>Purchase History</div>
                                 <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
                                   {opening > 0.001 && (
                                     <div className="flex items-center justify-between text-[11px] rounded-lg px-3 py-1.5" style={{ background: 'var(--card)', border: '1px dashed var(--border2)' }}>
-                                      <div style={{ color: 'var(--text3)' }}>Initial holding · <span className="font-mono">{+opening.toFixed(3)}</span> sh @ ₹{openingPrice.toFixed(2)}</div>
-                                      <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(openingInvested).toLocaleString('en-IN')}</div>
+                                      <div style={{ color: 'var(--text3)' }}>Initial holding · <span className="tabular-nums">{+opening.toFixed(3)}</span> sh @ ₹{openingPrice.toFixed(2)}</div>
+                                      <div className="tabular-nums font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(openingInvested).toLocaleString('en-IN')}</div>
                                     </div>
                                   )}
                                   {lots.map((t: any, i: number) => (
-                                    <div key={t.id ?? i} className="flex items-center gap-2 text-[11px] rounded-lg px-3 py-1.5" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
-                                      <div className="flex-1" style={{ color: 'var(--text2)' }}>{t.txn_date} · <span className="font-mono">{Number(t.units)}</span> sh @ ₹{Number(t.nav).toFixed(2)}</div>
-                                      <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(Number(t.amount)).toLocaleString('en-IN')}</div>
+                                    <div key={t.id ?? i} className="flex items-center gap-2 text-[11px] rounded-lg px-3 py-1.5" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
+                                      <div className="flex-1" style={{ color: 'var(--text2)' }}>{t.txn_date} · <span className="tabular-nums">{Number(t.units)}</span> sh @ ₹{Number(t.nav).toFixed(2)}</div>
+                                      <div className="tabular-nums font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(Number(t.amount)).toLocaleString('en-IN')}</div>
                                       <button onClick={() => setEditLot({ stock: s, lot: t })} className="p-1 rounded hover:bg-blue-50" style={{ color: 'var(--blue)' }} aria-label="Edit purchase"><Pencil size={11} /></button>
                                     </div>
                                   ))}
@@ -577,21 +579,9 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                             )
                           })()}
                           <div className="mt-4 flex gap-2">
-                            <button onClick={() => setAddLots(s)}
-                              className="text-[11px] font-semibold px-4 py-1.5 rounded-lg border"
-                              style={{ borderColor: 'var(--sage)', color: 'var(--sage)', background: 'var(--sage-bg)' }}>
-                              <IndianRupee size={10} className="inline mr-1" /> Buy More Shares
-                            </button>
-                            <button onClick={() => setEditStock(s)}
-                              className="text-[11px] font-semibold px-4 py-1.5 rounded-lg border"
-                              style={{ borderColor: 'var(--blue)', color: 'var(--blue)', background: 'var(--blue-bg)' }}>
-                              <Pencil size={10} className="inline mr-1" /> Edit
-                            </button>
-                            <button onClick={() => setDeleteStock(s)}
-                              className="text-[11px] font-semibold px-4 py-1.5 rounded-lg border"
-                              style={{ borderColor: 'var(--rose)', color: 'var(--rose)', background: 'transparent' }}>
-                              <Trash2 size={10} className="inline mr-1" /> Delete
-                            </button>
+                            <button onClick={() => setAddLots(s)} className="wl-btn wl-btn-primary" style={{ height: 34 }}><IndianRupee size={13} />Buy more</button>
+                            <button onClick={() => setEditStock(s)} className="wl-btn" style={{ height: 34, background: '#fff' }}><Pencil size={13} />Edit</button>
+                            <button onClick={() => setDeleteStock(s)} className="wl-btn" style={{ height: 34, background: '#fff', color: '#DC2626' }}><Trash2 size={13} />Delete</button>
                           </div>
                         </td>
                       </tr>
@@ -636,19 +626,20 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                   </div>
 
                   {isExpanded && (
-                    <div className="mt-3 mx-4 rounded-xl p-3 space-y-3" style={{ background: 'var(--canvas)', border: '1px solid var(--line)' }}>
-                      <div className="grid grid-cols-3 gap-y-2 gap-x-2">
+                    <div className="mt-2.5 mx-4 mb-1 rounded-2xl p-3 flex flex-col gap-3" style={{ background: 'var(--canvas)', border: '1px solid var(--line)' }}>
+                      <div className="grid grid-cols-3 gap-2">
                         {([
-                          ['Qty', Number(s.quantity).toFixed(s.exchange === 'NSE' ? 0 : 3)],
-                          ['Exchange', s.exchange || 'NSE'],
-                          ['Sector', s.sector || '—'],
-                          ['Avg Buy', `₹${Number(s.avg_buy_price).toFixed(2)}`],
-                          ['Abs P/L', `${absRt >= 0 ? '+' : ''}₹${Math.abs(Math.round(absRt)).toLocaleString('en-IN')}`],
-                          ['Live', hasLive ? 'Live ●' : 'Stored'],
+                          ['Shares', Number(s.quantity).toFixed(s.exchange === 'NSE' ? 0 : 3)],
+                          ['Avg buy', `₹${Number(s.avg_buy_price).toFixed(2)}`],
+                          ['Price now', `₹${price.toFixed(2)}`],
+                          ['Gain', `${absRt >= 0 ? '+' : '−'}${fmt(Math.abs(absRt))}`],
+                          ['Today', todayChg ? `${todayChg.changePct >= 0 ? '+' : ''}${todayChg.changePct.toFixed(2)}%` : '—'],
+                          ['Exchange', `${s.exchange || 'NSE'}${hasLive ? ' · live' : ''}`],
                         ] as [string, string][]).map(([l, v]) => (
-                          <div key={l}>
-                            <div className="text-[9px]" style={{ color: 'var(--text3)' }}>{l}</div>
-                            <div className="text-[11px] font-semibold truncate" style={{ color: 'var(--text)' }}>{v}</div>
+                          <div key={l} className="rounded-xl px-2.5 py-2 min-w-0" style={{ background: '#fff', border: '1px solid var(--line)' }}>
+                            <div className="text-[11px]" style={{ color: 'var(--text4)' }}>{l}</div>
+                            <div className="text-[12.5px] font-semibold tabular-nums truncate"
+                              style={{ color: l === 'Gain' ? (absRt >= 0 ? '#16A34A' : '#DC2626') : l === 'Today' && todayChg ? (todayChg.changePct >= 0 ? '#16A34A' : '#DC2626') : 'var(--text)' }}>{v}</div>
                           </div>
                         ))}
                       </div>
@@ -660,21 +651,25 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                         const lotsInvested = lots.reduce((a: number, t: any) => a + Number(t.amount || 0), 0)
                         const openingInvested = Math.max(0, Number(s.quantity || 0) * Number(s.avg_buy_price || 0) - lotsInvested)
                         const openingPrice = opening > 0.001 ? openingInvested / opening : 0
+                        const dt = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
                         return (
-                          <div>
-                            <div className="text-[9px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>Purchase History</div>
-                            <div className="space-y-1 max-h-36 overflow-y-auto">
+                          <div className="rounded-xl overflow-hidden" style={{ background: '#fff', border: '1px solid var(--line)' }}>
+                            <div className="px-3 py-2 text-[12.5px] font-semibold" style={{ color: 'var(--text)', borderBottom: '1px solid var(--line)' }}>Purchases</div>
+                            <div className="max-h-52 overflow-y-auto">
                               {opening > 0.001 && (
-                                <div className="flex items-center justify-between text-[11px] rounded-lg px-2.5 py-1.5" style={{ background: 'var(--card)', border: '1px dashed var(--border2)' }}>
-                                  <div style={{ color: 'var(--text3)' }}>Initial · {+opening.toFixed(3)} sh @ ₹{openingPrice.toFixed(2)}</div>
-                                  <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(openingInvested).toLocaleString('en-IN')}</div>
+                                <div className="flex items-center gap-2 px-3 py-2">
+                                  <div className="flex-1 min-w-0 text-[12px]" style={{ color: 'var(--text3)' }}>Opening holding · {+opening.toFixed(3)} shares at ₹{openingPrice.toFixed(2)}</div>
+                                  <div className="text-[12.5px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>₹{Math.round(openingInvested).toLocaleString('en-IN')}</div>
                                 </div>
                               )}
                               {lots.map((t: any, i: number) => (
-                                <div key={t.id ?? i} className="flex items-center gap-2 text-[11px] rounded-lg px-2.5 py-1.5" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
-                                  <div className="flex-1" style={{ color: 'var(--text2)' }}>{t.txn_date} · {Number(t.units)} sh @ ₹{Number(t.nav).toFixed(2)}</div>
-                                  <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(Number(t.amount)).toLocaleString('en-IN')}</div>
-                                  <button onClick={() => setEditLot({ stock: s, lot: t })} className="p-1.5 rounded" style={{ color: 'var(--blue)' }} aria-label="Edit purchase"><Pencil size={12} /></button>
+                                <div key={t.id ?? i} className="flex items-center gap-2 px-3 py-2" style={{ borderTop: i || opening > 0.001 ? '1px solid var(--track)' : undefined }}>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-[12.5px] font-medium" style={{ color: 'var(--text)' }}>{dt(t.txn_date)}</div>
+                                    <div className="text-[11.5px] tabular-nums" style={{ color: 'var(--text3)' }}>{Number(t.units)} shares at ₹{Number(t.nav).toFixed(2)}</div>
+                                  </div>
+                                  <div className="text-[12.5px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>₹{Math.round(Number(t.amount)).toLocaleString('en-IN')}</div>
+                                  <button onClick={() => setEditLot({ stock: s, lot: t })} className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ color: 'var(--text3)' }} aria-label="Edit purchase"><Pencil size={13} /></button>
                                 </div>
                               ))}
                             </div>
@@ -682,21 +677,9 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                         )
                       })()}
                       <div className="grid grid-cols-3 gap-2">
-                        <button onClick={() => setAddLots(s)}
-                          className="wl-tap flex items-center justify-center gap-1 px-2 rounded-lg border text-[11px] font-semibold"
-                          style={{ borderColor: 'var(--sage)', color: 'var(--sage)', background: 'var(--sage-bg)' }}>
-                          <IndianRupee size={11} /> Buy
-                        </button>
-                        <button onClick={() => setEditStock(s)}
-                          className="wl-tap flex items-center justify-center gap-1 px-2 rounded-lg border text-[11px] font-semibold"
-                          style={{ borderColor: 'var(--blue)', color: 'var(--blue)', background: 'var(--blue-bg)' }}>
-                          <Pencil size={11} /> Edit
-                        </button>
-                        <button onClick={() => setDeleteStock(s)}
-                          className="wl-tap flex items-center justify-center gap-1 px-2 rounded-lg border text-[11px] font-semibold"
-                          style={{ borderColor: 'var(--rose)', color: 'var(--rose)', background: 'transparent' }}>
-                          <Trash2 size={11} /> Delete
-                        </button>
+                        <button onClick={() => setAddLots(s)} className="wl-btn wl-btn-primary justify-center" style={{ height: 40 }}><IndianRupee size={14} />Buy</button>
+                        <button onClick={() => setEditStock(s)} className="wl-btn justify-center" style={{ height: 40, background: '#fff' }}><Pencil size={14} />Edit</button>
+                        <button onClick={() => setDeleteStock(s)} className="wl-btn justify-center" style={{ height: 40, background: '#fff', color: '#DC2626' }}><Trash2 size={14} />Delete</button>
                       </div>
                     </div>
                   )}
@@ -709,156 +692,134 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
       )}
 
       {/* ── ANALYTICS TAB ─────────────────────────────────────────────────────── */}
-      {tab === 'analytics' && (
-        <div className="space-y-4">
-
-          {/* Portfolio Health */}
-          <div className="wl-card p-5">
-            <div className="text-[11px] font-bold uppercase tracking-wider mb-4" style={{ color: 'var(--text3)' }}>Portfolio Health</div>
-            <div className="flex items-start gap-6 flex-wrap">
-              <div className="text-center">
-                <div className="text-[48px] font-bold font-mono" style={{ color: health.color }}>{health.score}</div>
-                <div className="text-[12px] font-semibold mt-1" style={{ color: health.color }}>{health.label}</div>
-                <div className="text-[10px] mt-0.5" style={{ color: 'var(--text3)' }}>out of 100</div>
+      {tab === 'analytics' && (() => {
+        const Section = ({ icon: Icon, title, children, right }: { icon: any; title: string; children: React.ReactNode; right?: React.ReactNode }) => (
+          <section className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
+            <div className="flex items-center gap-2.5 mb-3.5">
+              <span className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}><Icon size={15} /></span>
+              <h3 className="text-[14px] md:text-[15px] font-semibold flex-1" style={{ color: 'var(--text)' }}>{title}</h3>
+              {right}
+            </div>
+            {children}
+          </section>
+        )
+        const hhiTone = hhi < 0.15 ? { c: '#1E8F5F', bg: '#E7F7EF', t: 'Well spread' } : hhi < 0.25 ? { c: '#B96A0B', bg: '#FFF2E2', t: 'Moderate' } : { c: '#D9482F', bg: '#FDECE8', t: 'Concentrated' }
+        const byValue = [...stocks].map(st => ({ st, val: Number(st.quantity) * (livePrices[st.id] ?? Number(st.current_price ?? st.avg_buy_price)) })).sort((x, y) => y.val - x.val)
+        const byRet = [...stocks].map(st => ({ st, r: getReturn(st, livePrices) })).sort((x, y) => y.r - x.r)
+        const maxAbs = Math.max(1, ...byRet.map(x => Math.abs(x.r)))
+        return (
+          <div className="flex flex-col gap-3.5 md:gap-4">
+            <Section icon={ShieldCheck} title="Portfolio health">
+              <div className="flex items-center gap-4">
+                <Ring pct={health.score} size={84} color={health.color} track="var(--track)" label={`Health ${health.score} of 100`}>
+                  <div className="text-[22px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{health.score}</div>
+                </Ring>
+                <div className="flex-1 min-w-0 flex flex-col gap-2">
+                  <div className="text-[14px] font-semibold" style={{ color: health.color }}>{health.label}</div>
+                  {health.insights.map((ins, i) => {
+                    const ok = ins.startsWith('✓')
+                    return (
+                      <div key={i} className="flex items-start gap-2">
+                        <span className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 mt-px" style={ok ? { background: '#E7F7EF', color: '#1E8F5F' } : { background: '#FFF2E2', color: '#B96A0B' }}>
+                          {ok ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
+                        </span>
+                        <span className="text-[13px] leading-snug" style={{ color: 'var(--text2)' }}>{ins.replace(/^[✓⚠] /, '')}</span>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
-              <div className="flex-1 space-y-2 min-w-[200px]">
-                {health.insights.map((ins, i) => (
-                  <div key={i} className="flex items-start gap-2 text-[12px]">
-                    <span>{ins.startsWith('✓') ? '✅' : '⚠️'}</span>
-                    <span style={{ color: 'var(--text)' }}>{ins.replace(/^[✓⚠] /, '')}</span>
+            </Section>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 md:gap-4">
+              <Section icon={PieChartIcon} title="Sector exposure">
+                {bySector.length === 0 ? (
+                  <p className="text-[12.5px]" style={{ color: 'var(--text3)' }}>Add sectors to your stocks to see this.</p>
+                ) : (
+                  <div className="flex flex-col gap-2.5">
+                    {bySector.map(b => (
+                      <div key={b.sector}>
+                        <div className="flex items-center justify-between gap-2 text-[12.5px] mb-1">
+                          <span className="font-semibold" style={{ color: 'var(--text)' }}>{b.sector}</span>
+                          <span className="tabular-nums" style={{ color: 'var(--text3)' }}>{fmt(b.value)} · <b style={{ color: 'var(--text)' }}>{b.pct}%</b></span>
+                        </div>
+                        <div className="h-1.5 rounded-full" style={{ background: 'var(--track)' }}>
+                          <div className="h-full rounded-full wl-grow" style={{ width: `${b.pct}%`, background: b.pct > 50 ? '#DC2626' : b.color }} />
+                        </div>
+                        {b.pct > 50 && <div className="text-[11.5px] mt-0.5" style={{ color: '#D9482F' }}>Over half your stocks sit in this sector</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Section>
+
+              <Section icon={Layers} title="Concentration" right={<span className="rounded-full px-2.5 py-0.5 text-[12px] font-semibold" style={{ background: hhiTone.bg, color: hhiTone.c }}>{hhiTone.t}</span>}>
+                <div className="flex items-baseline gap-2 mb-3">
+                  <span className="text-[28px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{hhi.toFixed(2)}</span>
+                  <span className="text-[12px]" style={{ color: 'var(--text3)' }}>Herfindahl index · lower is better</span>
+                </div>
+                <div className="flex flex-col gap-2">
+                  {byValue.slice(0, 5).map(({ st, val }, i) => {
+                    const pct = currentValue > 0 ? Math.round(val / currentValue * 100) : 0
+                    return (
+                      <div key={st.id} className="flex items-center gap-2.5">
+                        <span className="text-[12px] w-4 text-center font-semibold" style={{ color: 'var(--text4)' }}>{i + 1}</span>
+                        <span className="text-[13px] font-semibold w-24 truncate" style={{ color: 'var(--text)' }}>{st.symbol}</span>
+                        <span className="flex-1 h-1.5 rounded-full" style={{ background: 'var(--track)' }}><span className="block h-full rounded-full wl-grow" style={{ width: `${pct}%`, background: SECTOR_COLORS[i % SECTOR_COLORS.length] }} /></span>
+                        <span className="text-[12.5px] font-semibold tabular-nums w-9 text-right" style={{ color: 'var(--text)' }}>{pct}%</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </Section>
+            </div>
+
+            <Section icon={TrendingUp} title="Return by stock">
+              <div className="flex flex-col gap-2.5">
+                {byRet.map(({ st, r }) => (
+                  <div key={st.id} className="flex items-center gap-2.5">
+                    <span className="text-[13px] font-semibold w-24 truncate" style={{ color: 'var(--text)' }}>{st.symbol}</span>
+                    {/* Diverging bar: losses grow left of the centre line, gains right */}
+                    <span className="flex-1 flex items-center h-5">
+                      <span className="flex-1 flex justify-end">{r < 0 && <span className="h-3 rounded-l-full wl-grow" style={{ width: `${Math.abs(r) / maxAbs * 100}%`, background: '#F2A5A5' }} />}</span>
+                      <span className="w-px h-5" style={{ background: 'var(--border2)' }} />
+                      <span className="flex-1 flex">{r >= 0 && <span className="h-3 rounded-r-full wl-grow" style={{ width: `${r / maxAbs * 100}%`, background: '#2FB67C' }} />}</span>
+                    </span>
+                    <span className="text-[12.5px] font-semibold tabular-nums w-16 text-right" style={{ color: r >= 0 ? '#16A34A' : '#DC2626' }}>{r >= 0 ? '+' : ''}{r.toFixed(1)}%</span>
                   </div>
                 ))}
-                <div className="pt-2">
-                  <div className="h-3 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}>
-                    <div className="h-full rounded-full transition-all" style={{ width: `${health.score}%`, background: health.color }} />
-                  </div>
-                </div>
               </div>
-            </div>
+            </Section>
           </div>
-
-          {/* Sector Exposure + HHI */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="wl-card p-5">
-              <div className="text-[11px] font-bold uppercase tracking-wider mb-4" style={{ color: 'var(--text3)' }}>Sector Exposure</div>
-              {bySector.length === 0 ? (
-                <div className="text-[12px]" style={{ color: 'var(--text3)' }}>Add sector info to your stocks for sector analysis</div>
-              ) : (
-                <div className="space-y-3">
-                  {bySector.map(b => (
-                    <div key={b.sector}>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[12px] font-semibold" style={{ color: 'var(--text)' }}>{b.emoji} {b.sector}</span>
-                        <div className="flex items-center gap-3">
-                          <span className="text-[11px] font-mono" style={{ color: 'var(--text2)' }}>{fmt(b.value)}</span>
-                          <span className="text-[11px] font-bold" style={{ color: b.color }}>{b.pct}%</span>
-                        </div>
-                      </div>
-                      <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}>
-                        <div className="h-full rounded-full" style={{ width: `${b.pct}%`, background: b.pct > 50 ? 'var(--rose)' : b.color }} />
-                      </div>
-                      {b.pct > 50 && <div className="text-[10px] mt-0.5" style={{ color: 'var(--rose)' }}>⚠ Over-concentrated in this sector</div>}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="wl-card p-5">
-              <div className="text-[11px] font-bold uppercase tracking-wider mb-4" style={{ color: 'var(--text3)' }}>Concentration Risk</div>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="text-[36px] font-bold font-mono" style={{ color: hhi < 0.15 ? 'var(--income)' : hhi < 0.25 ? 'var(--gold)' : 'var(--rose)' }}>
-                  {hhi.toFixed(2)}
-                </div>
-                <div>
-                  <div className="text-[12px] font-semibold" style={{ color: hhi < 0.15 ? 'var(--income)' : hhi < 0.25 ? 'var(--gold)' : 'var(--rose)' }}>
-                    {hhi < 0.15 ? 'Well Diversified' : hhi < 0.25 ? 'Moderate' : 'Highly Concentrated'}
-                  </div>
-                  <div className="text-[10px]" style={{ color: 'var(--text3)' }}>Herfindahl Index (lower = better)</div>
-                </div>
-              </div>
-              <div className="space-y-2">
-                {[...stocks].sort((a, b) => {
-                  const va = Number(a.quantity) * (livePrices[a.id] ?? Number(a.current_price ?? a.avg_buy_price))
-                  const vb = Number(b.quantity) * (livePrices[b.id] ?? Number(b.current_price ?? b.avg_buy_price))
-                  return vb - va
-                }).slice(0, 5).map((s, i) => {
-                  const val = Number(s.quantity) * (livePrices[s.id] ?? Number(s.current_price ?? s.avg_buy_price))
-                  const pct = currentValue > 0 ? Math.round(val / currentValue * 100) : 0
-                  return (
-                    <div key={s.id} className="flex items-center gap-2">
-                      <div className="text-[10px] w-4 text-center font-bold" style={{ color: 'var(--text3)' }}>{i+1}</div>
-                      <div className="text-[11px] font-semibold flex-1" style={{ color: 'var(--text)' }}>{s.symbol}</div>
-                      <div className="w-24">
-                        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}>
-                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: SECTOR_COLORS[i % SECTOR_COLORS.length] }} />
-                        </div>
-                      </div>
-                      <div className="text-[11px] font-bold w-8 text-right" style={{ color: SECTOR_COLORS[i % SECTOR_COLORS.length] }}>{pct}%</div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          </div>
-
-          {/* Return comparison */}
-          <div className="wl-card p-5">
-            <div className="text-[11px] font-bold uppercase tracking-wider mb-4" style={{ color: 'var(--text3)' }}>Return Comparison</div>
-            <ResponsiveContainer width="100%" height={Math.max(120, stocks.length * 44)}>
-              <BarChart layout="vertical"
-                data={[...stocks].sort((a,b) => getReturn(b,livePrices) - getReturn(a,livePrices)).map(s => ({
-                  name: s.symbol,
-                  return: Math.round(getReturn(s, livePrices) * 10) / 10,
-                }))}
-                margin={{ left: 20, right: 55 }}>
-                <XAxis type="number" tickFormatter={(v: number) => `${v}%`} tick={{ fontSize: 10 }} />
-                <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 11, fontWeight: 600 }} />
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <Tooltip formatter={(v: any) => [`${v}%`, 'Return']} />
-                <Bar dataKey="return" radius={[0, 5, 5, 0]}>
-                  {[...stocks].sort((a,b) => getReturn(b,livePrices) - getReturn(a,livePrices)).map((s, i) => (
-                    <Cell key={i} fill={getReturn(s, livePrices) >= 0 ? 'var(--income)' : 'var(--rose)'} />
-                  ))}
-                  <LabelList dataKey="return" position="right" formatter={(v: any) => `${v>0?'+':''}${v}%`} style={{ fontSize: 10 }} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* ── NEWS TAB ──────────────────────────────────────────────────────────── */}
       {tab === 'news' && (
-        <div className="wl-card p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <Newspaper size={14} style={{ color: 'var(--sage)' }} />
-            <div className="text-[13px] font-bold" style={{ color: 'var(--text)' }}>Stock Market News</div>
+        <div className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
+          <div className="flex items-center gap-2.5 mb-3">
+            <span className="w-8 h-8 rounded-[10px] flex items-center justify-center" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}><Newspaper size={15} /></span>
+            <h3 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Stock market news</h3>
           </div>
           {newsLoading ? (
             <div className="space-y-3">
-              {[1,2,3,4,5].map(i => <div key={i} className="h-14 rounded-xl animate-pulse" style={{ background: 'var(--bg2)' }} />)}
+              {[1,2,3,4,5].map(i => <div key={i} className="h-14 rounded-xl animate-pulse" style={{ background: '#E8EBF0' }} />)}
             </div>
           ) : news.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="text-3xl mb-2">📰</div>
-              <div className="text-[13px]" style={{ color: 'var(--text3)' }}>News feed unavailable. Try refreshing.</div>
-            </div>
+            <div className="text-center py-10 text-[13px]" style={{ color: 'var(--text3)' }}>News is unavailable right now. Try again in a moment.</div>
           ) : (
-            <div className="space-y-2">
+            <div className="-mx-4 md:-mx-5 -mb-1">
               {news.map((article, i) => (
                 <a key={i} href={article.link} target="_blank" rel="noopener noreferrer"
-                  className="flex items-start gap-4 p-4 rounded-xl transition-all hover:shadow-md block"
-                  style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-                  <div className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-[16px]"
-                    style={{ background: '#3B7DD818' }}>📈</div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[13px] font-semibold leading-snug" style={{ color: 'var(--text)' }}>{article.title}</div>
-                    <div className="text-[11px] mt-1" style={{ color: 'var(--text3)' }}>
+                  className="flex items-start gap-3 px-4 md:px-5 py-3 hover:bg-[#FAFAFE] transition-colors"
+                  style={{ borderTop: i ? '1px solid var(--track)' : '1px solid var(--line)' }}>
+                  <span className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}><Newspaper size={14} /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[13.5px] font-semibold leading-snug" style={{ color: 'var(--text)' }}>{article.title}</span>
+                    <span className="block text-[11.5px] mt-1" style={{ color: 'var(--text4)' }}>
                       {article.source} · {article.pubDate ? new Date(article.pubDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : ''}
-                    </div>
-                  </div>
-                  <TrendingUp size={14} style={{ color: '#3B7DD8', flexShrink: 0 }} />
+                    </span>
+                  </span>
                 </a>
               ))}
             </div>
@@ -869,23 +830,22 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
       {/* ── GROWTH TAB (Month-on-Month / Year-on-Year) ────────────────────────── */}
       {tab === 'growth' && (
         <div className="space-y-4">
-          <div className="wl-card p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <TrendingUp size={15} style={{ color: 'var(--sage)' }} />
-              <div className="text-[13px] font-bold" style={{ color: 'var(--text)' }}>Overall Stock Portfolio Growth</div>
-            </div>
+          <div className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
+            <div className="flex items-center gap-2.5 mb-3">
+            <span className="w-8 h-8 rounded-[10px] flex items-center justify-center" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}><TrendingUp size={15} /></span>
+            <h3 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>How your stocks have grown</h3>
+          </div>
             <InvestmentTimeline txns={allStockTxns} invested={totalInvested} currentValue={currentValue} />
           </div>
 
           {allStockTxns.length === 0 && (
-            <div className="wl-card p-4 text-[12px] flex items-start gap-2" style={{ color: 'var(--text3)' }}>
-              <span>💡</span>
-              <span>Month-on-month and year-on-year trends build up from your buy history. Use <strong>Buy More Shares</strong> and each purchase is recorded with its date.</span>
+            <div className="rounded-xl px-4 py-3 text-[12.5px] leading-snug" style={{ background: 'var(--accent-bg)', border: '1px solid var(--accent-border)', color: 'var(--accent2)' }}>
+              Trends build up from your buy history. Each purchase you record with <b>Buy</b> is added with its date.
             </div>
           )}
 
-          <div className="wl-card p-5">
-            <div className="text-[13px] font-bold mb-3" style={{ color: 'var(--text)' }}>Invested per Year — by Stock</div>
+          <div className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
+            <h3 className="text-[14px] md:text-[15px] font-semibold mb-3" style={{ color: 'var(--text)' }}>Invested each year, by stock</h3>
             <InvestmentMatrix
               assets={sorted.map(s => {
                 const price = livePrices[s.id] ?? Number(s.current_price ?? s.avg_buy_price)
@@ -904,7 +864,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
       {editStock && <EditHoldingModal kind="stock" row={editStock} onClose={() => { setEditStock(null); router.refresh() }} />}
       {deleteStock && (
         <Overlay>
-          <div className="wl-sheet-panel rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+          <div className="wl-sheet-panel rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
             <div className="flex items-center justify-between">
               <div className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>Delete Stock?</div>
               <button onClick={() => setDeleteStock(null)} style={{ color: 'var(--text3)' }}><X size={16} /></button>
@@ -913,7 +873,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
               Remove <strong style={{ color: 'var(--text)' }}>{deleteStock.symbol}</strong> and its recorded buy history? This can't be undone.
             </div>
             <div className="flex gap-2">
-              <button onClick={() => setDeleteStock(null)} className="flex-1 py-2.5 rounded-xl border text-[12px] font-semibold" style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>Cancel</button>
+              <button onClick={() => setDeleteStock(null)} className="flex-1 py-2.5 rounded-xl border text-[12px] font-semibold" style={{ borderColor: 'var(--line)', color: 'var(--text3)', background: 'var(--bg2)' }}>Cancel</button>
               <button onClick={confirmDelete} disabled={deleting} className="flex-1 py-2.5 rounded-xl text-white text-[12px] font-bold" style={{ background: 'var(--rose)' }}>{deleting ? 'Deleting…' : 'Delete'}</button>
             </div>
           </div>
