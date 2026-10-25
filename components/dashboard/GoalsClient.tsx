@@ -12,6 +12,8 @@ import {
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { getInvCurrentValue } from '@/lib/goalProgress'
 import { GOAL_INTEREST_CATEGORY } from '@/lib/goalInterests'
+import { PageHeader, Ring, Donut, Segmented, PALETTE } from '@/components/ui/kit'
+import { useUiStore } from '@/store/uiStore'
 
 
 const CAT_ICONS: Record<string, string> = {
@@ -69,6 +71,8 @@ export default function GoalsClient({ goals, goalInvestments, allInvestments }: 
   const [addDefaults, setAddDefaults] = useState<{ name: string; category: string } | undefined>()
   const [tab, setTab] = useState<'all' | Term>('all')
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [gtab, setGtab] = useState<'my' | 'suggested'>('my')
+  const { openAdvisor } = useUiStore()
 
   // Home's "set up this goal" chips land here with ?new=<goal name>
   useEffect(() => {
@@ -157,283 +161,250 @@ export default function GoalsClient({ goals, goalInvestments, allInvestments }: 
     router.refresh()
   }
 
-  const TERM_LABELS = { short: 'Short Term', mid: 'Mid Term', long: 'Long Term' }
-  const TERM_COLORS = { short: 'var(--gold)', mid: 'var(--blue)', long: 'var(--sage)' }
-  const TERM_BG = { short: 'var(--gold-bg)', mid: 'var(--blue-bg)', long: 'var(--sage-bg)' }
+  const TERM_LABELS = { short: 'Short term', mid: 'Mid term', long: 'Long term' }
+  const short = (v: number) => {
+    const a = Math.abs(v)
+    if (sym === '₹') return a >= 1e7 ? `₹${(v / 1e7).toFixed(2)}Cr` : a >= 1e5 ? `₹${(v / 1e5).toFixed(2)}L` : a >= 1e3 ? `₹${(v / 1e3).toFixed(1)}K` : `₹${Math.round(v)}`
+    return a >= 1e6 ? `AED ${(v / 1e6).toFixed(2)}M` : a >= 1e3 ? `AED ${(v / 1e3).toFixed(1)}K` : `AED ${Math.round(v)}`
+  }
+
+  // On track = progress at least close to the share of time already used
+  // (created → target date). Monthly = what's still needed per month.
+  const withPlan = enriched.map(g => {
+    const start = new Date(g.created_at ?? Date.now()).getTime(), end = new Date(g.target_date).getTime()
+    const elapsed = end > start ? Math.min(Math.max((Date.now() - start) / (end - start), 0), 1) * 100 : 100
+    const monthsLeft = Math.max(Math.ceil(g.daysLeft / 30.4), 1)
+    const monthly = g.pct >= 100 ? 0 : Math.max(g.targetInView - g.currentValue, 0) / monthsLeft
+    const status: 'done' | 'paused' | 'new' | 'ok' | 'behind' = g.pct >= 100 || g.status === 'achieved' ? 'done'
+      : g.status === 'paused' ? 'paused'
+      : g.currentValue <= 0 && g.linked_count === 0 ? 'new'
+      : g.pct >= elapsed - 10 ? 'ok' : 'behind'
+    return { ...g, monthly, status, eta: new Date(g.target_date).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) }
+  })
+  const shown = tab === 'all' ? withPlan : withPlan.filter(g => g.term === tab)
+  const okCount = withPlan.filter(g => g.status === 'ok' || g.status === 'done').length
+  const perMonth = withPlan.filter(g => g.status !== 'paused').reduce((a, g) => a + g.monthly, 0)
+  const overall = totalTarget > 0 ? Math.min(totalCurrent / totalTarget * 100, 100) : 0
+  const CHIP: Record<string, { label: string; bg: string; c: string }> = {
+    done:   { label: 'Achieved', bg: 'var(--pos-bg)', c: 'var(--pos-text)' },
+    ok:     { label: 'On track', bg: 'var(--pos-bg)', c: 'var(--pos-text)' },
+    behind: { label: 'Behind',   bg: 'var(--amber-bg)', c: 'var(--amber-text)' },
+    paused: { label: 'Paused',   bg: '#F1F5F9', c: 'var(--text3)' },
+    new:    { label: 'Not started', bg: '#F1F5F9', c: 'var(--text3)' },
+  }
+
+  // Tip: the goal that is furthest behind with the nearest deadline
+  const lagging = withPlan.filter(g => g.status === 'behind').sort((a, b) => a.daysLeft - b.daysLeft)[0]
+  const unstarted = withPlan.filter(g => g.status === 'new')
+  const tip = lagging
+    ? `${lagging.name} needs about ${short(lagging.monthly)} a month to land by ${lagging.eta}. Linking an investment or a SIP of that size keeps it on track.`
+    : unstarted.length
+      ? `${unstarted.length === withPlan.length ? 'None of your goals has' : `${unstarted.length} goal${unstarted.length === 1 ? ' has' : 's have'}`} an investment linked yet. Open a goal and link a fund, FD or SIP — progress then updates on its own.`
+    : withPlan.length
+      ? 'Every active goal is on pace. Review them each quarter and step up contributions when your income rises.'
+      : 'Start with an emergency fund: three to six months of essential costs in an easy-access account.'
+  const aiContext = `My goals (${view}): ${withPlan.map(g => `${g.name} ${short(g.currentValue)} of ${short(g.targetInView)} by ${g.eta}, ${CHIP[g.status].label.toLowerCase()}, needs ${short(g.monthly)}/month`).join('; ') || 'none yet'}.`
+
+  // Suggestions for common goals the user hasn't set up yet (rule-based)
+  // A goal counts as covered by its category or by its name (many are "General")
+  const covered = (cat: string, re: RegExp) => goals.some(g => g.category === cat || re.test(String(g.name ?? '')))
+  const SUGGEST = [
+    !covered('emergency', /emergency|rainy/i) && { t: 'Emergency fund', cat: 'emergency', ic: '🚨', c: '#E4573D', bg: '#FDECE8', why: 'Covers job loss, medical bills or urgent travel home without touching investments.', rule: 'Rule of thumb: 6× monthly essentials' },
+    !covered('retirement', /retire|pension/i) && { t: 'Retirement', cat: 'retirement', ic: '🛡️', c: '#6A55E8', bg: '#F0EDFF', why: 'The earlier you start, the more compounding does the work for you.', rule: 'Rule of thumb: 25× yearly expenses' },
+    !covered('education', /educat|school|college|universit/i) && { t: 'Kids’ education', cat: 'general', ic: '🎓', c: '#3B8EF0', bg: '#E7F1FE', why: 'School and university fees rise faster than general prices.', rule: 'Plan for about 10% yearly fee inflation' },
+    !covered('real_estate', /home|house|flat|apartment|property|villa/i) && { t: 'Buy a home', cat: 'real_estate', ic: '🏠', c: '#2FB67C', bg: '#E7F7EF', why: 'A down-payment goal keeps the loan, and the EMI, smaller.', rule: 'Aim for a 20% down payment' },
+    !covered('travel', /travel|trip|vacation|holiday/i) && { t: 'Travel', cat: 'general', ic: '✈️', c: '#F29A2E', bg: '#FFF2E2', why: 'Saving ahead beats paying card interest after the trip.', rule: 'Price it, then divide by months to go' },
+  ].filter(Boolean) as { t: string; cat: string; ic: string; c: string; bg: string; why: string; rule: string }[]
+  const addSuggested = (name: string, category: string) => { setAddDefaults({ name, category }); setShowAdd(true) }
 
   return (
-    <div className="p-6 space-y-5 animate-fade-up">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-[20px] font-bold" style={{ color: 'var(--text)' }}>Goals</h1>
-          <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>Track your financial milestones and build wealth systematically</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link href="/dashboard/goals/learn"
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[12px] font-bold"
-            style={{ background: 'var(--bg2)', color: 'var(--text2)' }}>
-            <BookOpen size={13} /> Learn
-          </Link>
-          <button onClick={() => setShowAdd(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-white text-[12px] font-bold"
-            style={{ background: 'var(--sage)' }}>
-            <Plus size={14} /> New Goal
-          </button>
-        </div>
-      </div>
+    <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
+      <PageHeader title="Goals"
+        sub={`${withPlan.filter(g => g.status !== 'done').length} active · funded from your monthly surplus`}
+        onAdd={() => setShowAdd(true)} addLabel="New goal"
+        actions={<>
+          <Link href="/dashboard/goals/learn" className="wl-btn" style={{ height: 36, borderRadius: 10, fontSize: 13 }}><BookOpen size={14} />Learn</Link>
+          <button onClick={() => setShowAdd(true)} className="wl-btn wl-btn-primary" style={{ height: 36, borderRadius: 10, fontSize: 13 }}><Plus size={14} />New goal</button>
+        </>} />
 
-      {/* Gamification Banner */}
-      <div className="wl-card p-4 relative overflow-hidden" style={{ background: `linear-gradient(135deg, ${level.color}10 0%, ${level.color}05 100%)`, border: `1.5px solid ${level.color}30` }}>
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0"
-            style={{ background: `${level.color}20`, border: `2px solid ${level.color}40` }}>
-            {level.emoji}
+      {/* Violet hero: saved vs target + overall ring */}
+      <section className="relative overflow-hidden rounded-[22px] md:rounded-[24px] bg-hero text-white p-[18px] md:px-8 md:py-7 flex justify-between items-center gap-3 md:gap-6"
+        style={{ boxShadow: '0 14px 34px rgba(76,60,190,.25)' }}>
+        <div aria-hidden className="absolute -right-10 -top-12 md:-right-[60px] md:-top-20 w-[150px] h-[150px] md:w-[260px] md:h-[260px] rounded-full" style={{ background: 'rgba(255,255,255,.07)' }} />
+        <div aria-hidden className="hidden md:block absolute right-[120px] -bottom-[110px] w-[220px] h-[220px] rounded-full" style={{ background: 'rgba(255,255,255,.06)' }} />
+        <div className="relative min-w-0 max-w-[560px]">
+          <div className="text-[10.5px] md:text-[11px] font-semibold uppercase tracking-[0.07em]" style={{ color: '#CFC8FA' }}>Build your future</div>
+          <div className="text-[21px] md:text-[30px] font-bold leading-[1.2] tracking-[-0.02em] my-1 md:my-1.5">
+            {short(totalCurrent)}<span className="hidden md:inline"> saved towards {short(totalTarget)}</span>
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[14px] font-bold" style={{ color: level.color }}>{level.name}</span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold" style={{ background: `${level.color}20`, color: level.color }}>{pts} pts</span>
-            </div>
-            <div className="text-[11px] mb-2" style={{ color: 'var(--text3)' }}>
-              {level.nextLvl ? `${level.nextLvl.min - pts} points to ${level.nextLvl.name} ${level.nextLvl.emoji}` : 'Maximum level achieved!'}
-            </div>
-            <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
-              <div className="h-full rounded-full transition-all duration-700"
-                style={{ width: `${level.pctToNext}%`, background: level.color }} />
-            </div>
-          </div>
-          <div className="flex gap-1.5 flex-wrap justify-end max-w-[140px]">
-            {earnedBadges.map(b => (
-              <span key={b.id} title={b.label}
-                className="text-lg cursor-help transition-transform hover:scale-125">{b.emoji}</span>
+          <div className="md:hidden text-[12px]" style={{ color: '#E4DEFF' }}>of {short(totalTarget)} · {okCount} of {withPlan.length} on track</div>
+          <div className="hidden md:block text-[14px]" style={{ color: '#E4DEFF' }}>Set goals, track progress, make it happen.</div>
+          <div className="hidden md:flex gap-2 mt-4 flex-wrap">
+            {[`${withPlan.length} goal${withPlan.length === 1 ? '' : 's'}`, `${okCount} on track`, `${short(perMonth)} / month needed`].map(t => (
+              <span key={t} className="rounded-full px-[13px] py-1.5 text-[12px] font-semibold" style={{ background: 'rgba(255,255,255,.16)' }}>{t}</span>
             ))}
           </div>
         </div>
-      </div>
+        <div className="relative">
+          <div className="md:hidden"><Ring pct={overall} size={70} stroke={3.4} color="#fff" track="rgba(255,255,255,.2)" label="Overall goal progress"><span className="text-[17px] font-bold">{Math.round(overall)}%</span></Ring></div>
+          <div className="hidden md:block"><Ring pct={overall} size={128} stroke={3.2} color="#fff" track="rgba(255,255,255,.2)" label="Overall goal progress">
+            <span className="text-[28px] font-bold leading-none">{Math.round(overall)}%</span>
+            <span className="text-[11px] mt-0.5" style={{ color: '#DAD3FF' }}>overall</span>
+          </Ring></div>
+        </div>
+      </section>
 
-      {/* KPI strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {[
-          { label: 'Total Goals', value: String(enriched.length), icon: <Target size={14} />, accent: 'blue' },
-          { label: 'Achieved', value: String(achieved), icon: <Trophy size={14} />, accent: 'sage' },
-          { label: 'On Track', value: String(onTrack), icon: <TrendingUp size={14} />, accent: 'income' },
-          { label: 'Behind Schedule', value: String(behind), icon: <AlertTriangle size={14} />, accent: behind > 0 ? 'rose' : 'sage' },
-        ].map(c => (
-          <div key={c.label} className="wl-card p-4 relative overflow-hidden">
-            <div className="absolute top-0 left-0 right-0 h-[3px] rounded-t-xl" style={{ background: `var(--${c.accent})` }} />
-            <div className="flex items-start justify-between mb-2">
-              <div className="text-[10px] uppercase tracking-[0.1em] font-semibold" style={{ color: 'var(--text3)' }}>{c.label}</div>
-              <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: `var(--${c.accent}-bg)`, color: `var(--${c.accent})` }}>{c.icon}</div>
-            </div>
-            <div className="text-[26px] font-bold font-mono" style={{ color: 'var(--text)' }}>{c.value}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Main content */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Goals list */}
-        <div className="lg:col-span-2 space-y-4">
-          {/* Tabs */}
-          <div className="flex gap-1 p-1 rounded-xl wl-tabs" style={{ background: 'var(--bg2)' }}>
+      <div className="flex flex-wrap gap-2.5 items-center">
+        <div className="max-md:w-full">
+          <Segmented violet full label="Goal lists" value={gtab} onChange={setGtab}
+            options={[{ value: 'my', label: 'My goals' }, { value: 'suggested', label: `Suggested${SUGGEST.length ? ` · ${SUGGEST.length}` : ''}` }]} />
+        </div>
+        {gtab === 'my' && withPlan.length > 0 && (
+          <div className="flex gap-1.5 overflow-x-auto no-scrollbar max-md:-mx-4 max-md:px-4">
             {(['all', 'short', 'mid', 'long'] as const).map(t => (
-              <button key={t} onClick={() => setTab(t)}
-                className="flex-1 py-1.5 rounded-lg text-[11px] font-semibold transition-all"
-                style={tab === t ? { background: '#fff', color: 'var(--text)', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' } : { color: 'var(--text3)' }}>
-                {t === 'all' ? 'All' : TERM_LABELS[t]}
-                <span className="ml-1 text-[10px]">({t === 'all' ? enriched.length : enriched.filter(g => g.term === t).length})</span>
+              <button key={t} onClick={() => setTab(t)} aria-pressed={tab === t} className="wl-chip flex-shrink-0">
+                {t === 'all' ? 'All' : TERM_LABELS[t]} · {t === 'all' ? withPlan.length : withPlan.filter(g => g.term === t).length}
               </button>
             ))}
           </div>
+        )}
+      </div>
 
-          {displayed.length === 0 ? (
-            <div className="wl-card p-10 text-center">
-              <div className="text-4xl mb-3">🎯</div>
-              <p className="text-[14px] font-semibold mb-1" style={{ color: 'var(--text)' }}>No goals yet</p>
-              <p className="text-[12px] mb-4" style={{ color: 'var(--text3)' }}>Set your first financial goal and start tracking your progress</p>
-              <button onClick={() => setShowAdd(true)}
-                className="px-4 py-2 rounded-lg text-white text-[12px] font-bold"
-                style={{ background: 'var(--sage)' }}>Create First Goal</button>
+      {gtab === 'my' && (
+        <div className="grid grid-cols-1 lg:grid-cols-[1.8fr_1fr] gap-4 items-start">
+          {shown.length === 0 ? (
+            <div className="rounded-[14px] px-6 py-12 text-center bg-white" style={{ border: '1.5px dashed var(--border2)' }}>
+              <div className="w-[60px] h-[60px] rounded-[18px] mx-auto mb-3.5 flex items-center justify-center" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}><Target size={26} /></div>
+              <div className="text-[18px] font-bold" style={{ color: 'var(--text)' }}>{withPlan.length ? 'No goals in this range' : 'No goals yet'}</div>
+              <div className="text-[13.5px] mt-1.5 mb-[18px]" style={{ color: 'var(--text3)' }}>Set a target and a date — linked investments track progress automatically.</div>
+              <div className="flex gap-2.5 justify-center flex-wrap">
+                <button onClick={() => setShowAdd(true)} className="wl-btn wl-btn-primary" style={{ height: 40, padding: '0 18px' }}>Create a goal</button>
+                {SUGGEST.length > 0 && <button onClick={() => setGtab('suggested')} className="wl-btn" style={{ height: 40, padding: '0 18px' }}>See suggestions</button>}
+              </div>
             </div>
           ) : (
-            <div className="space-y-3">
-              {displayed.map(goal => {
-                const isAchieved = goal.pct >= 100 || goal.status === 'achieved'
-                const isPaused = goal.status === 'paused'
-                const daysStr = goal.daysLeft < 0 ? 'Overdue' : goal.daysLeft === 0 ? 'Today' : `${goal.daysLeft}d left`
-
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 md:gap-3.5">
+              {shown.map(g => {
+                const chip = CHIP[g.status]
+                const color = g.color || 'var(--accent)'
                 return (
-                  <div key={goal.id}>
-                    {/* Confirm delete overlay */}
-                    {confirmDelete === goal.id && (
-                      <div className="wl-card p-4 mb-1 flex items-center justify-between gap-3"
-                        style={{ border: '1.5px solid var(--rose)', background: 'var(--rose-bg)' }}>
-                        <span className="text-[12px] font-medium" style={{ color: 'var(--rose)' }}>
-                          Delete &ldquo;{goal.name}&rdquo;? This cannot be undone.
-                        </span>
+                  <div key={g.id} className="wl-card px-3.5 md:px-5 py-3 md:py-[18px] flex flex-col gap-2.5 md:gap-3">
+                    {confirmDelete === g.id && (
+                      <div className="rounded-xl p-3 flex items-center justify-between gap-3" style={{ border: '1.5px solid var(--rose)', background: 'var(--rose-bg)' }}>
+                        <span className="text-[12px] font-medium" style={{ color: 'var(--rose)' }}>Delete “{g.name}”? This cannot be undone.</span>
                         <div className="flex gap-2 flex-shrink-0">
-                          <button onClick={() => setConfirmDelete(null)}
-                            className="px-3 py-1.5 rounded-lg text-[11px] font-semibold border"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text3)' }}>Cancel</button>
-                          <button onClick={() => deleteGoal(goal.id)}
-                            className="px-3 py-1.5 rounded-lg text-[11px] font-semibold text-white"
-                            style={{ background: 'var(--rose)' }}>Delete</button>
+                          <button onClick={() => setConfirmDelete(null)} className="px-3 py-1.5 rounded-lg text-[11.5px] font-semibold border bg-white" style={{ borderColor: 'var(--border)', color: 'var(--text3)' }}>Cancel</button>
+                          <button onClick={() => deleteGoal(g.id)} className="px-3 py-1.5 rounded-lg text-[11.5px] font-semibold text-white" style={{ background: 'var(--rose)' }}>Delete</button>
                         </div>
                       </div>
                     )}
-
-                    <div className="wl-card p-4 relative overflow-hidden"
-                      style={isAchieved ? { border: '1.5px solid var(--income)', background: 'var(--income-bg)' } : undefined}>
-                      {/* Term badge + action buttons */}
-                      <div className="absolute top-3 right-3 flex gap-1.5 items-center">
-                        <span className="text-[9px] px-2 py-0.5 rounded-full font-semibold"
-                          style={{ background: TERM_BG[goal.term as Term], color: TERM_COLORS[goal.term as Term] }}>
-                          {TERM_LABELS[goal.term as Term]}
-                        </span>
-                        <button onClick={e => { e.preventDefault(); pauseGoal(goal.id, goal.status) }}
-                          title={isPaused ? 'Resume' : 'Pause'}
-                          className="p-1 rounded-lg transition-colors hover:bg-[var(--bg2)]"
-                          style={{ color: isPaused ? 'var(--sage)' : 'var(--text3)' }}>
-                          <Pause size={12} />
-                        </button>
-                        <button onClick={e => { e.preventDefault(); setConfirmDelete(goal.id) }}
-                          title="Delete goal"
-                          className="p-1 rounded-lg transition-colors hover:bg-[var(--rose-bg)]"
-                          style={{ color: 'var(--text3)' }}
-                          onMouseEnter={e => (e.currentTarget.style.color = 'var(--rose)')}
-                          onMouseLeave={e => (e.currentTarget.style.color = 'var(--text3)')}>
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-
-                      <Link href={`/dashboard/goals/${goal.id}`} className="block">
-                        <div className="flex items-start gap-3 mb-3 pr-28">
-                          <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
-                            style={{ background: `${goal.color}20`, border: `1.5px solid ${goal.color}40` }}>
-                            {goal.icon}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-[13px] font-bold truncate" style={{ color: 'var(--text)' }}>{goal.name}</div>
-                            <div className="text-[11px] mt-0.5" style={{ color: 'var(--text3)' }}>
-                              {CAT_LABELS[goal.category]} · {goal.linked_count} investment{goal.linked_count !== 1 ? 's' : ''} linked
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Progress bar */}
-                        <div className="mb-2">
-                          <div className="flex justify-between text-[10px] mb-1">
-                            <span style={{ color: 'var(--text3)' }}>{fmt(goal.currentValue)}</span>
-                            <span className="font-semibold" style={{ color: goal.color }}>{goal.pct.toFixed(1)}%</span>
-                            <span style={{ color: 'var(--text3)' }}>{fmt(goal.targetInView)}</span>
-                          </div>
-                          <div className="h-2.5 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
-                            <div className="h-full rounded-full transition-all duration-700"
-                              style={{ width: `${goal.pct}%`, background: isAchieved ? 'var(--income)' : goal.color }} />
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between mt-2">
-                          <div className="flex items-center gap-1.5">
-                            {isAchieved ? (
-                              <span className="flex items-center gap-1 text-[10px] font-semibold" style={{ color: 'var(--income)' }}>
-                                <CheckCircle2 size={12} /> Achieved!
-                              </span>
-                            ) : isPaused ? (
-                              <span className="text-[10px] font-semibold" style={{ color: 'var(--text3)' }}>⏸ Paused</span>
-                            ) : (
-                              <span className="flex items-center gap-1 text-[10px]" style={{ color: goal.daysLeft < 90 ? 'var(--rose)' : 'var(--text3)' }}>
-                                <Clock size={10} /> {daysStr}
-                              </span>
-                            )}
-                          </div>
-                          <span className="flex items-center gap-0.5 text-[10px] font-semibold" style={{ color: 'var(--text3)' }}>
-                            View Details <ChevronRight size={10} />
+                    <div className="flex gap-3 items-center">
+                      <Link href={`/dashboard/goals/${g.id}`} className="flex gap-3 items-center flex-1 min-w-0">
+                        <span className="w-10 h-10 md:w-[46px] md:h-[46px] rounded-xl md:rounded-[14px] flex items-center justify-center flex-shrink-0 text-[19px]"
+                          style={{ background: `${g.color || '#6A55E8'}1F` }}>{g.icon || CAT_ICONS[g.category] || '🎯'}</span>
+                        <span className="min-w-0">
+                          <span className="block text-[14px] md:text-[15px] font-semibold truncate" style={{ color: 'var(--text)' }}>{g.name}</span>
+                          <span className="block text-[11.5px] truncate" style={{ color: 'var(--text4)' }}>
+                            {CAT_LABELS[g.category] ?? 'Goal'} · {g.linked_count} linked · {TERM_LABELS[g.term as Term]}
                           </span>
-                        </div>
+                        </span>
                       </Link>
+                      <span className="rounded-full px-2.5 py-[3px] text-[11px] font-semibold flex-shrink-0" style={{ background: chip.bg, color: chip.c }}>{chip.label}</span>
+                    </div>
+                    <Link href={`/dashboard/goals/${g.id}`} className="block">
+                      <div className="flex justify-between items-baseline gap-2">
+                        <span className="text-[17px] md:text-[20px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{short(g.currentValue)}</span>
+                        <span className="text-[12px]" style={{ color: 'var(--text3)' }}>of {short(g.targetInView)}</span>
+                      </div>
+                      <div className="h-[7px] md:h-[9px] rounded-full mt-2" style={{ background: 'var(--track)' }} role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(g.pct)} aria-label={`${g.name} progress`}>
+                        <div className="h-full rounded-full wl-grow" style={{ width: `${g.pct}%`, background: g.status === 'done' ? 'var(--pos)' : color }} />
+                      </div>
+                    </Link>
+                    <div className="flex justify-between items-center gap-2 text-[12px]" style={{ color: 'var(--text3)' }}>
+                      <span><b style={{ color: 'var(--text)' }}>{Math.round(g.pct)}%</b>{g.monthly > 0 ? ` · ${short(g.monthly)}/mo needed` : ''}</span>
+                      <span className="flex items-center gap-1">
+                        By {g.eta}
+                        <button onClick={() => pauseGoal(g.id, g.status)} title={g.status === 'paused' ? 'Resume goal' : 'Pause goal'} aria-label={g.status === 'paused' ? 'Resume goal' : 'Pause goal'}
+                          className="ml-1 p-1 rounded-md hover:bg-[var(--bg2)]" style={{ color: g.status === 'paused' ? 'var(--accent)' : 'var(--text4)' }}><Pause size={12} /></button>
+                        <button onClick={() => setConfirmDelete(g.id)} title="Delete goal" aria-label="Delete goal"
+                          className="p-1 rounded-md hover:bg-[var(--rose-bg)] hover:text-[var(--rose)]" style={{ color: 'var(--text4)' }}><Trash2 size={12} /></button>
+                      </span>
                     </div>
                   </div>
                 )
               })}
             </div>
           )}
-        </div>
 
-        {/* Right panel */}
-        <div className="space-y-4">
-          {/* Portfolio composition */}
-          {catData.length > 0 && (
-            <div className="wl-card p-4">
-              <div className="text-[11px] font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>Goal Composition</div>
-              <ResponsiveContainer width="100%" height={160}>
-                <PieChart>
-                  <Pie data={catData} cx="50%" cy="50%" innerRadius={40} outerRadius={70} dataKey="value" paddingAngle={2}>
-                    {catData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                  </Pie>
-                  <Tooltip formatter={(v: number) => fmt(v)} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="space-y-1.5 mt-2">
-                {catData.map((d, i) => (
-                  <div key={d.name} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
-                      <span className="text-[11px]" style={{ color: 'var(--text2)' }}>{d.icon} {d.name}</span>
-                    </div>
-                    <span className="text-[11px] font-mono font-semibold" style={{ color: 'var(--text)' }}>{fmt(d.value)}</span>
-                  </div>
-                ))}
+          {/* Right column */}
+          <div className="flex flex-col gap-3.5">
+            <section className="rounded-[18px] md:rounded-[20px] px-4 md:px-5 py-3.5 md:py-[18px]" style={{ background: '#E7F7EF', border: '1px solid #CBEBDA' }}>
+              <div className="flex gap-2.5 items-center mb-2">
+                <span className="w-8 h-8 rounded-full flex items-center justify-center text-white text-[15px] font-bold" style={{ background: 'var(--pos)' }}>✦</span>
+                <div className="text-[14px] font-semibold" style={{ color: '#14573D' }}>Money tip</div>
               </div>
-            </div>
-          )}
+              <div className="text-[12.5px] md:text-[13px] leading-[1.55]" style={{ color: '#245C45' }}>{tip}</div>
+              <button onClick={() => openAdvisor(`Optimise how I fund my goals from my monthly surplus. ${aiContext}`)}
+                className="mt-3 rounded-full px-4 py-2 text-[12.5px] font-semibold text-white" style={{ background: 'var(--pos)' }}>
+                ✦ Optimise my funding
+              </button>
+            </section>
 
-          {/* Overall progress */}
-          <div className="wl-card p-4">
-            <div className="text-[11px] font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>Overall Progress</div>
-            <div className="text-center py-3">
-              <div className="relative inline-flex items-center justify-center w-24 h-24">
-                <svg viewBox="0 0 100 100" className="w-24 h-24 -rotate-90">
-                  <circle cx="50" cy="50" r="40" fill="none" stroke="var(--border)" strokeWidth="10" />
-                  <circle cx="50" cy="50" r="40" fill="none" stroke="var(--sage)" strokeWidth="10"
-                    strokeDasharray={`${totalTarget > 0 ? (totalCurrent / totalTarget) * 251.2 : 0} 251.2`}
-                    strokeLinecap="round" />
-                </svg>
-                <div className="absolute text-center">
-                  <div className="text-[16px] font-bold" style={{ color: 'var(--text)' }}>
-                    {totalTarget > 0 ? ((totalCurrent / totalTarget) * 100).toFixed(0) : 0}%
+            {catData.length > 0 && (
+              <section className="wl-card px-4 md:px-5 py-4">
+                <h2 className="text-[14px] font-semibold mb-3" style={{ color: 'var(--text)' }}>Where your targets sit</h2>
+                <div className="flex gap-4 items-center">
+                  <Donut segments={catData.map((d, i) => ({ value: d.value, color: PALETTE[i % PALETTE.length] }))} size={104}
+                    label={`Goal targets by type: ${catData.map(d => `${d.name} ${fmt(d.value)}`).join(', ')}`} />
+                  <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+                    {catData.map((d, i) => (
+                      <div key={d.name} className="flex justify-between gap-2 text-[12px]">
+                        <span className="truncate" style={{ color: 'var(--text2)' }}><i className="inline-block w-2 h-2 rounded-full mr-1.5" style={{ background: PALETTE[i % PALETTE.length] }} />{d.name}</span>
+                        <span className="font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{short(d.value)}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              </div>
-              <div className="mt-2 text-[11px]" style={{ color: 'var(--text3)' }}>
-                {fmt(totalCurrent)} of {fmt(totalTarget)}
-              </div>
-            </div>
-          </div>
+              </section>
+            )}
 
-          {/* Quick tips */}
-          <div className="wl-card p-4" style={{ background: 'var(--sage-bg)', border: '1px solid var(--income)' }}>
-            <div className="flex items-center gap-2 mb-2">
-              <Zap size={13} style={{ color: 'var(--sage)' }} />
-              <span className="text-[11px] font-bold" style={{ color: 'var(--sage)' }}>Quick Tips</span>
-            </div>
-            <ul className="space-y-1.5">
-              {[
-                'Link your investments to see real progress',
-                'Short-term goals need higher liquidity',
-                'Long-term goals can take more equity risk',
-                'Review goals quarterly for best results',
-              ].map((tip, i) => (
-                <li key={i} className="flex items-start gap-1.5 text-[10px]" style={{ color: 'var(--text2)' }}>
-                  <Star size={9} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--gold)' }} />
-                  {tip}
-                </li>
-              ))}
-            </ul>
+            {withPlan.length > 0 && (
+              <section className="wl-card px-4 md:px-5 py-3.5 flex items-center gap-3">
+                <span className="w-10 h-10 rounded-xl flex items-center justify-center text-[20px] flex-shrink-0" style={{ background: `${level.color}1F` }}>{level.emoji}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{level.name} · {pts} pts</div>
+                  <div className="h-1.5 rounded-full mt-1.5" style={{ background: 'var(--track)' }}><div className="h-full rounded-full" style={{ width: `${level.pctToNext}%`, background: level.color }} /></div>
+                  <div className="text-[11px] mt-1" style={{ color: 'var(--text4)' }}>{level.nextLvl ? `${level.nextLvl.min - pts} pts to ${level.nextLvl.name}` : 'Top level reached'}</div>
+                </div>
+                <div className="flex gap-0.5 flex-wrap justify-end max-w-[90px]">
+                  {earnedBadges.map(b => <span key={b.id} title={b.label} className="text-[16px]">{b.emoji}</span>)}
+                </div>
+              </section>
+            )}
           </div>
         </div>
-      </div>
+      )}
+
+      {gtab === 'suggested' && (
+        SUGGEST.length === 0 ? (
+          <div className="wl-card px-5 py-8 text-center text-[13px]" style={{ color: 'var(--text3)' }}>You already have the common goals covered. Add your own with “New goal”.</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 md:gap-3.5">
+            {SUGGEST.map(x => (
+              <div key={x.t} className="wl-card px-3.5 md:px-5 py-3.5 md:py-[18px] flex flex-col gap-2 md:gap-2.5">
+                <div className="flex justify-between items-center gap-2">
+                  <span className="w-10 h-10 md:w-11 md:h-11 rounded-xl md:rounded-[13px] flex items-center justify-center text-[19px]" style={{ background: x.bg }}>{x.ic}</span>
+                  <span className="rounded-full px-2.5 py-[3px] text-[10.5px] font-semibold uppercase tracking-[0.04em]" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>✦ Suggested</span>
+                </div>
+                <div className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>{x.t}</div>
+                <div className="text-[12px] md:text-[12.5px] leading-normal flex-1" style={{ color: 'var(--text3)' }}>{x.why}</div>
+                <div className="text-[12px] md:text-[12.5px] font-semibold" style={{ color: 'var(--text)' }}>{x.rule}</div>
+                <button onClick={() => addSuggested(x.t, x.cat)} className="h-[38px] rounded-[10px] text-[13px] font-semibold text-white mt-1" style={{ background: 'var(--accent)' }}>Add this goal</button>
+              </div>
+            ))}
+          </div>
+        )
+      )}
 
       {showAdd && <AddGoalModal onClose={() => { setShowAdd(false); setAddDefaults(undefined) }} allInvestments={allInvestments} defaults={addDefaults} />}
     </div>
