@@ -22,8 +22,11 @@ import Link from 'next/link'
 
 const COLORS = ['#3D7A58','#3B7DD8','#D4920A','#C96A3A','#7C5CBF','#2E7D52','#B45309','#0891B2','#6D28D9']
 const TYPE_COLORS: Record<string, string> = {
-  mf: '#3D7A58', stocks: '#3B7DD8', etf: '#7C5CBF', fd: '#C96A3A',
-  rd: '#D4920A', gold: '#B45309', bonds: '#0891B2', nps: '#059669', lic: '#6D28D9',
+  mf: '#6A55E8', stocks: '#3B8EF0', etf: '#0891B2', fd: '#F29A2E',
+  rd: '#EC5B8C', gold: '#D97706', bonds: '#14B8A6', nps: '#2FB67C', lic: '#7C3AED',
+}
+const TYPE_NAMES: Record<string, string> = {
+  mf: 'Mutual funds', stocks: 'Stocks', etf: 'ETF', fd: 'FDs', rd: 'RDs', gold: 'Gold', bonds: 'Bonds', nps: 'NPS', lic: 'LIC',
 }
 
 function toINR(amt: number, cur: string, fx: number) { return cur === 'AED' ? amt * fx : amt }
@@ -475,7 +478,7 @@ export default function InvestmentsClient({
   function ChartTip({ active, payload, label }: any) {
     if (!active || !payload?.length) return null
     return (
-      <div className="p-3 rounded-xl text-[11px] shadow-lg border" style={{ background: '#fff', borderColor: 'var(--border)' }}>
+      <div className="p-3 rounded-xl text-[11px] shadow-lg border" style={{ background: '#fff', borderColor: 'var(--line)' }}>
         <div className="font-bold mb-2" style={{ color: 'var(--text)' }}>{label}</div>
         {payload.filter((p: any) => p.value > 0).map((p: any, i: number) => (
           <div key={i} className="flex items-center gap-2 mb-0.5">
@@ -524,9 +527,13 @@ export default function InvestmentsClient({
     + (analytics ? ` Profile: ${PROF_LABEL[analytics.profile]}. Equity ${analytics.equityPct.toFixed(0)}%.` : '')
 
   const tabSwitch = (
-    <div className="overflow-x-auto no-scrollbar -mx-4 px-4 md:mx-0 md:px-0">
-      <Segmented violet label="Portfolio views" value={tab} onChange={setTab}
-        options={TABS.map(t => ({ value: t.key, label: t.label }))} />
+    <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-4 px-4 md:mx-0 md:px-0 max-md:sticky max-md:top-0 max-md:z-20 max-md:py-2 max-md:bg-[var(--canvas-m)]" role="tablist" aria-label="Portfolio views">
+      {TABS.map(t => (
+        <button key={t.key} onClick={() => setTab(t.key)} role="tab" aria-selected={tab === t.key} aria-pressed={tab === t.key}
+          className="wl-chip flex-shrink-0 gap-1.5" style={{ height: 32 }}>
+          {t.icon && <t.icon size={13} />}{t.label}
+        </button>
+      ))}
     </div>
   )
 
@@ -808,18 +815,18 @@ export default function InvestmentsClient({
       {tab === 'trends' && (
         <>
           {/* Monthly Investment Trend */}
-          <div className="wl-card p-5">
-            <div className="mb-4">
-              <div className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>Monthly Investment Trend</div>
-              <div className="text-[11px] mt-0.5" style={{ color: 'var(--text3)' }}>Last 12 months — investment added per month, stacked by type</div>
+          <div className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
+            <div className="mb-3">
+              <h3 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Invested each month</h3>
+              <div className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>Last 12 months, by type</div>
             </div>
             {monthlyData.some(m => m.total > 0) ? (
               <>
-                <ResponsiveContainer width="100%" height={250}>
-                  <BarChart data={monthlyData} barSize={20}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#9CA3AF' }} />
-                    <YAxis tickFormatter={v => fmtS(v, sym)} tick={{ fontSize: 10, fill: '#9CA3AF' }} width={52} />
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={monthlyData} barSize={18}>
+                    <CartesianGrid stroke="var(--track)" vertical={false} />
+                    <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
+                    <YAxis tickFormatter={v => fmtS(v, sym)} tick={{ fontSize: 10, fill: '#94A3B8' }} width={48} axisLine={false} tickLine={false} />
                     <Tooltip content={<ChartTip />} />
                     <Bar dataKey="mf"     name="Mutual Funds"      fill={TYPE_COLORS.mf}     stackId="a" />
                     <Bar dataKey="stocks" name="Stocks"            fill={TYPE_COLORS.stocks}  stackId="a" />
@@ -833,44 +840,34 @@ export default function InvestmentsClient({
                   </BarChart>
                 </ResponsiveContainer>
 
-                {/* Legend */}
-                <div className="flex flex-wrap gap-2 mt-3">
-                  {Object.entries(TYPE_COLORS).map(([key, color]) => (
-                    <div key={key} className="flex items-center gap-1 text-[10px]" style={{ color: 'var(--text3)' }}>
-                      <span className="w-2 h-2 rounded-sm" style={{ background: color }} />
-                      {key.toUpperCase()}
-                    </div>
+                {/* Legend: only the types that appear */}
+                <div className="flex flex-wrap gap-x-3 gap-y-1.5 mt-2">
+                  {Object.entries(TYPE_COLORS).filter(([k]) => monthlyData.some((m: any) => (m[k] ?? 0) > 0)).map(([key, color]) => (
+                    <span key={key} className="flex items-center gap-1.5 text-[11.5px]" style={{ color: 'var(--text3)' }}>
+                      <i className="w-2.5 h-2.5 rounded-sm" style={{ background: color }} />{TYPE_NAMES[key]}
+                    </span>
                   ))}
                 </div>
 
-                {/* Monthly numbers table */}
-                <div className="mt-4 overflow-x-auto">
-                  <table className="w-full text-[10px] min-w-[600px]">
-                    <thead>
-                      <tr>
-                        {['Month', 'MF', 'Stocks', 'ETF', 'FD', 'RD', 'Gold', 'NPS', 'LIC', 'Total'].map(h => (
-                          <th key={h} className={`pb-2 font-semibold ${h === 'Month' ? 'text-left' : 'text-right'}`}
-                            style={{ color: 'var(--text3)' }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {monthlyData.slice(-6).map((row, i) => (
-                        <tr key={i} className="border-t" style={{ borderColor: 'var(--border)' }}>
-                          <td className="py-1.5 font-medium" style={{ color: 'var(--text2)' }}>{row.label}</td>
-                          {[row.mf, row.stocks, row.etf, row.fd, row.rd, row.gold, row.nps, row.lic].map((v, j) => (
-                            <td key={j} className="py-1.5 text-right font-mono"
-                              style={{ color: (v as number) > 0 ? 'var(--text)' : 'var(--text3)' }}>
-                              {(v as number) > 0 ? fmtS(v as number, sym) : '—'}
-                            </td>
-                          ))}
-                          <td className="py-1.5 text-right font-mono font-bold" style={{ color: 'var(--sage)' }}>
-                            {row.total > 0 ? fmtV(row.total, sym) : '—'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                {/* Last 6 months as rows */}
+                <div className="-mx-4 md:-mx-5 -mb-1 mt-3">
+                  {monthlyData.slice(-6).reverse().map((row: any, i: number) => {
+                    const parts = Object.keys(TYPE_COLORS).filter(k => (row[k] ?? 0) > 0)
+                    return (
+                      <div key={i} className="flex items-center gap-3 px-4 md:px-5 py-2.5" style={{ borderTop: i ? '1px solid var(--track)' : '1px solid var(--line)' }}>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{row.label}</div>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {parts.length === 0 ? <span className="text-[11.5px]" style={{ color: 'var(--text4)' }}>Nothing added</span>
+                              : parts.map(k => (
+                                <span key={k} className="rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums" style={{ background: TYPE_COLORS[k] + '1A', color: TYPE_COLORS[k] }}>{TYPE_NAMES[k]} {fmtS(row[k], sym)}</span>
+                              ))}
+                          </div>
+                        </div>
+                        <div className="text-[13.5px] font-bold tabular-nums flex-shrink-0" style={{ color: 'var(--text)' }}>{row.total > 0 ? fmtV(row.total, sym) : '—'}</div>
+                      </div>
+                    )
+                  })}
                 </div>
               </>
             ) : (
@@ -881,68 +878,46 @@ export default function InvestmentsClient({
           </div>
 
           {/* Yearly Trend */}
-          <div className="wl-card p-5">
-            <div className="mb-4">
-              <div className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>Yearly Investment Trend</div>
-              <div className="text-[11px] mt-0.5" style={{ color: 'var(--text3)' }}>Year-over-year total investment vs FD (7%) and Inflation (5%) benchmarks</div>
+          <div className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
+            <div className="mb-3">
+              <h3 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Invested each year</h3>
+              <div className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>Growth compared with an FD (7%) and inflation (5%)</div>
             </div>
             {yearlyData.some(y => y.total > 0) ? (
               <>
-                <ResponsiveContainer width="100%" height={220}>
+                <ResponsiveContainer width="100%" height={200}>
                   <BarChart data={yearlyData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
-                    <XAxis dataKey="year" tick={{ fontSize: 11, fill: '#9CA3AF' }} />
-                    <YAxis tickFormatter={v => fmtS(v, sym)} tick={{ fontSize: 10, fill: '#9CA3AF' }} width={55} />
+                    <CartesianGrid stroke="var(--track)" vertical={false} />
+                    <XAxis dataKey="year" tick={{ fontSize: 11, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
+                    <YAxis tickFormatter={v => fmtS(v, sym)} tick={{ fontSize: 10, fill: '#94A3B8' }} width={48} axisLine={false} tickLine={false} />
                     <Tooltip content={<ChartTip />} />
                     <Bar dataKey="total" name="Invested" fill="var(--sage)" radius={[4,4,0,0]} />
                   </BarChart>
                 </ResponsiveContainer>
 
-                <div className="mt-4 overflow-x-auto">
-                  <table className="w-full text-[11px]">
-                    <thead>
-                      <tr>
-                        {['Year','Total Invested','YoY Growth','FD Benchmark (7%)','Inflation (5%)','Status'].map(h => (
-                          <th key={h} className="text-left pb-2 pr-4 font-semibold" style={{ color: 'var(--text3)' }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {yearlyData.map((row, i) => {
-                        const beatsFD   = row.growth !== null && row.growth > 7
-                        const beatsInfl = row.growth !== null && row.growth > 5
-                        return (
-                          <tr key={i} className="border-t" style={{ borderColor: 'var(--border)' }}>
-                            <td className="py-2 font-bold pr-4" style={{ color: 'var(--text)' }}>{row.year}</td>
-                            <td className="py-2 font-mono pr-4" style={{ color: 'var(--text)' }}>{fmtV(row.total, sym)}</td>
-                            <td className="py-2 pr-4">
-                              {row.growth !== null
-                                ? <span className="font-bold" style={{ color: row.growth > 0 ? '#10B981' : '#EF4444' }}>
-                                    {row.growth > 0 ? '+' : ''}{row.growth.toFixed(1)}%
-                                  </span>
-                                : <span style={{ color: 'var(--text3)' }}>—</span>}
-                            </td>
-                            <td className="py-2 pr-4 font-mono" style={{ color: 'var(--text3)' }}>
-                              {row.fdBench ? fmtS(row.fdBench, sym) : '—'}
-                            </td>
-                            <td className="py-2 pr-4 font-mono" style={{ color: 'var(--text3)' }}>
-                              {row.inflBench ? fmtS(row.inflBench, sym) : '—'}
-                            </td>
-                            <td className="py-2">
-                              {row.growth !== null ? (
-                                <span className="px-2 py-0.5 rounded-full text-[9px] font-bold" style={{
-                                  background: beatsFD ? '#ECFDF5' : beatsInfl ? '#FFFBEB' : '#FEF2F2',
-                                  color: beatsFD ? '#10B981' : beatsInfl ? '#F59E0B' : '#EF4444',
-                                }}>
-                                  {beatsFD ? '▲ Beats FD' : beatsInfl ? '▲ Beats Inflation' : '▼ Below Target'}
-                                </span>
-                              ) : <span className="text-[10px]" style={{ color: 'var(--text3)' }}>No prior data</span>}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
+                <div className="-mx-4 md:-mx-5 -mb-1 mt-3">
+                  {[...yearlyData].reverse().map((row: any, i: number) => {
+                    const beatsFD = row.growth !== null && row.growth > 7
+                    const beatsInfl = row.growth !== null && row.growth > 5
+                    const tone = beatsFD ? { bg: '#E7F7EF', c: '#1E8F5F', t: 'Beats FD' } : beatsInfl ? { bg: '#FFF2E2', c: '#B96A0B', t: 'Beats inflation' } : { bg: '#FDECE8', c: '#D9482F', t: 'Below target' }
+                    return (
+                      <div key={i} className="flex items-center gap-3 px-4 md:px-5 py-2.5" style={{ borderTop: i ? '1px solid var(--track)' : '1px solid var(--line)' }}>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[13px] font-semibold flex items-center gap-2" style={{ color: 'var(--text)' }}>
+                            {row.year}
+                            {row.growth !== null && <span className="text-[12px] font-semibold" style={{ color: row.growth >= 0 ? '#16A34A' : '#DC2626' }}>{row.growth > 0 ? '+' : ''}{row.growth.toFixed(1)}%</span>}
+                          </div>
+                          <div className="text-[11.5px] truncate" style={{ color: 'var(--text3)' }}>
+                            {row.fdBench ? `FD would be ${fmtS(row.fdBench, sym)} · inflation ${fmtS(row.inflBench, sym)}` : 'First year on record'}
+                          </div>
+                        </div>
+                        <div className="text-right flex-shrink-0 flex flex-col items-end gap-1">
+                          <span className="text-[13.5px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{fmtV(row.total, sym)}</span>
+                          {row.growth !== null && <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: tone.bg, color: tone.c }}>{tone.t}</span>}
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               </>
             ) : (
@@ -967,17 +942,17 @@ export default function InvestmentsClient({
 
               {incomeData ? (
                 <>
-                  <div className="p-3 rounded-xl mb-5" style={{ background: 'var(--sage-bg)' }}>
-                    <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--sage)' }}>
+                  <div className="px-3.5 py-3 rounded-xl mb-5" style={{ background: 'var(--accent-bg)', border: '1px solid var(--accent-border)' }}>
+                    <div className="text-[11px] font-medium" style={{ color: 'var(--sage)' }}>
                       Avg Monthly Income
                     </div>
-                    <div className="text-[24px] font-black" style={{ color: 'var(--text)' }}>{fmtV(incomeData.avgInc, sym)}</div>
+                    <div className="text-[24px] font-bold" style={{ color: 'var(--text)' }}>{fmtV(incomeData.avgInc, sym)}</div>
                   </div>
 
                   {[
-                    { label: '🏠 Needs (Expenses)',       actual: incomeData.needsPct, target: 50, value: incomeData.avgExp,         color: '#3B7DD8', higher: false },
-                    { label: '🎯 Wants (Discretionary)',  actual: incomeData.wantsPct, target: 30, value: incomeData.avgInc * incomeData.wantsPct / 100, color: '#F59E0B', higher: false },
-                    { label: '📈 Savings & Investments',  actual: incomeData.invPct,   target: 20, value: incomeData.monthlyInvest,  color: '#10B981', higher: true  },
+                    { label: 'Needs (expenses)',       actual: incomeData.needsPct, target: 50, value: incomeData.avgExp,         color: '#3B7DD8', higher: false },
+                    { label: 'Wants (discretionary)',  actual: incomeData.wantsPct, target: 30, value: incomeData.avgInc * incomeData.wantsPct / 100, color: '#F59E0B', higher: false },
+                    { label: 'Savings and investments',  actual: incomeData.invPct,   target: 20, value: incomeData.monthlyInvest,  color: '#10B981', higher: true  },
                   ].map((row, i) => {
                     const onTarget = row.higher ? row.actual >= row.target : row.actual <= row.target
                     return (
@@ -985,7 +960,7 @@ export default function InvestmentsClient({
                         <div className="flex justify-between items-center text-[11px] mb-1.5">
                           <span className="font-semibold" style={{ color: 'var(--text)' }}>{row.label}</span>
                           <div className="flex items-center gap-1.5">
-                            <span className="font-mono" style={{ color: 'var(--text3)' }}>{fmtV(row.value, sym)}</span>
+                            <span className="tabular-nums" style={{ color: 'var(--text3)' }}>{fmtV(row.value, sym)}</span>
                             <span className="font-bold px-1.5 py-0.5 rounded text-[10px]" style={{
                               background: onTarget ? '#ECFDF5' : '#FEF2F2',
                               color: onTarget ? '#10B981' : '#EF4444',
@@ -994,7 +969,7 @@ export default function InvestmentsClient({
                             </span>
                           </div>
                         </div>
-                        <div className="relative h-3 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}>
+                        <div className="relative h-3 rounded-full overflow-hidden" style={{ background: 'var(--track)' }}>
                           <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(row.actual, 100)}%`, background: row.color }} />
                           <div className="absolute top-0 h-full" style={{
                             left: `${row.target}%`, borderRight: '2px dashed #9CA3AF', opacity: 0.6,
@@ -1070,7 +1045,7 @@ export default function InvestmentsClient({
                     background: 'var(--sage-bg)', borderColor: 'var(--sage)',
                   }}>
                     <span className="text-[12px] font-bold" style={{ color: 'var(--sage)' }}>Total Monthly Commitment</span>
-                    <span className="text-[18px] font-black" style={{ color: 'var(--sage)' }}>{fmtV(rdMonthly + licMonthly, sym)}</span>
+                    <span className="text-[18px] font-bold" style={{ color: 'var(--sage)' }}>{fmtV(rdMonthly + licMonthly, sym)}</span>
                   </div>
                 )}
               </div>
@@ -1121,14 +1096,14 @@ export default function InvestmentsClient({
                 background: PROF_BG[analytics.profile],
                 border: `1.5px solid ${PROF_COLOR[analytics.profile]}25`,
               }}>
-                <div className="text-[11px] font-bold uppercase tracking-wider mb-4" style={{ color: 'var(--text3)' }}>Investor Profile</div>
+                <div className="text-[14px] md:text-[15px] font-semibold mb-4" style={{ color: 'var(--text)' }}>Investor Profile</div>
                 <div className="flex items-center gap-3 mb-4">
                   <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
                     style={{ background: PROF_COLOR[analytics.profile] + '25' }}>
                     <Activity size={22} style={{ color: PROF_COLOR[analytics.profile] }} />
                   </div>
                   <div>
-                    <div className="text-[20px] font-black" style={{ color: PROF_COLOR[analytics.profile] }}>
+                    <div className="text-[20px] font-bold" style={{ color: PROF_COLOR[analytics.profile] }}>
                       {PROF_LABEL[analytics.profile]} Investor
                     </div>
                     <div className="text-[11px]" style={{ color: 'var(--text3)' }}>Based on current allocation</div>
@@ -1144,15 +1119,15 @@ export default function InvestmentsClient({
                     { label: 'Alt / Other', pct: analytics.altPct,  color: '#D4920A' },
                   ].map(k => (
                     <div key={k.label} className="p-3 rounded-xl text-center" style={{ background: 'rgba(255,255,255,0.7)' }}>
-                      <div className="text-[18px] font-black" style={{ color: k.color }}>{k.pct.toFixed(0)}%</div>
-                      <div className="text-[9px] font-semibold uppercase tracking-wider mt-0.5" style={{ color: '#9CA3AF' }}>{k.label}</div>
+                      <div className="text-[18px] font-bold" style={{ color: k.color }}>{k.pct.toFixed(0)}%</div>
+                      <div className="text-[11px] font-medium mt-0.5" style={{ color: '#9CA3AF' }}>{k.label}</div>
                     </div>
                   ))}
                 </div>
               </div>
 
               <div className="wl-card p-5">
-                <div className="text-[11px] font-bold uppercase tracking-wider mb-4" style={{ color: 'var(--text3)' }}>Investment Health Score</div>
+                <div className="text-[14px] md:text-[15px] font-semibold mb-4" style={{ color: 'var(--text)' }}>Investment Health Score</div>
                 <div className="flex items-center gap-5 mb-5">
                   <div className="relative flex-shrink-0 w-[88px] h-[88px]">
                     <svg width="88" height="88" viewBox="0 0 88 88">
@@ -1164,7 +1139,7 @@ export default function InvestmentsClient({
                         transform="rotate(-90 44 44)" />
                     </svg>
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-[22px] font-black"
+                      <span className="text-[22px] font-bold"
                         style={{ color: analytics.healthScore >= 70 ? '#10B981' : analytics.healthScore >= 45 ? '#F59E0B' : '#EF4444' }}>
                         {analytics.healthScore}
                       </span>
@@ -1209,13 +1184,13 @@ export default function InvestmentsClient({
             {/* Returns by Type */}
             {analytics.typeReturns.length > 0 && (
               <div className="wl-card p-4">
-                <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>Returns by Investment Type</div>
+                <div className="text-[14px] md:text-[15px] font-semibold mb-3" style={{ color: 'var(--text)' }}>Returns by Investment Type</div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {analytics.typeReturns.map((t, i) => (
                     <div key={i} className="p-3 rounded-xl" style={{ background: 'var(--bg2)' }}>
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-[12px] font-semibold" style={{ color: 'var(--text)' }}>{t.name}</span>
-                        <span className="text-[14px] font-black" style={{ color: t.pct >= 0 ? '#10B981' : '#EF4444' }}>
+                        <span className="text-[14px] font-bold" style={{ color: t.pct >= 0 ? '#10B981' : '#EF4444' }}>
                           {t.pct >= 0 ? '+' : ''}{t.pct.toFixed(1)}%
                         </span>
                       </div>
@@ -1242,7 +1217,7 @@ export default function InvestmentsClient({
                   <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: '#EF444420' }}>
                     <TrendingDown size={14} style={{ color: '#EF4444' }} />
                   </div>
-                  <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: '#EF4444' }}>
+                  <div className="text-[14px] md:text-[15px] font-semibold" style={{ color: '#EF4444' }}>
                     Underperforming Investments
                     <span className="ml-2 font-normal normal-case text-[11px]" style={{ color: 'var(--text3)' }}>
                       — review or average down
@@ -1268,7 +1243,7 @@ export default function InvestmentsClient({
                       </div>
                       <div className="text-right flex-shrink-0">
                         <div className="text-[12px] font-bold" style={{ color: '#EF4444' }}>{item.pct.toFixed(1)}%</div>
-                        <div className="text-[10px] font-mono" style={{ color: 'var(--text3)' }}>-{fmtV(item.loss, sym)}</div>
+                        <div className="text-[10px] tabular-nums" style={{ color: 'var(--text3)' }}>-{fmtV(item.loss, sym)}</div>
                       </div>
                     </div>
                   ))}
@@ -1279,7 +1254,7 @@ export default function InvestmentsClient({
             {/* Recommendations */}
             {analytics.recs.length > 0 && (
               <div className="wl-card p-4">
-                <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>
+                <div className="text-[14px] md:text-[15px] font-semibold mb-3" style={{ color: 'var(--text)' }}>
                   Smart Investment Recommendations
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -1376,28 +1351,21 @@ export default function InvestmentsClient({
         return (
           <div className="space-y-5">
             {/* Summary strip */}
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                { label: 'Total Investments', value: allInvRows.length, color: 'var(--sage)', bg: 'var(--sage-bg)' },
-                { label: 'Linked to Goals',   value: linked.length,    color: '#3B7DD8',      bg: 'var(--blue-bg)' },
-                { label: 'Unlinked',          value: unlinked.length,  color: unlinked.length > 0 ? '#EF4444' : '#10B981', bg: unlinked.length > 0 ? '#FEF2F2' : '#ECFDF5' },
-              ].map((s, i) => (
-                <div key={i} className="wl-card p-4 flex flex-col gap-1" style={{ borderLeft: `3px solid ${s.color}` }}>
-                  <div className="text-[22px] font-black" style={{ color: s.color }}>{s.value}</div>
-                  <div className="text-[11px]" style={{ color: 'var(--text3)' }}>{s.label}</div>
-                </div>
-              ))}
+            <div className="grid grid-cols-3 gap-2.5 md:gap-3.5">
+              <KpiTile label="All" value={String(allInvRows.length)} tint={0} icon={Layers} />
+              <KpiTile label="Linked" value={String(linked.length)} tint={1} icon={LinkIcon} tone="good" />
+              <KpiTile label="Unlinked" value={String(unlinked.length)} tint={2} icon={Unlink} tone={unlinked.length ? 'bad' : 'good'} />
             </div>
 
             {/* Progress bar */}
-            <div className="wl-card p-4">
+            <div className="wl-card px-4 md:px-5 py-4">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[12px] font-bold" style={{ color: 'var(--text)' }}>Goal Coverage</span>
+                <span className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Goal coverage</span>
                 <span className="text-[12px] font-bold" style={{ color: linkedPct >= 80 ? '#10B981' : linkedPct >= 50 ? '#F59E0B' : '#EF4444' }}>
                   {linkedPct}% investments linked
                 </span>
               </div>
-              <div className="h-3 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}>
+              <div className="h-3 rounded-full overflow-hidden" style={{ background: 'var(--track)' }}>
                 <div className="h-full rounded-full transition-all" style={{
                   width: `${linkedPct}%`,
                   background: linkedPct >= 80 ? '#10B981' : linkedPct >= 50 ? '#F59E0B' : '#EF4444',
@@ -1412,94 +1380,43 @@ export default function InvestmentsClient({
               </div>
             </div>
 
-            {/* Linked investments */}
-            {linked.length > 0 && (
-              <div className="wl-card p-4">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'var(--sage-bg)' }}>
-                    <LinkIcon size={13} style={{ color: 'var(--sage)' }} />
-                  </div>
-                  <div className="text-[13px] font-bold" style={{ color: 'var(--text)' }}>
-                    Investments Linked to Goals
-                    <span className="ml-2 text-[11px] font-normal" style={{ color: 'var(--text3)' }}>{linked.length} investments</span>
+            {/* Linked and unlinked investments as one list each */}
+            {[
+              { rows: linked, title: 'Linked to goals', sub: 'Each investment and the goals it funds', icon: LinkIcon, tint: '#E7F7EF', c: '#1E8F5F' },
+              { rows: unlinked, title: 'Not linked yet', sub: 'Open a goal to link these, so every investment has a job', icon: Unlink, tint: '#FDECE8', c: '#D9482F' },
+            ].filter(g => g.rows.length > 0).map(g => (
+              <section key={g.title} className="wl-card overflow-hidden">
+                <div className="px-4 md:px-5 pt-4 pb-3 flex items-center gap-2.5">
+                  <span className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ background: g.tint, color: g.c }}><g.icon size={15} /></span>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>{g.title} <span className="font-normal text-[12px]" style={{ color: 'var(--text3)' }}>· {g.rows.length}</span></h3>
+                    <div className="text-[12px]" style={{ color: 'var(--text3)' }}>{g.sub}</div>
                   </div>
                 </div>
-                <div className="space-y-2">
-                  {linked.map((inv, i) => {
-                    const links = goalMap.get(`${inv.type}::${inv.id}`) ?? []
-                    return (
-                      <div key={i} className="p-3 rounded-xl" style={{ background: 'var(--bg2)' }}>
-                        <div className="flex items-start justify-between gap-2 mb-2">
-                          <div>
-                            <div className="text-[12px] font-semibold" style={{ color: 'var(--text)' }}>{inv.name}</div>
-                            <div className="text-[10px]" style={{ color: 'var(--text3)' }}>{inv.typeKey} · {fmtV(inv.value, sym)}</div>
+                {g.rows.map((inv, i) => {
+                  const links = goalMap.get(`${inv.type}::${inv.id}`) ?? []
+                  return (
+                    <div key={i} className="flex items-center gap-3 px-4 md:px-5 py-2.5" style={{ borderTop: '1px solid ' + (i ? 'var(--track)' : 'var(--line)') }}>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[13px] font-semibold truncate" style={{ color: 'var(--text)' }}>{inv.name}</div>
+                        {links.length > 0 ? (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {links.map((l, j) => (
+                              <Link key={j} href={`/dashboard/goals/${l.goal.id}`} className="rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                                style={{ background: 'var(--accent-bg)', color: 'var(--accent2)' }}>{l.goal.name} · {l.alloc}%</Link>
+                            ))}
                           </div>
-                          <span className="flex-shrink-0 text-[9px] font-bold px-2 py-0.5 rounded-full"
-                            style={{ background: 'var(--sage-bg)', color: 'var(--sage)' }}>
-                            {links.length} goal{links.length !== 1 ? 's' : ''}
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5">
-                          {links.map((l, j) => (
-                            <Link key={j} href={`/dashboard/goals/${l.goal.id}`}
-                              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold hover:opacity-80 transition-opacity"
-                              style={{ background: (l.goal.color ?? '#16A34A') + '18', color: l.goal.color ?? '#16A34A' }}>
-                              <span>{l.goal.icon ?? '🎯'}</span>
-                              <span>{l.goal.name}</span>
-                              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold"
-                                style={{ background: (l.goal.color ?? '#16A34A') + '30' }}>
-                                {l.alloc}%
-                              </span>
-                            </Link>
-                          ))}
-                        </div>
+                        ) : <div className="text-[11.5px]" style={{ color: 'var(--text3)' }}>{inv.typeKey}</div>}
                       </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Unlinked investments */}
-            {unlinked.length > 0 && (
-              <div className="wl-card p-4" style={{ border: '1.5px solid #EF444428' }}>
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: '#EF444415' }}>
-                    <Unlink size={13} style={{ color: '#EF4444' }} />
-                  </div>
-                  <div>
-                    <div className="text-[13px] font-bold" style={{ color: 'var(--text)' }}>
-                      Investments Without Goals
-                      <span className="ml-2 text-[11px] font-normal" style={{ color: 'var(--text3)' }}>{unlinked.length} investments</span>
-                    </div>
-                    <div className="text-[10px]" style={{ color: 'var(--text3)' }}>Link these to goals to maximize purposeful investing</div>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                  {unlinked.map((inv, i) => (
-                    <div key={i} className="flex items-center justify-between p-3 rounded-xl" style={{ background: 'var(--bg2)' }}>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-[12px] font-semibold truncate" style={{ color: 'var(--text)' }}>{inv.name}</div>
-                        <div className="text-[10px]" style={{ color: 'var(--text3)' }}>{inv.typeKey}</div>
-                      </div>
-                      <div className="text-right flex-shrink-0 ml-2">
-                        <div className="text-[11px] font-mono font-bold" style={{ color: 'var(--text)' }}>{fmtV(inv.value, sym)}</div>
-                        <Link href="/dashboard/goals" className="text-[9px] font-semibold" style={{ color: '#3B7DD8' }}>
-                          + Link to goal
-                        </Link>
+                      <div className="text-right flex-shrink-0">
+                        <div className="text-[13px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{fmtV(inv.value, sym)}</div>
+                        {links.length === 0 && <Link href="/dashboard/goals" className="text-[11.5px] font-semibold" style={{ color: 'var(--accent)' }}>Link to goal</Link>}
                       </div>
                     </div>
-                  ))}
-                </div>
-                <div className="mt-4 flex items-center gap-3 p-3 rounded-xl" style={{ background: 'var(--blue-bg)' }}>
-                  <Flag size={14} style={{ color: '#3B7DD8', flexShrink: 0 }} />
-                  <p className="text-[11px]" style={{ color: 'var(--text2)' }}>
-                    Go to <Link href="/dashboard/goals" className="font-bold underline" style={{ color: '#3B7DD8' }}>Goals</Link> and
-                    open any goal to link these investments. Every investment should have a purpose!
-                  </p>
-                </div>
-              </div>
-            )}
+                  )
+                })}
+              </section>
+            ))}
 
             {allInvRows.length === 0 && (
               <div className="wl-card p-10 text-center" style={{ color: 'var(--text3)' }}>
