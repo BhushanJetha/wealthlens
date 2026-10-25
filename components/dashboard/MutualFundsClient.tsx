@@ -1,5 +1,7 @@
 'use client'
-import { PageHeader, InsightBar, AiActions } from '@/components/ui/kit'
+import { PageHeader, InsightBar, AiActions, HeroStat, KpiTile, Bars } from '@/components/ui/kit'
+import { ListSearch } from '@/components/ui/list'
+import { Wallet as IcWallet, TrendingUp as IcUp, CalendarClock as IcCal } from 'lucide-react'
 import { useState, useEffect, useMemo } from 'react'
 import { useViewStore } from '@/store/viewStore'
 import { createClient } from '@/lib/supabase/client'
@@ -28,8 +30,8 @@ import { useRouter } from 'next/navigation'
 
 // ─── constants ────────────────────────────────────────────────────────────────
 const TYPE_COLORS: Record<string, string> = {
-  equity: '#3D7A58', debt: '#3B7DD8', hybrid: '#D4920A',
-  elss: '#7C5CBF', index: '#0891B2', liquid: '#6B7280',
+  equity: '#16A34A', debt: '#3B8EF0', hybrid: '#D97706',
+  elss: '#7C3AED', index: '#0891B2', liquid: '#64748B',
 }
 const TYPE_LABELS: Record<string, string> = {
   equity: 'Equity', debt: 'Debt', hybrid: 'Hybrid',
@@ -591,30 +593,37 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
       {funds.length > 0 && <InsightBar text={`${funds.length} fund${funds.length === 1 ? '' : 's'} worth ${fmt(currentValue)}${totalRet != null ? `, ${totalRet >= 0 ? 'up' : 'down'} ${Math.abs(totalRet).toFixed(1)}% on what you put in` : ''}. ${activeSIPs ? `${activeSIPs} SIP${activeSIPs === 1 ? '' : 's'} running.` : 'No SIPs running yet.'}`} prompt={`My mutual funds: ${funds.slice(0, 15).map(f => `${f.fund_name} (${f.fund_type})`).join(', ')}. Invested ${fmt(totalInvested)}, worth ${fmt(currentValue)}, ${activeSIPs} active SIPs.`} />}
       {funds.length > 0 && <AiActions actions={['Check my fund overlap', 'Is my SIP enough for my goals?']} context={`My mutual funds: ${funds.slice(0, 15).map(f => `${f.fund_name} (${f.fund_type})`).join(', ')}. Invested ${fmt(totalInvested)}, worth ${fmt(currentValue)}, ${activeSIPs} active SIPs.`} />}
 
-      {/* ── Summary Strip ─────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        {[
-          { label: 'Invested',      value: fmt(totalInvested),                                                                                      accent: '#6B7280' },
-          { label: 'Current Value', value: hasAnyNav ? fmt(currentValue) : `${fmt(totalInvested)}*`,                                              accent: hasAnyNav ? (absRet >= 0 ? '#3D7A58' : '#E11D48') : '#6B7280' },
-          { label: 'Total Return',  value: totalRet !== null ? `${totalRet >= 0 ? '+' : ''}${totalRet.toFixed(2)}%` : '— Refresh NAV',           accent: totalRet !== null ? (totalRet >= 0 ? '#3D7A58' : '#E11D48') : '#6B7280' },
-          { label: 'Gain / Loss',   value: hasAnyNav ? `${absRet >= 0 ? '+' : '−'}${fmt(Math.abs(absRet))}` : '—',                               accent: hasAnyNav ? (absRet >= 0 ? '#3D7A58' : '#E11D48') : '#6B7280' },
-          { label: 'Active SIPs',   value: `${activeSIPs} of ${funds.length}`,                                                                    accent: '#7C5CBF' },
-        ].map(k => (
-          <div key={k.label} className="wl-card px-4 py-3" style={{ borderLeft: `3px solid ${k.accent}` }}>
-            <div className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>{k.label}</div>
-            <div className="text-[18px] font-bold font-mono mt-0.5" style={{ color: k.accent }}>{k.value}</div>
+      {/* ── Headline value + chart by fund (same card on desktop and phone), tiles ── */}
+      {funds.length > 0 && (() => {
+        const bars = funds.map(f => {
+          const n = getEffectiveNav(f)
+          const v = n != null ? Number(f.units) * n : Number(f.invested_amount)
+          return { label: String(f.fund_name).split(' ').slice(0, 2).join(' '), value: v, hi: true, tip: `${f.fund_name}: ${fmt(v)}` }
+        }).sort((a, b) => b.value - a.value).slice(0, 8)
+        return (
+          <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-3.5 md:gap-4">
+            <HeroStat label="Value today" value={hasAnyNav ? fmt(currentValue) : `${fmt(totalInvested)}*`}
+              tone={totalRet == null ? 'neutral' : totalRet >= 0 ? 'good' : 'bad'}
+              delta={totalRet == null ? 'Refresh NAV to see returns' : `${totalRet >= 0 ? '▲' : '▼'} ${Math.abs(totalRet).toFixed(2)}% on ${fmt(investedWithNav)} invested`}
+              right={<span className="text-[11.5px]" style={{ color: 'var(--text3)' }}>Value by fund</span>}>
+              {bars.length > 1 && <Bars data={bars} className="h-[110px] md:h-auto md:flex-1 md:min-h-[150px] mt-3" label={`Value by fund: ${bars.map(b => b.tip).join(', ')}`} />}
+            </HeroStat>
+            <div className="grid grid-cols-2 lg:grid-cols-1 gap-2.5 md:gap-3.5 lg:content-start">
+              <KpiTile label="Invested" value={fmt(totalInvested)} delta={`${funds.length} fund${funds.length === 1 ? '' : 's'}`} tint={1} icon={IcWallet} />
+              <KpiTile label="Gain / loss" value={hasAnyNav ? `${absRet >= 0 ? '+' : '−'}${fmt(Math.abs(absRet))}` : '—'} tint={2} icon={IcUp}
+                tone={!hasAnyNav ? 'neutral' : absRet >= 0 ? 'good' : 'bad'} delta={totalRet != null ? `${totalRet >= 0 ? '+' : ''}${totalRet.toFixed(2)}% overall` : 'needs live NAV'} />
+              <KpiTile className="max-lg:col-span-2" label="Active SIPs" value={`${activeSIPs} of ${funds.length}`} tint={3} icon={IcCal}
+                delta={activeSIPs ? `${fmt(funds.filter(f => f.has_sip && f.sip_amount).reduce((a, f) => a + Number(f.sip_amount), 0))} a month` : 'No SIPs running'} />
+            </div>
           </div>
-        ))}
-      </div>
+        )
+      })()}
 
       {/* ── Tabs ─────────────────────────────────────────────────────────────── */}
-      <div className="flex gap-1 p-1 rounded-xl wl-tabs" style={{ background: 'var(--bg2)', width: 'fit-content' }}>
+      <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-4 px-4 md:mx-0 md:px-0" role="tablist" aria-label="Mutual fund views">
         {([['portfolio', 'Portfolio', ListFilter], ['analytics', 'Analytics', BarChart2], ['growth', 'Growth', TrendingUp], ['projection', 'Projection', Rocket], ['news', 'News', Newspaper]] as const).map(([key, label, Icon]) => (
-          <button key={key} onClick={() => setTab(key as Tab)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[12px] font-semibold transition-all"
-            style={tab === key
-              ? { background: 'var(--card)', color: 'var(--sage)', boxShadow: '0 1px 4px rgba(0,0,0,0.1)' }
-              : { color: 'var(--text3)' }}>
+          <button key={key} onClick={() => setTab(key as Tab)} role="tab" aria-selected={tab === key} aria-pressed={tab === key}
+            className="wl-chip flex-shrink-0 gap-1.5" style={{ height: 32 }}>
             <Icon size={13} /> {label}
           </button>
         ))}
@@ -625,32 +634,32 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
       {/* ══════════════════════════════════════════════════════════════════════ */}
       {tab === 'portfolio' && (
         <div className="space-y-3">
-          {/* Search + sort */}
-          <div className="flex flex-wrap gap-2 items-center">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text3)' }} />
-              <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search fund or folio…"
-                className="wl-input pl-8 w-full" style={{ background: 'var(--bg2)' }} />
-            </div>
-            <select value={`${sortBy}-${sortDir}`}
-              onChange={e => { const [k, d] = e.target.value.split('-'); setSortBy(k as SortKey); setSortDir(d as 'asc' | 'desc') }}
-              className="wl-input" style={{ background: 'var(--bg2)', width: 'auto' }}>
-              <option value="return-desc">Returns: High → Low</option>
-              <option value="return-asc">Returns: Low → High</option>
-              <option value="value-desc">Current Value: High → Low</option>
-              <option value="invested-desc">Invested: High → Low</option>
-              <option value="nav-desc">NAV: High → Low</option>
-              <option value="name-asc">Name: A → Z</option>
-            </select>
-            {query && <span className="text-[11px]" style={{ color: 'var(--text3)' }}>{visible.length} of {funds.length}</span>}
-          </div>
-
           <div className="wl-card overflow-hidden">
+          <div className="px-4 md:px-5 pt-3.5 md:pt-[18px] pb-2.5 flex flex-col gap-2.5">
+            <div>
+              <h2 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Your funds</h2>
+              <div className="text-[11.5px] md:text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
+                {visible.length === funds.length ? `${funds.length} fund${funds.length === 1 ? '' : 's'}` : `${visible.length} of ${funds.length}`} · tap a fund for details, SIP and purchases
+              </div>
+            </div>
+            <ListSearch value={query} onChange={setQuery} placeholder="Search fund or folio…">
+              <select value={`${sortBy}-${sortDir}`} aria-label="Sort"
+                onChange={e => { const [k, d] = e.target.value.split('-'); setSortBy(k as SortKey); setSortDir(d as 'asc' | 'desc') }}
+                className="wl-input max-w-[44%]" style={{ background: '#fff', width: 'auto', height: 36 }}>
+                <option value="return-desc">Returns ↓</option>
+                <option value="return-asc">Returns ↑</option>
+                <option value="value-desc">Value ↓</option>
+                <option value="invested-desc">Invested ↓</option>
+                <option value="nav-desc">NAV ↓</option>
+                <option value="name-asc">Name A–Z</option>
+              </select>
+            </ListSearch>
+          </div>
           {/* Desktop holdings table */}
           <div className="overflow-x-auto hidden md:block">
             <table className="w-full text-[12px]">
               <thead>
-                <tr style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
+                <tr style={{ background: '#FAFAFE', borderTop: '1px solid var(--line)', borderBottom: '1px solid var(--line)' }}>
                   {([
                     ['name',     'Fund',          '280px', 'left'  ],
                     ['nav',      'NAV',           '90px',  'right' ],
@@ -660,8 +669,8 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
                     [null,       'Units',         '80px',  'right' ],
                     [null,       'Actions',       '110px', 'center'],
                   ] as const).map(([key, label, w, align]) => (
-                    <th key={label} className="px-4 py-3 font-semibold"
-                      style={{ minWidth: w, textAlign: align, color: 'var(--text3)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', cursor: key ? 'pointer' : 'default' }}
+                    <th key={label} className="px-4 py-2 font-semibold"
+                      style={{ minWidth: w, textAlign: align, color: 'var(--text4)', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.05em', cursor: key ? 'pointer' : 'default' }}
                       onClick={() => key && toggleSort(key as SortKey)}>
                       <span className="flex items-center gap-1" style={{ justifyContent: align === 'right' ? 'flex-end' : align === 'center' ? 'center' : 'flex-start' }}>
                         {label}
@@ -687,8 +696,8 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
 
                   return [
                     <tr key={f.id}
-                      className="transition-colors"
-                      style={{ borderBottom: isExpanded ? 'none' : '1px solid var(--border)', background: idx % 2 === 0 ? 'transparent' : 'var(--bg2)11', cursor: 'pointer' }}
+                      className="transition-colors hover:bg-[#FAFAFE]"
+                      style={{ borderBottom: isExpanded ? 'none' : '1px solid var(--track)', cursor: 'pointer' }}
                       onClick={async () => {
                         const next = isExpanded ? null : f.id
                         setExpandedId(next)
@@ -698,9 +707,9 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
                       {/* Fund name */}
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <div className="w-1 h-10 rounded-full flex-shrink-0" style={{ background: tc }} />
+                          <span className="w-[34px] h-[34px] rounded-[10px] flex items-center justify-center flex-shrink-0 text-[14px] font-bold" style={{ background: tc + '1A', color: tc }}>{String(f.fund_name).trim()[0]}</span>
                           <div className="min-w-0">
-                            <div className="font-semibold truncate max-w-[220px]" style={{ color: 'var(--text)', fontSize: 12 }}>{f.fund_name}</div>
+                            <div className="font-semibold truncate max-w-[240px]" style={{ color: 'var(--text)', fontSize: 13 }}>{f.fund_name}</div>
                             <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                               <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold" style={{ background: tc + '18', color: tc }}>
                                 {TYPE_LABELS[f.fund_type] ?? f.fund_type}
@@ -770,16 +779,8 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
                       {/* Actions */}
                       <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
-                          <button onClick={() => openSipModal(f)}
-                            className="px-2 py-1 rounded text-[10px] font-semibold border transition-all hover:shadow-sm"
-                            style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>
-                            {f.has_sip ? '✏ SIP' : '+ SIP'}
-                          </button>
-                          <button onClick={() => setAddLotsFund(f)}
-                            className="px-2 py-1 rounded text-[10px] font-semibold border transition-all hover:shadow-sm"
-                            style={{ borderColor: 'var(--sage)', color: 'var(--sage)', background: 'var(--sage-bg)' }}>
-                            + More
-                          </button>
+                          <button onClick={() => openSipModal(f)} className="wl-btn wl-btn-sm">{f.has_sip ? 'Edit SIP' : '+ SIP'}</button>
+                          <button onClick={() => setAddLotsFund(f)} className="wl-btn wl-btn-sm" style={{ color: 'var(--accent2)', borderColor: 'var(--accent-border)', background: 'var(--accent-bg)' }}>+ Buy</button>
                           <ChevronDown size={12} className={`transition-transform ${isExpanded ? 'rotate-180' : ''}`} style={{ color: 'var(--text3)' }} />
                         </div>
                       </td>
@@ -787,7 +788,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
 
                     /* Expanded detail row */
                     isExpanded && (
-                      <tr key={`${f.id}-detail`} style={{ background: 'var(--sage-bg)', borderBottom: '1px solid var(--border)' }}>
+                      <tr key={`${f.id}-detail`} style={{ background: '#FAFAFE', borderBottom: '1px solid var(--track)' }}>
                         <td colSpan={7} className="px-6 py-4">
                           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
@@ -925,7 +926,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
           </div>
 
           {/* Mobile holdings cards */}
-          <div className="md:hidden divide-y" style={{ borderColor: 'var(--border)' }}>
+          <div className="md:hidden divide-y divide-[var(--track)] border-t border-[var(--line)]">
             {paged.map(f => {
               const effectiveNav = getEffectiveNav(f)
               const nav          = effectiveNav ?? Number(f.avg_nav)
@@ -942,53 +943,26 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
               const rating       = computeRating(retPct, f.fund_type).stars
               return (
                 <div key={f.id} className="py-3">
-                  <div className="flex items-start gap-2.5 active:opacity-70"
+                  <div className="flex items-center gap-3 px-4 active:bg-[#FAFAFE]" role="button" aria-expanded={isExpanded}
                     onClick={async () => { const next = isExpanded ? null : f.id; setExpandedId(next); if (next) await loadFundHistory(f) }}>
-                    <div className="w-1 self-stretch rounded-full flex-shrink-0" style={{ background: tc, minHeight: 42 }} />
+                    <span className="w-9 h-9 rounded-[10px] flex items-center justify-center flex-shrink-0 text-[14px] font-bold" style={{ background: tc + '1A', color: tc }}>{String(f.fund_name).trim()[0]}</span>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="font-semibold text-[13px] leading-snug" style={{ color: 'var(--text)' }}>{f.fund_name}</div>
-                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                            <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold" style={{ background: tc + '18', color: tc }}>{TYPE_LABELS[f.fund_type] ?? f.fund_type}</span>
-                            {f.has_sip && f.sip_amount && (
-                              <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold flex items-center gap-0.5" style={{ background: '#7C5CBF18', color: '#7C5CBF' }}>
-                                <CalendarClock size={8} /> SIP ₹{Number(f.sip_amount).toLocaleString('en-IN')}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <ChevronDown size={16} className={`transition-transform flex-shrink-0 mt-0.5 ${isExpanded ? 'rotate-180' : ''}`} style={{ color: 'var(--text3)' }} />
+                      <div className="font-semibold text-[13.5px] truncate" style={{ color: 'var(--text)' }}>{f.fund_name}</div>
+                      <div className="text-[11.5px] truncate flex items-center gap-1" style={{ color: 'var(--text3)' }}>
+                        <span className="font-medium" style={{ color: tc }}>{TYPE_LABELS[f.fund_type] ?? f.fund_type}</span>
+                        <span>·</span>
+                        <span className="font-semibold" style={{ color: retColor }}>{retPct === null ? 'no NAV' : `${retPct >= 0 ? '+' : ''}${retPct.toFixed(1)}%`}</span>
+                        {f.has_sip && f.sip_amount && <><span>·</span><span>SIP ₹{Number(f.sip_amount).toLocaleString('en-IN')}</span></>}
                       </div>
-                      <div className="flex items-end justify-between gap-2 mt-2">
-                        <div>
-                          <div className="text-[9px]" style={{ color: 'var(--text3)' }}>Current</div>
-                          <div className="font-mono font-bold text-[14px]" style={{ color: retColor }}>{fmt(currVal)}</div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-[9px]" style={{ color: 'var(--text3)' }}>Return</div>
-                          <div className="font-mono font-bold text-[13px]" style={{ color: retColor }}>{retPct === null ? '—' : `${retPct >= 0 ? '+' : ''}${retPct.toFixed(1)}%`}</div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-[9px]" style={{ color: 'var(--text3)' }}>NAV</div>
-                          <div className="font-mono font-semibold text-[12px] flex items-center gap-1 justify-end" style={{ color: 'var(--text)' }}>
-                            <span className="w-1.5 h-1.5 rounded-full" style={{ background: hasLive ? '#10B981' : 'var(--text3)' }} />₹{nav.toFixed(2)}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="mt-2">
-                        <div className="flex items-center justify-between text-[9px] mb-0.5" style={{ color: 'var(--text3)' }}>
-                          <span>{fmt(invested)} invested</span><span>{weight.toFixed(1)}% of portfolio</span>
-                        </div>
-                        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}>
-                          <div className="h-full rounded-full" style={{ width: `${Math.min(100, weight)}%`, background: tc }} />
-                        </div>
-                      </div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div className="text-[13.5px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{fmt(currVal)}</div>
+                      <div className="text-[11px] tabular-nums" style={{ color: 'var(--text4)' }}>{weight.toFixed(1)}% · {fmt(invested)} in</div>
                     </div>
                   </div>
 
                   {isExpanded && (
-                    <div className="mt-3 rounded-xl p-3 space-y-3" style={{ background: 'var(--sage-bg)' }}>
+                    <div className="mt-3 mx-4 rounded-xl p-3 space-y-3" style={{ background: 'var(--canvas)', border: '1px solid var(--line)' }}>
                       <div className="grid grid-cols-3 gap-y-2 gap-x-2">
                         {([
                           ['Units', Number(f.units).toFixed(3)],
