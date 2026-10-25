@@ -1,4 +1,5 @@
 'use client'
+import { InsightBar, AiActions } from '@/components/ui/kit'
 import { useMemo, useState, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -226,6 +227,14 @@ export default function LoanDetailClient({ loan, txns, plan = [] }: { loan: any;
         </div>
       </div>
       {importMsg && <div className="text-[11px]" style={{ color: 'var(--text2)' }}>{importMsg}</div>}
+
+      {outstandingBal > 0 && emiVal > 0 && <InsightBar
+        text={Number.isFinite(baseSim.months)
+          ? `${money(outstandingBal)} left at ${loan.interest_rate}%. At ${money(emiVal)} a month it's paid off by ${payoffBase}, with about ${money(baseSim.interest)} of interest still to pay. Try the prepayment simulator below to shorten it.`
+          : `At ${money(emiVal)} a month the EMI doesn't cover the interest on ${money(outstandingBal)}, so the balance won't fall. Check the EMI and rate.`}
+        prompt={`Explain my ${loan.name}: ${money(outstandingBal)} outstanding at ${loan.interest_rate}%, EMI ${money(emiVal)}, ${Number.isFinite(baseSim.months) ? `${baseSim.months} months and ${money(baseSim.interest)} interest left` : 'EMI below interest'}.`} />}
+      {outstandingBal > 0 && <AiActions actions={['Should I prepay this loan?', 'Should I refinance?']}
+        context={`${loan.name} with ${loan.bank_name}: ${money(outstandingBal)} outstanding at ${loan.interest_rate}%, EMI ${money(emiVal)}.`} />}
 
       {/* Summary strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

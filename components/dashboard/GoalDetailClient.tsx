@@ -1,4 +1,5 @@
 'use client'
+import { InsightBar, AiActions } from '@/components/ui/kit'
 import { useMemo, useState } from 'react'
 import { useViewStore } from '@/store/viewStore'
 import { useRouter } from 'next/navigation'
@@ -199,7 +200,7 @@ export default function GoalDetailClient({ goal, linkedInvestments, allInvestmen
   const termBg = termMonths <= 12 ? 'var(--gold-bg)' : termMonths <= 36 ? 'var(--blue-bg)' : 'var(--sage-bg)'
 
   return (
-    <div className="p-6 space-y-5 animate-fade-up">
+    <div className="space-y-5 animate-fade-up">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2">
         <Link href="/dashboard/goals" className="flex items-center gap-1 text-[11px] font-medium hover:opacity-80 transition-opacity"
@@ -224,7 +225,7 @@ export default function GoalDetailClient({ goal, linkedInvestments, allInvestmen
         <div className="flex items-start gap-4">
           <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0"
             style={{ background: `${goal.color}20`, border: `2px solid ${goal.color}40` }}>{goal.icon}</div>
-          <div className="flex-1 pr-16">
+          <div className="flex-1 min-w-0 pr-28">
             <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em]" style={{ color: 'var(--text)' }}>{goal.name}</h1>
             {goal.description && <p className="text-[12px] mt-1" style={{ color: 'var(--text3)' }}>{goal.description}</p>}
             <div className="flex items-center gap-3 mt-2 flex-wrap">
@@ -260,6 +261,14 @@ export default function GoalDetailClient({ goal, linkedInvestments, allInvestmen
           )}
         </div>
       </div>
+
+      {!isAchieved && targetInView > 0 && <InsightBar
+        text={monthsLeft > 0
+          ? `${Math.round(pct)}% funded. About ${fmt(monthlySIPNeeded)} a month for ${monthsLeft} months closes the ${fmt(gap)} gap, assuming ${sipRate}% a year.`
+          : `The target date has passed with ${fmt(gap)} still to go. Pick a new date or a smaller target to get a fresh plan.`}
+        prompt={`Explain my goal "${goal.name}": target ${fmt(targetInView)} by ${goal.target_date}, ${fmt(currentValue)} saved (${Math.round(pct)}%), ${monthsLeft} months left, needs about ${fmt(monthlySIPNeeded)} a month at ${sipRate}%.`} />}
+      {!isAchieved && <AiActions actions={['Fix my plan', 'Which investments suit this goal?']}
+        context={`Goal "${goal.name}": target ${fmt(targetInView)} by ${goal.target_date}, ${fmt(currentValue)} saved, ${monthsLeft} months left.`} />}
 
       {/* Celebration banner */}
       {showCelebration && pct >= 75 && !isAchieved && (
