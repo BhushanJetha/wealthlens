@@ -160,9 +160,10 @@ export function ListSearch({ value, onChange, placeholder, children }: {
 }
 
 // One scrolling row of filter chips with counts (no wrapping wall of chips)
-export function ChipFilter({ options, value, onChange, label }: {
+export function ChipFilter({ options, value, onChange, label, trailing }: {
   options: { key: string; label: string; count?: number; warn?: boolean }[]
   value: string; onChange: (k: string) => void; label: string
+  trailing?: React.ReactNode            // e.g. a "Manage" chip after the options
 }) {
   return (
     <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-4 px-4 md:-mx-5 md:px-5" role="group" aria-label={label}>
@@ -173,6 +174,7 @@ export function ChipFilter({ options, value, onChange, label }: {
           {o.count != null && <span className="text-[10.5px] tabular-nums" style={{ color: value === o.key ? 'var(--accent)' : 'var(--text4)' }}>{o.count}</span>}
         </button>
       ))}
+      {trailing}
     </div>
   )
 }

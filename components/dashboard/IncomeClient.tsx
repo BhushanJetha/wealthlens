@@ -7,9 +7,13 @@ import AddTransactionModal from '@/components/forms/AddTransactionModal'
 import BankStatementUploadModal from '@/components/forms/BankStatementUploadModal'
 import BillImageUploadModal from '@/components/forms/BillImageUploadModal'
 import TransactionVoiceModal from '@/components/forms/TransactionVoiceModal'
+import ManageCategoriesSheet from '@/components/forms/ManageCategoriesSheet'
+import { useCategoryStore } from '@/store/categoryStore'
+import { colorOf } from '@/lib/categories'
+import { toast } from '@/components/ui/toaster'
 
 import Pagination from '@/components/dashboard/Pagination'
-import { Search, PenLine, BarChart2, Plus, Pencil, Trash2, X, Check, Upload, Image, Mic, ChevronDown, Copy } from 'lucide-react'
+import { PenLine, BarChart2, Plus, Pencil, Trash2, Upload, Image, Mic, ChevronDown, Copy, Settings2 } from 'lucide-react'
 import Link from 'next/link'
 import { PageHeader, InsightBar, AiActions, KpiTile, HeroStat, Bars, Donut, ProgressRow, LearnStrip, PALETTE } from '@/components/ui/kit'
 import { ListCard, ListRow, ListSearch, ChipFilter } from '@/components/ui/list'
@@ -19,25 +23,6 @@ import { Star, Hash, Divide, Sprout } from 'lucide-react'
 
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
-const INCOME_CATS = [
-  'All', 'UAE Income (NRO)', 'Salary', 'NRE Received', 'Dividend', 'Interest', 'FD/RD Maturity', 'Rental', 'Gift', 'Bonus', 'Tax Refund', 'Freelance', 'NRI Transfer', 'Other'
-]
-
-const CAT_COLORS: Record<string,string> = {
-  'UAE Income (NRO)': '#15803D',
-  Salary:          '#16A34A',
-  'NRE Received':  '#0284C7',
-  Dividend:        '#2563EB',
-  Interest:        '#0369A1',
-  'FD/RD Maturity':'#0891B2',
-  Rental:          '#7C3AED',
-  Gift:            '#E11D48',
-  Bonus:           '#D97706',
-  'Tax Refund':    '#059669',
-  Freelance:       '#EA580C',
-  'NRI Transfer':  '#0EA5E9',
-  Other:           '#6B7280',
-}
 type Modal = 'none' | 'manual' | 'statement' | 'bill' | 'voice'
 
 export default function IncomeClient({ transactions, accounts, transfers = [] }: { transactions: any[]; accounts: any[]; transfers?: any[] }) {
@@ -48,10 +33,10 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
   const [activeModal, setActiveModal] = useState<Modal>('none')
   const [page,        setPage]        = useState(1)
   const [pageSize,    setPageSize]    = useState(20)
-  const [editTxn,     setEditTxn]     = useState<any | null>(null)
-  const [editFields,  setEditFields]  = useState<any>({})
-  const [editSaving,  setEditSaving]  = useState(false)
-  const [isDup,       setIsDup]       = useState(false)
+  const [editing,     setEditing]     = useState<{ txn: any; duplicate?: boolean } | null>(null)
+  const [manageCats,  setManageCats]  = useState(false)
+  const { rows: categories, load: loadCategories } = useCategoryStore()
+  useEffect(() => { loadCategories() }, [loadCategories])
   const [deletingId,  setDeletingId]  = useState<string | null>(null)
   const [showAddMenu, setShowAddMenu] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -75,43 +60,15 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
     { key: 'manual',    label: 'Manual Entry',     desc: 'Type in an income entry manually',        icon: PenLine, color: '#16A34A' },
   ]
 
-  function openEdit(t: any) {
-    setIsDup(false)
-    setEditTxn(t)
-    setEditFields({ txn_date: t.txn_date, merchant: t.merchant, category: t.category, amount: t.amount, txn_type: t.txn_type ?? 'income', description: (t.description && t.description !== t.merchant) ? t.description : '' })
-  }
-  function openDuplicate(t: any) {
-    setIsDup(true)
-    setEditTxn(t)
-    setEditFields({ txn_date: t.txn_date, merchant: t.merchant, category: t.category, amount: t.amount, txn_type: t.txn_type ?? 'income', description: (t.description && t.description !== t.merchant) ? t.description : '', currency: t.currency, account_id: t.account_id ?? null })
-  }
-  function closeEdit() { setEditTxn(null); setIsDup(false) }
-  async function saveEdit() {
-    if (!editTxn) return
-    setEditSaving(true)
-    if (isDup) {
-      await fetch('/api/transactions', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          txn_date: editFields.txn_date, merchant: editFields.merchant, category: editFields.category,
-          amount: Math.abs(Number(editFields.amount)), currency: editFields.currency,
-          account_id: editFields.account_id ?? null, txn_type: editFields.txn_type,
-          description: editFields.description || null,
-        }),
-      })
-    } else {
-      await fetch('/api/transactions', {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: editTxn.id, ...editFields, amount: Math.abs(Number(editFields.amount)) }),
-      })
-    }
-    setEditSaving(false); closeEdit(); router.refresh()
-  }
+  const openEdit      = (t: any) => setEditing({ txn: t })
+  const openDuplicate = (t: any) => setEditing({ txn: t, duplicate: true })
   async function deleteTxn(id: string) {
     if (!confirm('Delete this income entry?')) return
     setDeletingId(id)
-    await fetch(`/api/transactions?id=${id}`, { method: 'DELETE' })
-    setDeletingId(null); router.refresh()
+    const res = await fetch(`/api/transactions?id=${id}`, { method: 'DELETE' })
+    setDeletingId(null)
+    toast(res.ok ? 'Income deleted' : 'Couldn’t delete it. Try again.', res.ok ? 'success' : 'error')
+    router.refresh()
   }
 
   const sym = view === 'uae' ? 'AED ' : '₹'
@@ -204,6 +161,13 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
   const passive = filteredForMonth.filter(t => PASSIVE.includes(t.category)).reduce((a, t) => a + toDisplay(Number(t.amount), t.currency), 0)
 
   // Category chips: only categories this period has, with counts
+  // Income entries per category (all loaded history) for the manage sheet
+  const catUsage = useMemo(() => {
+    const n: Record<string, number> = {}
+    transactions.forEach(t => { if (t.category) n[t.category] = (n[t.category] ?? 0) + 1 })
+    return n
+  }, [transactions])
+
   const catOptions = useMemo(() => {
     const n: Record<string, number> = {}
     let all = 0
@@ -226,6 +190,7 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
         <PageHeader title="Income" sub={`${viewLabel} · ${rangeLabel}`}
           onAdd={() => setShowAddMenu(true)} addLabel="Add income"
           actions={<>
+            <button onClick={() => setManageCats(true)} className="wl-btn" style={{ height: 34 }}><Settings2 size={14} />Categories</button>
             <Link href="/dashboard/income/report" className="wl-btn" style={{ height: 34 }}><BarChart2 size={14} />Annual report</Link>
             <div className="relative" ref={menuRef}>
               <button onClick={() => setShowAddMenu(v => !v)} aria-expanded={showAddMenu} aria-haspopup="menu"
@@ -297,6 +262,7 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
       <ListCard className="max-md:order-9" title="Income"
         sub={`${filteredForMonth.length} in ${rangeLabel}${cat !== 'All' ? ` · ${cat}` : ''}`}
         head={['Source', 'Category', 'Date', 'Amount']}
+        right={<button onClick={() => setManageCats(true)} className="wl-btn flex-shrink-0" style={{ height: 30, fontSize: 12 }}><Settings2 size={13} />Categories</button>}
         toolbar={<>
           <ListSearch value={search} onChange={setSearch} placeholder="Search…">
             <select value={accFilter} onChange={e => setAccFilter(e.target.value)} aria-label="Account"
@@ -317,7 +283,7 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
             onPage={setPage} onPageSize={s => { setPageSize(s); setPage(1) }} />
         </div>}>
         {filteredForMonth.slice((page - 1) * pageSize, page * pageSize).map((t, i) => {
-          const c = CAT_COLORS[t.category] ?? '#16A34A'
+          const c = colorOf(categories, t.category, '#16A34A')
           const account = accounts.find((a: any) => a.id === t.account_id)?.name ?? null
           const lSym = t.currency === 'AED' ? 'AED ' : '₹'
           return (
@@ -361,69 +327,13 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
 
       <div className="max-md:order-11"><LearnStrip title="Building more than one income stream" href="/dashboard/learn" /></div>
 
-      {activeModal === 'manual'    && <AddTransactionModal onClose={() => setActiveModal('none')} />}
+      {activeModal === 'manual'    && <AddTransactionModal onClose={() => setActiveModal('none')} defaults={{ txn_type: 'income' }} />}
       {activeModal === 'statement' && <BankStatementUploadModal onClose={() => setActiveModal('none')} />}
       {activeModal === 'bill'      && <BillImageUploadModal onClose={() => setActiveModal('none')} defaultType="income" />}
       {activeModal === 'voice'     && <TransactionVoiceModal onClose={() => setActiveModal('none')} defaultType="income" />}
 
-      {/* Edit income modal */}
-      {editTxn && (
-        <div className="fixed inset-0 wl-sheet bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="wl-sheet-panel rounded-2xl w-full max-w-md" style={{ background:'#fff', border:'1px solid var(--border)', boxShadow:'0 8px 40px rgba(0,0,0,0.15)' }}>
-            <div className="flex justify-between items-center px-5 py-4 border-b" style={{ borderColor:'var(--border)' }}>
-              <div className="text-[14px] font-bold" style={{ color:'var(--text)' }}>{isDup ? 'Duplicate Income' : 'Edit Income'}</div>
-              <button onClick={closeEdit} style={{ color:'var(--text3)' }}><X size={16} /></button>
-            </div>
-            <div className="p-5 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color:'var(--text3)' }}>Date</label>
-                  <input type="date" value={editFields.txn_date}
-                    onChange={e => setEditFields((f: any) => ({ ...f, txn_date: e.target.value }))}
-                    className="wl-input w-full text-[12px]" style={{ background:'var(--bg2)', border:'1px solid var(--border)', color:'var(--text)' }} />
-                </div>
-                <div>
-                  <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color:'var(--text3)' }}>Amount</label>
-                  <input type="number" value={editFields.amount} min="0" step="0.01"
-                    onChange={e => setEditFields((f: any) => ({ ...f, amount: e.target.value }))}
-                    className="wl-input w-full text-[12px]" style={{ background:'var(--bg2)', border:'1px solid var(--border)', color:'var(--text)' }} />
-                </div>
-              </div>
-              <div>
-                <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color:'var(--text3)' }}>Source</label>
-                <input type="text" value={editFields.merchant}
-                  onChange={e => setEditFields((f: any) => ({ ...f, merchant: e.target.value }))}
-                  className="wl-input w-full text-[12px]" style={{ background:'var(--bg2)', border:'1px solid var(--border)', color:'var(--text)' }} />
-              </div>
-              <div>
-                <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color:'var(--text3)' }}>Note (optional)</label>
-                <input type="text" value={editFields.description ?? ''}
-                  onChange={e => setEditFields((f: any) => ({ ...f, description: e.target.value }))}
-                  placeholder="Add a note / description"
-                  className="wl-input w-full text-[12px]" style={{ background:'var(--bg2)', border:'1px solid var(--border)', color:'var(--text)' }} />
-              </div>
-              <div>
-                <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color:'var(--text3)' }}>Category</label>
-                <select value={editFields.category}
-                  onChange={e => setEditFields((f: any) => ({ ...f, category: e.target.value }))}
-                  className="wl-input w-full text-[12px]" style={{ background:'var(--bg2)', border:'1px solid var(--border)', color:'var(--text)' }}>
-                  {INCOME_CATS.slice(1).map(c => <option key={c}>{c}</option>)}
-                </select>
-              </div>
-              <div className="flex gap-3 pt-1">
-                <button onClick={closeEdit}
-                  className="flex-1 py-2.5 rounded-lg border text-[12px] font-semibold"
-                  style={{ borderColor:'var(--border)', color:'var(--text3)', background:'var(--bg2)' }}>Cancel</button>
-                <button onClick={saveEdit} disabled={editSaving}
-                  className="flex-1 py-2.5 rounded-lg text-white text-[12px] font-bold flex items-center justify-center gap-2 disabled:opacity-40"
-                  style={{ background:'var(--income)' }}>
-                  {editSaving ? 'Saving…' : <><Check size={13}/> {isDup ? 'Add Copy' : 'Save Changes'}</>}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {editing && <AddTransactionModal edit={editing} onClose={() => setEditing(null)} />}
+      {manageCats && <ManageCategoriesSheet initialKind="income" usage={catUsage} onClose={() => setManageCats(false)} onChanged={() => router.refresh()} />}
     </div>
   )
 }

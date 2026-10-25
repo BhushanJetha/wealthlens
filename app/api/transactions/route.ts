@@ -36,7 +36,7 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()
-  const { txn_date, merchant, description, category, amount, currency, account_id, txn_type } = body
+  const { txn_date, merchant, description, category, sub_category, amount, currency, account_id, txn_type } = body
 
   if (!txn_date || !merchant || !category || !amount || !currency) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -51,6 +51,7 @@ export async function POST(req: Request) {
     merchant,
     description: description ?? null,
     category,
+    sub_category: sub_category || null,
     amount: Math.abs(Number(amount)),
     currency,
     country,
@@ -70,8 +71,15 @@ export async function PATCH(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()
-  const { id, ...updates } = body
+  const { id } = body
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
+  // Only the transaction's own fields can change (never user_id, source…)
+  const EDITABLE = ['txn_date', 'merchant', 'description', 'category', 'sub_category', 'amount', 'currency', 'account_id', 'txn_type']
+  const updates: Record<string, any> = Object.fromEntries(EDITABLE.filter(k => k in body).map(k => [k, body[k]]))
+  if ('amount' in updates) updates.amount = Math.abs(Number(updates.amount))
+  if ('account_id' in updates) updates.account_id = updates.account_id || null
+  if ('sub_category' in updates) updates.sub_category = updates.sub_category || null
+  if (updates.currency) updates.country = updates.currency === 'AED' ? 'UAE' : 'India'
 
   const { data, error } = await supabase
     .from('transactions')

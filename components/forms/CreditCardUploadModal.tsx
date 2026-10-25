@@ -1,9 +1,10 @@
 'use client'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { buildCategoryMemory } from '@/lib/categoryMemory'
 import { useViewStore } from '@/store/viewStore'
+import { useCategoryStore } from '@/store/categoryStore'
 import {
   X, Upload, Loader2, CheckCircle2, AlertCircle,
   FileText, Lock, Eye, EyeOff, CreditCard, Trash2,
@@ -60,6 +61,10 @@ const BANKS = [
 ]
 
 export default function CreditCardUploadModal({ onClose }: Props) {
+  // The user's expense categories (plus Transfer) for the review dropdowns
+  const { rows: userCats, load: loadCats } = useCategoryStore()
+  useEffect(() => { loadCats() }, [loadCats])
+  const cardCats = [...userCats.filter(c => c.kind === 'expense').map(c => c.name), 'Transfer']
   const [file, setFile]             = useState<File | null>(null)
   const [bank, setBank]             = useState('')
   const [stage, setStage]           = useState<Stage>('idle')
@@ -597,7 +602,7 @@ export default function CreditCardUploadModal({ onClose }: Props) {
                             <select value={t.category} onChange={e => updateTxn(i, 'category', e.target.value)}
                               className="text-[10px] px-1.5 py-1 rounded border w-full"
                               style={{ borderColor: 'var(--border)', background: 'var(--bg2)', color: 'var(--text)' }}>
-                              {CATS.map(c => <option key={c}>{c}</option>)}
+                              {(cardCats.includes(t.category) ? cardCats : [t.category, ...cardCats]).map(c => <option key={c}>{c}</option>)}
                             </select>
                           </td>
                           <td className="px-2 py-2">

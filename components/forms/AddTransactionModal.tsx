@@ -1,55 +1,60 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { X, Loader2, Plus, ArrowRight, RefreshCw } from 'lucide-react'
+import { X, Loader2, ArrowRight, RefreshCw, Plus, Settings2, Globe, ArrowLeftRight, Users, Banknote } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useViewStore } from '@/store/viewStore'
+import { useCategoryStore } from '@/store/categoryStore'
+import { colorOf } from '@/lib/categories'
+import { Segmented } from '@/components/ui/kit'
+import { CategoryIcon } from '@/components/ui/CategoryIcon'
+import { toast } from '@/components/ui/toaster'
+import ManageCategoriesSheet from './ManageCategoriesSheet'
 
-const EXPENSE_CATS = ['Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment','Travel','Trip/Vacation','Event/Function','Education','Subscription','Investment','Tax Payment','EMI/Loan','Loan on Card','Credit Card Payment','Family Transfer','Refund','Other']
-const INCOME_CATS  = ['UAE Income (NRO)','Salary','NRE Received','Dividend','Interest','FD/RD Maturity','Rental','Gift','Bonus','Tax Refund','Freelance','NRI Transfer','Loan Taken','Refund','Other']
-
-const CAT_COLORS: Record<string,string> = {
-  Food:'#D97706', Shopping:'#2563EB', Utilities:'#7C3AED', Transport:'#16A34A',
-  Health:'#059669', Entertainment:'#E11D48', Travel:'#EA580C', Education:'#0284C7',
-  Subscription:'#EC4899', 'Personal Care':'#DB2777', 'Trip/Vacation':'#0D9488', 'Event/Function':'#C026D3',
-  Investment:'#10B981', 'Tax Payment':'#BE123C', 'EMI/Loan':'#F97316', 'Loan on Card':'#F59E0B',
-  'Credit Card Payment':'#9333EA', 'Family Transfer':'#0EA5E9', Refund:'#059669',
-  'UAE Income (NRO)':'#15803D', Salary:'#16A34A', 'NRE Received':'#0284C7', Dividend:'#2563EB', Rental:'#7C3AED', Gift:'#E11D48',
-  Bonus:'#D97706', 'Tax Refund':'#059669', Interest:'#0369A1', 'FD/RD Maturity':'#0891B2', Freelance:'#EA580C',
-  'NRI Transfer':'#0EA5E9', 'Loan Taken':'#6366F1',
-  Other:'#6B7280',
-}
+type TxnType = 'expense' | 'income' | 'transfer' | 'loan'
 
 const TRANSFER_SUBTYPES = [
-  { value: 'International',   label: 'UAE → India',     desc: 'Send money from UAE to India',          color: '#3B7DD8' },
-  { value: 'Internal',       label: 'NRE → NRO',       desc: 'Move funds between NRE & NRO accounts',  color: '#7C5CBF' },
-  { value: 'Family',         label: 'Family Transfer',  desc: 'Monthly allowance to spouse or parents', color: '#3D7A58' },
-  { value: 'ATM Withdrawal', label: 'ATM Cash',         desc: 'Bank → Cash wallet (cash withdrawn)',    color: '#0891B2' },
+  { value: 'International',  label: 'UAE → India',     desc: 'Send money home',              icon: Globe,          color: '#3B8EF0' },
+  { value: 'Internal',       label: 'NRE → NRO',       desc: 'Between your own accounts',    icon: ArrowLeftRight, color: '#6A55E8' },
+  { value: 'Family',         label: 'Family transfer', desc: 'Allowance to family',          icon: Users,          color: '#2FB67C' },
+  { value: 'ATM Withdrawal', label: 'ATM cash',        desc: 'Bank to your cash wallet',     icon: Banknote,       color: '#0891B2' },
 ]
+// Loan categories are recorded as loan payments (they show under Loan payments)
+const LOAN_CATS = new Set(['Loan on Card', 'EMI/Loan'])
 
-const Lbl = ({ children }: { children: React.ReactNode }) => (
-  <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1.5"
-    style={{ color: 'var(--text3)' }}>{children}</label>
+const Label = ({ children, right }: { children: React.ReactNode; right?: React.ReactNode }) => (
+  <div className="flex items-center justify-between mb-1.5">
+    <span className="text-[11px] font-semibold uppercase tracking-[0.05em]" style={{ color: 'var(--text3)' }}>{children}</span>
+    {right}
+  </div>
 )
-const inputStyle = { background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }
+const FIELD = { height: 42, fontSize: 14, borderRadius: 9, background: '#F7F8FA', borderColor: '#E2E8F0' }
 
-export default function AddTransactionModal({ onClose, onAdded, defaults }: {
+// Add, edit or duplicate a transaction (design v2: centred 460px dialog on
+// desktop, bottom sheet on phones). Categories come from the user's own list.
+export default function AddTransactionModal({ onClose, onAdded, defaults, edit }: {
   onClose: () => void
   onAdded?: () => void
   defaults?: Partial<{ txn_type: string; account_id: string; category: string; currency: string; sub_category: string; merchant: string; amount: string; txn_date: string; description: string }>
+  edit?: { txn: any; duplicate?: boolean }     // edit (or copy) an existing transaction
 }) {
-  // In the UAE view new entries default to AED; India/Consolidated default to INR
   const { view } = useViewStore()
-  const [form, setForm] = useState({
-    txn_date:     defaults?.txn_date ?? new Date().toISOString().slice(0, 10),
-    merchant:     defaults?.merchant ?? '',
-    description:  defaults?.description ?? '',
-    category:     defaults?.category ?? (defaults?.txn_type === 'income' ? 'Salary' : 'Food'),
-    sub_category: defaults?.sub_category ?? '',
-    amount:       defaults?.amount ?? '',
-    currency:     defaults?.currency ?? (view === 'uae' ? 'AED' : 'INR'),
-    txn_type:     defaults?.txn_type ?? 'expense',
-    account_id:   defaults?.account_id ?? '',
+  const { rows: categories, load: loadCategories } = useCategoryStore()
+  const t0 = edit?.txn
+  const mode: 'add' | 'edit' | 'duplicate' = !edit ? 'add' : edit.duplicate ? 'duplicate' : 'edit'
+  const [form, setForm] = useState(() => {
+    const type = (t0?.txn_type ?? defaults?.txn_type ?? 'expense') as TxnType
+    return {
+      txn_date:     t0?.txn_date ?? defaults?.txn_date ?? new Date().toISOString().slice(0, 10),
+      merchant:     t0?.merchant ?? defaults?.merchant ?? '',
+      description:  t0 ? (t0.description && t0.description !== t0.merchant ? t0.description : '') : (defaults?.description ?? ''),
+      category:     t0?.category ?? defaults?.category ?? (type === 'income' ? 'Salary' : type === 'transfer' ? 'Transfer' : 'Food'),
+      sub_category: t0?.sub_category ?? defaults?.sub_category ?? '',
+      amount:       t0 ? String(Math.abs(Number(t0.amount))) : (defaults?.amount ?? ''),
+      currency:     t0?.currency ?? defaults?.currency ?? (view === 'uae' ? 'AED' : 'INR'),
+      txn_type:     type,
+      account_id:   t0?.account_id ?? defaults?.account_id ?? '',
+    }
   })
   const [accounts,    setAccounts]    = useState<any[]>([])
   const [saving,      setSaving]      = useState(false)
@@ -57,339 +62,254 @@ export default function AddTransactionModal({ onClose, onAdded, defaults }: {
   const [liveRate,    setLiveRate]    = useState<number | null>(null)
   const [rateLoading, setRateLoading] = useState(false)
   const [rateDate,    setRateDate]    = useState<string | null>(null)
+  const [manage,      setManage]      = useState(false)
 
   const supabase = createClient()
   const router   = useRouter()
 
+  useEffect(() => { loadCategories() }, [loadCategories])
   useEffect(() => {
     supabase.from('accounts').select('id,name,bank_name,currency,account_type').eq('is_active', true)
       .then(({ data }) => setAccounts(data ?? []))
   }, [])
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !manage) onClose() }
+    window.addEventListener('keydown', esc); return () => window.removeEventListener('keydown', esc)
+  }, [onClose, manage])
 
   async function fetchLiveRate() {
     setRateLoading(true)
     try {
-      const res = await fetch('/api/fx-rate')
-      const d   = await res.json()
-      setLiveRate(d.rate)
-      setRateDate(d.date)
-    } catch {
-      setLiveRate(22.80)
-    } finally {
-      setRateLoading(false)
-    }
+      const d = await (await fetch('/api/fx-rate')).json()
+      setLiveRate(d.rate); setRateDate(d.date)
+    } catch { setLiveRate(null) } finally { setRateLoading(false) }
   }
+  useEffect(() => { if (form.currency === 'AED' && liveRate === null) fetchLiveRate() }, [form.currency])
 
-  useEffect(() => {
-    if (form.currency === 'AED' && liveRate === null) {
-      fetchLiveRate()
-    }
-  }, [form.txn_type, form.currency])
+  const set = (patch: Partial<typeof form>) => setForm(p => ({ ...p, ...patch }))
+  const isTransfer = form.txn_type === 'transfer'
+  const isIncome   = form.txn_type === 'income'
+  const catKind    = isIncome ? 'income' : 'expense'
 
-  function f(key: string) {
-    return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
-      setForm(p => ({ ...p, [key]: e.target.value }))
+  // The user's categories for this type, plus the current one if it isn't in the list (e.g. from an import)
+  const cats = useMemo(() => {
+    const list = categories.filter(c => c.kind === catKind)
+    return form.category && !list.some(c => c.name === form.category) && !isTransfer
+      ? [{ id: 'current', kind: catKind, name: form.category, color: colorOf(categories, form.category), icon: 'tag', sort_order: -1 }, ...list]
+      : list
+  }, [categories, catKind, form.category, isTransfer])
+
+  function setType(t: TxnType) {
+    if (t === form.txn_type) return
+    const kindCats = categories.filter(c => c.kind === (t === 'income' ? 'income' : 'expense'))
+    const keep = t !== 'transfer' && kindCats.some(c => c.name === form.category)
+    set({
+      txn_type: t, sub_category: '',
+      category: t === 'transfer' ? 'Transfer' : keep ? form.category
+        : t === 'income' ? 'Salary' : t === 'loan' ? 'EMI/Loan' : 'Food',
+      account_id: form.account_id === '__cash__' && t === 'transfer' ? '' : form.account_id,
+    })
   }
-
-  function setType(txn_type: string) {
-    const category = txn_type === 'transfer' ? 'Transfer'
-      : txn_type === 'income' ? 'Salary' : 'Food'
-    setForm(p => ({ ...p, txn_type, category, sub_category: '' }))
+  function setCategory(name: string) {
+    // Loan categories are loan payments; leaving them makes it an expense again
+    const txn_type: TxnType = LOAN_CATS.has(name) ? 'loan' : form.txn_type === 'loan' ? 'expense' : form.txn_type
+    set({ category: name, txn_type })
   }
-
   function setTransferSubtype(sub: string) {
-    const autoMerchant =
-      sub === 'International'   ? 'Transfer to India' :
-      sub === 'Internal'        ? 'NRE to NRO'        :
-      sub === 'ATM Withdrawal'  ? 'ATM Withdrawal'    :
-      'Family Transfer'
     const isAtm = sub === 'ATM Withdrawal'
+    const autoMerchant = sub === 'International' ? 'Transfer to India' : sub === 'Internal' ? 'NRE to NRO' : isAtm ? 'ATM Withdrawal' : 'Family Transfer'
     setForm(p => ({
-      ...p,
-      sub_category: sub,
-      // ATM cash is its own category (money movement, not spend); it lands in
-      // the Cash wallet so cash-in-hand is topped up.
+      ...p, sub_category: sub,
+      // ATM cash is a money movement into the Cash wallet, not spend
       category:   isAtm ? 'ATM Withdrawal' : 'Transfer',
       account_id: isAtm ? '__cash__' : (p.account_id === '__cash__' ? '' : p.account_id),
       currency:   sub === 'International' ? 'AED' : p.currency,
       merchant:   p.merchant || autoMerchant,
     }))
-    if (sub === 'International' && liveRate === null) fetchLiveRate()
   }
 
-  // Resolve the "💵 Cash" sentinel to a real wallet account, creating one
-  // (per-currency) the first time cash is used so cash spend is tracked.
+  // Resolve the Cash sentinel to the wallet account, creating it (per currency) the first time
   async function resolveAccountId(): Promise<string | null> {
     if (form.account_id !== '__cash__') return form.account_id || null
     const existing = accounts.find(a => a.account_type === 'wallet' && a.currency === form.currency)
     if (existing) return existing.id
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) throw new Error('Not signed in')
+    if (!user) throw new Error('Please sign in again')
     const { data, error: err } = await supabase.from('accounts').insert({
-      user_id: user.id,
-      name: 'Cash', bank_name: 'Cash', account_type: 'wallet',
-      currency: form.currency, country: form.currency === 'AED' ? 'UAE' : 'India',
-      outstanding_bal: 0,
+      user_id: user.id, name: 'Cash', bank_name: 'Cash', account_type: 'wallet',
+      currency: form.currency, country: form.currency === 'AED' ? 'UAE' : 'India', outstanding_bal: 0,
     }).select('id').single()
-    if (err || !data) throw new Error(err?.message || 'Could not create Cash wallet')
-    setAccounts(p => [...p, { ...data, name: 'Cash', bank_name: 'Cash', currency: form.currency, account_type: 'wallet' }])
+    if (err || !data) throw new Error(err?.message || 'Could not create the Cash wallet')
     return data.id
   }
 
   async function save() {
-    if (!form.merchant || !form.amount || !form.txn_date) {
-      setError('Merchant/label, amount and date are required'); return
-    }
+    if (!(Number(form.amount) > 0)) { setError('Enter an amount above zero.'); return }
+    if (!form.merchant.trim()) { setError(isTransfer ? 'Give the transfer a label.' : isIncome ? 'Who paid you? Add a source.' : 'Where did you spend it? Add a merchant.'); return }
+    if (!form.txn_date) { setError('Pick a date.'); return }
+    if (isTransfer && !form.sub_category) { setError('Choose the kind of transfer.'); return }
     setSaving(true); setError('')
-    let acctId: string | null
-    try { acctId = await resolveAccountId() }
-    catch (e: any) { setSaving(false); setError(e.message ?? 'Could not save'); return }
+    let account_id: string | null
+    try { account_id = await resolveAccountId() } catch (e: any) { setSaving(false); setError(e.message ?? 'Could not save'); return }
+    const body = { ...form, merchant: form.merchant.trim(), description: form.description.trim() || null, amount: Math.abs(Number(form.amount)), account_id }
     const res = await fetch('/api/transactions', {
-      method: 'POST',
+      method: mode === 'edit' ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form, account_id: acctId }),
+      body: JSON.stringify(mode === 'edit' ? { id: t0.id, ...body } : body),
     })
-    const data = await res.json()
+    const data = await res.json().catch(() => ({}))
     setSaving(false)
-    if (!res.ok) { setError(data.error ?? 'Failed to save'); return }
+    if (!res.ok) { setError(data.error ?? 'Could not save. Try again.'); return }
+    const noun = isTransfer ? 'Transfer' : isIncome ? 'Income' : form.txn_type === 'loan' ? 'Loan payment' : 'Expense'
+    toast(mode === 'edit' ? 'Changes saved' : `${noun} saved · ${form.merchant.trim()}`)
     router.refresh()
     onAdded?.()
     onClose()
   }
 
-  const typeStyles: Record<string, { bg: string; border: string; color: string }> = {
-    expense:  { bg: 'var(--rose-bg)',   border: 'var(--rose)',   color: 'var(--rose)' },
-    income:   { bg: 'var(--income-bg)', border: 'var(--income)', color: 'var(--income)' },
-    transfer: { bg: 'var(--blue-bg)',   border: 'var(--blue)',   color: 'var(--blue)' },
-  }
-  const inactiveTypeStyle = { background: 'var(--bg2)', borderColor: 'var(--border)', color: 'var(--text3)' }
-
-  const isTransfer  = form.txn_type === 'transfer'
-  const isIncome    = form.txn_type === 'income'
-  const cats        = isIncome ? INCOME_CATS : EXPENSE_CATS
-
+  const sym      = form.currency === 'AED' ? 'AED' : '₹'
   const aedAmt   = form.currency === 'AED' ? Number(form.amount || 0) : 0
   const inrEquiv = liveRate && aedAmt > 0 ? Math.round(aedAmt * liveRate) : null
+  const noun     = isTransfer ? 'transfer' : isIncome ? 'income' : form.txn_type === 'loan' ? 'loan payment' : 'expense'
+  const title    = mode === 'edit' ? `Edit ${noun}` : mode === 'duplicate' ? `Copy ${noun}` : `Add ${noun}`
+  const cashId   = accounts.find(a => a.account_type === 'wallet' && a.currency === form.currency)?.id ?? '__cash__'
+  const typeOpts = [{ value: 'expense' as TxnType, label: 'Expense' }, { value: 'income' as TxnType, label: 'Income' }, { value: 'transfer' as TxnType, label: 'Transfer' },
+    ...(mode !== 'add' || form.txn_type === 'loan' ? [{ value: 'loan' as TxnType, label: 'Loan' }] : [])]
 
   return (
-    <div className="fixed inset-0 wl-sheet bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="wl-sheet-panel rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto"
-        style={{ background: '#fff', border: '1px solid var(--border)', boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}>
+    <div className="fixed inset-0 wl-sheet z-50 flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,.4)' }} onClick={onClose}>
+      <div className="wl-sheet-panel bg-white w-full max-w-[460px] rounded-2xl flex flex-col max-h-[90vh]" style={{ boxShadow: '0 24px 60px rgba(15,23,42,.3)' }}
+        onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={title}>
 
-        <div className="flex justify-between items-center mb-5">
-          <h2 className="text-[15px] font-bold flex items-center gap-2" style={{ color: 'var(--text)' }}>
-            <Plus size={16} style={{ color: 'var(--sage)' }} /> Add Transaction
-          </h2>
-          <button onClick={onClose} style={{ color: 'var(--text3)' }}><X size={18} /></button>
+        <div className="px-5 md:px-6 pt-5 md:pt-6 pb-3 flex items-center justify-between">
+          <h2 className="text-[18px] font-bold" style={{ color: 'var(--text)' }}>{title}</h2>
+          <button onClick={onClose} aria-label="Close" className="w-8 h-8 -mr-1 rounded-lg flex items-center justify-center hover:bg-[var(--bg2)]" style={{ color: 'var(--text3)' }}><X size={18} /></button>
         </div>
 
-        {error && (
-          <div className="rounded-lg p-3 text-[12px] mb-4"
-            style={{ background: 'var(--rose-bg)', border: '1px solid var(--rose)', color: 'var(--rose)' }}>
-            {error}
-          </div>
-        )}
+        <div className="overflow-y-auto px-5 md:px-6 pb-2 flex flex-col gap-3.5">
+          <Segmented full label="Type" value={form.txn_type} onChange={setType} options={typeOpts} />
 
-        <div className="space-y-3">
-          {/* Type toggle */}
+          {/* Amount first: the number people came to enter */}
           <div>
-            <Lbl>Type</Lbl>
+            <Label>Amount</Label>
             <div className="flex gap-2">
-              {['expense', 'income', 'transfer'].map(t => {
-                const s = typeStyles[t]
-                return (
-                  <button key={t} onClick={() => setType(t)}
-                    className="flex-1 py-2 rounded-lg text-[11px] font-bold border transition-all capitalize"
-                    style={form.txn_type === t
-                      ? { background: s.bg, borderColor: s.border, color: s.color }
-                      : inactiveTypeStyle}>
-                    {t}
-                  </button>
-                )
-              })}
+              <div className="relative flex-1 min-w-0">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[15px] font-semibold" style={{ color: 'var(--text3)' }}>{sym}</span>
+                <input type="number" inputMode="decimal" min="0" step="0.01" value={form.amount} onChange={e => set({ amount: e.target.value })} placeholder="0"
+                  autoFocus={mode === 'add'} aria-label="Amount"
+                  className={`wl-input ${sym === 'AED' ? 'pl-12' : 'pl-8'} tabular-nums`} style={{ ...FIELD, height: 50, fontSize: 22, fontWeight: 700 }} />
+              </div>
+              <Segmented label="Currency" value={form.currency} onChange={c => set({ currency: c })}
+                options={[{ value: 'INR', label: '₹ INR' }, { value: 'AED', label: 'AED' }]} />
             </div>
+            {form.currency === 'AED' && Number(form.amount) > 0 && (
+              <div className="mt-1.5 flex items-center gap-1.5 text-[12px]" style={{ color: 'var(--text3)' }}>
+                <ArrowRight size={12} />
+                {rateLoading ? <span className="flex items-center gap-1"><Loader2 size={11} className="animate-spin" />Getting today’s rate…</span>
+                  : liveRate ? <>
+                      <span className="font-semibold tabular-nums" style={{ color: 'var(--text)' }}>₹{inrEquiv?.toLocaleString('en-IN')}</span>
+                      <span>at ₹{liveRate.toFixed(2)} per AED{rateDate ? ` · ${rateDate}` : ''}</span>
+                      <button onClick={fetchLiveRate} aria-label="Refresh rate" style={{ color: 'var(--accent)' }}><RefreshCw size={11} /></button>
+                    </> : <span>Rate unavailable</span>}
+              </div>
+            )}
           </div>
 
-          {/* Transfer sub-type chips */}
           {isTransfer && (
             <div>
-              <Lbl>Transfer Type</Lbl>
+              <Label>Kind of transfer</Label>
               <div className="grid grid-cols-2 gap-2">
-                {TRANSFER_SUBTYPES.map(sub => (
-                  <button key={sub.value} onClick={() => setTransferSubtype(sub.value)}
-                    className="p-2 rounded-xl border text-center transition-all"
-                    style={form.sub_category === sub.value
-                      ? { background: sub.color + '15', borderColor: sub.color, color: sub.color }
-                      : { background: 'var(--bg2)', borderColor: 'var(--border)', color: 'var(--text3)' }}>
-                    <div className="text-[11px] font-bold">{sub.label}</div>
-                    <div className="text-[9px] mt-0.5 leading-tight">{sub.desc}</div>
-                  </button>
-                ))}
+                {TRANSFER_SUBTYPES.map(s => {
+                  const on = form.sub_category === s.value
+                  return (
+                    <button key={s.value} onClick={() => setTransferSubtype(s.value)} aria-pressed={on}
+                      className="rounded-xl px-3 py-2.5 text-left flex items-start gap-2.5 transition-colors"
+                      style={on ? { background: s.color + '14', boxShadow: `inset 0 0 0 1.5px ${s.color}` } : { background: '#fff', border: '1px solid var(--line)' }}>
+                      <span className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: s.color + '1A', color: s.color }}><s.icon size={14} /></span>
+                      <span className="min-w-0">
+                        <span className="block text-[12.5px] font-semibold" style={{ color: on ? s.color : 'var(--text)' }}>{s.label}</span>
+                        <span className="block text-[11px] leading-tight mt-0.5" style={{ color: 'var(--text3)' }}>{s.desc}</span>
+                      </span>
+                    </button>
+                  )
+                })}
               </div>
               {form.sub_category === 'ATM Withdrawal' && (
-                <div className="mt-2 text-[10px] rounded-lg px-2.5 py-1.5"
-                  style={{ background: '#ECFEFF', border: '1px solid #0891B240', color: '#0E7490' }}>
-                  💵 Records cash added to your <strong>Cash wallet</strong> — not an expense. Log your cash spends separately from the Cash wallet.
+                <div className="mt-2 text-[12px] rounded-lg px-3 py-2 leading-snug" style={{ background: '#E0F4F8', color: '#0E7490' }}>
+                  Adds the cash to your Cash wallet. It isn’t counted as spending; log what you buy with it as cash expenses.
                 </div>
               )}
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Lbl>Date</Lbl>
-              <input type="date" value={form.txn_date} onChange={f('txn_date')}
-                className="wl-input" style={inputStyle}
-                onFocus={e => (e.target.style.borderColor = 'var(--sage)')}
-                onBlur={e => (e.target.style.borderColor = 'var(--border)')} />
-            </div>
-            <div>
-              <Lbl>Currency</Lbl>
-              <select value={form.currency} onChange={e => {
-                f('currency')(e)
-                if (e.target.value === 'AED' && liveRate === null) fetchLiveRate()
-              }}
-                className="wl-input" style={inputStyle}
-                onFocus={e => (e.target.style.borderColor = 'var(--sage)')}
-                onBlur={e => (e.target.style.borderColor = 'var(--border)')}>
-                <option value="INR">₹ INR — India</option>
-                <option value="AED">AED — UAE</option>
-              </select>
-            </div>
+          <div>
+            <Label>{isTransfer ? 'Label' : isIncome ? 'Received from' : 'Paid to'}</Label>
+            <input type="text" value={form.merchant} onChange={e => set({ merchant: e.target.value })}
+              placeholder={isTransfer ? 'e.g. Transfer to India' : isIncome ? 'e.g. Employer, tenant, bank' : 'e.g. Carrefour, Amazon, DEWA'}
+              className="wl-input" style={FIELD} />
           </div>
 
-          <div>
-            <Lbl>{isTransfer ? 'Transfer Label' : 'Merchant / Description'}</Lbl>
-            <input type="text" value={form.merchant} onChange={f('merchant')}
-              placeholder={isTransfer ? 'e.g. Transfer to India, NRE → NRO' : 'e.g. Carrefour, Amazon, DEWA'}
-              className="wl-input" style={inputStyle}
-              onFocus={e => (e.target.style.borderColor = 'var(--sage)')}
-              onBlur={e => (e.target.style.borderColor = 'var(--border)')} />
-          </div>
-
-          {/* Amount + FX preview */}
-          <div>
-            <Lbl>Amount</Lbl>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] font-mono" style={{ color: 'var(--text3)' }}>
-                {form.currency === 'AED' ? 'AED' : '₹'}
-              </span>
-              <input type="number" value={form.amount} onChange={f('amount')} placeholder="0.00"
-                className="wl-input pl-12 font-mono font-bold" style={inputStyle}
-                onFocus={e => (e.target.style.borderColor = 'var(--sage)')}
-                onBlur={e => (e.target.style.borderColor = 'var(--border)')} />
+          <div className="grid grid-cols-2 gap-2.5">
+            <div>
+              <Label>Date</Label>
+              <input type="date" value={form.txn_date} onChange={e => set({ txn_date: e.target.value })} className="wl-input" style={FIELD} />
             </div>
-            {/* Live FX conversion preview */}
-            {form.currency === 'AED' && Number(form.amount) > 0 && (
-              <div className="mt-1.5 flex items-center gap-1.5 text-[11px]"
-                style={{ color: 'var(--text3)' }}>
-                <ArrowRight size={11} />
-                {rateLoading ? (
-                  <span className="flex items-center gap-1">
-                    <Loader2 size={10} className="animate-spin" /> Fetching live rate…
-                  </span>
-                ) : liveRate ? (
-                  <>
-                    <span className="font-mono font-bold" style={{ color: 'var(--gold)' }}>
-                      ₹{inrEquiv?.toLocaleString('en-IN')}
-                    </span>
-                    <span>at ₹{liveRate.toFixed(2)}/AED</span>
-                    {rateDate && <span style={{ color: 'var(--text3)' }}>· {rateDate}</span>}
-                    <button onClick={fetchLiveRate} title="Refresh rate"
-                      style={{ color: 'var(--blue)' }}>
-                      <RefreshCw size={10} />
-                    </button>
-                  </>
-                ) : null}
+            {form.sub_category !== 'ATM Withdrawal' && (
+              <div>
+                <Label>{isTransfer ? 'From account' : isIncome ? 'Received in' : 'Paid from'}</Label>
+                <select value={form.account_id === '__cash__' ? cashId : form.account_id} onChange={e => set({ account_id: e.target.value })} className="wl-input" style={FIELD}>
+                  <option value="">Not linked</option>
+                  {!isTransfer && <option value={cashId}>Cash wallet</option>}
+                  {accounts.filter(a => a.account_type !== 'wallet').filter(a => !isTransfer || a.currency === form.currency)
+                    .map(a => <option key={a.id} value={a.id}>{a.name}{a.bank_name && a.bank_name !== a.name ? ` · ${a.bank_name}` : ''}</option>)}
+                </select>
               </div>
             )}
           </div>
 
-          {/* Transfer: To recipient */}
-          {isTransfer ? (
+          {!isTransfer && (
             <div>
-              <Lbl>{form.sub_category === 'ATM Withdrawal' ? 'Withdrawn from (bank, optional)' : 'To (Recipient / Account)'}</Lbl>
-              <input type="text" value={form.description} onChange={f('description')}
-                placeholder={
-                  form.sub_category === 'ATM Withdrawal' ? 'e.g. HDFC Savings •••4521' :
-                  form.sub_category === 'International' ? 'e.g. HDFC Savings •••4521' :
-                  form.sub_category === 'Internal'      ? 'e.g. NRO Account, HDFC' :
-                  'e.g. Wife - personal expenses'
-                }
-                className="wl-input" style={inputStyle}
-                onFocus={e => (e.target.style.borderColor = 'var(--sage)')}
-                onBlur={e => (e.target.style.borderColor = 'var(--border)')} />
-            </div>
-          ) : (
-            /* Category for expense/income */
-            <div>
-              <Lbl>Category</Lbl>
-              <div className="flex flex-wrap gap-1.5">
+              <Label right={<button onClick={() => setManage(true)} className="text-[12px] font-semibold flex items-center gap-1" style={{ color: 'var(--accent)' }}><Settings2 size={12} />Manage</button>}>Category</Label>
+              <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Category">
                 {cats.map(c => {
-                  const col = CAT_COLORS[c] ?? '#6B7280'
+                  const on = form.category === c.name
                   return (
-                    <button key={c} onClick={() => setForm(p => ({ ...p, category: c }))}
-                      className="px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all border"
-                      style={form.category === c
-                        ? { background: col + '18', borderColor: col + '60', color: col }
-                        : { background: 'var(--bg2)', borderColor: 'var(--border)', color: 'var(--text3)' }}>
-                      {c}
+                    <button key={c.id} role="radio" aria-checked={on} onClick={() => setCategory(c.name)}
+                      className="inline-flex items-center gap-1.5 h-[34px] pl-2 pr-3 rounded-full text-[12.5px] transition-colors"
+                      style={on ? { background: c.color + '1A', boxShadow: `inset 0 0 0 1.5px ${c.color}`, color: c.color, fontWeight: 600 }
+                        : { background: '#fff', border: '1px solid var(--line)', color: 'var(--text2)', fontWeight: 500 }}>
+                      <span className="w-[22px] h-[22px] rounded-full flex items-center justify-center" style={{ background: c.color + (on ? '26' : '1A'), color: c.color }}><CategoryIcon icon={c.icon} size={12} /></span>
+                      {c.name}
                     </button>
                   )
                 })}
+                <button onClick={() => setManage(true)} className="inline-flex items-center gap-1 h-[34px] px-3 rounded-full text-[12.5px] font-semibold"
+                  style={{ border: '1px dashed var(--accent-border)', color: 'var(--accent2)', background: 'var(--accent-bg)' }}>
+                  <Plus size={13} />New
+                </button>
               </div>
             </div>
           )}
 
-          {/* Account / payment source (ATM lands in the Cash wallet, so no picker) */}
-          {(!isTransfer || accounts.length > 0) && form.sub_category !== 'ATM Withdrawal' && (
-            <div>
-              <Lbl>{isTransfer ? 'From Account' : 'Paid From (optional)'}</Lbl>
-              <select value={form.account_id} onChange={f('account_id')}
-                className="wl-input" style={inputStyle}
-                onFocus={e => (e.target.style.borderColor = 'var(--sage)')}
-                onBlur={e => (e.target.style.borderColor = 'var(--border)')}>
-                <option value="">No account linked</option>
-                {!isTransfer && (
-                  <option value={
-                    accounts.find(a => a.account_type === 'wallet' && a.currency === form.currency)?.id ?? '__cash__'
-                  }>💵 Cash — spent from wallet</option>
-                )}
-                {accounts
-                  .filter(a => a.account_type !== 'wallet')
-                  .filter(a => !isTransfer || a.currency === form.currency)
-                  .map(a => (
-                    <option key={a.id} value={a.id}>{a.name} ({a.bank_name})</option>
-                  ))}
-              </select>
-            </div>
-          )}
+          <div>
+            <Label>{isTransfer ? (form.sub_category === 'ATM Withdrawal' ? 'Withdrawn from (optional)' : 'To (recipient or account)') : 'Note (optional)'}</Label>
+            <input type="text" value={form.description} onChange={e => set({ description: e.target.value })}
+              placeholder={isTransfer ? (form.sub_category === 'Family' ? 'e.g. Wife, parents' : 'e.g. HDFC NRO ••4521') : 'Anything to remember'}
+              className="wl-input" style={FIELD} />
+          </div>
 
-          {/* Notes (non-transfer only, since description is used for recipient) */}
-          {!isTransfer && (
-            <div>
-              <Lbl>Notes (optional)</Lbl>
-              <input type="text" value={form.description} onChange={f('description')}
-                placeholder="Additional details"
-                className="wl-input" style={inputStyle}
-                onFocus={e => (e.target.style.borderColor = 'var(--sage)')}
-                onBlur={e => (e.target.style.borderColor = 'var(--border)')} />
-            </div>
-          )}
+          {error && <div className="rounded-lg px-3 py-2.5 text-[12.5px] leading-snug" style={{ background: '#FDECE8', color: '#B4231A' }} role="alert">{error}</div>}
         </div>
 
-        <div className="flex gap-3 mt-5">
-          <button onClick={onClose} className="flex-1 py-2.5 rounded-lg text-[12px] font-semibold"
-            style={{ border: '1px solid var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>
-            Cancel
-          </button>
-          <button onClick={save} disabled={saving}
-            className="flex-1 py-2.5 rounded-lg text-white text-[12px] font-bold flex items-center justify-center gap-2 disabled:opacity-50"
-            style={{ background: isTransfer ? 'var(--blue)' : isIncome ? 'var(--income)' : 'var(--sage)' }}>
-            {saving ? <><Loader2 size={14} className="animate-spin" />Saving…</> : 'Save'}
+        <div className="px-5 md:px-6 pt-3 pb-5 md:pb-6 flex gap-2.5">
+          <button onClick={onClose} className="wl-btn" style={{ height: 44, padding: '0 18px', fontSize: 13.5, borderRadius: 9 }}>Cancel</button>
+          <button onClick={save} disabled={saving} className="wl-btn wl-btn-primary flex-1 disabled:opacity-60" style={{ height: 44, fontSize: 14, borderRadius: 9 }}>
+            {saving ? <><Loader2 size={15} className="animate-spin" />Saving…</> : mode === 'edit' ? 'Save changes' : mode === 'duplicate' ? 'Add copy' : `Save ${noun}`}
           </button>
         </div>
       </div>
+
+      {manage && <div onClick={e => e.stopPropagation()}><ManageCategoriesSheet initialKind={catKind} onClose={() => setManage(false)} /></div>}
     </div>
   )
 }

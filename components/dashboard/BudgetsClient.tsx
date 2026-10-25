@@ -5,16 +5,18 @@ import { createClient } from '@/lib/supabase/client'
 import { Plus, BarChart2, BookOpen, CreditCard, TrendingUp, LayoutGrid, Sparkles, Lock, Unlock, Pencil, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { PageHeader, InsightBar, AiActions, LearnStrip } from '@/components/ui/kit'
+import { useCategoryStore } from '@/store/categoryStore'
+import { colorOf } from '@/lib/categories'
 
 const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
-// Planable categories. Excludes "Credit Card Payment" and "Loan on Card" — a CC
-// bill just settles spend already budgeted in other categories, so budgeting it
-// would double-count. EMI/Loan Payment IS budgetable (a real monthly outflow).
-const CATS = [
-  'Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment',
-  'Travel','Trip/Vacation','Event/Function','Education','Subscription','Investment','Tax Payment','EMI/Loan','International Transfer','Family Transfer','Transfer','Other',
-]
+// Planable categories = the user's expense categories (store/categoryStore),
+// minus "Credit Card Payment" and "Loan on Card" — a CC bill just settles spend
+// already budgeted in other categories, so budgeting it would double-count —
+// and Refund (money back, not spend). EMI/Loan Payment IS budgetable. Money
+// sent abroad / transfers are budgetable rows that aren't categories.
+const NOT_PLANABLE = new Set(['Loan on Card', 'Credit Card Payment', 'Refund'])
+const TRANSFER_ROWS = ['International Transfer', 'Transfer']
 
 // Budgets previously created for these are hidden (no longer planable).
 const DEPRECATED_BUDGET_CATS = new Set(['Loan on Card', 'Credit Card Payment'])
@@ -26,14 +28,6 @@ const CAT_LABEL: Record<string, string> = {
   'International Transfer': 'Transfer to India (Remittance)',
 }
 
-const CAT_COLORS: Record<string, string> = {
-  Food: '#D97706', Shopping: '#2563EB', Utilities: '#7C3AED', Transport: '#16A34A',
-  Health: '#059669', Entertainment: '#E11D48', Travel: '#EA580C', Education: '#0284C7',
-  Subscription: '#EC4899', Investment: '#8B5CF6', 'Tax Payment': '#BE123C', 'EMI/Loan': '#DC2626',
-  'Personal Care': '#DB2777', 'Family Transfer': '#0EA5E9', 'International Transfer': '#2563EB',
-  Transfer: '#3B7DD8', Other: '#6B7280',
-  'Trip/Vacation': '#0D9488', 'Event/Function': '#C026D3',
-}
 
 function pctColor(pct: number): string {
   if (pct >= 100) return 'var(--rose)'
@@ -84,6 +78,12 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
   const [smartLoading,   setSmartLoading]   = useState(false)
   const [smartPreview,   setSmartPreview]   = useState<Record<string,number> | null>(null)
   const supabase = createClient()
+  const { rows: categories, load: loadCategories } = useCategoryStore()
+  useEffect(() => { loadCategories() }, [loadCategories])
+  const planCats = useMemo(() => [
+    ...categories.filter(c => c.kind === 'expense' && !NOT_PLANABLE.has(c.name)).map(c => c.name),
+    ...TRANSFER_ROWS,
+  ], [categories])
 
   const sym       = view === 'uae' ? 'AED ' : '₹'
   const thisMonth = new Date().toISOString().slice(0, 7)
@@ -175,7 +175,7 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
       catTotals[cat] = (catTotals[cat] ?? 0) + amt
     })
 
-    const cats = CATS
+    const cats = planCats
       .filter(c => hasBudget.has(c) || Object.prototype.hasOwnProperty.call(matrix, c))
       .sort((a, b) => {
         if (hasBudget.has(a) !== hasBudget.has(b)) return hasBudget.has(a) ? -1 : 1
@@ -183,7 +183,7 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
       })
 
     return { catMonthMatrix: matrix, matrixCats: cats }
-  }, [transactions, budgets, view])
+  }, [transactions, budgets, view, planCats])
 
   // 12-month comparison data
   const monthlyData = useMemo(() => {
@@ -608,7 +608,7 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
                   disabled={!!editingId}
                   onChange={e => setNewBudget(p => ({ ...p, category: e.target.value }))}
                   className="wl-input" style={{ background: 'var(--bg2)', opacity: editingId ? 0.6 : 1 }}>
-                  {CATS.map(c => <option key={c} value={c}>{CAT_LABEL[c] ?? c}</option>)}
+                  {planCats.map(c => <option key={c} value={c}>{CAT_LABEL[c] ?? c}</option>)}
                 </select>
               </div>
               <div className="min-w-[150px]">
@@ -652,7 +652,7 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
               const cap    = Math.round(budgetCapOf(b))
               const pct    = cap > 0 ? Math.min(Math.round(spent / cap * 100), 110) : 0
               const color  = pctColor(pct)
-              const catCol = CAT_COLORS[b.category] ?? '#6B7280'
+              const catCol = colorOf(categories, b.category)
               return (
                 <div key={i} className="wl-card p-4">
                   <div className="flex justify-between items-center mb-2">
@@ -746,7 +746,7 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
                         style={{ borderBottom: '1px solid var(--border)' }}>
                         <td className="px-4 py-2.5 font-semibold" style={{ color: 'var(--text)' }}>
                           <div className="flex items-center gap-2">
-                            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: CAT_COLORS[r.category] ?? '#6B7280' }} />
+                            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: colorOf(categories, r.category) }} />
                             {CAT_LABEL[r.category] ?? r.category}
                           </div>
                         </td>
@@ -900,7 +900,7 @@ export default function BudgetsClient({ budgets: initBudgets, transactions, inco
                         <td className="px-3 py-2 font-semibold" style={{ color: 'var(--text)', background: rowBg }}>
                           <div className="flex items-center gap-1.5">
                             <span className="w-2 h-2 rounded-full flex-shrink-0"
-                              style={{ background: CAT_COLORS[cat] ?? '#6B7280' }} />
+                              style={{ background: colorOf(categories, cat) }} />
                             {cat}
                           </div>
                         </td>

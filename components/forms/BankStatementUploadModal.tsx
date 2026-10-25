@@ -1,9 +1,10 @@
 'use client'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { buildCategoryMemory } from '@/lib/categoryMemory'
 import { useViewStore } from '@/store/viewStore'
+import { useCategoryStore } from '@/store/categoryStore'
 import {
   X, Upload, Loader2, CheckCircle2, AlertCircle,
   FileText, Lock, Eye, EyeOff, Landmark, Trash2, PiggyBank,
@@ -92,6 +93,16 @@ export default function BankStatementUploadModal({ onClose }: Props) {
 
   const router   = useRouter()
   const supabase = createClient()
+  // The user's categories for the review dropdowns (names in both lists, like
+  // Refund / Other, and loan / card ones sit in their own groups below)
+  const { rows: userCats, load: loadCats } = useCategoryStore()
+  useEffect(() => { loadCats() }, [loadCats])
+  const { spendCats, incomeCats } = useMemo(() => {
+    const exp = userCats.filter(c => c.kind === 'expense').map(c => c.name)
+    const inc = userCats.filter(c => c.kind === 'income').map(c => c.name)
+    const grouped = new Set(['Credit Card Payment', 'Loan on Card', 'EMI/Loan', 'Family Transfer', 'Loan Taken', ...exp.filter(n => inc.includes(n))])
+    return { spendCats: exp.filter(n => !grouped.has(n)), incomeCats: inc.filter(n => !grouped.has(n)) }
+  }, [userCats])
   const { setDateRange } = useViewStore()
 
   const onDrop = useCallback((accepted: File[]) => {
@@ -660,16 +671,17 @@ export default function BankStatementUploadModal({ onClose }: Props) {
                                 updateTxn(i, 'category', cat)
                                 if (['Transfer','Family Transfer','Loan Received','Loan Taken','International Transfer','NRE to NRO','NRO to Family','Self Transfer'].includes(cat)) updateTxn(i, 'txn_type', 'transfer')
                                 else if (cat === 'Loan on Card' || cat === 'EMI/Loan') updateTxn(i, 'txn_type', 'loan')
-                                else if (['UAE Income (NRO)','Salary','NRE Received','Interest','Dividend','Rental','Bonus','Tax Refund','Freelance','Gift','NRI Transfer','FD/RD Maturity'].includes(cat)) updateTxn(i, 'txn_type', 'income')
-                                else if (['Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment','Travel','Education','Subscription','Tax Payment','Investment'].includes(cat)) updateTxn(i, 'txn_type', 'expense')
+                                else if (incomeCats.includes(cat)) updateTxn(i, 'txn_type', 'income')
+                                else if (spendCats.includes(cat)) updateTxn(i, 'txn_type', 'expense')
                               }}
                               className="text-[10px] px-1.5 py-1 rounded border w-full"
                               style={{ borderColor: 'var(--border)', background: 'var(--bg2)', color: 'var(--text)' }}>
+                              {t.category && ![...spendCats, ...incomeCats, 'Transfer', 'International Transfer', 'NRE to NRO', 'NRO to Family', 'Self Transfer', 'Family Transfer', 'Credit Card Payment', 'Loan on Card', 'EMI/Loan', 'Loan Received', 'Loan Taken', 'Refund', 'Other'].includes(t.category) && <option>{t.category}</option>}
                               <optgroup label="Spending">
-                                {['Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment','Travel','Education','Subscription','Tax Payment'].map(c => <option key={c}>{c}</option>)}
+                                {spendCats.map(c => <option key={c}>{c}</option>)}
                               </optgroup>
                               <optgroup label="Income">
-                                {['UAE Income (NRO)','Salary','NRE Received','Interest','Dividend','FD/RD Maturity','Rental','Bonus','Tax Refund','Freelance','Gift','NRI Transfer'].map(c => <option key={c}>{c}</option>)}
+                                {incomeCats.map(c => <option key={c}>{c}</option>)}
                               </optgroup>
                               <optgroup label="Transfers">
                                 <option>Transfer</option>
@@ -689,7 +701,7 @@ export default function BankStatementUploadModal({ onClose }: Props) {
                                 <option>Loan Taken</option>
                               </optgroup>
                               <optgroup label="Other">
-                                {['Investment','Refund','Other'].map(c => <option key={c}>{c}</option>)}
+                                {['Refund','Other'].map(c => <option key={c}>{c}</option>)}
                               </optgroup>
                             </select>
                           </td>

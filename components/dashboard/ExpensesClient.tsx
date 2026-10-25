@@ -11,8 +11,12 @@ import BillImageUploadModal from '@/components/forms/BillImageUploadModal'
 import TransactionVoiceModal from '@/components/forms/TransactionVoiceModal'
 import CreditCardUploadModal from '@/components/forms/CreditCardUploadModal'
 import MessageParseModal from '@/components/forms/MessageParseModal'
+import ManageCategoriesSheet from '@/components/forms/ManageCategoriesSheet'
+import { useCategoryStore } from '@/store/categoryStore'
+import { colorOf } from '@/lib/categories'
+import { toast } from '@/components/ui/toaster'
 
-import { Search, Upload, Image, Mic, PenLine, BarChart2, ArrowRight, AlertTriangle, X, CreditCard, Pencil, Trash2, Check, BookOpen, ChevronDown, Plus, Copy, Wallet, Banknote, MessageSquareText, ArrowUpRight, Landmark, TrendingUp, CalendarDays } from 'lucide-react'
+import { Upload, Image, Mic, PenLine, BarChart2, X, CreditCard, Pencil, Trash2, ChevronDown, Plus, Copy, Wallet, Banknote, MessageSquareText, Landmark, TrendingUp, CalendarDays, Settings2 } from 'lucide-react'
 import Link from 'next/link'
 import { PageHeader, InsightBar, AiActions, KpiTile, HeroStat, Bars, Donut, ProgressRow, LearnStrip, PALETTE } from '@/components/ui/kit'
 import { ListCard, ListRow, ListSearch, ChipFilter } from '@/components/ui/list'
@@ -21,16 +25,6 @@ import { fmtCompact } from '@/lib/format'
 
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
-const EXPENSE_CATS = ['All','Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment','Travel','Trip/Vacation','Event/Function','Education','Subscription','Investment','Tax Payment','Credit Card Payment','Loan on Card','EMI/Loan','Family Transfer','Transfer','Refund','Other']
-const CAT_COLORS: Record<string,string> = {
-  Food:'#D97706', Shopping:'#2563EB', Utilities:'#7C3AED', Transport:'#16A34A',
-  Health:'#059669', Entertainment:'#E11D48', Travel:'#EA580C', Other:'#6B7280',
-  Transfer:'#3B7DD8', Education:'#0284C7', Subscription:'#EC4899', Refund:'#10B981',
-  'Personal Care':'#DB2777', Investment:'#14B8A6', 'Tax Payment':'#BE123C',
-  'Credit Card Payment':'#9333EA', 'Family Transfer':'#0EA5E9',
-  'Loan on Card':'#F59E0B', 'EMI/Loan':'#F97316',
-  'Trip/Vacation':'#0D9488', 'Event/Function':'#C026D3',
-}
 const TRANSFER_SUBTYPE_COLORS: Record<string,string> = {
   International: '#3B7DD8', Internal: '#7C5CBF', Family: '#3D7A58',
 }
@@ -54,10 +48,9 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
   const [rateDate,     setRateDate]     = useState<string | null>(null)
   const [budgets,      setBudgets]      = useState<any[]>([])
   const [alertCat,     setAlertCat]     = useState<string | null>(null)
-  const [editTxn,      setEditTxn]      = useState<any | null>(null)
-  const [editFields,   setEditFields]   = useState<any>({})
-  const [editSaving,   setEditSaving]   = useState(false)
-  const [isDup,        setIsDup]        = useState(false)
+  const [editing,      setEditing]      = useState<{ txn: any; duplicate?: boolean } | null>(null)
+  const [manageCats,   setManageCats]   = useState(false)
+  const { rows: categories, load: loadCategories } = useCategoryStore()
   const [openPanel,    setOpenPanel]    = useState<string | null>(null)
   const [deletingId,   setDeletingId]   = useState<string | null>(null)
   const [showAddMenu,  setShowAddMenu]  = useState(false)
@@ -67,6 +60,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
 
   const supabase = createClient()
   const router   = useRouter()
+  useEffect(() => { loadCategories() }, [loadCategories])
 
   const sym       = view === 'uae' ? 'AED ' : '₹'
   const toDisplay = (amt: number, cur: string) => view === 'consolidated' ? amt * (cur === 'AED' ? FX : 1) : amt
@@ -104,66 +98,15 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
       .then(({ data }) => setBudgets(data ?? []))
   }, [])
 
-  function openEdit(txn: any) {
-    setIsDup(false)
-    setEditTxn(txn)
-    setEditFields({
-      txn_date:    txn.txn_date,
-      merchant:    txn.merchant,
-      category:    txn.category,
-      amount:      txn.amount,
-      txn_type:    txn.txn_type,
-      description: (txn.description && txn.description !== txn.merchant) ? txn.description : '',
-    })
-  }
+  const openEdit      = (txn: any) => setEditing({ txn })
+  const openDuplicate = (txn: any) => setEditing({ txn, duplicate: true })
 
-  function openDuplicate(txn: any) {
-    setIsDup(true)
-    setEditTxn(txn)
-    setEditFields({
-      txn_date:    txn.txn_date,
-      merchant:    txn.merchant,
-      category:    txn.category,
-      amount:      txn.amount,
-      txn_type:    txn.txn_type,
-      description: (txn.description && txn.description !== txn.merchant) ? txn.description : '',
-      currency:    txn.currency,
-      account_id:  txn.account_id ?? null,
-    })
-  }
-
-  function closeEdit() { setEditTxn(null); setIsDup(false) }
-
-  async function saveEdit() {
-    if (!editTxn) return
-    setEditSaving(true)
-    if (isDup) {
-      await fetch('/api/transactions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          txn_date: editFields.txn_date, merchant: editFields.merchant, category: editFields.category,
-          amount: Math.abs(Number(editFields.amount)), currency: editFields.currency,
-          account_id: editFields.account_id ?? null, txn_type: editFields.txn_type,
-          description: editFields.description || null,
-        }),
-      })
-    } else {
-      await fetch('/api/transactions', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: editTxn.id, ...editFields, amount: Math.abs(Number(editFields.amount)) }),
-      })
-    }
-    setEditSaving(false)
-    closeEdit()
-    router.refresh()
-  }
-
-  async function deleteTxn(id: string) {
-    setDeletingId(id)
-    await fetch(`/api/transactions?id=${id}`, { method: 'DELETE' })
+  async function deleteTxn(t: any) {
+    if (!confirm(`Delete ${t.merchant || 'this transaction'}? This can’t be undone.`)) return
+    setDeletingId(t.id)
+    const res = await fetch(`/api/transactions?id=${t.id}`, { method: 'DELETE' })
     setDeletingId(null)
+    toast(res.ok ? 'Transaction deleted' : 'Couldn’t delete it. Try again.', res.ok ? 'success' : 'error')
     router.refresh()
   }
 
@@ -287,14 +230,20 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
       ...Object.entries(n).sort((a, b) => b[1] - a[1]).map(([c, k]) => ({ key: c, label: c, count: k, warn: (getBudgetStatus(c)?.pct ?? 0) >= 100 }))]
   }, [transactions, view, accFilter, fromMonth, toMonth, cat, budgetMap, catMonthTotals])
 
+  const catUsage = useMemo(() => {
+    const n: Record<string, number> = {}
+    transactions.forEach(t => { if (t.category) n[t.category] = (n[t.category] ?? 0) + 1 })
+    return n
+  }, [transactions])
+
   // Top five categories + "Other categories"
   const catRows = useMemo(() => {
     const m: Record<string, number> = {}
     realExpensesForMonth.forEach(t => { m[t.category] = (m[t.category] ?? 0) + toDisplay(Number(t.amount), t.currency) })
     const rows = Object.entries(m).sort((a, b) => b[1] - a[1])
     const rest = rows.slice(5).reduce((a, r) => a + r[1], 0)
-    return [...rows.slice(0, 5).map(([cat, v]) => ({ cat, v })), ...(rest > 0 ? [{ cat: 'Other categories', v: rest }] : [])]
-  }, [filteredForMonth, view, FX])
+    return [...rows.slice(0, 5).map(([cat, v]) => ({ cat, v, color: colorOf(categories, cat) })), ...(rest > 0 ? [{ cat: 'Other categories', v: rest, color: '#CBD5E1' }] : [])]
+  }, [filteredForMonth, view, FX, categories])
 
   const overBudget = Object.keys(budgetMap).filter(c => (catMonthTotals[c] ?? 0) > budgetMap[c])
   const top = catRows[0]
@@ -351,6 +300,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
           sub={<>{viewLabel} · {rangeLabel}{liveRate && <span className="hidden sm:inline" style={{ color:'var(--amber-text)' }}> · 1 AED = ₹{liveRate.toFixed(2)}{rateDate ? ` (${rateDate})` : ''}</span>}</>}
           onAdd={() => setShowAddMenu(true)} addLabel="Add transaction"
           actions={<>
+            <button onClick={() => setManageCats(true)} className="wl-btn" style={{ height: 34 }}><Settings2 size={14} />Categories</button>
             <Link href="/dashboard/expenses/report" className="wl-btn" style={{ height: 34 }}><BarChart2 size={14} />Annual report</Link>
             <div className="relative" ref={menuRef}>
               <button onClick={() => setShowAddMenu(v => !v)} aria-expanded={showAddMenu} aria-haspopup="menu"
@@ -392,17 +342,17 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
             <div className="text-[12.5px] py-6 text-center" style={{ color:'var(--text3)' }}>No spending in {rangeLabel}.</div>
           ) : (<>
             <div className="hidden md:flex justify-center">
-              <Donut segments={catRows.map((r, i) => ({ value: r.v, color: PALETTE[i % PALETTE.length] }))} size={128}
+              <Donut segments={catRows.map(r => ({ value: r.v, color: r.color }))} size={128}
                 label={`Spending by category: ${catRows.map(r => `${r.cat} ${short(r.v)}`).join(', ')}`}>
                 <div className="text-[10.5px]" style={{ color:'var(--text3)' }}>Spent</div>
                 <div className="text-[16px] font-bold tracking-[-0.01em]" style={{ color:'var(--text)' }}>{short(rangeExpenses)}</div>
               </Donut>
             </div>
-            {catRows.map((r, i) => {
+            {catRows.map(r => {
               const real = r.cat !== 'Other categories'
               const cap = real ? budgetMap[r.cat] : undefined
               const share = rangeExpenses > 0 ? r.v / rangeExpenses * 100 : 0
-              const row = <ProgressRow name={r.cat} sub={cap ? `of ${short(cap)} budget` : undefined} value={short(r.v)} right={`${Math.round(share)}%`} pct={share} color={PALETTE[i % PALETTE.length]} />
+              const row = <ProgressRow name={r.cat} sub={cap ? `of ${short(cap)} budget` : undefined} value={short(r.v)} right={`${Math.round(share)}%`} pct={share} color={r.color} />
               return real
                 ? <button key={r.cat} onClick={() => setCat(r.cat)} className="text-left" title={`Show only ${r.cat}`}>{row}</button>
                 : <div key={r.cat}>{row}</div>
@@ -517,6 +467,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
       <ListCard className="max-md:order-9" title="Transactions"
         sub={`${filteredForMonth.length} in ${rangeLabel}${cat !== 'All' ? ` · ${cat}` : ''}`}
         head={['Merchant', 'Category', 'Date', 'Amount']}
+        right={<button onClick={() => setManageCats(true)} className="wl-btn flex-shrink-0" style={{ height: 30, fontSize: 12 }}><Settings2 size={13} />Categories</button>}
         toolbar={<>
           <ListSearch value={search} onChange={setSearch} placeholder="Search…">
             <select value={accFilter} onChange={e => setAccFilter(e.target.value)} aria-label="Account"
@@ -542,7 +493,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
           const isLoan     = t.txn_type === 'loan'
           const catColor   = isTransfer
             ? (t.category === 'Family Transfer' ? '#0EA5E9' : TRANSFER_SUBTYPE_COLORS[t.sub_category] ?? '#3B7DD8')
-            : (CAT_COLORS[t.category] ?? '#6B7280')
+            : colorOf(categories, t.category)
           const bs = !isTransfer && !isLoan && t.category !== 'Credit Card Payment' ? getBudgetStatus(t.category) : null
           const lSym  = t.currency === 'AED' ? 'AED ' : '₹'
           const inrEq = t.currency === 'AED' && view !== 'uae' && liveRate
@@ -559,7 +510,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
               actions={[
                 { label: 'Edit', icon: Pencil, onClick: () => openEdit(t) },
                 { label: 'Duplicate', icon: Copy, onClick: () => openDuplicate(t) },
-                { label: 'Delete', icon: Trash2, onClick: () => deleteTxn(t.id), danger: true, disabled: deletingId === t.id },
+                { label: 'Delete', icon: Trash2, onClick: () => deleteTxn(t), danger: true, disabled: deletingId === t.id },
               ]} />
           )
         })}
@@ -576,109 +527,8 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
       {activeModal === 'voice'       && <TransactionVoiceModal onClose={() => setActiveModal('none')} defaultType="expense" />}
       {activeModal === 'credit_card' && <CreditCardUploadModal onClose={() => setActiveModal('none')} />}
 
-      {/* Edit transaction modal */}
-      {editTxn && (
-        <div className="fixed inset-0 wl-sheet bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="wl-sheet-panel rounded-2xl w-full max-w-md"
-            style={{ background:'#fff', border:'1px solid var(--border)', boxShadow:'0 8px 40px rgba(0,0,0,0.15)' }}>
-            <div className="flex justify-between items-center px-5 py-4 border-b" style={{ borderColor:'var(--border)' }}>
-              <div className="text-[14px] font-bold" style={{ color:'var(--text)' }}>{isDup ? 'Duplicate Transaction' : 'Edit Transaction'}</div>
-              <button onClick={closeEdit} style={{ color:'var(--text3)' }}><X size={16} /></button>
-            </div>
-            <div className="p-5 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color:'var(--text3)' }}>Date</label>
-                  <input type="date" value={editFields.txn_date}
-                    onChange={e => setEditFields((f: any) => ({ ...f, txn_date: e.target.value }))}
-                    className="wl-input w-full text-[12px]" style={{ background:'var(--bg2)', border:'1px solid var(--border)', color:'var(--text)' }} />
-                </div>
-                <div>
-                  <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color:'var(--text3)' }}>Amount</label>
-                  <input type="number" value={editFields.amount} min="0" step="0.01"
-                    onChange={e => setEditFields((f: any) => ({ ...f, amount: e.target.value }))}
-                    className="wl-input w-full text-[12px]" style={{ background:'var(--bg2)', border:'1px solid var(--border)', color:'var(--text)' }} />
-                </div>
-              </div>
-              <div>
-                <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color:'var(--text3)' }}>Merchant</label>
-                <input type="text" value={editFields.merchant}
-                  onChange={e => setEditFields((f: any) => ({ ...f, merchant: e.target.value }))}
-                  className="wl-input w-full text-[12px]" style={{ background:'var(--bg2)', border:'1px solid var(--border)', color:'var(--text)' }} />
-              </div>
-              <div>
-                <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color:'var(--text3)' }}>Note (optional)</label>
-                <input type="text" value={editFields.description ?? ''}
-                  onChange={e => setEditFields((f: any) => ({ ...f, description: e.target.value }))}
-                  placeholder="Add a note / description"
-                  className="wl-input w-full text-[12px]" style={{ background:'var(--bg2)', border:'1px solid var(--border)', color:'var(--text)' }} />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color:'var(--text3)' }}>Category</label>
-                  <select value={editFields.category}
-                    onChange={e => {
-                      const cat = e.target.value
-                      const autoType =
-                        ['Transfer','Family Transfer','International Transfer','NRE Received','NRE to NRO','NRO to Family','Self Transfer','Loan Received','Loan Taken'].includes(cat) ? 'transfer'
-                        : ['Loan on Card','EMI/Loan'].includes(cat) ? 'loan'
-                        : ['Salary','Interest','Dividend','Rental','Bonus','Tax Refund','Freelance','Gift','NRI Transfer'].includes(cat) ? 'income'
-                        : ['Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment','Travel','Education','Subscription'].includes(cat) ? 'expense'
-                        : editFields.txn_type
-                      setEditFields((f: any) => ({ ...f, category: cat, txn_type: autoType }))
-                    }}
-                    className="wl-input w-full text-[12px]" style={{ background:'var(--bg2)', border:'1px solid var(--border)', color:'var(--text)' }}>
-                    <optgroup label="Spending">
-                      {['Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment','Travel','Education','Subscription'].map(c => <option key={c}>{c}</option>)}
-                    </optgroup>
-                    <optgroup label="Income">
-                      {['Salary','Interest','Dividend','Rental','Bonus','Tax Refund','Freelance','Gift','NRI Transfer'].map(c => <option key={c}>{c}</option>)}
-                    </optgroup>
-                    <optgroup label="Transfers">
-                      {['Transfer','International Transfer','NRE Received','NRE to NRO','NRO to Family','Self Transfer','Family Transfer','Loan Received'].map(c => <option key={c}>{c}</option>)}
-                    </optgroup>
-                    <optgroup label="Payments">
-                      <option>Credit Card Payment</option>
-                    </optgroup>
-                    <optgroup label="Loans">
-                      {['Loan on Card','EMI/Loan','Loan Taken'].map(c => <option key={c}>{c}</option>)}
-                    </optgroup>
-                    <optgroup label="Other">
-                      {['Investment','Refund','Other'].map(c => <option key={c}>{c}</option>)}
-                    </optgroup>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color:'var(--text3)' }}>Type</label>
-                  <select value={editFields.txn_type}
-                    onChange={e => setEditFields((f: any) => ({ ...f, txn_type: e.target.value }))}
-                    className="wl-input w-full text-[12px]" style={{ background:'var(--bg2)', border:'1px solid var(--border)', color:'var(--text)' }}>
-                    <option value="expense">Expense</option>
-                    <option value="income">Income</option>
-                    <option value="transfer">Transfer</option>
-                    <option value="loan">Loan</option>
-                  </select>
-                  <div className="mt-1 text-[9px] leading-tight" style={{ color:'var(--text3)' }}>
-                    Transfer = UAE→India, NRO→NRE · Loan = LOC/EMI
-                  </div>
-                </div>
-              </div>
-              <div className="flex gap-3 pt-1">
-                <button onClick={closeEdit}
-                  className="flex-1 py-2.5 rounded-lg border text-[12px] font-semibold"
-                  style={{ borderColor:'var(--border)', color:'var(--text3)', background:'var(--bg2)' }}>
-                  Cancel
-                </button>
-                <button onClick={saveEdit} disabled={editSaving}
-                  className="flex-1 py-2.5 rounded-lg text-white text-[12px] font-bold flex items-center justify-center gap-2 disabled:opacity-40"
-                  style={{ background:'var(--blue)' }}>
-                  {editSaving ? <><span className="animate-spin">⏳</span> Saving…</> : <><Check size={13}/> {isDup ? 'Add Copy' : 'Save Changes'}</>}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {editing && <AddTransactionModal edit={editing} onClose={() => setEditing(null)} />}
+      {manageCats && <ManageCategoriesSheet usage={catUsage} onClose={() => setManageCats(false)} onChanged={() => router.refresh()} />}
     </div>
   )
 }

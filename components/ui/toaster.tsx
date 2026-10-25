@@ -13,23 +13,18 @@ export function Toaster() {
     addToast = (message, type = 'success') => {
       const id = Date.now()
       setToasts(p => [...p, { id, message, type }])
-      setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 4000)
+      setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), type === 'error' ? 4000 : 2200)
     }
   }, [])
 
   return (
-    <div className="fixed bottom-20 right-6 z-[200] flex flex-col gap-2">
+    <div className="fixed left-1/2 -translate-x-1/2 bottom-[calc(env(safe-area-inset-bottom,0px)+84px)] md:bottom-7 z-[200] flex flex-col items-center gap-2 pointer-events-none" role="status" aria-live="polite">
       {toasts.map(t => (
-        <div key={t.id} className="flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg text-[13px] font-medium animate-fade-up"
-          style={t.type === 'success'
-            ? { background: '#fff', border: '1px solid var(--income)', color: 'var(--text)' }
-            : { background: '#fff', border: '1px solid var(--rose)', color: 'var(--text)' }}>
-          {t.type === 'success'
-            ? <CheckCircle size={15} style={{ color: 'var(--income)' }} />
-            : <AlertCircle size={15} style={{ color: 'var(--rose)' }} />}
-          {t.message}
-          <button onClick={() => setToasts(p => p.filter(x => x.id !== t.id))} className="ml-2"
-            style={{ color: 'var(--text3)' }}>
+        <div key={t.id} className="pointer-events-auto flex items-center gap-2 pl-4 pr-2.5 py-2.5 rounded-full text-[13px] font-medium animate-fade-up max-w-[92vw]"
+          style={{ background: t.type === 'success' ? '#0F172A' : '#B4231A', color: '#fff', boxShadow: '0 8px 24px rgba(15,23,42,.3)' }}>
+          {t.type === 'success' ? <CheckCircle size={15} style={{ color: '#4ADE80' }} /> : <AlertCircle size={15} />}
+          <span className="truncate">{t.message}</span>
+          <button onClick={() => setToasts(p => p.filter(x => x.id !== t.id))} aria-label="Dismiss" className="ml-1 opacity-60 hover:opacity-100">
             <X size={13} />
           </button>
         </div>
