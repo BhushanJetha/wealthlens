@@ -1,5 +1,5 @@
 'use client'
-import { InsightBar, AiActions } from '@/components/ui/kit'
+import { InsightBar, AiActions, PageHeader, HeroStat, KpiTile, Bars, Donut, ProgressRow } from '@/components/ui/kit'
 import { useMemo, useState, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -208,315 +208,318 @@ export default function LoanDetailClient({ loan, txns, plan = [] }: { loan: any;
     { key: 'schedule', label: 'Schedule & Prepay', icon: TrendingDown },
   ]
 
+  // Balance at each year end until the loan clears (today's EMI and rate)
+  const balBars = useMemo(() => {
+    const rows = amort.schedule
+    if (!rows.length) return []
+    const years = Math.ceil(rows.length / 12)
+    const step = Math.max(1, Math.ceil(years / 10))
+    const out = [{ label: 'Now', value: outstandingBal, hi: true, tip: `Now: ${money(outstandingBal)}` }]
+    for (let y = step; y <= years; y += step) {
+      const r = rows[Math.min(y * 12, rows.length) - 1]
+      out.push({ label: `+${y}y`, value: Math.max(0, Number(r.balance) || 0), hi: true, tip: `In ${y} year${y === 1 ? '' : 's'}: ${money(Number(r.balance) || 0)}` })
+    }
+    return out
+  }, [amort.schedule, outstandingBal])
+  const dt = (d: string) => d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
+  const mon = (d: string) => /^\d{4}-\d{2}/.test(d ?? '') ? new Date(`${d.slice(0, 7)}-01`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) : d
+  const short = (n: number) => { const a = Math.abs(n); return a >= 1e5 ? `${sym}${(n / 1e5).toFixed(2)}L` : a >= 1e3 ? `${sym}${(n / 1e3).toFixed(1)}K` : money(n) }
+  const head = (text: React.ReactNode, action?: React.ReactNode) => (
+    <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
+      <div className="text-[12.5px]" style={{ color: 'var(--text3)' }}>{text}</div>
+      {action}
+    </div>
+  )
+  const addBtn = (label: string, onClick: () => void) => (
+    <button onClick={onClick} className="wl-btn wl-btn-primary" style={{ height: 32 }}><Plus size={14} />{label}</button>
+  )
+
   return (
-    <div className="space-y-5 animate-fade-up">
-      {/* Header */}
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <Link href="/dashboard/loans" className="flex items-center gap-1 text-[11px] mb-2" style={{ color: 'var(--sage)' }}><ChevronLeft size={13} /> All Loans</Link>
-          <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em] flex items-center gap-2" style={{ color: 'var(--text)' }}><Building2 size={18} style={{ color: 'var(--blue)' }} /> {loan.name}</h1>
-          <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>{loan.bank_name} · {loan.interest_rate}% p.a. · {loan.tenure_months} mo tenure</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => fileRef.current?.click()} disabled={importing}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border disabled:opacity-60"
-            style={{ background: 'var(--sage-bg)', borderColor: 'var(--sage)', color: 'var(--sage)' }} title="Import from a loan statement PDF">
-            {importing ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Import statement
-          </button>
-          <input ref={fileRef} type="file" accept=".pdf,application/pdf" className="hidden" onChange={importStatement} />
-        </div>
+    <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
+      <div className="max-md:order-1">
+        <Link href="/dashboard/loans" className="inline-flex items-center gap-1 text-[12.5px] font-semibold mb-1.5" style={{ color: 'var(--accent)' }}><ChevronLeft size={14} /> All loans</Link>
+        <PageHeader title={loan.name} sub={`${loan.bank_name} · ${loan.interest_rate}% a year · ${loan.tenure_months}-month tenure`}
+          actions={<button onClick={() => fileRef.current?.click()} disabled={importing} className="wl-btn" style={{ height: 34 }} title="Import from a loan statement PDF">
+            {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}Import statement</button>} />
+        <input ref={fileRef} type="file" accept=".pdf,application/pdf" className="hidden" onChange={importStatement} />
+        <button onClick={() => fileRef.current?.click()} disabled={importing} className="md:hidden wl-chip mt-2.5 gap-1.5" style={{ height: 32 }}>
+          {importing ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}Import statement
+        </button>
+        {importMsg && <div className="text-[12.5px] mt-2" style={{ color: 'var(--text2)' }}>{importMsg}</div>}
       </div>
-      {importMsg && <div className="text-[11px]" style={{ color: 'var(--text2)' }}>{importMsg}</div>}
 
-      {outstandingBal > 0 && emiVal > 0 && <InsightBar
+      {outstandingBal > 0 && emiVal > 0 && <div className="max-md:order-4"><InsightBar
         text={Number.isFinite(baseSim.months)
-          ? `${money(outstandingBal)} left at ${loan.interest_rate}%. At ${money(emiVal)} a month it's paid off by ${payoffBase}, with about ${money(baseSim.interest)} of interest still to pay. Try the prepayment simulator below to shorten it.`
+          ? `${money(outstandingBal)} left at ${loan.interest_rate}%. At ${money(emiVal)} a month it's paid off by ${payoffBase}, with about ${money(baseSim.interest)} of interest still to pay. Try the prepayment simulator to shorten it.`
           : `At ${money(emiVal)} a month the EMI doesn't cover the interest on ${money(outstandingBal)}, so the balance won't fall. Check the EMI and rate.`}
-        prompt={`Explain my ${loan.name}: ${money(outstandingBal)} outstanding at ${loan.interest_rate}%, EMI ${money(emiVal)}, ${Number.isFinite(baseSim.months) ? `${baseSim.months} months and ${money(baseSim.interest)} interest left` : 'EMI below interest'}.`} />}
-      {outstandingBal > 0 && <AiActions actions={['Should I prepay this loan?', 'Should I refinance?']}
-        context={`${loan.name} with ${loan.bank_name}: ${money(outstandingBal)} outstanding at ${loan.interest_rate}%, EMI ${money(emiVal)}.`} />}
+        prompt={`Explain my ${loan.name}: ${money(outstandingBal)} outstanding at ${loan.interest_rate}%, EMI ${money(emiVal)}, ${Number.isFinite(baseSim.months) ? `${baseSim.months} months and ${money(baseSim.interest)} interest left` : 'EMI below interest'}.`} /></div>}
+      {outstandingBal > 0 && <div className="max-md:order-5"><AiActions actions={['Should I prepay this loan?', 'Should I refinance?']}
+        context={`${loan.name} with ${loan.bank_name}: ${money(outstandingBal)} outstanding at ${loan.interest_rate}%, EMI ${money(emiVal)}.`} /></div>}
 
-      {/* Summary strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {isHome && <Stat label="Property Value" value={propertyCost > 0 ? money(propertyCost) : '— set below'} icon={Home} />}
-        <Stat label="Sanctioned Amount" value={money(loan.sanctioned_amt)} />
-        <Stat label="Loan Disbursed (to date)" value={money(effectiveDisbursed)} color="var(--blue)" />
-        <Stat label="Loan Outstanding" value={money(loan.outstanding_amt)} color="var(--rose)" />
-        {isHome && <Stat label="Outstanding to Builder" value={propertyCost > 0 ? money(outstandingToBuilder) : '—'} color="var(--gold)" />}
-        {isHome && <Stat label="Own Contribution" value={money(totalOwn)} color="var(--income)" />}
-        <Stat label="Current EMI" value={money(loan.emi_amount)} />
-        <Stat label="EMIs Paid / Remaining" value={`${emisPaidCount} / ${amort.balanceTenor}`} icon={CalendarClock} />
+      <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4">
+        <HeroStat className="max-md:order-2" label="Outstanding" value={money(outstandingBal)}
+          tone={Number.isFinite(baseSim.months) ? 'good' : 'bad'}
+          delta={Number.isFinite(baseSim.months) ? `Paid off by ${payoffBase} · ${baseSim.months} EMIs to go` : "EMI doesn't cover the interest"}
+          right={<span className="text-[11.5px]" style={{ color: 'var(--text3)' }}>Balance each year at today&apos;s EMI</span>}>
+          {balBars.length > 1 && <Bars data={balBars} className="h-[110px] md:h-auto md:flex-1 md:min-h-[150px] mt-3" label={`Balance by year: ${balBars.map(b => b.tip).join(', ')}`} />}
+        </HeroStat>
+
+        <section className="wl-card max-md:order-6 px-4 md:px-5 py-4 md:py-[18px] flex flex-col gap-3">
+          <h2 className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Repayment so far</h2>
+          <div className="flex items-center gap-4">
+            <Donut size={96} label={`Principal paid ${money(amort.principalPaid)}, interest paid ${money(amort.interestPaid)}, principal left ${money(amort.remaining)}`}
+              segments={[{ value: amort.principalPaid, color: '#2FB67C' }, { value: amort.interestPaid, color: '#EC5B8C' }, { value: amort.remaining, color: '#E6E3F5' }]}>
+              <div className="text-[10.5px]" style={{ color: 'var(--text3)' }}>Repaid</div>
+              <div className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>{Math.round(princBarPaid)}%</div>
+            </Donut>
+            <div className="flex-1 min-w-0 flex flex-col gap-1.5 text-[12.5px]">
+              {[['Principal paid', amort.principalPaid, '#2FB67C'], ['Interest paid', amort.interestPaid, '#EC5B8C'], ['Principal left', amort.remaining, '#B9B4D6']].map(([l, v, c]) => (
+                <div key={l as string} className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5 min-w-0" style={{ color: 'var(--text3)' }}><i className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: c as string }} /><span className="truncate">{l}</span></span>
+                  <span className="font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{money(v as number)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <ProgressRow name="Interest paid" sub={`of ~${money(intTotal)} over the loan`} value={`${Math.round(intBarPaid)}%`} pct={intBarPaid} color="#EC5B8C" />
+        </section>
       </div>
 
-      {/* Repayment breakdown */}
-      <div className="wl-card p-4">
-        <div className="text-[11px] font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5" style={{ color: 'var(--text3)' }}><TrendingDown size={12} /> Repayment Breakdown</div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-          <Mini label="Principal Paid" value={money(amort.principalPaid)} color="var(--income)" />
-          <Mini label="Interest Paid" value={money(amort.interestPaid)} color="var(--rose)" />
-          <Mini label="Remaining Principal" value={money(amort.remaining)} color="var(--text2)" />
-          {isHome && <Mini label="Own Contribution" value={money(totalOwn)} color="var(--blue)" />}
-        </div>
-        <div className="space-y-3">
-          <div>
-            <div className="flex justify-between text-[10px] mb-1" style={{ color: 'var(--text3)' }}><span>Principal: {money(amort.principalPaid)} paid</span><span>of {money(amort.principal)}</span></div>
-            <div className="h-2.5 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}><div className="h-full" style={{ width: `${Math.min(100, princBarPaid)}%`, background: 'var(--income)' }} /></div>
-          </div>
-          <div>
-            <div className="flex justify-between text-[10px] mb-1" style={{ color: 'var(--text3)' }}><span>Interest: {money(amort.interestPaid)} paid</span><span>~{money(intTotal)} total cost</span></div>
-            <div className="h-2.5 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}><div className="h-full" style={{ width: `${Math.min(100, intBarPaid)}%`, background: 'var(--rose)' }} /></div>
-          </div>
-        </div>
+      <div className="max-md:order-3 grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
+        <KpiTile label="Current EMI" value={money(loan.emi_amount)} delta="a month" tint={2} icon={Coins} />
+        <KpiTile label="EMIs paid" value={`${emisPaidCount} / ${emisPaidCount + amort.balanceTenor}`} delta={`${amort.balanceTenor} left`} tint={0} icon={CalendarClock} />
+        <KpiTile label="Interest left" value={Number.isFinite(baseSim.interest) ? money(baseSim.interest) : '—'} delta="at today's EMI" tint={3} icon={TrendingDown} />
+        <KpiTile label="Disbursed" value={money(effectiveDisbursed)} delta={Number(loan.sanctioned_amt) > 0 ? `of ${money(loan.sanctioned_amt)} sanctioned` : 'to date'} tint={1} icon={Landmark} />
       </div>
+
+      {isHome && (
+        <section className="wl-card max-md:order-6 px-4 md:px-5 py-4">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <h2 className="text-[14px] font-semibold flex items-center gap-2" style={{ color: 'var(--text)' }}><Home size={15} style={{ color: 'var(--accent)' }} />Property</h2>
+            {!editCost && <button onClick={() => { setEditCost(true); setCostVal(String(loan.property_cost ?? '')) }} className="text-[12.5px] font-semibold flex items-center gap-1" style={{ color: 'var(--accent)' }}><Pencil size={12} />{propertyCost > 0 ? 'Edit value' : 'Set value'}</button>}
+          </div>
+          {editCost && (
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-[12.5px]" style={{ color: 'var(--text3)' }}>Property value {sym.trim()}</span>
+              <input type="number" inputMode="numeric" value={costVal} onChange={e => setCostVal(e.target.value)} className="wl-input w-40" style={{ background: '#fff' }} autoFocus />
+              <button onClick={saveCost} className="wl-btn wl-btn-primary" style={{ height: 34 }} aria-label="Save"><Check size={14} /></button>
+              <button onClick={() => setEditCost(false)} className="wl-btn" style={{ height: 34 }} aria-label="Cancel"><X size={14} /></button>
+            </div>
+          )}
+          <div className="grid grid-cols-3 gap-2">
+            <Mini label="Value" value={propertyCost > 0 ? short(propertyCost) : '—'} color="var(--text)" />
+            <Mini label="Own money" value={short(totalOwn)} color="#16A34A" />
+            <Mini label="To fund" value={propertyCost > 0 ? short(outstandingToBuilder) : '—'} color="#B96A0B" />
+          </div>
+          <div className="mt-3">
+            <div className="h-2.5 rounded-full overflow-hidden flex gap-[2px]" style={{ background: 'var(--track)' }}>
+              <div style={{ width: `${barLoan}%`, background: '#3B8EF0' }} /><div style={{ width: `${barOwn}%`, background: '#2FB67C' }} />
+            </div>
+            <div className="flex gap-4 mt-1.5 text-[11.5px] flex-wrap" style={{ color: 'var(--text3)' }}>
+              <span className="flex items-center gap-1.5"><i className="w-2 h-2 rounded-full" style={{ background: '#3B8EF0' }} />Loan {money(effectiveDisbursed)} ({propertyCost > 0 ? Math.round(fundLoanPct) : loanShare}%)</span>
+              <span className="flex items-center gap-1.5"><i className="w-2 h-2 rounded-full" style={{ background: '#2FB67C' }} />Own {money(totalOwn)} ({propertyCost > 0 ? Math.round(fundOwnPct) : ownShare}%)</span>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Tabs */}
-      <div className="wl-card overflow-hidden">
-        <div className="flex border-b overflow-x-auto no-scrollbar" style={{ borderColor: 'var(--border)' }}>
-          {TABS.map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)}
-              className="flex items-center gap-1.5 px-4 py-3 text-[12px] font-semibold whitespace-nowrap transition-all border-b-2"
-              style={tab === t.key ? { borderColor: 'var(--sage)', color: 'var(--sage)', background: 'var(--sage-bg)' } : { borderColor: 'transparent', color: 'var(--text3)' }}>
-              <t.icon size={13} /> {t.label}
-            </button>
-          ))}
-        </div>
+      <div className="max-md:order-7 flex gap-1.5 overflow-x-auto no-scrollbar -mx-4 px-4 md:mx-0 md:px-0 max-md:sticky max-md:top-0 max-md:z-20 max-md:py-2 max-md:bg-[var(--canvas-m)]" role="tablist" aria-label="Loan sections">
+        {TABS.map(t => (
+          <button key={t.key} onClick={() => setTab(t.key)} role="tab" aria-selected={tab === t.key} aria-pressed={tab === t.key}
+            className="wl-chip flex-shrink-0 gap-1.5" style={{ height: 32 }}>
+            <t.icon size={13} /> {t.label}
+          </button>
+        ))}
+      </div>
 
-        <div className="p-4">
-          {/* ── Payment plan tab ── */}
-          {tab === 'plan' && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <div className="text-[12px]" style={{ color: 'var(--text3)' }}>
-                  Builder's slab-wise plan · funded <b style={{ color: 'var(--text)' }}>{money(planPaid)}</b>{planTotal > 0 ? ` of ${money(planTotal)}` : ''}
-                </div>
-                <button onClick={openPlanAdd} className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg" style={{ background: 'var(--sage)', color: '#fff' }}><Plus size={12} /> Add slab</button>
-              </div>
-              {slabs.length === 0 ? (
-                <Empty text="No payment plan yet. Add the builder's milestones (e.g. On Booking 10%, Plinth 15%, each floor slab…). As you record disbursements & own contributions, each slab is marked paid automatically." />
-              ) : (
-                <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-[12px]">
-                      <thead>
-                        <tr style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
-                          {['#', 'Milestone', 'Amount', 'Paid', 'Funded from', 'Status', ''].map(h => <th key={h} className="px-3 py-2 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--text3)' }}>{h}</th>)}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {planStatus.map((ps, i) => {
-                          const c = ps.status === 'paid' ? 'var(--income)' : ps.status === 'partial' ? 'var(--gold)' : 'var(--text3)'
-                          return (
-                            <tr key={ps.slab.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                              <td className="px-3 py-2 font-mono" style={{ color: 'var(--text3)' }}>{i + 1}</td>
-                              <td className="px-3 py-2 font-medium" style={{ color: 'var(--text)' }}>{ps.slab.milestone}{ps.slab.percentage ? <span className="text-[10px]" style={{ color: 'var(--text3)' }}> · {ps.slab.percentage}%</span> : ''}</td>
-                              <td className="px-3 py-2 font-mono" style={{ color: 'var(--text)' }}>{money(ps.slab.amount)}</td>
-                              <td className="px-3 py-2 font-mono" style={{ color: c }}>{money(ps.paid)}{ps.gap > 0.5 && ps.paid > 0 ? <span className="text-[10px]" style={{ color: 'var(--gold)' }}> (−{money(ps.gap)})</span> : ''}</td>
-                              <td className="px-3 py-2 text-[10px]" style={{ color: 'var(--text3)' }}>
-                                {ps.fromLoan > 0 && <span style={{ color: 'var(--blue)' }}>Loan {money(ps.fromLoan)}</span>}
-                                {ps.fromLoan > 0 && ps.fromOwn > 0 && ' · '}
-                                {ps.fromOwn > 0 && <span style={{ color: 'var(--income)' }}>Own {money(ps.fromOwn)}</span>}
-                                {ps.paid === 0 && '—'}
-                              </td>
-                              <td className="px-3 py-2">
-                                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: c + '18', color: c }}>
-                                  {ps.status === 'paid' ? <CheckCircle2 size={10} /> : <Circle size={10} />}{ps.status === 'paid' ? 'Paid' : ps.status === 'partial' ? 'Partial' : 'Pending'}
-                                </span>
-                              </td>
-                              <td className="px-3 py-2 text-right whitespace-nowrap">
-                                <button onClick={() => openPlanEdit(ps.slab)} className="p-1 rounded mr-1" style={{ color: 'var(--blue)' }}><Pencil size={12} /></button>
-                                <button onClick={() => delPlan(ps.slab.id)} className="p-1 rounded" style={{ color: 'var(--rose)' }}><Trash2 size={12} /></button>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                      <tfoot>
-                        <tr style={{ background: 'var(--bg2)', borderTop: '2px solid var(--border)' }}>
-                          <td className="px-3 py-2 font-bold" colSpan={2} style={{ color: 'var(--text)' }}>Total</td>
-                          <td className="px-3 py-2 font-mono font-bold" style={{ color: 'var(--text)' }}>{money(planTotal)}</td>
-                          <td className="px-3 py-2 font-mono font-bold" style={{ color: 'var(--income)' }}>{money(planPaid)}</td>
-                          <td colSpan={3}></td>
-                        </tr>
-                      </tfoot>
-                    </table>
+      <section className="max-md:order-7 wl-card px-4 md:px-5 py-4 md:py-[18px]">
+        {tab === 'plan' && (<>
+          {head(<>Builder&apos;s slab-wise plan · funded <b style={{ color: 'var(--text)' }}>{money(planPaid)}</b>{planTotal > 0 ? ` of ${money(planTotal)}` : ''}</>, addBtn('Add slab', openPlanAdd))}
+          {slabs.length === 0 ? (
+            <Empty text="No payment plan yet. Add the builder's milestones (on booking, plinth, each floor slab…). As you record disbursements and your own payments, each slab is marked paid." />
+          ) : (
+            <div className="-mx-4 md:-mx-5 -mb-1">
+              {planStatus.map((ps, i) => {
+                const st = ps.status === 'paid' ? { c: '#1E8F5F', bg: '#E7F7EF', t: 'Paid' } : ps.status === 'partial' ? { c: '#B96A0B', bg: '#FFF2E2', t: 'Part paid' } : { c: 'var(--text3)', bg: 'var(--track)', t: 'Pending' }
+                return (
+                  <div key={ps.slab.id} className="flex items-center gap-3 px-4 md:px-5 py-2.5" style={{ borderTop: i ? '1px solid var(--track)' : '1px solid var(--line)' }}>
+                    <span className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ background: st.bg, color: st.c }}>
+                      {ps.status === 'paid' ? <CheckCircle2 size={15} /> : <Circle size={15} />}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] font-semibold truncate" style={{ color: 'var(--text)' }}>{i + 1}. {ps.slab.milestone}{ps.slab.percentage ? <span className="font-normal" style={{ color: 'var(--text3)' }}> · {ps.slab.percentage}%</span> : ''}</div>
+                      <div className="text-[11.5px] truncate" style={{ color: 'var(--text3)' }}>
+                        {ps.paid === 0 ? 'Not funded yet' : [ps.fromLoan > 0 ? `loan ${money(ps.fromLoan)}` : null, ps.fromOwn > 0 ? `own ${money(ps.fromOwn)}` : null].filter(Boolean).join(' · ')}
+                        {ps.gap > 0.5 && ps.paid > 0 ? ` · ${money(ps.gap)} to go` : ''}
+                      </div>
+                    </div>
+                    <div className="text-right flex-shrink-0 flex flex-col items-end gap-0.5">
+                      <span className="text-[13px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{money(ps.slab.amount)}</span>
+                      <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: st.bg, color: st.c }}>{st.t}</span>
+                    </div>
+                    <span className="flex flex-col md:flex-row gap-0.5">
+                      <IconBtn label="Edit slab" onClick={() => openPlanEdit(ps.slab)}><Pencil size={13} /></IconBtn>
+                      <IconBtn label="Delete slab" danger onClick={() => delPlan(ps.slab.id)}><Trash2 size={13} /></IconBtn>
+                    </span>
                   </div>
-                </div>
-              )}
-              {planTotal > 0 && propertyCost > 0 && Math.abs(planTotal - propertyCost) > 1 && (
-                <p className="text-[10px]" style={{ color: 'var(--gold)' }}>Note: plan total ({money(planTotal)}) differs from property value ({money(propertyCost)}). Adjust slabs or property cost.</p>
-              )}
+                )
+              })}
+              <div className="flex items-center justify-between px-4 md:px-5 py-2.5 text-[13px] font-semibold" style={{ borderTop: '1px solid var(--line)', background: '#FAFAFE' }}>
+                <span style={{ color: 'var(--text)' }}>Total</span>
+                <span className="tabular-nums" style={{ color: 'var(--text3)' }}>{money(planTotal)} · <b style={{ color: '#16A34A' }}>{money(planPaid)} paid</b></span>
+              </div>
             </div>
           )}
+          {planTotal > 0 && propertyCost > 0 && Math.abs(planTotal - propertyCost) > 1 && (
+            <p className="text-[12px] mt-2" style={{ color: '#B96A0B' }}>The plan adds up to {money(planTotal)}, but the property value is {money(propertyCost)}. Adjust a slab or the property value.</p>
+          )}
+        </>)}
 
-          {/* ── Own contribution tab ── */}
-          {tab === 'own' && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="text-[12px]" style={{ color: 'var(--text3)' }}>Down-payments from your own funds · <b style={{ color: 'var(--income)' }}>{money(totalOwn)}</b></div>
-                  {!editCost && <button onClick={() => { setEditCost(true); setCostVal(String(loan.property_cost ?? '')) }} className="text-[11px] flex items-center gap-1" style={{ color: 'var(--sage)' }}><Pencil size={11} /> Property cost</button>}
+        {tab === 'own' && (<>
+          {head(<>Down-payments from your own money · <b style={{ color: '#16A34A' }}>{money(totalOwn)}</b></>, addBtn('Add', () => openAdd('own_contribution')))}
+          {contributions.length === 0 ? <Empty text="No own-money payments recorded yet." /> : <TxnList items={contributions} money={money} dt={dt} onDel={delTxn} onEdit={openEdit} />}
+        </>)}
+
+        {tab === 'loan' && (<>
+          {head(<>Bank disbursements to date · <b style={{ color: 'var(--text)' }}>{money(effectiveDisbursed)}</b>{Number(loan.sanctioned_amt) > 0 ? ` of ${money(loan.sanctioned_amt)}` : ''}</>, addBtn('Add', () => openAdd('disbursement')))}
+          {disbursements.length === 0 ? <Empty text="No disbursements yet. Add each tranche the bank releases, or import a loan statement." /> : <TxnList items={disbursements} money={money} dt={dt} onDel={delTxn} onEdit={openEdit} />}
+        </>)}
+
+        {tab === 'emi' && (
+          emiPays.length === 0 ? <Empty text="No EMI payments recorded yet. Import a loan statement to pull in the EMIs you've paid." /> : (<>
+            {head(<>{emiPays.length} EMIs paid · total <b style={{ color: '#16A34A' }}>{money(totalEmiPaid)}</b></>)}
+            <div className="-mx-4 md:-mx-5 -mb-1">
+              {emiPaged.map((t, i) => (
+                <div key={t.id} className="flex items-center gap-3 px-4 md:px-5 py-2.5" style={{ borderTop: i ? '1px solid var(--track)' : '1px solid var(--line)' }}>
+                  <span className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ background: '#E7F7EF', color: '#1E8F5F' }}><CheckCircle2 size={15} /></span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{dt(t.txn_date)}</div>
+                    <div className="text-[11.5px] truncate" style={{ color: 'var(--text3)' }}>{t.note ?? 'EMI'}</div>
+                  </div>
+                  <span className="text-[13px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{money(t.amount)}</span>
+                  <IconBtn label="Delete EMI" danger onClick={() => delTxn(t.id)}><Trash2 size={13} /></IconBtn>
                 </div>
-                <button onClick={() => openAdd('own_contribution')} className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg" style={{ background: 'var(--sage)', color: '#fff' }}><Plus size={12} /> Add</button>
+              ))}
+              {emiPays.length > emiSize && <Pagination total={emiPays.length} page={emiP} pageSize={emiSize} onPage={setEmiPage} onPageSize={s => { setEmiSize(s); setEmiPage(1) }} />}
+            </div>
+          </>)
+        )}
+
+        {tab === 'schedule' && (
+          <div className="flex flex-col gap-4">
+            {/* Prepayment simulator */}
+            <div className="rounded-2xl p-3.5 md:p-4" style={{ background: 'var(--accent-bg)', border: '1px solid var(--accent-border)' }}>
+              <div className="text-[14px] font-semibold flex items-center gap-1.5" style={{ color: 'var(--accent2)' }}><Sparkles size={15} /> Prepayment savings</div>
+              <p className="text-[12.5px] mt-0.5 mb-3" style={{ color: 'var(--text3)' }}>See how much interest and time a little extra saves.</p>
+              <div className="flex flex-col md:flex-row md:items-center gap-2.5 mb-3">
+                <button onClick={() => setExtraYearly(v => !v)} aria-pressed={extraYearly} className="wl-chip gap-1.5 self-start" style={{ height: 34, background: extraYearly ? undefined : '#fff' }}>
+                  {extraYearly ? <CheckCircle2 size={14} /> : <Circle size={14} />} One extra EMI a year
+                </button>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[12.5px]" style={{ color: 'var(--text3)' }}>Extra a month {sym.trim()}</span>
+                  <input type="number" inputMode="numeric" value={extraMonthly} onChange={e => setExtraMonthly(e.target.value)} placeholder="0" min="0" className="wl-input w-28" style={{ background: '#fff' }} />
+                  {[5000, 10000, 25000].map(v => <button key={v} onClick={() => setExtraMonthly(String(v))} aria-pressed={extraMonthly === String(v)} className="wl-chip" style={{ height: 30, background: extraMonthly === String(v) ? undefined : '#fff' }}>{money(v)}</button>)}
+                </div>
               </div>
-              {editCost && (
-                <div className="flex items-center gap-2">
-                  <span className="text-[12px]" style={{ color: 'var(--text3)' }}>Total property cost {sym}</span>
-                  <input type="number" value={costVal} onChange={e => setCostVal(e.target.value)} className="wl-input text-[12px] w-40" style={{ background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} autoFocus />
-                  <button onClick={saveCost} className="p-1.5 rounded-lg" style={{ background: 'var(--income-bg)', color: 'var(--income)' }}><Check size={14} /></button>
-                  <button onClick={() => setEditCost(false)} className="p-1.5 rounded-lg" style={{ background: 'var(--bg2)', color: 'var(--text3)' }}><X size={14} /></button>
-                </div>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                <Mini label="Interest saved" value={hasExtra ? money(interestSaved) : '—'} color="#16A34A" />
+                <Mini label="Time saved" value={hasExtra && monthsSaved > 0 ? `${Math.floor(monthsSaved / 12)}y ${monthsSaved % 12}m` : '—'} color="#16A34A" />
+                <Mini label="Paid off (today)" value={payoffBase} color="var(--text)" />
+                <Mini label="Paid off (with extra)" value={hasExtra ? payoffWith : '—'} color="var(--accent2)" />
+              </div>
+              {hasExtra && (
+                <p className="text-[12.5px] mt-3 leading-snug" style={{ color: 'var(--text2)' }}>
+                  Paying {extraYearly ? `one extra EMI (${money(emiVal)}) a year` : ''}{extraYearly && extraM > 0 ? ' plus ' : ''}{extraM > 0 ? `${money(extraM)} extra a month` : ''} clears the loan by <b>{payoffWith}</b> instead of {payoffBase}, saving <b style={{ color: '#16A34A' }}>{money(interestSaved)}</b> of interest.
+                </p>
               )}
-              {/* Funding split */}
-              <div className="rounded-xl p-3" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-                <div className="h-3 rounded-full overflow-hidden flex" style={{ background: 'var(--card)' }}>
-                  <div style={{ width: `${barLoan}%`, background: 'var(--blue)' }} /><div style={{ width: `${barOwn}%`, background: 'var(--income)' }} />
-                </div>
-                <div className="flex gap-4 mt-1.5 text-[10px]" style={{ color: 'var(--text3)' }}>
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: 'var(--blue)' }} /> Loan {money(effectiveDisbursed)} ({propertyCost > 0 ? Math.round(fundLoanPct) : loanShare}%)</span>
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: 'var(--income)' }} /> Own {money(totalOwn)} ({propertyCost > 0 ? Math.round(fundOwnPct) : ownShare}%)</span>
-                  {propertyCost > 0 && outstandingToBuilder > 0 && <span>· Yet to fund {money(outstandingToBuilder)}</span>}
-                </div>
-              </div>
-              {contributions.length === 0 ? <Empty text="No own-contribution entries yet." /> : <TxnTable items={contributions} money={money} onDel={delTxn} onEdit={openEdit} detailLabel="Note" />}
+              {!Number.isFinite(withSim.months) && hasExtra && <p className="text-[12px] mt-2" style={{ color: '#DC2626' }}>The EMI doesn&apos;t cover the interest. Check the EMI and rate.</p>}
             </div>
-          )}
 
-          {/* ── Loan / disbursements tab ── */}
-          {tab === 'loan' && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="text-[12px]" style={{ color: 'var(--text3)' }}>Bank disbursements to date · <b style={{ color: 'var(--blue)' }}>{money(effectiveDisbursed)}</b>{Number(loan.sanctioned_amt) > 0 ? ` of ${money(loan.sanctioned_amt)} sanctioned` : ''}</div>
-                <button onClick={() => openAdd('disbursement')} className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg" style={{ background: 'var(--sage)', color: '#fff' }}><Plus size={12} /> Add</button>
+            {prepays.length > 0 && (
+              <div>
+                <h3 className="text-[14px] font-semibold mb-2 flex items-center gap-1.5" style={{ color: 'var(--text)' }}><PiggyBank size={15} style={{ color: 'var(--accent)' }} /> Prepayments made · {money(totalPrepay)}</h3>
+                <TxnList items={prepays} money={money} dt={dt} onDel={delTxn} onEdit={openEdit} />
               </div>
-              {disbursements.length === 0 ? <Empty text="No disbursement entries yet — add each tranche the bank releases, or import a statement." /> : <TxnTable items={disbursements} money={money} onDel={delTxn} onEdit={openEdit} detailLabel="Particulars" />}
-            </div>
-          )}
+            )}
 
-          {/* ── EMIs paid tab ── */}
-          {tab === 'emi' && (
-            emiPays.length === 0 ? <Empty text="No EMI payments recorded yet — import a loan statement to pull in your paid EMIs." /> : (
-              <div className="space-y-2">
-                <div className="text-[12px] mb-1" style={{ color: 'var(--text3)' }}>{emiPays.length} EMIs paid · total <b style={{ color: 'var(--income)' }}>{money(totalEmiPaid)}</b></div>
-                <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-[12px]">
-                      <thead><tr style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>{['EMI', 'Date', 'Amount', ''].map(h => <th key={h} className="px-3 py-2 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--text3)' }}>{h}</th>)}</tr></thead>
+            {amort.schedule.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Schedule · {amort.balanceTenor} EMIs left</h3>
+                  <button onClick={() => openAdd('prepayment')} className="text-[12.5px] font-semibold flex items-center gap-1" style={{ color: 'var(--accent)' }}><Plus size={13} /> Record prepayment</button>
+                </div>
+                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--line)' }}>
+                  <div className="md:hidden">
+                    {schedule.map((r, i) => (
+                      <div key={r.n} className="flex items-center gap-3 px-3.5 py-2.5" style={{ borderTop: i ? '1px solid var(--track)' : undefined }}>
+                        <span className="text-[11.5px] w-6 text-center tabular-nums" style={{ color: 'var(--text4)' }}>{r.n}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{mon(r.date)}</div>
+                          <div className="text-[11.5px] tabular-nums truncate" style={{ color: 'var(--text3)' }}>
+                            <span style={{ color: '#16A34A' }}>{short(r.principal)}</span> principal · <span style={{ color: '#DC2626' }}>{short(r.interest)}</span> interest
+                          </div>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <div className="text-[13px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{money(r.emi)}</div>
+                          <div className="text-[11px] tabular-nums" style={{ color: 'var(--text4)' }}>left {short(r.balance)}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="hidden md:block overflow-x-auto">
+                    <table className="w-full text-[12.5px]">
+                      <thead><tr style={{ background: '#FAFAFE', borderBottom: '1px solid var(--line)' }}>{['#', 'Month', 'EMI', 'Principal', 'Interest', 'Balance'].map(h => <th key={h} className="px-3 py-2 text-left text-[10.5px] font-semibold uppercase tracking-[0.05em]" style={{ color: 'var(--text4)' }}>{h}</th>)}</tr></thead>
                       <tbody>
-                        {emiPaged.map(t => (
-                          <tr key={t.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                            <td className="px-3 py-2" style={{ color: 'var(--text2)' }}>{t.note ?? 'EMI'}</td>
-                            <td className="px-3 py-2 font-mono" style={{ color: 'var(--text3)' }}>{t.txn_date}</td>
-                            <td className="px-3 py-2 font-mono font-semibold" style={{ color: 'var(--income)' }}>{money(t.amount)}</td>
-                            <td className="px-3 py-2 text-right"><button onClick={() => delTxn(t.id)} style={{ color: 'var(--rose)' }}><Trash2 size={12} /></button></td>
+                        {schedule.map(r => (
+                          <tr key={r.n} style={{ borderBottom: '1px solid var(--track)' }}>
+                            <td className="px-3 py-2 tabular-nums" style={{ color: 'var(--text4)' }}>{r.n}</td>
+                            <td className="px-3 py-2" style={{ color: 'var(--text2)' }}>{mon(r.date)}</td>
+                            <td className="px-3 py-2 tabular-nums font-semibold" style={{ color: 'var(--text)' }}>{money(r.emi)}</td>
+                            <td className="px-3 py-2 tabular-nums" style={{ color: '#16A34A' }}>{money(r.principal)}</td>
+                            <td className="px-3 py-2 tabular-nums" style={{ color: '#DC2626' }}>{money(r.interest)}</td>
+                            <td className="px-3 py-2 tabular-nums" style={{ color: 'var(--text3)' }}>{money(r.balance)}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
-                  {emiPays.length > emiSize && <Pagination total={emiPays.length} page={emiP} pageSize={emiSize} onPage={setEmiPage} onPageSize={s => { setEmiSize(s); setEmiPage(1) }} />}
+                  {amort.schedule.length > schedSize && <Pagination total={amort.schedule.length} page={schedP} pageSize={schedSize} onPage={setSchedPage} onPageSize={s => { setSchedSize(s); setSchedPage(1) }} pageSizeOptions={[12, 24, 60]} />}
                 </div>
               </div>
-            )
-          )}
+            )}
 
-          {/* ── Schedule & prepay tab ── */}
-          {tab === 'schedule' && (
-            <div className="space-y-4">
-              {/* Prepayment simulator */}
-              <div className="rounded-xl p-4" style={{ background: 'var(--sage-bg)', border: '1px solid var(--sage)' }}>
-                <div className="text-[12px] font-bold flex items-center gap-1.5 mb-1" style={{ color: 'var(--sage)' }}><Sparkles size={14} /> Prepayment savings</div>
-                <p className="text-[11px] mb-3" style={{ color: 'var(--text3)' }}>See how much interest and time you save by paying a little extra.</p>
-                <div className="flex items-center gap-3 flex-wrap mb-3">
-                  <button onClick={() => setExtraYearly(v => !v)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border"
-                    style={extraYearly ? { background: 'var(--sage)', borderColor: 'var(--sage)', color: '#fff' } : { background: 'var(--card)', borderColor: 'var(--border)', color: 'var(--text3)' }}>
-                    {extraYearly ? <CheckCircle2 size={13} /> : <Circle size={13} />} +1 EMI every year
-                  </button>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[11px]" style={{ color: 'var(--text3)' }}>+ extra / month {sym}</span>
-                    <input type="number" value={extraMonthly} onChange={e => setExtraMonthly(e.target.value)} placeholder="0" min="0"
-                      className="wl-input text-[12px] w-28" style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)' }} />
-                    {[5000, 10000, 25000].map(v => <button key={v} onClick={() => setExtraMonthly(String(v))} className="text-[10px] px-2 py-1 rounded" style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text3)' }}>{money(v)}</button>)}
+            {insightNotes.length > 0 && (
+              <div className="flex flex-col gap-2">
+                {insightNotes.map((n, i) => (
+                  <div key={i} className="flex items-start gap-2.5 rounded-xl px-3 py-2.5" style={{ background: '#FAFAFE', border: '1px solid var(--line)' }}>
+                    <Sparkles size={14} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--accent)' }} />
+                    <span className="text-[12.5px] leading-snug" style={{ color: 'var(--text2)' }}>{n}</span>
                   </div>
-                </div>
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                  <Mini label="Interest you'll save" value={hasExtra ? money(interestSaved) : '—'} color="var(--income)" />
-                  <Mini label="Time saved" value={hasExtra && monthsSaved > 0 ? `${Math.floor(monthsSaved / 12)}y ${monthsSaved % 12}m` : '—'} color="var(--income)" />
-                  <Mini label="Payoff without extra" value={`${payoffBase}`} color="var(--text2)" />
-                  <Mini label="Payoff with extra" value={hasExtra ? payoffWith : '—'} color="var(--sage)" />
-                </div>
-                {hasExtra && (
-                  <p className="text-[11px] mt-3" style={{ color: 'var(--text2)' }}>
-                    Paying {extraYearly ? `one extra EMI (${money(emiVal)}) a year` : ''}{extraYearly && extraM > 0 ? ' + ' : ''}{extraM > 0 ? `${money(extraM)}/month extra` : ''} clears the loan by <b>{payoffWith}</b> instead of {payoffBase} — saving <b style={{ color: 'var(--income)' }}>{money(interestSaved)}</b> in interest and <b>{Math.floor(monthsSaved / 12)}y {monthsSaved % 12}m</b>.
-                  </p>
-                )}
-                {!Number.isFinite(withSim.months) && hasExtra && <p className="text-[11px] mt-2" style={{ color: 'var(--rose)' }}>The EMI doesn't cover the interest — check the EMI/rate values.</p>}
+                ))}
               </div>
-
-              {/* Past prepayments */}
-              {prepays.length > 0 && (
-                <div>
-                  <div className="text-[11px] font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5" style={{ color: 'var(--text3)' }}><PiggyBank size={12} /> Prepayments made · {money(totalPrepay)}</div>
-                  <TxnTable items={prepays} money={money} onDel={delTxn} onEdit={openEdit} detailLabel="Particulars" />
-                </div>
-              )}
-
-              {/* Amortization schedule */}
-              {amort.schedule.length > 0 && (
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Amortization Schedule — {amort.balanceTenor} EMIs left</div>
-                    <button onClick={() => openAdd('prepayment')} className="text-[11px] flex items-center gap-1 font-semibold" style={{ color: 'var(--sage)' }}><Plus size={12} /> Record prepayment</button>
-                  </div>
-                  <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-[12px]">
-                        <thead><tr style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>{['#', 'Month', 'EMI', 'Principal', 'Interest', 'Balance'].map(h => <th key={h} className="px-3 py-2 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--text3)' }}>{h}</th>)}</tr></thead>
-                        <tbody>
-                          {schedule.map(r => (
-                            <tr key={r.n} style={{ borderBottom: '1px solid var(--border)' }}>
-                              <td className="px-3 py-2 font-mono" style={{ color: 'var(--text3)' }}>{r.n}</td>
-                              <td className="px-3 py-2" style={{ color: 'var(--text2)' }}>{r.date}</td>
-                              <td className="px-3 py-2 font-mono" style={{ color: 'var(--text)' }}>{money(r.emi)}</td>
-                              <td className="px-3 py-2 font-mono" style={{ color: 'var(--income)' }}>{money(r.principal)}</td>
-                              <td className="px-3 py-2 font-mono" style={{ color: 'var(--rose)' }}>{money(r.interest)}</td>
-                              <td className="px-3 py-2 font-mono" style={{ color: 'var(--text3)' }}>{money(r.balance)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    {amort.schedule.length > schedSize && <Pagination total={amort.schedule.length} page={schedP} pageSize={schedSize} onPage={setSchedPage} onPageSize={s => { setSchedSize(s); setSchedPage(1) }} pageSizeOptions={[12, 24, 60]} />}
-                  </div>
-                </div>
-              )}
-
-              {insightNotes.length > 0 && (
-                <ul className="space-y-1.5">
-                  {insightNotes.map((n, i) => <li key={i} className="text-[11px] flex gap-2" style={{ color: 'var(--text2)' }}><span style={{ color: 'var(--sage)' }}>•</span><span>{n}</span></li>)}
-                </ul>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
+            )}
+          </div>
+        )}
+      </section>
 
       {/* Add/edit txn modal */}
       {adding !== 'none' && (
         <div className="fixed inset-0 wl-sheet bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => !saving && closeModal()}>
-          <div className="wl-sheet-panel rounded-2xl w-full max-w-md" onClick={e => e.stopPropagation()} style={{ background: '#fff', border: '1px solid var(--border)', boxShadow: '0 8px 40px rgba(0,0,0,0.15)' }}>
-            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
+          <div className="wl-sheet-panel rounded-2xl w-full max-w-md" onClick={e => e.stopPropagation()} style={{ background: '#fff', border: '1px solid var(--line)', boxShadow: '0 8px 40px rgba(0,0,0,0.15)' }}>
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--line)' }}>
               <div className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>{editingId ? 'Edit' : 'Add'} {adding === 'disbursement' ? 'Disbursement' : adding === 'own_contribution' ? 'Own Contribution' : 'Prepayment'}</div>
               <button onClick={closeModal} style={{ color: 'var(--text3)' }}><X size={16} /></button>
             </div>
             <div className="p-5 space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: 'var(--text3)' }}>Date</label><input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} className="wl-input w-full text-[12px]" style={{ background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} /></div>
-                <div><label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: 'var(--text3)' }}>Amount ({sym.trim()})</label><input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} autoFocus min="0" step="0.01" className="wl-input w-full text-[12px]" style={{ background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} /></div>
+                <div><label className="block text-[11px] font-medium font-semibold mb-1" style={{ color: 'var(--text3)' }}>Date</label><input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} className="wl-input w-full text-[12px]" style={{ background: '#FAFAFE', border: '1px solid var(--line)', color: 'var(--text)' }} /></div>
+                <div><label className="block text-[11px] font-medium font-semibold mb-1" style={{ color: 'var(--text3)' }}>Amount ({sym.trim()})</label><input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} autoFocus min="0" step="0.01" className="wl-input w-full text-[12px]" style={{ background: '#FAFAFE', border: '1px solid var(--line)', color: 'var(--text)' }} /></div>
               </div>
-              <div><label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: 'var(--text3)' }}>Note (optional)</label><input type="text" value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} placeholder="e.g. NEFT ref, builder demand 3" className="wl-input w-full text-[12px]" style={{ background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} /></div>
+              <div><label className="block text-[11px] font-medium font-semibold mb-1" style={{ color: 'var(--text3)' }}>Note (optional)</label><input type="text" value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} placeholder="e.g. NEFT ref, builder demand 3" className="wl-input w-full text-[12px]" style={{ background: '#FAFAFE', border: '1px solid var(--line)', color: 'var(--text)' }} /></div>
               <div className="flex gap-3 pt-1">
-                <button onClick={closeModal} className="flex-1 py-2.5 rounded-lg border text-[12px] font-semibold" style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>Cancel</button>
-                <button onClick={saveTxn} disabled={saving || !form.amount} className="flex-1 py-2.5 rounded-lg text-white text-[12px] font-bold flex items-center justify-center gap-2 disabled:opacity-50" style={{ background: 'var(--sage)' }}>{saving ? <><Loader2 size={13} className="animate-spin" />Saving…</> : <><Check size={13} />Save</>}</button>
+                <button onClick={closeModal} className="wl-btn flex-1 justify-center" style={{ height: 42 }}>Cancel</button>
+                <button onClick={saveTxn} disabled={saving || !form.amount} className="wl-btn wl-btn-primary flex-1 justify-center disabled:opacity-50" style={{ height: 42 }}>{saving ? <><Loader2 size={13} className="animate-spin" />Saving…</> : <><Check size={13} />Save</>}</button>
               </div>
             </div>
           </div>
@@ -526,30 +529,30 @@ export default function LoanDetailClient({ loan, txns, plan = [] }: { loan: any;
       {/* Payment plan slab modal */}
       {planModal && (
         <div className="fixed inset-0 wl-sheet bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => !saving && setPlanModal(null)}>
-          <div className="wl-sheet-panel rounded-2xl w-full max-w-md" onClick={e => e.stopPropagation()} style={{ background: '#fff', border: '1px solid var(--border)', boxShadow: '0 8px 40px rgba(0,0,0,0.15)' }}>
-            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
+          <div className="wl-sheet-panel rounded-2xl w-full max-w-md" onClick={e => e.stopPropagation()} style={{ background: '#fff', border: '1px solid var(--line)', boxShadow: '0 8px 40px rgba(0,0,0,0.15)' }}>
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--line)' }}>
               <div className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>{planModal === 'add' ? 'Add' : 'Edit'} plan slab</div>
               <button onClick={() => setPlanModal(null)} style={{ color: 'var(--text3)' }}><X size={16} /></button>
             </div>
             <div className="p-5 space-y-3">
-              <div><label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: 'var(--text3)' }}>Milestone</label><input type="text" value={planForm.milestone} onChange={e => setPlanForm({ ...planForm, milestone: e.target.value })} autoFocus placeholder="e.g. On Booking, Plinth, 3rd Floor Slab" className="wl-input w-full text-[12px]" style={{ background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} /></div>
+              <div><label className="block text-[11px] font-medium font-semibold mb-1" style={{ color: 'var(--text3)' }}>Milestone</label><input type="text" value={planForm.milestone} onChange={e => setPlanForm({ ...planForm, milestone: e.target.value })} autoFocus placeholder="e.g. On Booking, Plinth, 3rd Floor Slab" className="wl-input w-full text-[12px]" style={{ background: '#FAFAFE', border: '1px solid var(--line)', color: 'var(--text)' }} /></div>
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: 'var(--text3)' }}>% of property</label><input type="number" value={planForm.percentage}
+                <div><label className="block text-[11px] font-medium font-semibold mb-1" style={{ color: 'var(--text3)' }}>% of property</label><input type="number" value={planForm.percentage}
                   onChange={e => {
                     const pct = e.target.value
                     // auto-fill amount from % of property value (still editable below)
                     const amt = propertyCost > 0 && Number(pct) > 0 ? String(Math.round(propertyCost * Number(pct) / 100)) : planForm.amount
                     setPlanForm({ ...planForm, percentage: pct, amount: amt })
                   }}
-                  placeholder="10" className="wl-input w-full text-[12px]" style={{ background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} /></div>
-                <div><label className="block text-[10px] uppercase tracking-wider font-semibold mb-1" style={{ color: 'var(--text3)' }}>Amount ({sym.trim()})</label><input type="number" value={planForm.amount} onChange={e => setPlanForm({ ...planForm, amount: e.target.value })} placeholder="auto from %" className="wl-input w-full text-[12px]" style={{ background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} /></div>
+                  placeholder="10" className="wl-input w-full text-[12px]" style={{ background: '#FAFAFE', border: '1px solid var(--line)', color: 'var(--text)' }} /></div>
+                <div><label className="block text-[11px] font-medium font-semibold mb-1" style={{ color: 'var(--text3)' }}>Amount ({sym.trim()})</label><input type="number" value={planForm.amount} onChange={e => setPlanForm({ ...planForm, amount: e.target.value })} placeholder="auto from %" className="wl-input w-full text-[12px]" style={{ background: '#FAFAFE', border: '1px solid var(--line)', color: 'var(--text)' }} /></div>
               </div>
               {propertyCost > 0
                 ? <p className="text-[10px]" style={{ color: 'var(--text3)' }}>Amount auto-fills from % of {money(propertyCost)} — edit it if the builder's figure differs.</p>
                 : <p className="text-[10px]" style={{ color: 'var(--gold)' }}>Set the property value (Own Contribution tab → Property cost) to auto-calc amounts from %.</p>}
               <div className="flex gap-3 pt-1">
-                <button onClick={() => setPlanModal(null)} className="flex-1 py-2.5 rounded-lg border text-[12px] font-semibold" style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>Cancel</button>
-                <button onClick={savePlan} disabled={saving || !planForm.milestone} className="flex-1 py-2.5 rounded-lg text-white text-[12px] font-bold flex items-center justify-center gap-2 disabled:opacity-50" style={{ background: 'var(--sage)' }}>{saving ? <><Loader2 size={13} className="animate-spin" />Saving…</> : <><Check size={13} />Save</>}</button>
+                <button onClick={() => setPlanModal(null)} className="wl-btn flex-1 justify-center" style={{ height: 42 }}>Cancel</button>
+                <button onClick={savePlan} disabled={saving || !planForm.milestone} className="wl-btn wl-btn-primary flex-1 justify-center disabled:opacity-50" style={{ height: 42 }}>{saving ? <><Loader2 size={13} className="animate-spin" />Saving…</> : <><Check size={13} />Save</>}</button>
               </div>
             </div>
           </div>
@@ -560,54 +563,44 @@ export default function LoanDetailClient({ loan, txns, plan = [] }: { loan: any;
 }
 
 // ── sub-components ───────────────────────────────────────────────────────────
-function Stat({ label, value, color, icon: Icon }: { label: string; value: string; color?: string; icon?: any }) {
-  return (
-    <div className="wl-card p-3">
-      <div className="text-[10px] uppercase tracking-wider font-semibold mb-1 flex items-center gap-1" style={{ color: 'var(--text3)' }}>{Icon && <Icon size={11} />}{label}</div>
-      <div className="text-[15px] font-bold font-mono" style={{ color: color ?? 'var(--text)' }}>{value}</div>
-    </div>
-  )
-}
 function Mini({ label, value, color }: { label: string; value: string; color: string }) {
   return (
-    <div className="rounded-xl p-3" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-      <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>{label}</div>
-      <div className="text-[15px] font-bold font-mono" style={{ color }}>{value}</div>
+    <div className="rounded-xl px-3 py-2.5 min-w-0" style={{ background: '#fff', border: '1px solid var(--line)' }}>
+      <div className="text-[11.5px] truncate" style={{ color: 'var(--text3)' }}>{label}</div>
+      <div className="text-[14px] md:text-[15px] font-bold tabular-nums truncate" style={{ color }}>{value}</div>
     </div>
   )
 }
-function Empty({ text }: { text: string }) { return <p className="text-[11px] py-2" style={{ color: 'var(--text3)' }}>{text}</p> }
-function TxnTable({ items, money, onDel, onEdit, detailLabel }: { items: any[]; money: (n: number) => string; onDel: (id: string) => void; onEdit?: (t: any) => void; detailLabel?: string }) {
+function Empty({ text }: { text: string }) {
+  return <p className="text-[12.5px] leading-snug rounded-xl px-4 py-5 text-center" style={{ color: 'var(--text3)', background: '#FAFAFE', border: '1.5px dashed var(--border2)' }}>{text}</p>
+}
+function IconBtn({ label, onClick, danger, children }: { label: string; onClick: () => void; danger?: boolean; children: React.ReactNode }) {
+  return (
+    <button onClick={onClick} title={label} aria-label={label}
+      className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[var(--accent-bg)] transition-colors"
+      style={{ color: danger ? '#DC2626' : 'var(--text3)' }}>{children}</button>
+  )
+}
+// Dated payments (disbursements, own money, prepayments) as rows with edit/delete
+function TxnList({ items, money, dt, onDel, onEdit }: { items: any[]; money: (n: number) => string; dt: (d: string) => string; onDel: (id: string) => void; onEdit?: (t: any) => void }) {
   const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(10)
   const p = Math.min(page, Math.max(1, Math.ceil(items.length / pageSize)))
   const paged = items.slice((p - 1) * pageSize, p * pageSize)
   return (
-    <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
-      <div className="overflow-x-auto">
-        <table className="w-full text-[12px]">
-          <thead>
-            <tr style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
-              <th className="px-3 py-2 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--text3)' }}>Date</th>
-              <th className="px-3 py-2 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--text3)' }}>{detailLabel ?? 'Details'}</th>
-              <th className="px-3 py-2 text-right text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--text3)' }}>Amount</th>
-              <th className="px-3 py-2" style={{ width: onEdit ? 64 : 32 }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {paged.map(t => (
-              <tr key={t.id} style={{ borderBottom: '1px solid var(--border)' }} className="hover:bg-stone-50 transition-colors">
-                <td className="px-3 py-2 font-mono whitespace-nowrap" style={{ color: 'var(--text3)' }}>{t.txn_date}</td>
-                <td className="px-3 py-2 truncate" style={{ color: 'var(--text2)', maxWidth: 220 }}>{t.note || '—'}</td>
-                <td className="px-3 py-2 text-right font-mono font-semibold whitespace-nowrap" style={{ color: 'var(--text)' }}>{money(t.amount)}</td>
-                <td className="px-3 py-2 text-right whitespace-nowrap">
-                  {onEdit && <button onClick={() => onEdit(t)} className="p-1 rounded mr-1" style={{ color: 'var(--blue)' }} title="Edit"><Pencil size={12} /></button>}
-                  <button onClick={() => onDel(t.id)} className="p-1 rounded" style={{ color: 'var(--rose)' }} title="Delete"><Trash2 size={12} /></button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+    <div className="-mx-4 md:-mx-5 -mb-1">
+      {paged.map((t, i) => (
+        <div key={t.id} className="flex items-center gap-3 px-4 md:px-5 py-2.5" style={{ borderTop: i ? '1px solid var(--track)' : '1px solid var(--line)' }}>
+          <div className="flex-1 min-w-0">
+            <div className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{dt(t.txn_date)}</div>
+            <div className="text-[11.5px] truncate" style={{ color: 'var(--text3)' }}>{t.note || 'No note'}</div>
+          </div>
+          <span className="text-[13px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{money(t.amount)}</span>
+          <span className="flex gap-0.5">
+            {onEdit && <IconBtn label="Edit" onClick={() => onEdit(t)}><Pencil size={13} /></IconBtn>}
+            <IconBtn label="Delete" danger onClick={() => onDel(t.id)}><Trash2 size={13} /></IconBtn>
+          </span>
+        </div>
+      ))}
       {items.length > pageSize && <Pagination total={items.length} page={p} pageSize={pageSize} onPage={setPage} onPageSize={s => { setPageSize(s); setPage(1) }} />}
     </div>
   )
