@@ -1,269 +1,173 @@
 'use client'
-import { PageHeader, InsightBar, AiActions } from '@/components/ui/kit'
 import { useMemo } from 'react'
-import Link from 'next/link'
 import { useViewStore } from '@/store/viewStore'
-import { LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, Legend } from 'recharts'
-import { Scale, TrendingUp, TrendingDown, PiggyBank, ArrowLeft, Lightbulb, AlertTriangle, CheckCircle2, LineChart as LineChartIcon } from 'lucide-react'
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { Landmark, Scale, Percent, ShieldCheck, TrendingDown } from 'lucide-react'
+import { computeNetWorth, viewAmount, type Holdings } from '@/lib/netWorth'
+import { fmtMoney, fmtCompact } from '@/lib/format'
+import { PageHeader, InsightBar, AiActions, LearnStrip, HeroStat, KpiTile, Donut, ProgressRow, EmptyState } from '@/components/ui/kit'
+import { ListCard, ListRow } from '@/components/ui/list'
 
-// Blended expected annual return assumptions per asset bucket (%)
+// Expected yearly return per asset row (for the projection only)
 const EXP_RETURN: Record<string, number> = {
-  'Mutual Funds': 11, Stocks: 12, ETF: 11, NPS: 9, Gold: 7, Bonds: 7.5,
-  'Fixed Deposits': 7, 'Recurring Deposits': 6.5, 'PPF / EPF': 7.5, LIC: 5,
+  mf: 11, stock: 12, etf: 11, nps: 9, gold: 7, bond: 7.5, fd: 7, rd: 6.5, ppf: 7.5, lic: 5, bank: 0,
 }
-function fmtK(n: number): string {
-  if (Math.abs(n) >= 1e7) return `${(n / 1e7).toFixed(2)}Cr`
-  if (Math.abs(n) >= 1e5) return `${(n / 1e5).toFixed(1)}L`
-  if (Math.abs(n) >= 1e3) return `${(n / 1e3).toFixed(0)}K`
-  return String(Math.round(n))
+const LOAN_LABEL: Record<string, string> = {
+  home_loan: 'Home loan', car_loan: 'Car loan', bike_loan: 'Bike loan', gold_loan: 'Gold loan',
+  personal_loan: 'Personal loan', loan_on_card: 'Loan on card', other_loan: 'Other loan',
 }
+const LOAN_COLOR = ['#DC2626', '#F97316', '#D97706', '#EC5B8C', '#9333EA', '#64748B']
 
-function monthsElapsed(start?: string): number {
-  if (!start) return 0
-  const s = new Date(start), n = new Date()
-  return Math.max(0, (n.getFullYear() - s.getFullYear()) * 12 + (n.getMonth() - s.getMonth()))
-}
-
-export default function DebtEquityClient(props: {
-  funds: any[]; stocks: any[]; etfs: any[]; fds: any[]; rds: any[]; nps: any[]
-  lic: any[]; gold: any[]; bonds: any[]; ppf: any[]; loans: any[]
-}) {
+// Debt vs equity (design v2): how much of what you hold is borrowed. Uses the
+// same net-worth maths as Home and Net worth; projection and stress tests are
+// worked out from your own holdings and labelled as estimates.
+export default function DebtEquityClient({ holdings }: { holdings: Holdings }) {
   const { view, fxRate: FX } = useViewStore()
-  const sym = view === 'uae' ? 'AED ' : '₹'
-  const money = (n: number) => `${sym}${Math.round(Number(n) || 0).toLocaleString('en-IN')}`
-  const conv = (amt: number, cur = 'INR') =>
-    view === 'uae' ? (cur === 'AED' ? amt : amt / (FX || 1)) : (cur === 'AED' ? amt * FX : amt)
-  const S = (arr: any[], fn: (x: any) => number) => arr.reduce((a, x) => a + conv(fn(x) || 0, x.currency || 'INR'), 0)
+  const cur = view === 'uae' ? 'AED' : 'INR'
+  const money = (n: number) => fmtMoney(n, cur)
+  const short = (n: number) => fmtCompact(n, cur)
+  const conv = (amt: number, c: string) => viewAmount(amt, c ?? 'INR', view, FX)
+  const inView = (c?: string) => view === 'consolidated' || (view === 'uae' ? c === 'AED' : (c ?? 'INR') === 'INR')
 
-  const { equityRows, debtRows, totalEquity, totalDebt } = useMemo(() => {
-    const mfVal  = (f: any) => (Number(f.units) > 0 && Number(f.current_nav) > 0) ? Number(f.units) * Number(f.current_nav) : Number(f.invested_amount) || 0
-    const stVal  = (s: any) => Number(s.quantity) * (Number(s.current_price) || Number(s.avg_buy_price) || 0)
-    const etfVal = (e: any) => Number(e.current_value) || (Number(e.units) * (Number(e.current_price) || Number(e.avg_buy_price))) || Number(e.invested_amount) || 0
-    const rdVal  = (r: any) => Number(r.current_amount) || (Number(r.monthly_amount) * monthsElapsed(r.start_date)) || 0
-    const licVal = (l: any) => (Number(l.total_paid) || 0) + (Number(l.bonus_accrued) || 0)
+  const nw = useMemo(() => computeNetWorth(holdings, view, FX), [holdings, view, FX])
+  const { assetRows, totalAssets, totalLiab, netWorth } = nw
+  const loans = holdings.loans.filter(l => inView(l.currency))
+  const cards = holdings.accounts.filter(a => a.account_type === 'credit_card' && inView(a.currency))
 
-    const eq = [
-      { cat: 'Mutual Funds',       val: S(props.funds, mfVal),                              color: '#2563EB' },
-      { cat: 'Stocks',             val: S(props.stocks, stVal),                             color: '#7C3AED' },
-      { cat: 'ETF',                val: S(props.etfs, etfVal),                              color: '#0EA5E9' },
-      { cat: 'Fixed Deposits',     val: S(props.fds, (f: any) => Number(f.principal)),       color: '#16A34A' },
-      { cat: 'Recurring Deposits', val: S(props.rds, rdVal),                                color: '#059669' },
-      { cat: 'PPF / EPF',          val: S(props.ppf, (p: any) => Number(p.current_balance)), color: '#0D9488' },
-      { cat: 'NPS',                val: S(props.nps, (n: any) => Number(n.corpus_amount)),   color: '#7C5CBF' },
-      { cat: 'Gold',               val: S(props.gold, (g: any) => Number(g.current_value) || (Number(g.quantity_grams) * Number(g.current_price_per_gram)) || Number(g.invested_amount)), color: '#D97706' },
-      { cat: 'Bonds',              val: S(props.bonds, (b: any) => Number(b.current_value) || Number(b.invested_amount) || (Number(b.face_value) * Number(b.quantity))), color: '#CA8A04' },
-      { cat: 'LIC',                val: S(props.lic, licVal),                               color: '#EA580C' },
-    ].filter(r => r.val > 0).sort((a, b) => b.val - a.val)
+  // Composition of what you hold: owned outright vs each kind of debt
+  const debtParts = useMemo(() => {
+    const m: Record<string, number> = {}
+    loans.forEach(l => { const k = LOAN_LABEL[l.loan_type] ?? 'Loan'; m[k] = (m[k] ?? 0) + conv(Number(l.outstanding_amt) || 0, l.currency) })
+    const cardBal = cards.reduce((a, c) => a + conv(Number(c.outstanding_bal) || 0, c.currency), 0)
+    if (cardBal > 0) m['Credit cards'] = cardBal
+    return Object.entries(m).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1])
+  }, [loans, cards, view, FX])
 
-    const typeLabel: Record<string, string> = { home_loan: 'Home Loan', car_loan: 'Car Loan', bike_loan: 'Bike Loan', gold_loan: 'Gold Loan', personal_loan: 'Personal Loan', loan_on_card: 'Loan on Card', other_loan: 'Other Loan' }
-    const dm: Record<string, number> = {}
-    props.loans.forEach((l: any) => {
-      const k = typeLabel[l.loan_type] || 'Loan'
-      dm[k] = (dm[k] ?? 0) + conv(Number(l.outstanding_amt) || 0, l.currency || 'INR')
-    })
-    const debt = Object.entries(dm).map(([cat, val]) => ({ cat, val })).filter(r => r.val > 0).sort((a, b) => b.val - a.val)
+  const debtPct = totalAssets > 0 ? Math.round(totalLiab / totalAssets * 100) : 0
+  const leverage = netWorth > 0 ? totalAssets / netWorth : null
+  const monthlyInterest = loans.reduce((a, l) => a + conv((Number(l.outstanding_amt) || 0) * (Number(l.interest_rate) || 0) / 1200, l.currency), 0)
+  const monthlyEmi = loans.reduce((a, l) => a + conv(Number(l.emi_amount) || 0, l.currency), 0)
+  const topLoan = [...loans].filter(l => Number(l.interest_rate) > 0).sort((a, b) => Number(b.interest_rate) - Number(a.interest_rate))[0]
+  const zone = totalLiab === 0 ? 'Debt-free' : debtPct < 30 ? 'Healthy' : debtPct < 50 ? 'Moderate' : 'High'
 
-    return {
-      equityRows: eq, debtRows: debt,
-      totalEquity: eq.reduce((a, r) => a + r.val, 0),
-      totalDebt: debt.reduce((a, r) => a + r.val, 0),
-    }
-  }, [props, view, FX])
-
-  // ── Future projection: equity grows with SIPs, debt amortises with EMIs ──
+  // 10-year projection: investments grow at a blended rate plus what you add
+  // each month; cash stays flat; loans amortise at today's EMI and rate
   const projection = useMemo(() => {
-    const blended = totalEquity > 0 ? equityRows.reduce((a, r) => a + r.val * (EXP_RETURN[r.cat] ?? 8), 0) / totalEquity : 8
-    const monthlyInvest =
-      S(props.funds.filter((f: any) => f.has_sip && f.sip_amount), (f: any) => Number(f.sip_amount)) +
-      S(props.rds, (r: any) => Number(r.monthly_amount)) +
-      S(props.ppf, (p: any) => Number(p.annual_contribution) / 12)
-    const monthlyEMI = S(props.loans, (l: any) => Number(l.emi_amount))
-    const r = blended / 1200
-    let eq = totalEquity
-    const loanBals = props.loans.map((l: any) => ({ bal: conv(Number(l.outstanding_amt) || 0, l.currency || 'INR'), lr: (Number(l.interest_rate) || 0) / 1200, emi: conv(Number(l.emi_amount) || 0, l.currency || 'INR') }))
-    const series: { year: number; Investments: number; Debt: number; 'Net Worth': number }[] = []
+    const invested = assetRows.filter(r => r.key !== 'bank')
+    const base = invested.reduce((a, r) => a + r.value, 0)
+    const blended = base > 0 ? invested.reduce((a, r) => a + r.value * (EXP_RETURN[r.key] ?? 7), 0) / base : 7
+    const S = (arr: any[], fn: (x: any) => number) => arr.filter(x => inView(x.currency ?? 'INR')).reduce((a, x) => a + conv(fn(x) || 0, x.currency ?? 'INR'), 0)
+    const monthlyAdd = S(holdings.mutualFunds.filter(f => f.has_sip && f.sip_amount), f => Number(f.sip_amount))
+      + S(holdings.recurringDeposits, r => Number(r.monthly_amount)) + S(holdings.ppfEpf, x => Number(x.annual_contribution) / 12)
+    const cash = assetRows.find(r => r.key === 'bank')?.value ?? 0
+    const bals = loans.map(l => ({ b: conv(Number(l.outstanding_amt) || 0, l.currency), r: (Number(l.interest_rate) || 0) / 1200, e: conv(Number(l.emi_amount) || 0, l.currency) }))
+    const cardDebt = cards.reduce((a, c) => a + conv(Number(c.outstanding_bal) || 0, c.currency), 0)
+    let inv = base
+    const series: { year: string; Assets: number; Debt: number }[] = []
     for (let m = 0; m <= 120; m++) {
-      if (m % 12 === 0) {
-        const debt = loanBals.reduce((a, x) => a + Math.max(0, x.bal), 0)
-        series.push({ year: m / 12, Investments: Math.round(eq), Debt: Math.round(debt), 'Net Worth': Math.round(eq - debt) })
-      }
-      eq = eq * (1 + r) + monthlyInvest
-      loanBals.forEach(x => { if (x.bal > 0) { x.bal = x.bal * (1 + x.lr) - x.emi; if (x.bal < 0) x.bal = 0 } })
+      if (m % 12 === 0) series.push({ year: m === 0 ? 'Now' : `+${m / 12}y`, Assets: Math.round(inv + cash), Debt: Math.round(bals.reduce((a, x) => a + Math.max(x.b, 0), 0) + (m === 0 ? cardDebt : 0)) })
+      inv = inv * (1 + blended / 1200) + monthlyAdd
+      bals.forEach(x => { if (x.b > 0) x.b = Math.max(0, x.b * (1 + x.r) - x.e) })
     }
-    return { blended, monthlyInvest, monthlyEMI, series }
-  }, [props, totalEquity, equityRows, view, FX])
+    return { series, blended, monthlyAdd }
+  }, [assetRows, loans, cards, holdings, view, FX])
+  const in10 = projection.series[projection.series.length - 1]
 
-  const netWorth = totalEquity - totalDebt
-  const debtPct  = totalEquity + totalDebt > 0 ? Math.round((totalDebt / (totalEquity + totalDebt)) * 100) : 0
-  const deRatio  = totalEquity > 0 ? totalDebt / totalEquity : (totalDebt > 0 ? Infinity : 0)
+  // Stress tests: funds, stocks and ETFs fall; everything else held at today's value
+  const market = assetRows.filter(r => r.group === 'mf' || r.group === 'equity').reduce((a, r) => a + r.value, 0)
+  const stress = [
+    { name: 'Mild dip', what: 'Markets −10%', drop: 0.10 },
+    { name: 'Bad year', what: 'Markets −20%', drop: 0.20 },
+    { name: 'Severe crash', what: 'Markets −35%', drop: 0.35 },
+  ].map(s => {
+    const assets = totalAssets - market * s.drop
+    return { ...s, nw: assets - totalLiab, ratio: assets > 0 ? Math.round(totalLiab / assets * 100) : 0 }
+  })
+  const rateHit = loans.reduce((a, l) => a + conv((Number(l.outstanding_amt) || 0) * 0.01, l.currency), 0)
 
-  const zone = totalDebt === 0 ? 'debt_free' : debtPct >= 65 ? 'high' : debtPct >= 45 ? 'moderate' : 'healthy'
-  const zoneColor = zone === 'high' ? 'var(--rose)' : zone === 'moderate' ? 'var(--gold)' : 'var(--income)'
-  const zoneLabel = zone === 'high' ? 'High Debt' : zone === 'moderate' ? 'Moderate' : zone === 'debt_free' ? 'Debt Free' : 'Healthy'
-  const rawColor = zone === 'high' ? '#EF4444' : zone === 'moderate' ? '#F59E0B' : '#10B981'
-
-  const insights: { tone: 'good' | 'warn' | 'info'; text: string }[] = []
-  if (totalDebt === 0 && totalEquity > 0) insights.push({ tone: 'good', text: 'You have no outstanding loans — every rupee compounds for you. Keep growing your investments.' })
-  else if (zone === 'high') insights.push({ tone: 'warn', text: `Your debt (${money(totalDebt)}) exceeds your investments (${money(totalEquity)}). Prioritise repaying the highest-interest loan and pause new borrowing.` })
-  else if (zone === 'moderate') insights.push({ tone: 'info', text: `Balanced: debt is ${debtPct}% of your total. Grow investments faster than debt to move into the healthy zone.` })
-  else if (totalEquity > 0) insights.push({ tone: 'good', text: `Healthy: investments (${money(totalEquity)}) comfortably outweigh debt (${money(totalDebt)}).` })
-  insights.push({ tone: netWorth >= 0 ? 'good' : 'warn', text: `Net position (assets − liabilities): ${money(netWorth)}.` })
-  const topLoan = [...props.loans].filter(l => Number(l.interest_rate) > 0).sort((a, b) => Number(b.interest_rate) - Number(a.interest_rate))[0]
-  if (topLoan) insights.push({ tone: 'info', text: `Your costliest loan is ${topLoan.name} at ${topLoan.interest_rate}% p.a. — prepaying this first saves the most interest.` })
-  const liquidShare = totalEquity > 0 ? Math.round(((equityRows.find(r => r.cat === 'Mutual Funds')?.val ?? 0) + (equityRows.find(r => r.cat === 'Stocks')?.val ?? 0)) / totalEquity * 100) : 0
-  if (totalEquity > 0) insights.push({ tone: 'info', text: `${liquidShare}% of your investments are market-linked (MF + stocks) — liquid but volatile; the rest is in fixed/long-term assets.` })
-
-  const Bar = ({ rows, total, label, accent }: { rows: { cat: string; val: number; color?: string }[]; total: number; label: string; accent: string }) => (
-    <div className="wl-card p-4">
-      <div className="text-[11px] font-bold uppercase tracking-wider mb-3 flex items-center justify-between" style={{ color: 'var(--text3)' }}>
-        <span>{label}</span><span className="font-mono" style={{ color: accent }}>{money(total)}</span>
-      </div>
-      {rows.length === 0 ? <p className="text-[12px] py-4 text-center" style={{ color: 'var(--text3)' }}>None</p> : (
-        <div className="space-y-2.5">
-          {rows.map((r, i) => {
-            const pct = total > 0 ? (r.val / total) * 100 : 0
-            const c = r.color ?? accent
-            return (
-              <div key={r.cat} className="flex items-center gap-3">
-                <div className="text-[11px] font-medium w-28 flex-shrink-0 truncate" style={{ color: 'var(--text2)' }}>{r.cat}</div>
-                <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}>
-                  <div className="h-full rounded-full" style={{ width: `${pct}%`, background: c }} />
-                </div>
-                <div className="text-[10px] font-mono w-9 text-right" style={{ color: 'var(--text3)' }}>{pct.toFixed(0)}%</div>
-                <div className="text-[11px] font-mono font-semibold w-20 text-right" style={{ color: 'var(--text)' }}>{money(r.val)}</div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
+  const empty = totalAssets === 0 && totalLiab === 0
+  const ctx = `Assets ${money(totalAssets)}, debt ${money(totalLiab)} (${debtPct}% of assets), owned outright ${money(netWorth)}, leverage ${leverage ? leverage.toFixed(2) + '×' : 'n/a'}, interest about ${money(monthlyInterest)} a month.${topLoan ? ` Costliest loan ${topLoan.name} at ${topLoan.interest_rate}%.` : ''}`
 
   return (
-    <div className="space-y-5 animate-fade-up">
-      <PageHeader title="Debt vs equity"
-        sub={`${view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'} · how your investments stack up against your loans`} />
-      <InsightBar
-        text={totalDebt === 0
-          ? `No debt — ${money(totalEquity)} of investments and savings, all yours.`
-          : `Debt is ${debtPct}% of everything (${money(totalDebt)} against ${money(totalEquity)} of investments) — ${zoneLabel.toLowerCase()}.${topLoan ? ` ${topLoan.name} at ${topLoan.interest_rate}% is your costliest loan.` : ''}`}
-        prompt={`Explain my debt vs equity page. Debt ${money(totalDebt)}, equity ${money(totalEquity)}, debt share ${debtPct}%, zone ${zoneLabel}, net ${money(netWorth)}.${topLoan ? ` Costliest loan ${topLoan.name} at ${topLoan.interest_rate}%.` : ''}`} />
-      <AiActions actions={['Pay down debt or invest?', 'Best prepayment plan']}
-        context={`Debt ${money(totalDebt)}, equity ${money(totalEquity)}, debt share ${debtPct}%.${topLoan ? ` Costliest loan ${topLoan.name} at ${topLoan.interest_rate}%, outstanding ${topLoan.outstanding_amt}.` : ''}`} />
-
-      {/* Gauge + zone */}
-      <div className="wl-card p-5 flex items-center gap-5 flex-wrap" style={{ border: `1.5px solid ${rawColor}40` }}>
-        <div className="w-24 h-24 rounded-full flex items-center justify-center flex-shrink-0"
-          style={{ background: `conic-gradient(${rawColor} ${debtPct * 3.6}deg, #E5E7EB ${debtPct * 3.6}deg)` }}>
-          <div className="w-[72px] h-[72px] bg-white rounded-full flex flex-col items-center justify-center">
-            <div className="text-[18px] font-black" style={{ color: rawColor }}>{debtPct}%</div>
-            <div className="text-[8px] uppercase tracking-wider" style={{ color: 'var(--text3)' }}>debt</div>
-          </div>
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>Debt is {debtPct}% of your total</span>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: rawColor + '20', color: rawColor }}>{zoneLabel}</span>
-          </div>
-          <p className="text-[12px]" style={{ color: 'var(--text3)' }}>
-            Debt-to-Equity ratio: <b style={{ color: 'var(--text)' }}>{deRatio === Infinity ? '∞' : deRatio.toFixed(2)}</b>
-            {' '}· every {sym}1 invested carries {sym}{(totalEquity > 0 ? totalDebt / totalEquity : 0).toFixed(2)} of debt.
-          </p>
-        </div>
+    <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
+      <div className="max-md:order-1">
+        <PageHeader title="Debt vs equity" sub={`How much of what you hold is borrowed · ${view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'}`} />
       </div>
+      {!empty && <div className="max-md:order-4"><InsightBar
+        text={totalLiab === 0
+          ? `No debt: all ${short(totalAssets)} of what you hold is yours.`
+          : `Debt is ${debtPct}% of what you hold (${zone.toLowerCase()}). A 20% market fall would take net worth to about ${short(stress[1].nw)} and the debt ratio to ${stress[1].ratio}%.${topLoan ? ` ${topLoan.name} at ${topLoan.interest_rate}% costs the most.` : ''}`}
+        prompt={`Explain my debt vs equity page in plain language. ${ctx}`} /></div>}
+      {!empty && <div className="max-md:order-5"><AiActions actions={['Pay down debt or invest?', 'Best prepayment plan']} context={ctx} /></div>}
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Kpi label="Investments (Equity)" value={money(totalEquity)} icon={TrendingUp} color="var(--income)" />
-        <Kpi label="Total Debt"          value={money(totalDebt)}   icon={TrendingDown} color="var(--rose)" />
-        <Kpi label="Net Worth"           value={money(netWorth)}    icon={PiggyBank} color={netWorth >= 0 ? 'var(--income)' : 'var(--rose)'} />
-        <Kpi label="Debt / Equity"       value={deRatio === Infinity ? '∞' : deRatio.toFixed(2)} icon={Scale} color={zoneColor} />
-      </div>
+      {empty ? (
+        <div className="max-md:order-2"><EmptyState message="Add investments or loans to see how much of what you hold is borrowed." /></div>
+      ) : (<>
+        <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4">
+          <HeroStat className="max-md:order-2" label="Equity · what you own outright" value={money(netWorth)}
+            tone={zone === 'High' ? 'bad' : 'good'}
+            delta={`${100 - debtPct}% of ${short(totalAssets)} held · ${zone}`}
+            right={<span className="text-[11.5px] flex items-center gap-3" style={{ color: 'var(--text3)' }}>
+              <span className="flex items-center gap-1.5"><i className="inline-block w-[9px] h-[9px] rounded-sm" style={{ background: '#6A55E8' }} />Assets</span>
+              <span className="flex items-center gap-1.5"><i className="inline-block w-[9px] h-[9px] rounded-sm" style={{ background: '#94A3B8' }} />Debt</span>
+            </span>}>
+            <div className="text-[11.5px] mt-2" style={{ color: 'var(--text3)' }}>Next 10 years if you keep investing {short(projection.monthlyAdd)} a month and paying today&apos;s EMIs (estimate)</div>
+            <div className="h-[120px] md:h-auto md:flex-1 md:min-h-[190px] mt-2 -mx-1">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={projection.series} margin={{ top: 4, right: 6, bottom: 0, left: 6 }}>
+                  <XAxis dataKey="year" tick={{ fontSize: 11, fill: '#94A3B8' }} tickLine={false} axisLine={false} interval={1} padding={{ left: 14, right: 18 }} />
+                  <YAxis hide domain={[0, 'dataMax']} />
+                  <Tooltip contentStyle={{ background: '#fff', border: '1px solid var(--line)', borderRadius: 10, fontSize: 12, padding: '6px 10px' }}
+                    formatter={(v: any, n: any) => [money(Number(v)), n]} />
+                  <Line type="monotone" dataKey="Assets" stroke="#6A55E8" strokeWidth={2.5} dot={false} isAnimationActive={false} />
+                  <Line type="monotone" dataKey="Debt" stroke="#94A3B8" strokeWidth={2} strokeDasharray="5 4" dot={false} isAnimationActive={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </HeroStat>
 
-      {/* Breakdowns */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Bar rows={equityRows} total={totalEquity} label="Investments breakdown" accent="var(--income)" />
-        <Bar rows={debtRows.map(d => ({ ...d, color: 'var(--rose)' }))} total={totalDebt} label="Debt breakdown" accent="var(--rose)" />
-      </div>
-
-      {/* Future outlook */}
-      {(totalEquity > 0 || totalDebt > 0) && projection.series.length > 0 && (
-        <div className="wl-card p-4">
-          <div className="text-[11px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1.5" style={{ color: 'var(--text3)' }}>
-            <LineChartIcon size={12} /> Future Outlook
-          </div>
-          <p className="text-[11px] mb-3" style={{ color: 'var(--text3)' }}>
-            Investing <b style={{ color: 'var(--text2)' }}>{money(projection.monthlyInvest)}/mo</b> at ~{projection.blended.toFixed(1)}% blended return · paying <b style={{ color: 'var(--text2)' }}>{money(projection.monthlyEMI)}/mo</b> in EMIs — assuming both continue.
-          </p>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-            {([['Now', 0], ['In 1 year', 1], ['In 5 years', 5], ['In 10 years', 10]] as const).map(([label, yr]) => {
-              const p = projection.series[yr]
-              if (!p) return null
-              return (
-                <div key={label} className="rounded-xl p-3" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-                  <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--text3)' }}>{label}</div>
-                  <div className="text-[11px] flex justify-between"><span style={{ color: 'var(--text3)' }}>Invest.</span><span className="font-mono font-semibold" style={{ color: 'var(--income)' }}>{money(p.Investments)}</span></div>
-                  <div className="text-[11px] flex justify-between"><span style={{ color: 'var(--text3)' }}>Debt</span><span className="font-mono font-semibold" style={{ color: 'var(--rose)' }}>{money(p.Debt)}</span></div>
-                  <div className="text-[12px] flex justify-between mt-1 pt-1 border-t" style={{ borderColor: 'var(--border)' }}><span className="font-semibold" style={{ color: 'var(--text2)' }}>Net</span><span className="font-mono font-bold" style={{ color: p['Net Worth'] >= 0 ? 'var(--income)' : 'var(--rose)' }}>{money(p['Net Worth'])}</span></div>
-                </div>
-              )
-            })}
-          </div>
-          <div style={{ width: '100%', height: 240 }}>
-            <ResponsiveContainer>
-              <LineChart data={projection.series} margin={{ top: 4, right: 8, left: -6, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="year" tick={{ fontSize: 10, fill: 'var(--text3)' }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}y`} />
-                <YAxis tick={{ fontSize: 10, fill: 'var(--text3)' }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtK(Number(v))} />
-                <Tooltip formatter={(v: any) => money(Number(v))} labelFormatter={(l) => `Year ${l}`} contentStyle={{ fontSize: 11, borderRadius: 10, border: '1px solid var(--border)' }} />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Line type="monotone" dataKey="Investments" stroke="var(--income)" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="Debt" stroke="var(--rose)" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="Net Worth" stroke="var(--blue)" strokeWidth={2} strokeDasharray="4 3" dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-          <p className="text-[10px] mt-2" style={{ color: 'var(--text3)' }}>
-            Estimate only. Investments compound at a blended rate from your asset mix; loans amortise at their current EMI &amp; rate (future top-up disbursements not modelled). Actual returns vary with the market.
-          </p>
+          <section className="wl-card max-md:order-6 px-4 md:px-5 py-4 md:py-[18px] flex flex-col gap-3">
+            <h2 className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Composition</h2>
+            <div className="hidden md:flex justify-center">
+              <Donut size={128} label={`Owned ${100 - debtPct}%, debt ${debtPct}%`}
+                segments={[{ value: Math.max(netWorth, 0), color: '#6A55E8' }, ...debtParts.map(([, v], i) => ({ value: v, color: LOAN_COLOR[i % LOAN_COLOR.length] }))]}>
+                <div className="text-[10.5px]" style={{ color: 'var(--text3)' }}>Debt</div>
+                <div className="text-[16px] font-bold" style={{ color: 'var(--text)' }}>{debtPct}%</div>
+              </Donut>
+            </div>
+            <ProgressRow name="Owned outright" value={short(netWorth)} right={`${100 - debtPct}%`} pct={100 - debtPct} color="#6A55E8" />
+            {debtParts.map(([k, v], i) => (
+              <ProgressRow key={k} name={k} value={short(v)} right={`${totalAssets > 0 ? Math.round(v / totalAssets * 100) : 0}%`}
+                pct={totalAssets > 0 ? v / totalAssets * 100 : 0} color={LOAN_COLOR[i % LOAN_COLOR.length]} href={k === 'Credit cards' ? '/dashboard/cards' : '/dashboard/loans'} />
+            ))}
+          </section>
         </div>
-      )}
 
-      {/* Insights */}
-      <div className="wl-card p-4">
-        <div className="text-[11px] font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5" style={{ color: 'var(--text3)' }}>
-          <Lightbulb size={12} style={{ color: 'var(--gold)' }} /> Insights &amp; Recommendations
+        <div className="max-md:order-3 grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
+          <KpiTile label="Debt" value={short(totalLiab)} delta={`${debtPct}% of assets`} tint={2} icon={Landmark}
+            tone={debtPct < 30 ? 'good' : debtPct < 50 ? 'neutral' : 'bad'} />
+          <KpiTile label="Leverage" value={leverage ? `${leverage.toFixed(2)}×` : '—'} delta="Assets ÷ equity · target under 1.5×" tint={0} icon={Scale}
+            tone={leverage == null ? 'bad' : leverage < 1.5 ? 'good' : leverage < 2 ? 'neutral' : 'bad'} />
+          <KpiTile label="Interest cost" value={`${short(monthlyInterest)}/mo`} delta={monthlyEmi > 0 ? `${Math.round(monthlyInterest / monthlyEmi * 100)}% of your EMIs` : 'No loans'} tint={3} icon={Percent} />
+          <KpiTile label="In 10 years" value={in10 ? short(in10.Assets - in10.Debt) : '—'} delta={`net worth at ~${projection.blended.toFixed(1)}% a year (estimate)`} tint={1} icon={ShieldCheck} />
         </div>
-        <div className="space-y-2.5">
-          {insights.map((ins, i) => {
-            const c = ins.tone === 'warn' ? 'var(--rose)' : ins.tone === 'good' ? 'var(--income)' : 'var(--blue)'
-            const Icon = ins.tone === 'warn' ? AlertTriangle : ins.tone === 'good' ? CheckCircle2 : Lightbulb
-            return (
-              <div key={i} className="flex gap-2.5">
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: c + '18' }}><Icon size={14} style={{ color: c }} /></div>
-                <p className="text-[12px] leading-snug" style={{ color: 'var(--text2)' }}>{ins.text}</p>
-              </div>
-            )
-          })}
-        </div>
-        <div className="mt-3 pt-3 border-t flex gap-2 flex-wrap" style={{ borderColor: 'var(--border)' }}>
-          <Link href="/dashboard/loans" className="px-3 py-1.5 rounded-lg text-[11px] font-semibold border" style={{ borderColor: 'var(--border)', color: 'var(--text2)', background: 'var(--bg2)' }}>Manage loans</Link>
-          <Link href="/dashboard/investments" className="px-3 py-1.5 rounded-lg text-[11px] font-semibold border" style={{ borderColor: 'var(--border)', color: 'var(--text2)', background: 'var(--bg2)' }}>View investments</Link>
-          <Link href="/dashboard/financial-health" className="px-3 py-1.5 rounded-lg text-[11px] font-semibold border" style={{ borderColor: 'var(--sage)', color: 'var(--sage)', background: 'var(--sage-bg)' }}>Full financial health</Link>
-        </div>
-      </div>
-    </div>
-  )
-}
 
-function Kpi({ label, value, icon: Icon, color }: { label: string; value: string; icon: any; color: string }) {
-  return (
-    <div className="wl-card p-3.5">
-      <div className="flex items-center gap-2 mb-1.5">
-        <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: color + '18' }}><Icon size={14} style={{ color }} /></div>
-        <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: 'var(--text3)' }}>{label}</span>
-      </div>
-      <div className="text-[18px] font-bold font-mono" style={{ color }}>{value}</div>
+        <ListCard className="max-md:order-7" title="Stress tests" sub="Funds, stocks and ETFs fall; everything else holds its value · estimates"
+          head={['Scenario', 'What happens', 'Debt ratio', 'Net worth']}>
+          <ListRow color="#16A34A" initial="✓" title="Today" tag="As it is" meta={`${debtPct}%`} amount={money(netWorth)} />
+          {stress.map(s => (
+            <ListRow key={s.name} color={s.drop >= 0.35 ? '#DC2626' : s.drop >= 0.2 ? '#D97706' : '#3B8EF0'} initial={<TrendingDown size={15} />}
+              title={s.name} tag={s.what} meta={`${s.ratio}%`} metaColor={s.ratio >= 50 ? '#DC2626' : undefined}
+              amount={money(s.nw)} amountSub={`−${short(netWorth - s.nw)}`} />
+          ))}
+          {rateHit > 0 && (
+            <ListRow color="#7C3AED" initial="%" title="Rates up 1%" tag="Loan rates +1%" meta={`${debtPct}%`}
+              amount={`−${short(rateHit)}/yr`} amountColor="#DC2626" amountSub="extra interest" />
+          )}
+        </ListCard>
+      </>)}
+
+      <div className="max-md:order-8"><LearnStrip title="Debt vs equity mix" href="/dashboard/learn" /></div>
     </div>
   )
 }

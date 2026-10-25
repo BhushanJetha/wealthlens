@@ -7,20 +7,21 @@ export default async function DebtEquityPage() {
   if (!user) return null
   const uid = user.id
   const sel = (t: string) => supabase.from(t).select('*').eq('user_id', uid)
+  const active = (t: string) => sel(t).eq('is_active', true)
 
-  const [mf, st, etf, fd, rd, nps, lic, gold, bonds, ppf, loans] = await Promise.all([
-    sel('mutual_funds'), sel('stocks'), sel('etf_investments'),
-    sel('fixed_deposits'), sel('recurring_deposits'), sel('nps_accounts'),
-    sel('lic_policies'), sel('gold_investments'), sel('bond_investments'),
-    sel('ppf_epf_accounts'), supabase.from('home_loans').select('*').eq('user_id', uid).eq('is_active', true),
+  // Same holdings (and active filters) as the Net worth page, so both agree
+  const [accounts, mf, st, etf, fd, rd, nps, lic, gold, bonds, ppf, loans] = await Promise.all([
+    active('accounts'), sel('mutual_funds'), sel('stocks'), sel('etf_investments'),
+    active('fixed_deposits'), active('recurring_deposits'), sel('nps_accounts'),
+    active('lic_policies'), sel('gold_investments'), sel('bond_investments'),
+    sel('ppf_epf_accounts'), active('home_loans'),
   ])
 
   return (
-    <DebtEquityClient
-      funds={mf.data ?? []} stocks={st.data ?? []} etfs={etf.data ?? []}
-      fds={fd.data ?? []} rds={rd.data ?? []} nps={nps.data ?? []}
-      lic={lic.data ?? []} gold={gold.data ?? []} bonds={bonds.data ?? []}
-      ppf={ppf.data ?? []} loans={loans.data ?? []}
-    />
+    <DebtEquityClient holdings={{
+      accounts: accounts.data ?? [], mutualFunds: mf.data ?? [], stocks: st.data ?? [], etf: etf.data ?? [],
+      fixedDeposits: fd.data ?? [], recurringDeposits: rd.data ?? [], nps: nps.data ?? [],
+      lic: lic.data ?? [], gold: gold.data ?? [], bonds: bonds.data ?? [], ppfEpf: ppf.data ?? [], loans: loans.data ?? [],
+    }} />
   )
 }
