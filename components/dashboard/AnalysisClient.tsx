@@ -5,22 +5,30 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import { Wallet, Gauge, CalendarRange, History } from 'lucide-react'
 import { useViewStore } from '@/store/viewStore'
 import { useUiStore } from '@/store/uiStore'
-import { isSpend, catOf, labelOf } from '@/lib/money'
+import { isSpend, catOf, labelOf, spendGroup, SPEND_GROUPS } from '@/lib/money'
+import { useCategoryStore } from '@/store/categoryStore'
+import { colorOf as catColorOf } from '@/lib/categories'
+import { CategoryIcon } from '@/components/ui/CategoryIcon'
 import { addMonths, daysInMonth, localToday } from '@/lib/insights'
 import { fmtMoney, fmtCompact } from '@/lib/format'
-import { PageHeader, KpiTile, Bars, Ring, Segmented, EmptyState, PALETTE, PALETTE_BG, type Tone } from '@/components/ui/kit'
+import { PageHeader, KpiTile, Bars, Ring, Segmented, EmptyState, type Tone } from '@/components/ui/kit'
 
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const monLabel = (ym: string, year = false) => `${MON[Number(ym.slice(5)) - 1]}${year ? ` ${ym.slice(0, 4)}` : ''}`
+// Budgets for these never match spend (card bills settle spend already
+// counted; refunds are money back) — same exclusions as the Budgets page
+const NOT_PLANABLE = new Set(['Credit Card Payment', 'Loan on Card', 'Refund'])
+const SENT_COLOR: Record<string, string> = { 'International Transfer': '#3B8EF0', Transfer: '#0EA5E9' }
 
 // Spending analysis (design v2): budget vs actual, pace, comparisons, movers,
 // big purchases. "Spend" uses the shared rule in lib/money (same as Home).
 export default function AnalysisClient({ transactions, budgets }: { transactions: any[]; budgets: any[] }) {
   const { view, toMonth, fxRate: FX } = useViewStore()
   const { openAdvisor } = useUiStore()
+  const { rows: categories, load: loadCategories } = useCategoryStore()
   const [cmp, setCmp] = useState<'lm' | 'ly'>('lm')
   const [today, setToday] = useState('')
-  useEffect(() => { setToday(localToday()) }, [])
+  useEffect(() => { setToday(localToday()); loadCategories() }, [loadCategories])
 
   const cur = view === 'uae' ? 'AED' : 'INR'
   const money = (n: number) => fmtMoney(n, cur)
@@ -58,7 +66,7 @@ export default function AnalysisClient({ transactions, budgets }: { transactions
   }, [spend, focus, dayCut, lm, ly, cmp, view, FX])
 
   const T = sum(data.now), LMs = sum(data.lmSame), LMf = sum(data.lmFull), LYs = sum(data.lySame), CMPs = sum(data.cmpSame)
-  const budgetRows = budgets.filter(b => b.month_year === focus && inView(b.currency ?? 'INR'))
+  const budgetRows = budgets.filter(b => b.month_year === focus && inView(b.currency ?? 'INR') && !NOT_PLANABLE.has(b.category))
   const budgetBy: Record<string, number> = {}
   budgetRows.forEach(b => { budgetBy[b.category] = (budgetBy[b.category] ?? 0) + conv(Number(b.monthly_cap), b.currency ?? 'INR') })
   const B = sum(budgetBy)
@@ -83,10 +91,22 @@ export default function AnalysisClient({ transactions, budgets }: { transactions
   const vsLm = pct(T, LMs), vsLy = pct(T, LYs)
   const overCats = Object.keys(budgetBy).filter(c => (data.now[c] ?? 0) > budgetBy[c])
 
-  // Category order follows this month's spend; colour follows the category
+  // Category order follows this month's spend; colour and icon follow the
+  // user's own category (so a category looks the same on every screen)
   const cats = Object.keys({ ...data.now, ...budgetBy }).sort((a, b) => (data.now[b] ?? 0) - (data.now[a] ?? 0))
-  const colorOf = (c: string) => PALETTE[Math.max(cats.indexOf(c), 0) % PALETTE.length]
-  const bgOf = (c: string) => PALETTE_BG[Math.max(cats.indexOf(c), 0) % PALETTE_BG.length]
+  const colorOf = (c: string) => SENT_COLOR[c] ?? catColorOf(categories, c)
+  const bgOf = (c: string) => colorOf(c) + '1A'
+  const iconOf = (c: string) => categories.find(r => r.name === c)?.icon ?? (SENT_COLOR[c] ? 'hand-coins' : 'tag')
+
+  // What this month's money out is made of (living, sent, loans, invested)
+  const parts = useMemo(() => {
+    const o: Record<string, number> = { living: 0, sent: 0, loans: 0, invest: 0 }
+    spend.forEach(t => {
+      if (t.txn_date?.slice(0, 7) !== focus || Number(t.txn_date.slice(8, 10)) > dayCut) return
+      const g = spendGroup(t); if (g) o[g] += conv(Number(t.amount), t.currency)
+    })
+    return o
+  }, [spend, focus, dayCut, view, FX])
 
   const movers = Array.from(new Set([...Object.keys(data.now), ...Object.keys(data.cmpSame)]))
     .map(c => ({ c, from: data.cmpSame[c] ?? 0, to: data.now[c] ?? 0 }))
@@ -171,14 +191,32 @@ export default function AnalysisClient({ transactions, budgets }: { transactions
       </div>
 
       <div className="max-md:order-2 grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
-        <KpiTile label={isCurrent ? 'Spent so far' : 'Spent'} value={money(T)} tint={0} icon={Wallet}
-          delta={!B ? 'No budget set' : outside > 0 ? `${money(outside)} outside budgets` : `of ${money(B)} budget`} />
+        <KpiTile label={isCurrent ? 'Money out so far' : 'Money out'} value={money(T)} tint={0} icon={Wallet}
+          delta={`${short(parts.living + parts.sent)} spending · ${short(parts.loans + parts.invest)} loans & investing`} />
         <KpiTile label="Budget used" value={used == null ? '—' : `${Math.round(used)}%`} tint={1} icon={Gauge}
           delta={used == null ? 'Set budgets to track' : `${money(Math.abs(left))} ${left >= 0 ? 'left' : 'over'}${overCats.length ? ` · ${overCats.length} categor${overCats.length === 1 ? 'y' : 'ies'} over` : ''}`}
           tone={used == null ? 'neutral' : used > 100 ? 'bad' : 'good'} />
         <KpiTile label="vs last month" value={fmtPct(vsLm)} delta={LMs > 0 ? `${money(LMs)} at the same point` : 'No data'} tone={toneOf(vsLm)} tint={2} icon={CalendarRange} />
         <KpiTile label={`vs ${monLabel(ly, true)}`} value={fmtPct(vsLy)} delta={LYs > 0 ? `${money(LYs)} at the same point` : 'No data'} tone={toneOf(vsLy)} tint={3} icon={History} />
       </div>
+
+      {/* What the money out is made of */}
+      {T > 0 && (
+        <section className="max-md:order-2 wl-card px-4 md:px-5 py-3.5 flex flex-col gap-2.5">
+          <div className="flex h-2.5 rounded-full overflow-hidden gap-[2px]" role="img" aria-label={SPEND_GROUPS.map(g => `${g.label} ${short(parts[g.key])}`).join(', ')}>
+            {SPEND_GROUPS.map(g => parts[g.key] > 0 && <div key={g.key} style={{ width: `${parts[g.key] / T * 100}%`, background: g.color }} />)}
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1.5">
+            {SPEND_GROUPS.map(g => (
+              <div key={g.key} className="flex items-center gap-2 text-[12.5px] min-w-0">
+                <i className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: g.color }} />
+                <span className="truncate" style={{ color: 'var(--text3)' }}>{g.label}</span>
+                <span className="ml-auto font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{short(parts[g.key])}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Budget vs actual + budget used */}
       <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-4 items-start">
@@ -195,7 +233,7 @@ export default function AnalysisClient({ transactions, budgets }: { transactions
             const sp = data.now[c] ?? 0, bu = budgetBy[c], p = sp / bu * 100, over = sp > bu
             return (
               <div key={c} className="flex gap-3 items-center">
-                <span className="w-[34px] h-[34px] md:w-[38px] md:h-[38px] rounded-[11px] flex items-center justify-center flex-shrink-0 text-[15px] font-bold" style={{ background: bgOf(c), color: colorOf(c) }}>{labelOf(c)[0]}</span>
+                <span className="w-[34px] h-[34px] md:w-[38px] md:h-[38px] rounded-[11px] flex items-center justify-center flex-shrink-0" style={{ background: bgOf(c), color: colorOf(c) }}><CategoryIcon icon={iconOf(c)} size={16} /></span>
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between gap-2 text-[12.5px] md:text-[13px] mb-[5px]">
                     <span className="font-semibold truncate" style={{ color: 'var(--text)' }}>{labelOf(c)}
@@ -256,7 +294,7 @@ export default function AnalysisClient({ transactions, budgets }: { transactions
             const col = r.diff > 0 ? '#D9482F' : '#1E8F5F'
             return (
               <div key={r.c} className="flex gap-2.5 items-center py-[9px]" style={{ borderTop: '1px solid var(--track)' }}>
-                <span className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0 text-[14px] font-bold" style={{ background: bgOf(r.c), color: colorOf(r.c) }}>{labelOf(r.c)[0]}</span>
+                <span className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ background: bgOf(r.c), color: colorOf(r.c) }}><CategoryIcon icon={iconOf(r.c)} size={15} /></span>
                 <div className="flex-1 min-w-0">
                   <div className="text-[13px] font-semibold truncate" style={{ color: 'var(--text)' }}>{labelOf(r.c)}</div>
                   <div className="text-[11.5px]" style={{ color: 'var(--text4)' }}>{short(r.from)} → {short(r.to)}</div>
@@ -313,7 +351,7 @@ export default function AnalysisClient({ transactions, budgets }: { transactions
             const c = catOf(t)
             return (
               <div key={t.id} className="flex gap-3 items-center py-[11px]" style={{ borderTop: '1px solid var(--track)' }}>
-                <span className="w-[38px] h-[38px] rounded-[11px] flex items-center justify-center flex-shrink-0 text-[16px] font-bold" style={{ background: bgOf(c), color: colorOf(c) }}>{labelOf(c)[0]}</span>
+                <span className="w-[38px] h-[38px] rounded-[11px] flex items-center justify-center flex-shrink-0" style={{ background: bgOf(c), color: colorOf(c) }}><CategoryIcon icon={iconOf(c)} size={16} /></span>
                 <div className="flex-1 min-w-0">
                   <div className="text-[13.5px] font-semibold truncate" style={{ color: 'var(--text)' }}>{t.merchant}</div>
                   <div className="text-[11.5px] truncate" style={{ color: 'var(--text4)' }}>{labelOf(c)} · {Number(t.txn_date.slice(8, 10))} {monLabel(focus)}</div>

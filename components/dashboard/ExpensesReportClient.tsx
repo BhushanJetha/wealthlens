@@ -5,6 +5,8 @@ import { Download, ChevronLeft, ChevronRight, CalendarDays, CalendarRange, Targe
 import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, Cell, Legend } from 'recharts'
 import TxnDrillModal from '@/components/dashboard/TxnDrillModal'
 import { CC_BILL, classify, labelOf, catOf } from '@/lib/money'
+import { PageHeader, KpiTile, Segmented } from '@/components/ui/kit'
+import { useCategoryStore } from '@/store/categoryStore'
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 function momChange(curr: number, prev: number): number | null {
@@ -25,7 +27,6 @@ const CAT_COLORS: Record<string,string> = {
 const CC_COLOR = '#9333EA'
 
 const FALLBACK_PALETTE = ['#6366F1','#DB2777','#0D9488','#CA8A04','#C2640A','#475569','#B45309','#7C3AED']
-const colorOf = (cat: string, idx: number) => CAT_COLORS[cat] ?? FALLBACK_PALETTE[idx % FALLBACK_PALETTE.length]
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 // Which account a transaction ran through. Strict binary split so NRE + NRO =
@@ -81,6 +82,11 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
   const sym = view === 'uae' ? 'AED ' : '₹'
   const money = (n: number) => `${sym}${Math.round(n).toLocaleString('en-IN')}`
   const mLabel = (m: string) => new Date(m + '-01').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
+
+  // Colours follow the user's own categories (same as Expenses and Reports)
+  const { rows: userCats, load: loadCats } = useCategoryStore()
+  useEffect(() => { loadCats() }, [loadCats])
+  const colorOf = (cat: string, idx: number) => userCats.find(r => r.name === cat)?.color ?? CAT_COLORS[cat] ?? FALLBACK_PALETTE[idx % FALLBACK_PALETTE.length]
 
   const [tab, setTab] = useState<Tab>('monthly')
   const [scope, setScope] = useState<Scope>('both')
@@ -259,7 +265,7 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
         const val = pivot[cat]?.[m] ?? 0
         const inSel = m >= fromMonth && m <= toMonth
         return (
-          <td key={m} className="px-3 py-2.5 text-right font-mono"
+          <td key={m} className="px-3 py-2.5 text-right tabular-nums"
             style={{ color: val > 0 && !muted ? 'var(--text)' : 'var(--text3)', background: inSel ? `${color}08` : 'transparent', fontWeight: val > 0 && !muted ? 600 : 400 }}>
             {val > 0
               ? <button onClick={() => setDrill({ title: labelOf(cat), subtitle: mLabel(m), items: yearTxns.filter((t: any) => catOf(t) === cat && t.txn_date?.slice(0, 7) === m) })} className="hover:underline" style={{ color: 'inherit' }}>{sym}{fmt(val)}</button>
@@ -271,85 +277,59 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
   )
 
   return (
-    <div className="space-y-5 animate-fade-up">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em]" style={{ color: 'var(--text)' }}>Expense Report</h1>
-          <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
-            {view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'}
-            {scope !== 'both' && <> · <strong>{scope.toUpperCase()} account only</strong></>} · income, spend &amp; net
-          </p>
-        </div>
+    <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
+      <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+        <PageHeader title="Expense report"
+          sub={<>{view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'}{scope !== 'both' && <> · <b>{scope.toUpperCase()} account only</b></>} · every category, month by month</>} />
         <div className="flex items-center gap-2">
-          <div className="flex items-center rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)', background: 'var(--bg2)' }}>
-            <button onClick={() => setViewYear(y => y - 1)} className="px-2 py-1.5 hover:bg-gray-100" style={{ color: 'var(--text3)' }}><ChevronLeft size={13} /></button>
-            <span className="px-3 text-[12px] font-bold" style={{ color: 'var(--text)' }}>{viewYear}</span>
-            <button onClick={() => setViewYear(y => y + 1)} className="px-2 py-1.5 hover:bg-gray-100" style={{ color: 'var(--text3)' }}><ChevronRight size={13} /></button>
+          <div className="inline-flex items-center rounded-xl bg-white" style={{ border: '1px solid var(--line)', height: 38 }}>
+            <button onClick={() => setViewYear(y => y - 1)} aria-label="Previous year" className="w-9 h-full flex items-center justify-center" style={{ color: 'var(--text2)' }}><ChevronLeft size={16} /></button>
+            <span className="px-2 text-[13px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{viewYear}</span>
+            <button onClick={() => setViewYear(y => y + 1)} aria-label="Next year" className="w-9 h-full flex items-center justify-center" style={{ color: 'var(--text2)' }}><ChevronRight size={16} /></button>
           </div>
-          <button onClick={handleExport} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all"
-            style={{ borderColor: 'var(--border)', color: 'var(--sage)', background: 'var(--sage-bg)' }}>
-            <Download size={13} /> CSV
-          </button>
+          <button onClick={handleExport} className="wl-btn" style={{ height: 38 }}><Download size={14} />CSV</button>
         </div>
       </div>
 
-      {/* Tabs + account scope */}
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex gap-1 p-1 rounded-xl w-fit wl-tabs" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-          {TABS.map(({ key, label, icon: Icon }) => (
-            <button key={key} onClick={() => setTab(key)}
-              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[12px] font-bold transition-all"
-              style={tab === key ? { background: '#fff', color: 'var(--text)', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' } : { color: 'var(--text3)' }}>
-              <Icon size={13} /> {label}
-            </button>
-          ))}
-        </div>
-        <div className="flex gap-1 p-1 rounded-xl w-fit wl-tabs" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-          {([['both', 'NRE + NRO'], ['nre', 'NRE'], ['nro', 'NRO']] as [Scope, string][]).map(([key, label]) => (
-            <button key={key} onClick={() => setScope(key)}
-              className="px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all"
-              style={scope === key ? { background: '#fff', color: 'var(--blue)', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' } : { color: 'var(--text3)' }}>
-              {label}
-            </button>
-          ))}
-        </div>
+        <Segmented label="Report view" value={tab} onChange={setTab}
+          options={TABS.map(({ key, label, icon: Icon }) => ({ value: key, label: <span className="inline-flex items-center gap-1.5"><Icon size={13} />{label}</span> }))} />
+        <Segmented label="Account" value={scope} onChange={setScope}
+          options={[{ value: 'both' as Scope, label: 'NRE + NRO' }, { value: 'nre' as Scope, label: 'NRE' }, { value: 'nro' as Scope, label: 'NRO' }]} />
       </div>
 
-      {/* KPI strip — income / outflow / net / savings (hidden on Yearly, which has its own YoY table) */}
       {tab !== 'yearly' && (
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {[
-          { label: `${viewYear} Income`,  val: money(incomeGrand),  color: 'var(--income)' },
-          { label: `${viewYear} Expenses`, val: money(outflowGrand), color: 'var(--expense)' },
-          { label: 'Net (Income − Exp)',  val: `${netGrand < 0 ? '-' : ''}${money(Math.abs(netGrand))}`, color: netGrand >= 0 ? 'var(--income)' : 'var(--rose)' },
-          { label: 'Savings Rate',        val: `${savingsRate}%`,   color: savingsRate >= 20 ? 'var(--income)' : savingsRate >= 0 ? 'var(--gold)' : 'var(--rose)' },
-        ].map(k => (
-          <div key={k.label} className="wl-card p-3 text-center">
-            <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>{k.label}</div>
-            <div className="text-[16px] font-bold font-mono" style={{ color: k.color }}>{k.val}</div>
-          </div>
-        ))}
-      </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
+          <KpiTile label={`${viewYear} income`} value={money(incomeGrand)} tint={1} icon={Wallet} />
+          <KpiTile label={`${viewYear} expenses`} value={money(outflowGrand)} tint={0} icon={CreditCard} />
+          <KpiTile label="Net (income − expenses)" value={`${netGrand < 0 ? '−' : ''}${money(Math.abs(netGrand))}`} tone={netGrand >= 0 ? 'good' : 'bad'} tint={3} icon={Landmark}
+            delta={netGrand >= 0 ? 'kept this year' : 'spent more than came in'} />
+          <KpiTile label="Savings rate" value={`${savingsRate}%`} tone={savingsRate >= 20 ? 'good' : 'bad'} tint={2} icon={Target} delta="target 20%" />
+        </div>
       )}
 
       {/* ─────────────── MONTHLY TAB ─────────────── */}
       {tab === 'monthly' && (
         <>
           {/* Income vs Expense bar */}
-          <div className="wl-card p-4">
-            <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>Income vs Expense — {viewYear}</div>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={barData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="month" tick={{ fill: 'var(--text3)', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: 'var(--text3)', fontSize: 10 }} axisLine={false} tickLine={false}
+          <div className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
+            <div className="flex justify-between items-center gap-3 mb-3">
+              <h2 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Income vs expenses · {viewYear}</h2>
+              <div className="flex gap-3.5 text-[11.5px]" style={{ color: 'var(--text3)' }}>
+                <span className="flex items-center gap-1.5"><i className="w-[9px] h-[9px] rounded-sm" style={{ background: '#2FB67C' }} />Income</span>
+                <span className="flex items-center gap-1.5"><i className="w-[9px] h-[9px] rounded-sm" style={{ background: '#6A55E8' }} />Expenses</span>
+              </div>
+            </div>
+            <ResponsiveContainer width="100%" height={210}>
+              <BarChart data={barData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }} barGap={3}>
+                <CartesianGrid stroke="var(--track)" vertical={false} />
+                <XAxis dataKey="month" tick={{ fill: '#94A3B8', fontSize: 10.5 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} width={40}
                   tickFormatter={(v: number) => v >= 100000 ? `${(v / 100000).toFixed(0)}L` : v >= 1000 ? `${(v / 1000).toFixed(0)}K` : String(v)} />
-                <Tooltip contentStyle={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 8, fontSize: 11 }}
+                <Tooltip cursor={{ fill: 'rgba(106,85,232,0.06)' }} contentStyle={{ background: '#fff', border: '1px solid var(--line)', borderRadius: 10, fontSize: 12 }}
                   formatter={(v: any, n: any) => [`${sym}${Number(v).toLocaleString('en-IN')}`, n]} />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey="Income" fill="var(--income)" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="Expenses" fill="var(--expense)" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="Income" fill="#2FB67C" radius={[4, 4, 0, 0]} maxBarSize={18} isAnimationActive={false} />
+                <Bar dataKey="Expenses" fill="#6A55E8" radius={[4, 4, 0, 0]} maxBarSize={18} isAnimationActive={false} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -362,67 +342,67 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
               <div className="overflow-x-auto">
                 <table className="w-full text-[11px] border-collapse">
                   <thead>
-                    <tr style={{ background: 'var(--bg2)', borderBottom: '2px solid var(--border)' }}>
-                      <th className="sticky left-0 px-4 py-3 text-left text-[10px] uppercase tracking-wider font-bold min-w-[130px]"
-                        style={{ background: 'var(--bg2)', color: 'var(--text3)', borderRight: '1px solid var(--border)' }}>Category</th>
+                    <tr style={{ background: '#FAFAFE', borderBottom: '2px solid var(--line)' }}>
+                      <th className="sticky left-0 px-4 py-3 text-left text-[10.5px] uppercase tracking-[0.05em] font-semibold min-w-[130px]"
+                        style={{ background: '#FAFAFE', color: 'var(--text3)', borderRight: '1px solid var(--line)' }}>Category</th>
                       {months.map(m => (
-                        <th key={m} className="px-3 py-3 text-right text-[10px] uppercase tracking-wider font-bold min-w-[64px]"
+                        <th key={m} className="px-3 py-3 text-right text-[10.5px] uppercase tracking-[0.05em] font-semibold min-w-[64px]"
                           style={{ color: 'var(--text3)', background: m >= fromMonth && m <= toMonth ? 'var(--rose-bg)' : 'var(--bg2)' }}>
                           {MONTH_NAMES[Number(m.slice(5)) - 1]}
                         </th>
                       ))}
-                      <th className="px-4 py-3 text-right text-[10px] uppercase tracking-wider font-bold"
-                        style={{ color: 'var(--expense)', background: 'var(--bg2)', borderLeft: '2px solid var(--border)' }}>Total</th>
+                      <th className="px-4 py-3 text-right text-[10.5px] uppercase tracking-[0.05em] font-semibold"
+                        style={{ color: 'var(--expense)', background: '#FAFAFE', borderLeft: '2px solid var(--line)' }}>Total</th>
                     </tr>
                   </thead>
                   <tbody>
                     {activeExpense.map((cat, ci) => {
                       const color = colorOf(cat, ci); const total = rowTot(cat)
                       return (
-                        <tr key={cat} style={{ borderBottom: '1px solid var(--border)' }} className="hover:bg-stone-50 transition-colors">
+                        <tr key={cat} style={{ borderBottom: '1px solid var(--line)' }} className="hover:bg-stone-50 transition-colors">
                           <td className="sticky left-0 px-4 py-2.5 font-semibold min-w-[130px]"
-                            style={{ background: ci % 2 === 0 ? '#fff' : 'var(--bg2)', borderRight: '1px solid var(--border)' }}>
+                            style={{ background: ci % 2 === 0 ? '#fff' : 'var(--bg2)', borderRight: '1px solid var(--line)' }}>
                             <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: color }} /><span style={{ color: 'var(--text)' }}>{labelOf(cat)}</span></div>
                           </td>
                           <MonthCells cat={cat} color={color} />
-                          <td className="px-4 py-2.5 text-right font-mono font-bold" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--border)' }}>
+                          <td className="px-4 py-2.5 text-right tabular-nums font-bold" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--line)' }}>
                             <button onClick={() => setDrill({ title: labelOf(cat), subtitle: String(viewYear), items: yearTxns.filter((t: any) => catOf(t) === cat) })} className="hover:underline" style={{ color: 'inherit' }}>{sym}{fmt(total)}</button>
                           </td>
                         </tr>
                       )
                     })}
                     {/* Shown for tracking, NOT summed: own-account moves / money received, then the card bill */}
-                    <tr style={{ background: 'var(--bg2)', borderTop: '2px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
-                      <td className="sticky left-0 px-4 py-1.5 text-[9px] uppercase tracking-wider font-bold" style={{ background: 'var(--bg2)', color: 'var(--text3)', borderRight: '1px solid var(--border)' }}>Not in total ↓</td>
+                    <tr style={{ background: '#FAFAFE', borderTop: '2px solid var(--line)', borderBottom: '1px solid var(--line)' }}>
+                      <td className="sticky left-0 px-4 py-1.5 text-[10px] uppercase tracking-[0.05em] font-semibold" style={{ background: '#FAFAFE', color: 'var(--text3)', borderRight: '1px solid var(--line)' }}>Not in total ↓</td>
                       <td colSpan={months.length + 1} />
                     </tr>
                     {activeExcluded.map((cat, ci) => {
                       const color = colorOf(cat, ci)
                       return (
-                        <tr key={cat} style={{ borderBottom: '1px solid var(--border)' }} className="hover:bg-stone-50 transition-colors">
-                          <td className="sticky left-0 px-4 py-2.5 font-medium min-w-[130px]" style={{ background: '#fff', borderRight: '1px solid var(--border)' }}>
+                        <tr key={cat} style={{ borderBottom: '1px solid var(--line)' }} className="hover:bg-stone-50 transition-colors">
+                          <td className="sticky left-0 px-4 py-2.5 font-medium min-w-[130px]" style={{ background: '#fff', borderRight: '1px solid var(--line)' }}>
                             <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-sm flex-shrink-0 opacity-50" style={{ background: color }} /><span style={{ color: 'var(--text3)' }}>{labelOf(cat)}</span></div>
                           </td>
                           <MonthCells cat={cat} color={color} muted />
-                          <td className="px-4 py-2.5 text-right font-mono" style={{ color: 'var(--text3)', borderLeft: '2px solid var(--border)' }}>
+                          <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: 'var(--text3)', borderLeft: '2px solid var(--line)' }}>
                             <button onClick={() => setDrill({ title: labelOf(cat), subtitle: String(viewYear), items: yearTxns.filter((t: any) => catOf(t) === cat) })} className="hover:underline" style={{ color: 'inherit' }}>{sym}{fmt(rowTot(cat))}</button>
                           </td>
                         </tr>
                       )
                     })}
                     <tr style={{ background: `${CC_COLOR}08` }}>
-                      <td className="sticky left-0 px-4 py-2.5 font-semibold min-w-[130px]" style={{ background: '#FAF5FF', borderRight: '1px solid var(--border)' }}>
+                      <td className="sticky left-0 px-4 py-2.5 font-semibold min-w-[130px]" style={{ background: '#FAF5FF', borderRight: '1px solid var(--line)' }}>
                         <div className="flex items-center gap-2"><CreditCard size={12} style={{ color: CC_COLOR }} className="flex-shrink-0" /><span style={{ color: CC_COLOR }}>Credit Card Bill</span></div>
                       </td>
                       {months.map(m => { const val = pivot[CC_BILL]?.[m] ?? 0
                         return (
-                          <td key={m} className="px-3 py-2.5 text-right font-mono" style={{ color: val > 0 ? CC_COLOR : 'var(--text3)', fontWeight: val > 0 ? 600 : 400 }}>
+                          <td key={m} className="px-3 py-2.5 text-right tabular-nums" style={{ color: val > 0 ? CC_COLOR : 'var(--text3)', fontWeight: val > 0 ? 600 : 400 }}>
                             {val > 0
                               ? <button onClick={() => setDrill({ title: 'Credit Card Bill', subtitle: mLabel(m), items: yearTxns.filter((t: any) => catOf(t) === CC_BILL && t.txn_date?.slice(0, 7) === m) })} className="hover:underline" style={{ color: 'inherit' }}>{sym}{fmt(val)}</button>
                               : '—'}
                           </td>
                         ) })}
-                      <td className="px-4 py-2.5 text-right font-mono font-bold" style={{ color: CC_COLOR, borderLeft: '2px solid var(--border)' }}>
+                      <td className="px-4 py-2.5 text-right tabular-nums font-bold" style={{ color: CC_COLOR, borderLeft: '2px solid var(--line)' }}>
                         {ccBillGrand > 0
                           ? <button onClick={() => setDrill({ title: 'Credit Card Bill', subtitle: String(viewYear), items: yearTxns.filter((t: any) => catOf(t) === CC_BILL) })} className="hover:underline" style={{ color: 'inherit' }}>{sym}{fmt(ccBillGrand)}</button>
                           : '—'}
@@ -431,29 +411,29 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
                   </tbody>
                   <tfoot>
                     {/* Total monthly expenses — spend categories only (card bill & moves excluded) */}
-                    <tr style={{ borderTop: '2px solid var(--border)', background: 'var(--bg2)' }}>
-                      <td className="sticky left-0 px-4 py-2.5 font-bold text-[11px] uppercase tracking-wider" style={{ background: 'var(--bg2)', color: 'var(--expense)', borderRight: '1px solid var(--border)' }}>Total Monthly Expenses</td>
-                      {months.map(m => (<td key={m} className="px-3 py-2.5 text-right font-mono font-bold" style={{ color: 'var(--expense)', background: m >= fromMonth && m <= toMonth ? 'var(--rose-bg)' : 'var(--bg2)' }}>{outflowCol(m) > 0 ? `${sym}${fmt(outflowCol(m))}` : '—'}</td>))}
-                      <td className="px-4 py-2.5 text-right font-mono font-bold text-[13px]" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--border)' }}>{money(outflowGrand)}</td>
+                    <tr style={{ borderTop: '2px solid var(--line)', background: '#FAFAFE' }}>
+                      <td className="sticky left-0 px-4 py-2.5 font-bold text-[11px] uppercase tracking-wider" style={{ background: '#FAFAFE', color: 'var(--expense)', borderRight: '1px solid var(--line)' }}>Total Monthly Expenses</td>
+                      {months.map(m => (<td key={m} className="px-3 py-2.5 text-right tabular-nums font-bold" style={{ color: 'var(--expense)', background: m >= fromMonth && m <= toMonth ? 'var(--rose-bg)' : 'var(--bg2)' }}>{outflowCol(m) > 0 ? `${sym}${fmt(outflowCol(m))}` : '—'}</td>))}
+                      <td className="px-4 py-2.5 text-right tabular-nums font-bold text-[13px]" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--line)' }}>{money(outflowGrand)}</td>
                     </tr>
                     {/* Income */}
                     <tr style={{ background: 'var(--income-bg)' }}>
-                      <td className="sticky left-0 px-4 py-2.5 font-bold text-[11px] uppercase tracking-wider" style={{ background: 'var(--income-bg)', color: 'var(--income)', borderRight: '1px solid var(--border)' }}>Income</td>
-                      {months.map(m => (<td key={m} className="px-3 py-2.5 text-right font-mono font-bold" style={{ color: 'var(--income)' }}>{incomeCol(m) > 0 ? `${sym}${fmt(incomeCol(m))}` : '—'}</td>))}
-                      <td className="px-4 py-2.5 text-right font-mono font-bold text-[13px]" style={{ color: 'var(--income)', borderLeft: '2px solid var(--border)' }}>{money(incomeGrand)}</td>
+                      <td className="sticky left-0 px-4 py-2.5 font-bold text-[11px] uppercase tracking-wider" style={{ background: 'var(--income-bg)', color: 'var(--income)', borderRight: '1px solid var(--line)' }}>Income</td>
+                      {months.map(m => (<td key={m} className="px-3 py-2.5 text-right tabular-nums font-bold" style={{ color: 'var(--income)' }}>{incomeCol(m) > 0 ? `${sym}${fmt(incomeCol(m))}` : '—'}</td>))}
+                      <td className="px-4 py-2.5 text-right tabular-nums font-bold text-[13px]" style={{ color: 'var(--income)', borderLeft: '2px solid var(--line)' }}>{money(incomeGrand)}</td>
                     </tr>
                     {/* Net */}
-                    <tr style={{ background: 'var(--bg2)', borderTop: '1px solid var(--border)' }}>
-                      <td className="sticky left-0 px-4 py-3 font-black text-[11px] uppercase tracking-wider" style={{ background: 'var(--bg2)', color: 'var(--text)', borderRight: '1px solid var(--border)' }}>Net (Inc − Exp)</td>
+                    <tr style={{ background: '#FAFAFE', borderTop: '1px solid var(--line)' }}>
+                      <td className="sticky left-0 px-4 py-3 font-black text-[11px] uppercase tracking-wider" style={{ background: '#FAFAFE', color: 'var(--text)', borderRight: '1px solid var(--line)' }}>Net (Inc − Exp)</td>
                       {months.map(m => { const n = netCol(m); const has = incomeCol(m) > 0 || outflowCol(m) > 0
-                        return (<td key={m} className="px-3 py-3 text-right font-mono font-black" style={{ color: !has ? 'var(--text3)' : n >= 0 ? 'var(--income)' : 'var(--rose)' }}>{has ? `${n < 0 ? '-' : ''}${sym}${fmt(Math.abs(n))}` : '—'}</td>) })}
-                      <td className="px-4 py-3 text-right font-mono font-black text-[13px]" style={{ color: netGrand >= 0 ? 'var(--income)' : 'var(--rose)', borderLeft: '2px solid var(--border)' }}>{netGrand < 0 ? '-' : ''}{money(Math.abs(netGrand))}</td>
+                        return (<td key={m} className="px-3 py-3 text-right tabular-nums font-black" style={{ color: !has ? 'var(--text3)' : n >= 0 ? 'var(--income)' : 'var(--rose)' }}>{has ? `${n < 0 ? '-' : ''}${sym}${fmt(Math.abs(n))}` : '—'}</td>) })}
+                      <td className="px-4 py-3 text-right tabular-nums font-black text-[13px]" style={{ color: netGrand >= 0 ? 'var(--income)' : 'var(--rose)', borderLeft: '2px solid var(--line)' }}>{netGrand < 0 ? '-' : ''}{money(Math.abs(netGrand))}</td>
                     </tr>
                   </tfoot>
                 </table>
               </div>
             )}
-            <div className="px-4 py-2 text-[10px]" style={{ color: 'var(--text3)', borderTop: '1px solid var(--border)' }}>
+            <div className="px-4 py-2 text-[10px]" style={{ color: 'var(--text3)', borderTop: '1px solid var(--line)' }}>
               Total Monthly Expenses = every spend category, incl. money sent (Money Transfer, Transfer to India, Family), Investment &amp; EMI.
               The credit card bill only settles card spend already counted above, and moves between your own accounts / money received are the same money — so those are shown but not summed.
             </div>
@@ -462,24 +442,24 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
           {/* Spend by account / card */}
           {accountRows.length > 0 && (
             <div className="wl-card overflow-hidden">
-              <div className="px-4 py-3" style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
+              <div className="px-4 py-3" style={{ background: '#FAFAFE', borderBottom: '1px solid var(--line)' }}>
                 <div className="text-[12px] font-bold" style={{ color: 'var(--text)' }}>Spend by Account / Card — {viewYear}</div>
                 <div className="text-[10px] mt-0.5" style={{ color: 'var(--text3)' }}>Where your Total Monthly Expenses were paid from · click a cell to see the transactions</div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-[11px] border-collapse">
                   <thead>
-                    <tr style={{ background: 'var(--bg2)', borderBottom: '2px solid var(--border)' }}>
-                      <th className="sticky left-0 px-4 py-3 text-left text-[10px] uppercase tracking-wider font-bold min-w-[160px]"
-                        style={{ background: 'var(--bg2)', color: 'var(--text3)', borderRight: '1px solid var(--border)' }}>Account / Card</th>
+                    <tr style={{ background: '#FAFAFE', borderBottom: '2px solid var(--line)' }}>
+                      <th className="sticky left-0 px-4 py-3 text-left text-[10.5px] uppercase tracking-[0.05em] font-semibold min-w-[160px]"
+                        style={{ background: '#FAFAFE', color: 'var(--text3)', borderRight: '1px solid var(--line)' }}>Account / Card</th>
                       {months.map(m => (
-                        <th key={m} className="px-3 py-3 text-right text-[10px] uppercase tracking-wider font-bold min-w-[64px]"
+                        <th key={m} className="px-3 py-3 text-right text-[10.5px] uppercase tracking-[0.05em] font-semibold min-w-[64px]"
                           style={{ color: 'var(--text3)', background: m >= fromMonth && m <= toMonth ? 'var(--rose-bg)' : 'var(--bg2)' }}>
                           {MONTH_NAMES[Number(m.slice(5)) - 1]}
                         </th>
                       ))}
-                      <th className="px-4 py-3 text-right text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--expense)', background: 'var(--bg2)', borderLeft: '2px solid var(--border)' }}>Total</th>
-                      <th className="px-3 py-3 text-right text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--text3)', background: 'var(--bg2)' }}>Share</th>
+                      <th className="px-4 py-3 text-right text-[10.5px] uppercase tracking-[0.05em] font-semibold" style={{ color: 'var(--expense)', background: '#FAFAFE', borderLeft: '2px solid var(--line)' }}>Total</th>
+                      <th className="px-3 py-3 text-right text-[10.5px] uppercase tracking-[0.05em] font-semibold" style={{ color: 'var(--text3)', background: '#FAFAFE' }}>Share</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -489,28 +469,28 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
                       const acctItems = (m?: string) => yearTxns.filter((t: any) => acctKey(t) === r.key
                         && classify(catOf(t)) === 'expense' && (!m || t.txn_date?.slice(0, 7) === m))
                       return (
-                        <tr key={r.key} style={{ borderBottom: '1px solid var(--border)' }} className="hover:bg-stone-50 transition-colors">
-                          <td className="sticky left-0 px-4 py-2 min-w-[160px]" style={{ background: ri % 2 === 0 ? '#fff' : 'var(--bg2)', borderRight: '1px solid var(--border)' }}>
+                        <tr key={r.key} style={{ borderBottom: '1px solid var(--line)' }} className="hover:bg-stone-50 transition-colors">
+                          <td className="sticky left-0 px-4 py-2 min-w-[160px]" style={{ background: ri % 2 === 0 ? '#fff' : 'var(--bg2)', borderRight: '1px solid var(--line)' }}>
                             <div className="flex items-center gap-2">
                               <Icon size={13} className="flex-shrink-0" style={{ color: iconColor }} />
                               <div className="min-w-0">
                                 <div className="font-semibold truncate" style={{ color: r.type === 'none' ? 'var(--text3)' : 'var(--text)' }}>{r.name}</div>
-                                {r.sub && <div className="text-[9px] truncate" style={{ color: 'var(--text3)' }}>{r.sub}</div>}
+                                {r.sub && <div className="text-[10.5px] truncate" style={{ color: 'var(--text3)' }}>{r.sub}</div>}
                               </div>
                             </div>
                           </td>
                           {months.map(m => { const val = r.byMonth[m] ?? 0
                             return (
-                              <td key={m} className="px-3 py-2 text-right font-mono" style={{ color: val > 0 ? 'var(--text)' : 'var(--text3)', fontWeight: val > 0 ? 600 : 400 }}>
+                              <td key={m} className="px-3 py-2 text-right tabular-nums" style={{ color: val > 0 ? 'var(--text)' : 'var(--text3)', fontWeight: val > 0 ? 600 : 400 }}>
                                 {val > 0
                                   ? <button onClick={() => setDrill({ title: r.name, subtitle: mLabel(m), items: acctItems(m) })} className="hover:underline" style={{ color: 'inherit' }}>{sym}{fmt(val)}</button>
                                   : '—'}
                               </td>
                             ) })}
-                          <td className="px-4 py-2 text-right font-mono font-bold" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--border)' }}>
+                          <td className="px-4 py-2 text-right tabular-nums font-bold" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--line)' }}>
                             <button onClick={() => setDrill({ title: r.name, subtitle: String(viewYear), items: acctItems() })} className="hover:underline" style={{ color: 'inherit' }}>{sym}{fmt(r.total)}</button>
                           </td>
-                          <td className="px-3 py-2 text-right font-mono" style={{ color: 'var(--text3)' }}>
+                          <td className="px-3 py-2 text-right tabular-nums" style={{ color: 'var(--text3)' }}>
                             {outflowGrand > 0 ? `${Math.round(r.total / outflowGrand * 100)}%` : '—'}
                           </td>
                         </tr>
@@ -518,16 +498,16 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
                     })}
                   </tbody>
                   <tfoot>
-                    <tr style={{ borderTop: '2px solid var(--border)', background: 'var(--bg2)' }}>
-                      <td className="sticky left-0 px-4 py-2.5 font-bold text-[11px] uppercase tracking-wider" style={{ background: 'var(--bg2)', color: 'var(--expense)', borderRight: '1px solid var(--border)' }}>Total</td>
-                      {months.map(m => (<td key={m} className="px-3 py-2.5 text-right font-mono font-bold" style={{ color: 'var(--expense)' }}>{outflowCol(m) > 0 ? `${sym}${fmt(outflowCol(m))}` : '—'}</td>))}
-                      <td className="px-4 py-2.5 text-right font-mono font-bold text-[13px]" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--border)' }}>{money(outflowGrand)}</td>
+                    <tr style={{ borderTop: '2px solid var(--line)', background: '#FAFAFE' }}>
+                      <td className="sticky left-0 px-4 py-2.5 font-bold text-[11px] uppercase tracking-wider" style={{ background: '#FAFAFE', color: 'var(--expense)', borderRight: '1px solid var(--line)' }}>Total</td>
+                      {months.map(m => (<td key={m} className="px-3 py-2.5 text-right tabular-nums font-bold" style={{ color: 'var(--expense)' }}>{outflowCol(m) > 0 ? `${sym}${fmt(outflowCol(m))}` : '—'}</td>))}
+                      <td className="px-4 py-2.5 text-right tabular-nums font-bold text-[13px]" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--line)' }}>{money(outflowGrand)}</td>
                       <td />
                     </tr>
                   </tfoot>
                 </table>
               </div>
-              <div className="px-4 py-2 text-[10px]" style={{ color: 'var(--text3)', borderTop: '1px solid var(--border)' }}>
+              <div className="px-4 py-2 text-[10px]" style={{ color: 'var(--text3)', borderTop: '1px solid var(--line)' }}>
                 Card bill payments aren’t counted against the bank account they were paid from — that spend is already on the card.
                 Link transactions to an account so they don’t land in “No account linked”.
               </div>
@@ -536,8 +516,8 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
 
           {/* Category share */}
           {activeExpense.length > 0 && (
-            <div className="wl-card p-4">
-              <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>Where it goes — {viewYear}</div>
+            <div className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
+              <div className="text-[14px] md:text-[15px] font-semibold mb-3" style={{ color: 'var(--text)' }}>Where it goes — {viewYear}</div>
               <div className="space-y-2">
                 {activeExpense.map((cat, ci) => {
                   const pct = outflowGrand > 0 ? (rowTot(cat) / outflowGrand) * 100 : 0
@@ -545,9 +525,9 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
                   return (
                     <div key={cat} className="flex items-center gap-3">
                       <div className="text-[11px] font-medium w-28 flex-shrink-0 truncate" style={{ color: 'var(--text2, var(--text))' }}>{labelOf(cat)}</div>
-                      <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}><div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} /></div>
-                      <div className="text-[11px] font-mono font-semibold w-12 text-right" style={{ color }}>{pct.toFixed(1)}%</div>
-                      <div className="text-[11px] font-mono w-20 text-right" style={{ color: 'var(--text)' }}>{money(rowTot(cat))}</div>
+                      <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: '#FAFAFE' }}><div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} /></div>
+                      <div className="text-[11px] tabular-nums font-semibold w-12 text-right" style={{ color }}>{pct.toFixed(1)}%</div>
+                      <div className="text-[11px] tabular-nums w-20 text-right" style={{ color: 'var(--text)' }}>{money(rowTot(cat))}</div>
                     </div>
                   )
                 })}
@@ -566,59 +546,59 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
             <div className="overflow-x-auto">
               <table className="w-full text-[12px] border-collapse">
                 <thead>
-                  <tr style={{ background: 'var(--bg2)', borderBottom: '2px solid var(--border)' }}>
-                    <th className="sticky left-0 px-4 py-3 text-left text-[10px] uppercase tracking-wider font-bold min-w-[150px]"
-                      style={{ background: 'var(--bg2)', color: 'var(--text3)', borderRight: '1px solid var(--border)' }}>Category</th>
+                  <tr style={{ background: '#FAFAFE', borderBottom: '2px solid var(--line)' }}>
+                    <th className="sticky left-0 px-4 py-3 text-left text-[10.5px] uppercase tracking-[0.05em] font-semibold min-w-[150px]"
+                      style={{ background: '#FAFAFE', color: 'var(--text3)', borderRight: '1px solid var(--line)' }}>Category</th>
                     {yearsSorted.map(y => (
                       <th key={y} className="px-4 py-3 text-right text-[11px] font-bold min-w-[90px]"
                         style={{ color: y === String(viewYear) ? 'var(--sage)' : 'var(--text3)', background: y === String(viewYear) ? 'var(--sage-bg)' : 'var(--bg2)' }}>
                         <button onClick={() => setViewYear(parseInt(y))} className="hover:underline">{y}</button>
                       </th>
                     ))}
-                    <th className="px-4 py-3 text-right text-[10px] uppercase tracking-wider font-bold" style={{ color: 'var(--expense)', background: 'var(--bg2)', borderLeft: '2px solid var(--border)' }}>Total</th>
+                    <th className="px-4 py-3 text-right text-[10.5px] uppercase tracking-[0.05em] font-semibold" style={{ color: 'var(--expense)', background: '#FAFAFE', borderLeft: '2px solid var(--line)' }}>Total</th>
                   </tr>
                 </thead>
                 <tbody>
                   {catYear.list.map((cat, ci) => {
                     const rowTotal = yearsSorted.reduce((a, y) => a + (catYear.matrix[cat]?.[y] ?? 0), 0)
                     return (
-                      <tr key={cat} style={{ borderBottom: '1px solid var(--border)' }} className="hover:bg-stone-50 transition-colors">
-                        <td className="sticky left-0 px-4 py-2.5 font-semibold" style={{ background: ci % 2 === 0 ? '#fff' : 'var(--bg2)', borderRight: '1px solid var(--border)' }}>
+                      <tr key={cat} style={{ borderBottom: '1px solid var(--line)' }} className="hover:bg-stone-50 transition-colors">
+                        <td className="sticky left-0 px-4 py-2.5 font-semibold" style={{ background: ci % 2 === 0 ? '#fff' : 'var(--bg2)', borderRight: '1px solid var(--line)' }}>
                           <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: colorOf(cat, ci) }} /><span style={{ color: 'var(--text)' }}>{labelOf(cat)}</span></div>
                         </td>
                         {yearsSorted.map(y => { const v = catYear.matrix[cat]?.[y] ?? 0
                           return (
-                            <td key={y} className="px-4 py-2.5 text-right font-mono" style={{ color: v > 0 ? 'var(--text)' : 'var(--text3)', fontWeight: v > 0 ? 600 : 400, background: y === String(viewYear) ? 'rgba(0,0,0,0.02)' : 'transparent' }}>
+                            <td key={y} className="px-4 py-2.5 text-right tabular-nums" style={{ color: v > 0 ? 'var(--text)' : 'var(--text3)', fontWeight: v > 0 ? 600 : 400, background: y === String(viewYear) ? 'rgba(0,0,0,0.02)' : 'transparent' }}>
                               {v > 0
                                 ? <button onClick={() => setDrill({ title: labelOf(cat), subtitle: y, items: transactions.filter((t: any) => catOf(t) === cat && t.txn_date?.slice(0, 4) === y && inView(t.currency) && inScope(t)) })} className="hover:underline" style={{ color: 'inherit' }}>{sym}{fmt(v)}</button>
                                 : '—'}
                             </td>
                           )
                         })}
-                        <td className="px-4 py-2.5 text-right font-mono font-bold" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--border)' }}>{money(rowTotal)}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums font-bold" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--line)' }}>{money(rowTotal)}</td>
                       </tr>
                     )
                   })}
                 </tbody>
                 <tfoot>
                   {/* Total Outflow */}
-                  <tr style={{ borderTop: '2px solid var(--border)', background: 'var(--bg2)' }}>
-                    <td className="sticky left-0 px-4 py-2.5 font-bold text-[11px] uppercase tracking-wider" style={{ background: 'var(--bg2)', color: 'var(--expense)', borderRight: '1px solid var(--border)' }}>Total Expenses</td>
-                    {yearsSorted.map(y => (<td key={y} className="px-4 py-2.5 text-right font-mono font-bold" style={{ color: 'var(--expense)' }}>{yearAgg[y].outflow > 0 ? `${sym}${fmt(yearAgg[y].outflow)}` : '—'}</td>))}
-                    <td className="px-4 py-2.5 text-right font-mono font-bold text-[13px]" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--border)' }}>{money(yearsSorted.reduce((a, y) => a + yearAgg[y].outflow, 0))}</td>
+                  <tr style={{ borderTop: '2px solid var(--line)', background: '#FAFAFE' }}>
+                    <td className="sticky left-0 px-4 py-2.5 font-bold text-[11px] uppercase tracking-wider" style={{ background: '#FAFAFE', color: 'var(--expense)', borderRight: '1px solid var(--line)' }}>Total Expenses</td>
+                    {yearsSorted.map(y => (<td key={y} className="px-4 py-2.5 text-right tabular-nums font-bold" style={{ color: 'var(--expense)' }}>{yearAgg[y].outflow > 0 ? `${sym}${fmt(yearAgg[y].outflow)}` : '—'}</td>))}
+                    <td className="px-4 py-2.5 text-right tabular-nums font-bold text-[13px]" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--line)' }}>{money(yearsSorted.reduce((a, y) => a + yearAgg[y].outflow, 0))}</td>
                   </tr>
                   {/* Income */}
                   <tr style={{ background: 'var(--income-bg)' }}>
-                    <td className="sticky left-0 px-4 py-2.5 font-bold text-[11px] uppercase tracking-wider" style={{ background: 'var(--income-bg)', color: 'var(--income)', borderRight: '1px solid var(--border)' }}>Income</td>
-                    {yearsSorted.map(y => (<td key={y} className="px-4 py-2.5 text-right font-mono font-bold" style={{ color: 'var(--income)' }}>{(catYear.inc[y] ?? 0) > 0 ? `${sym}${fmt(catYear.inc[y])}` : '—'}</td>))}
-                    <td className="px-4 py-2.5 text-right font-mono font-bold text-[13px]" style={{ color: 'var(--income)', borderLeft: '2px solid var(--border)' }}>{money(yearsSorted.reduce((a, y) => a + (catYear.inc[y] ?? 0), 0))}</td>
+                    <td className="sticky left-0 px-4 py-2.5 font-bold text-[11px] uppercase tracking-wider" style={{ background: 'var(--income-bg)', color: 'var(--income)', borderRight: '1px solid var(--line)' }}>Income</td>
+                    {yearsSorted.map(y => (<td key={y} className="px-4 py-2.5 text-right tabular-nums font-bold" style={{ color: 'var(--income)' }}>{(catYear.inc[y] ?? 0) > 0 ? `${sym}${fmt(catYear.inc[y])}` : '—'}</td>))}
+                    <td className="px-4 py-2.5 text-right tabular-nums font-bold text-[13px]" style={{ color: 'var(--income)', borderLeft: '2px solid var(--line)' }}>{money(yearsSorted.reduce((a, y) => a + (catYear.inc[y] ?? 0), 0))}</td>
                   </tr>
                   {/* Net */}
-                  <tr style={{ background: 'var(--bg2)', borderTop: '1px solid var(--border)' }}>
-                    <td className="sticky left-0 px-4 py-3 font-black text-[11px] uppercase tracking-wider" style={{ background: 'var(--bg2)', color: 'var(--text)', borderRight: '1px solid var(--border)' }}>Net (Inc − Exp)</td>
+                  <tr style={{ background: '#FAFAFE', borderTop: '1px solid var(--line)' }}>
+                    <td className="sticky left-0 px-4 py-3 font-black text-[11px] uppercase tracking-wider" style={{ background: '#FAFAFE', color: 'var(--text)', borderRight: '1px solid var(--line)' }}>Net (Inc − Exp)</td>
                     {yearsSorted.map(y => { const n = (catYear.inc[y] ?? 0) - yearAgg[y].outflow
-                      return (<td key={y} className="px-4 py-3 text-right font-mono font-black" style={{ color: n >= 0 ? 'var(--income)' : 'var(--rose)' }}>{n < 0 ? '-' : ''}{sym}{fmt(Math.abs(n))}</td>) })}
-                    <td className="px-4 py-3 text-right font-mono font-black text-[13px]" style={{ borderLeft: '2px solid var(--border)', color: (yearsSorted.reduce((a, y) => a + ((catYear.inc[y] ?? 0) - yearAgg[y].outflow), 0)) >= 0 ? 'var(--income)' : 'var(--rose)' }}>
+                      return (<td key={y} className="px-4 py-3 text-right tabular-nums font-black" style={{ color: n >= 0 ? 'var(--income)' : 'var(--rose)' }}>{n < 0 ? '-' : ''}{sym}{fmt(Math.abs(n))}</td>) })}
+                    <td className="px-4 py-3 text-right tabular-nums font-black text-[13px]" style={{ borderLeft: '2px solid var(--line)', color: (yearsSorted.reduce((a, y) => a + ((catYear.inc[y] ?? 0) - yearAgg[y].outflow), 0)) >= 0 ? 'var(--income)' : 'var(--rose)' }}>
                       {(() => { const t = yearsSorted.reduce((a, y) => a + ((catYear.inc[y] ?? 0) - yearAgg[y].outflow), 0); return `${t < 0 ? '-' : ''}${money(Math.abs(t))}` })()}
                     </td>
                   </tr>
@@ -626,7 +606,7 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
               </table>
             </div>
           )}
-          <div className="px-4 py-2 text-[10px]" style={{ color: 'var(--text3)', borderTop: '1px solid var(--border)' }}>
+          <div className="px-4 py-2 text-[10px]" style={{ color: 'var(--text3)', borderTop: '1px solid var(--line)' }}>
             Actual spend per category each year · click a cell to see the transactions · click a year header to open its monthly view.
           </div>
         </div>
@@ -643,21 +623,21 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
             <div className="overflow-x-auto">
               <table className="w-full text-[11px] border-collapse">
                 <thead>
-                  <tr style={{ background: 'var(--bg2)', borderBottom: '2px solid var(--border)' }}>
-                    <th className="sticky left-0 px-4 py-3 text-left text-[10px] uppercase tracking-wider font-bold min-w-[130px]" style={{ background: 'var(--bg2)', color: 'var(--text3)', borderRight: '1px solid var(--border)' }}>Category</th>
-                    <th className="px-3 py-3 text-right text-[10px] uppercase tracking-wider font-bold" style={{ background: 'var(--bg2)', color: 'var(--sage)', borderRight: '1px solid var(--border)' }}>Budget /mo</th>
-                    {months.map(m => (<th key={m} className="px-2 py-3 text-center text-[10px] uppercase tracking-wider font-bold min-w-[60px]" style={{ color: 'var(--text3)', background: m >= fromMonth && m <= toMonth ? 'var(--sage-bg)' : 'var(--bg2)' }}>{MONTH_NAMES[Number(m.slice(5)) - 1]}</th>))}
+                  <tr style={{ background: '#FAFAFE', borderBottom: '2px solid var(--line)' }}>
+                    <th className="sticky left-0 px-4 py-3 text-left text-[10.5px] uppercase tracking-[0.05em] font-semibold min-w-[130px]" style={{ background: '#FAFAFE', color: 'var(--text3)', borderRight: '1px solid var(--line)' }}>Category</th>
+                    <th className="px-3 py-3 text-right text-[10.5px] uppercase tracking-[0.05em] font-semibold" style={{ background: '#FAFAFE', color: 'var(--sage)', borderRight: '1px solid var(--line)' }}>Budget /mo</th>
+                    {months.map(m => (<th key={m} className="px-2 py-3 text-center text-[10.5px] uppercase tracking-[0.05em] font-semibold min-w-[60px]" style={{ color: 'var(--text3)', background: m >= fromMonth && m <= toMonth ? 'var(--sage-bg)' : 'var(--bg2)' }}>{MONTH_NAMES[Number(m.slice(5)) - 1]}</th>))}
                   </tr>
                 </thead>
                 <tbody>
                   {budgetCats.map((cat, ci) => {
                     const cap = budgetCapMap[cat]
                     return (
-                      <tr key={cat} style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td className="sticky left-0 px-4 py-2.5 font-semibold" style={{ background: ci % 2 === 0 ? '#fff' : 'var(--bg2)', borderRight: '1px solid var(--border)' }}>
+                      <tr key={cat} style={{ borderBottom: '1px solid var(--line)' }}>
+                        <td className="sticky left-0 px-4 py-2.5 font-semibold" style={{ background: ci % 2 === 0 ? '#fff' : 'var(--bg2)', borderRight: '1px solid var(--line)' }}>
                           <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: colorOf(cat, ci) }} /><span style={{ color: 'var(--text)' }}>{labelOf(cat)}</span></div>
                         </td>
-                        <td className="px-3 py-2.5 text-right font-mono font-bold" style={{ color: 'var(--text)', borderRight: '1px solid var(--border)' }}>{money(cap)}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums font-bold" style={{ color: 'var(--text)', borderRight: '1px solid var(--line)' }}>{money(cap)}</td>
                         {months.map(m => {
                           const spent = pivot[cat]?.[m] ?? 0
                           const pct = cap > 0 ? Math.round(spent / cap * 100) : 0
@@ -666,7 +646,7 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
                           return (
                             <td key={m} className="px-2 py-2.5 text-center" style={{ background: bg }}>
                               {spent > 0
-                                ? <button onClick={() => setDrill({ title: `${cat} · budget ${money(cap)}`, subtitle: mLabel(m), items: yearTxns.filter((t: any) => catOf(t) === cat && t.txn_date?.slice(0, 7) === m) })} className="font-mono" style={{ color: fg }}>
+                                ? <button onClick={() => setDrill({ title: `${cat} · budget ${money(cap)}`, subtitle: mLabel(m), items: yearTxns.filter((t: any) => catOf(t) === cat && t.txn_date?.slice(0, 7) === m) })} className="tabular-nums" style={{ color: fg }}>
                                     <div className="font-bold text-[11px]">{pct}%</div>
                                     <div className="text-[8px] opacity-80">{sym}{fmt(spent)}</div>
                                   </button>
@@ -681,7 +661,7 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
               </table>
             </div>
           )}
-          <div className="px-4 py-2.5 border-t flex flex-wrap gap-4 text-[10px]" style={{ borderColor: 'var(--border)', color: 'var(--text3)' }}>
+          <div className="px-4 py-2.5 border-t flex flex-wrap gap-4 text-[10px]" style={{ borderColor: 'var(--line)', color: 'var(--text3)' }}>
             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded inline-block" style={{ background: '#DCFCE7' }} /> Under 75%</span>
             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded inline-block" style={{ background: '#FEF3C7' }} /> 75–99% (near limit)</span>
             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded inline-block" style={{ background: '#FEE2E2' }} /> ≥100% over budget</span>

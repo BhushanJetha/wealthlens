@@ -13,7 +13,8 @@ import CreditCardUploadModal from '@/components/forms/CreditCardUploadModal'
 import MessageParseModal from '@/components/forms/MessageParseModal'
 import ManageCategoriesSheet from '@/components/forms/ManageCategoriesSheet'
 import { useCategoryStore } from '@/store/categoryStore'
-import { colorOf } from '@/lib/categories'
+import { colorOf as catColorOf } from '@/lib/categories'
+import { isSpending, spendGroup, catOf, labelOf } from '@/lib/money'
 import { toast } from '@/components/ui/toaster'
 
 import { Upload, Image, Mic, PenLine, BarChart2, X, CreditCard, Pencil, Trash2, ChevronDown, Plus, Copy, Wallet, Banknote, MessageSquareText, Landmark, TrendingUp, CalendarDays, Settings2 } from 'lucide-react'
@@ -115,7 +116,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
     return transactions.filter(t => {
       if (view === 'uae'   && t.currency !== 'AED') return false
       if (view === 'india' && t.currency !== 'INR') return false
-      if (cat !== 'All'   && t.category !== cat)    return false
+      if (cat !== 'All'   && t.category !== cat && catOf(t) !== cat) return false
       if (accFilter !== 'All' && t.account_id !== accFilter) return false
       if (search && !t.merchant?.toLowerCase().includes(search.toLowerCase())) return false
       return true
@@ -123,11 +124,14 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
   }, [transactions, view, cat, accFilter, search])
 
   const filteredForMonth    = useMemo(() => filtered.filter(t => inRange(t.txn_date)), [filtered, fromMonth, toMonth])
+  // Same split as Spending analysis and Reports (lib/money): spending = living
+  // costs + money sent; loan repayments and investments have their own tiles;
+  // card bills settle spend already counted
   const expensesForMonth        = filteredForMonth.filter(t => t.txn_type === 'expense')
-  const loansForMonth           = filteredForMonth.filter(t => t.txn_type === 'loan')
-  const ccPaymentsForMonth      = expensesForMonth.filter(t => t.category === 'Credit Card Payment')
-  const realExpensesForMonth    = expensesForMonth.filter(t => t.category !== 'Credit Card Payment' && t.category !== 'Investment')
-  const investmentsForMonth     = expensesForMonth.filter(t => t.category === 'Investment')
+  const loansForMonth           = filteredForMonth.filter(t => spendGroup(t) === 'loans')
+  const ccPaymentsForMonth      = filteredForMonth.filter(t => t.category === 'Credit Card Payment')
+  const realExpensesForMonth    = filteredForMonth.filter(isSpending)
+  const investmentsForMonth     = filteredForMonth.filter(t => spendGroup(t) === 'invest')
 
   const rangeExpenses     = realExpensesForMonth.reduce((a, t) => a + toDisplay(Number(t.amount), t.currency), 0)
   const rangeCCPayments   = ccPaymentsForMonth.reduce((a, t) => a + toDisplay(Number(t.amount), t.currency), 0)
@@ -140,7 +144,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
     filteredForMonth.filter(t => t.txn_type === 'expense')
       .forEach(t => { m[t.category] = (m[t.category] ?? 0) + toDisplay(Number(t.amount), t.currency) })
     return m
-  }, [filteredForMonth, view])
+  }, [filteredForMonth, view, FX])
 
   const budgetMap = useMemo(() => {
     const m: Record<string, number> = {}
@@ -177,7 +181,9 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
   const short     = (n: number) => fmtCompact(n, cur)
   const money     = (n: number) => `${sym}${Math.round(n).toLocaleString('en-IN')}`
   const viewLabel = view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'
-  const isSpend   = (t: any) => t.txn_type === 'expense' && t.category !== 'Credit Card Payment' && t.category !== 'Investment'
+  const isSpend   = isSpending
+  const SENT_COLOR: Record<string, string> = { 'International Transfer': '#3B8EF0', Transfer: '#0EA5E9' }
+  const colorOf = (rows: typeof categories, c: string) => SENT_COLOR[c] ?? catColorOf(rows, c)
 
   // Same-length period just before the selected one, for "vs previous"
   const spanMonths = (Number(toMonth.slice(0, 4)) - Number(fromMonth.slice(0, 4))) * 12 + Number(toMonth.slice(5)) - Number(fromMonth.slice(5)) + 1
@@ -239,7 +245,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
   // Top five categories + "Other categories"
   const catRows = useMemo(() => {
     const m: Record<string, number> = {}
-    realExpensesForMonth.forEach(t => { m[t.category] = (m[t.category] ?? 0) + toDisplay(Number(t.amount), t.currency) })
+    realExpensesForMonth.forEach(t => { const c = catOf(t); m[c] = (m[c] ?? 0) + toDisplay(Number(t.amount), t.currency) })
     const rows = Object.entries(m).sort((a, b) => b[1] - a[1])
     const rest = rows.slice(5).reduce((a, r) => a + r[1], 0)
     return [...rows.slice(0, 5).map(([cat, v]) => ({ cat, v, color: colorOf(categories, cat) })), ...(rest > 0 ? [{ cat: 'Other categories', v: rest, color: '#CBD5E1' }] : [])]
@@ -352,7 +358,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
               const real = r.cat !== 'Other categories'
               const cap = real ? budgetMap[r.cat] : undefined
               const share = rangeExpenses > 0 ? r.v / rangeExpenses * 100 : 0
-              const row = <ProgressRow name={r.cat} sub={cap ? `of ${short(cap)} budget` : undefined} value={short(r.v)} right={`${Math.round(share)}%`} pct={share} color={r.color} />
+              const row = <ProgressRow name={labelOf(r.cat)} sub={cap ? `of ${short(cap)} budget` : undefined} value={short(r.v)} right={`${Math.round(share)}%`} pct={share} color={r.color} />
               return real
                 ? <button key={r.cat} onClick={() => setCat(r.cat)} className="text-left" title={`Show only ${r.cat}`}>{row}</button>
                 : <div key={r.cat}>{row}</div>

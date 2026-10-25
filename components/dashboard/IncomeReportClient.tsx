@@ -1,7 +1,8 @@
 'use client'
 import { useMemo, useState, useEffect } from 'react'
 import { useViewStore } from '@/store/viewStore'
-import { Download, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Download, ChevronLeft, ChevronRight, Wallet, CalendarDays, Trophy, Activity } from 'lucide-react'
+import { PageHeader, KpiTile, Bars } from '@/components/ui/kit'
 
 // ─── Analytics Utilities ────────────────────────────────────────────────────
 
@@ -106,7 +107,7 @@ export default function IncomeReportClient({ transactions }: { transactions: any
       map[cat][m] = (map[cat][m] ?? 0) + toDisplay(Number(t.amount), t.currency)
     })
     return map
-  }, [yearTxns, view])
+  }, [yearTxns, view, FX])
 
   const colTotals = useMemo(() => {
     const totals: Record<string, number> = {}
@@ -165,104 +166,49 @@ export default function IncomeReportClient({ transactions }: { transactions: any
   const maxVal = Math.max(...Object.values(colTotals).filter(v => v > 0), 1)
 
   return (
-    <div className="space-y-5 animate-fade-up">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em]" style={{ color: 'var(--text)' }}>Income Report</h1>
-          <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
-            Monthly breakdown by source · {view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'}
-          </p>
-        </div>
+    <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
+      <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+        <PageHeader title="Income report" sub={`Month by month, by source · ${view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'}`} />
         <div className="flex items-center gap-2">
-          <div className="flex items-center rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)', background: 'var(--bg2)' }}>
-            <button onClick={() => setViewYear(y => y - 1)} className="px-2 py-1.5 hover:bg-gray-100" style={{ color: 'var(--text3)' }}>
-              <ChevronLeft size={13} />
-            </button>
-            <span className="px-3 text-[12px] font-bold" style={{ color: 'var(--text)' }}>{viewYear}</span>
-            <button onClick={() => setViewYear(y => y + 1)} className="px-2 py-1.5 hover:bg-gray-100" style={{ color: 'var(--text3)' }}>
-              <ChevronRight size={13} />
-            </button>
+          <div className="inline-flex items-center rounded-xl bg-white" style={{ border: '1px solid var(--line)', height: 38 }}>
+            <button onClick={() => setViewYear(y => y - 1)} aria-label="Previous year" className="w-9 h-full flex items-center justify-center" style={{ color: 'var(--text2)' }}><ChevronLeft size={16} /></button>
+            <span className="px-2 text-[13px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{viewYear}</span>
+            <button onClick={() => setViewYear(y => y + 1)} aria-label="Next year" className="w-9 h-full flex items-center justify-center" style={{ color: 'var(--text2)' }}><ChevronRight size={16} /></button>
           </div>
-          <button onClick={handleExport}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border"
-            style={{ borderColor: 'var(--border)', color: 'var(--income)', background: 'var(--income-bg)' }}>
-            <Download size={13} /> Export CSV
-          </button>
+          <button onClick={handleExport} className="wl-btn" style={{ height: 38 }}><Download size={14} />CSV</button>
         </div>
       </div>
 
-      {/* Sparkline bar */}
-      <div className="wl-card p-4">
-        <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>Monthly Income — {viewYear}</div>
+      {/* Income by month (same card on both sizes) */}
+      <section className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
+        <div className="text-[10.5px] md:text-[11px] font-semibold uppercase tracking-[0.05em]" style={{ color: 'var(--text3)' }}>Income · {viewYear}</div>
+        <div className="text-[30px] md:text-[32px] font-bold tabular-nums tracking-[-0.02em] leading-tight mt-0.5" style={{ color: 'var(--text)' }}>{sym}{Math.round(grandTotal).toLocaleString('en-IN')}</div>
         {grandTotal === 0 ? (
-          <div className="text-[12px] text-center py-8" style={{ color: 'var(--text3)' }}>
-            No {view === 'uae' ? 'AED' : view === 'india' ? 'INR' : ''} income recorded for {viewYear}.
-            Try switching the view (UAE / India / Consolidated) at the top, or pick another year.
+          <div className="text-[12.5px] text-center py-8" style={{ color: 'var(--text3)' }}>
+            No {view === 'uae' ? 'AED' : view === 'india' ? 'INR' : ''} income recorded for {viewYear}. Try another view (UAE / India / Consolidated) or year.
           </div>
         ) : (
-          <div className="flex gap-1" style={{ height: 84 }}>
-            {months.map(m => {
-              const val = colTotals[m] ?? 0
-              const pct = val > 0 ? Math.max(6, Math.round((val / maxVal) * 100)) : 0
-              const isSelected = m >= fromMonth && m <= toMonth
-              return (
-                <div key={m} className="flex-1 flex flex-col items-center justify-end"
-                  title={`${MONTH_NAMES[Number(m.slice(5)) - 1]}: ${sym}${Math.round(val).toLocaleString('en-IN')}`}>
-                  <div className="w-full flex items-end" style={{ height: 60 }}>
-                    <div className="w-full rounded-t-sm transition-all"
-                      style={{ height: `${pct}%`, minHeight: val > 0 ? 4 : 1, background: val === 0 ? 'var(--border)' : isSelected ? 'var(--income)' : 'var(--sage)' }} />
-                  </div>
-                  <span className="text-[9px] mt-1" style={{ color: 'var(--text3)' }}>{MONTH_NAMES[Number(m.slice(5)) - 1]}</span>
-                </div>
-              )
-            })}
-          </div>
+          <Bars className="h-[130px] md:h-[200px] mt-3"
+            data={months.map(m => ({ label: MONTH_NAMES[Number(m.slice(5)) - 1], value: colTotals[m] ?? 0, hi: m >= fromMonth && m <= toMonth,
+              tip: `${MONTH_NAMES[Number(m.slice(5)) - 1]}: ${sym}${Math.round(colTotals[m] ?? 0).toLocaleString('en-IN')}` }))}
+            label={`Income by month in ${viewYear}`} />
         )}
-      </div>
+      </section>
 
-      {/* KPI strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="wl-card p-3 text-center">
-          <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Annual Total</div>
-          <div className="text-[16px] font-bold font-mono mt-1" style={{ color: 'var(--income)' }}>
-            {sym}{Math.round(grandTotal).toLocaleString('en-IN')}
-          </div>
-        </div>
-        <div className="wl-card p-3 text-center">
-          <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Monthly Avg</div>
-          <div className="text-[16px] font-bold font-mono mt-1" style={{ color: 'var(--text)' }}>
-            {sym}{Math.round(grandTotal / 12).toLocaleString('en-IN')}
-          </div>
-        </div>
-        <div className="wl-card p-3 text-center">
-          <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Best Month</div>
-          <div className="text-[16px] font-bold font-mono mt-1" style={{ color: 'var(--text)' }}>
-            {months.length
-              ? MONTH_NAMES[Number(months.reduce((best, m) => (colTotals[m] ?? 0) > (colTotals[best] ?? 0) ? m : best, months[0]).slice(5)) - 1]
-              : '—'}
-          </div>
-        </div>
-        {/* Income Stability Score — new KPI */}
-        <div className="wl-card p-4">
-          <div className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>
-            Income Stability
-          </div>
-          <div className="text-[24px] font-bold font-mono" style={{
-            color: incomeStabilityScore >= 70 ? 'var(--income)' : incomeStabilityScore >= 40 ? 'var(--gold)' : 'var(--rose)'
-          }}>
-            {incomeStabilityScore}/100
-          </div>
-          <div className="text-[10px] mt-1" style={{ color: 'var(--text3)' }}>
-            {incomeStabilityScore >= 70 ? 'Highly Predictable' : incomeStabilityScore >= 40 ? 'Moderate Variation' : 'High Variation'}
-          </div>
-        </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
+        <KpiTile label="Year total" value={`${sym}${Math.round(grandTotal).toLocaleString('en-IN')}`} tint={1} icon={Wallet} />
+        <KpiTile label="Monthly average" value={`${sym}${Math.round(grandTotal / Math.max(months.filter(m => (colTotals[m] ?? 0) > 0).length, 1)).toLocaleString('en-IN')}`} tint={0} icon={CalendarDays} delta="over months with income" />
+        <KpiTile label="Best month" tint={2} icon={Trophy}
+          value={months.length ? MONTH_NAMES[Number(months.reduce((best, m) => (colTotals[m] ?? 0) > (colTotals[best] ?? 0) ? m : best, months[0]).slice(5)) - 1] : '—'} />
+        <KpiTile label="Income stability" value={`${incomeStabilityScore}/100`} tint={3} icon={Activity}
+          tone={incomeStabilityScore >= 70 ? 'good' : incomeStabilityScore >= 40 ? 'neutral' : 'bad'}
+          delta={incomeStabilityScore >= 70 ? 'Very predictable' : incomeStabilityScore >= 40 ? 'Some variation' : 'Varies a lot'} />
       </div>
 
       {/* Income Forecast Panel */}
       {incomeForecast.length > 0 && avgMonthlyIncome > 0 && (
-        <div className="wl-card p-4">
-          <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>
+        <div className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
+          <div className="text-[14px] md:text-[15px] font-semibold mb-3" style={{ color: 'var(--text)' }}>
             Income Forecast · Next 3 Months
           </div>
           <div className="grid grid-cols-3 gap-3">
@@ -271,11 +217,11 @@ export default function IncomeReportClient({ transactions }: { transactions: any
               const label = d.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' })
               return (
                 <div key={i} className="rounded-xl p-3 text-center"
-                  style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-                  <div className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>
+                  style={{ background: '#FAFAFE', border: '1px solid var(--line)' }}>
+                  <div className="text-[10.5px] font-semibold uppercase tracking-[0.05em] mb-1" style={{ color: 'var(--text3)' }}>
                     {label} (est)
                   </div>
-                  <div className="text-[20px] font-bold font-mono" style={{ color: 'var(--income)' }}>
+                  <div className="text-[20px] font-bold tabular-nums" style={{ color: 'var(--income)' }}>
                     {sym}{val.toLocaleString('en-IN')}
                   </div>
                   <div className="text-[10px] mt-1" style={{ color: 'var(--text3)' }}>
@@ -304,32 +250,32 @@ export default function IncomeReportClient({ transactions }: { transactions: any
         const inrEquivalentAtLive = Math.round(totalAED * FX)
 
         return (
-          <div className="wl-card p-4" style={{ borderTop: '3px solid #0EA5E9' }}>
+          <div className="wl-card px-4 md:px-5 py-4 md:py-[18px]" style={{ borderTop: '3px solid #0EA5E9' }}>
             <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#0EA5E9' }}>
               Remittance Analysis (UAE → India)
             </div>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <div className="text-[10px]" style={{ color: 'var(--text3)' }}>Total Transferred</div>
-                <div className="text-[18px] font-bold font-mono mt-0.5" style={{ color: 'var(--gold)' }}>
+                <div className="text-[18px] font-bold tabular-nums mt-0.5" style={{ color: 'var(--gold)' }}>
                   AED {Math.round(totalAED).toLocaleString('en-IN')}
                 </div>
               </div>
               <div>
                 <div className="text-[10px]" style={{ color: 'var(--text3)' }}>INR Equivalent (live rate)</div>
-                <div className="text-[18px] font-bold font-mono mt-0.5" style={{ color: 'var(--income)' }}>
+                <div className="text-[18px] font-bold tabular-nums mt-0.5" style={{ color: 'var(--income)' }}>
                   ₹{inrEquivalentAtLive.toLocaleString('en-IN')}
                 </div>
               </div>
               <div>
                 <div className="text-[10px]" style={{ color: 'var(--text3)' }}>Live Rate</div>
-                <div className="text-[18px] font-bold font-mono mt-0.5" style={{ color: 'var(--text)' }}>
+                <div className="text-[18px] font-bold tabular-nums mt-0.5" style={{ color: 'var(--text)' }}>
                   ₹{FX.toFixed(2)} / AED
                 </div>
               </div>
               <div>
                 <div className="text-[10px]" style={{ color: 'var(--text3)' }}>Transfers Count</div>
-                <div className="text-[18px] font-bold font-mono mt-0.5" style={{ color: 'var(--text)' }}>
+                <div className="text-[18px] font-bold tabular-nums mt-0.5" style={{ color: 'var(--text)' }}>
                   {aedTransfers.length}
                 </div>
               </div>
@@ -348,20 +294,20 @@ export default function IncomeReportClient({ transactions }: { transactions: any
           <div className="overflow-x-auto">
             <table className="w-full text-[11px] border-collapse">
               <thead>
-                <tr style={{ background: 'var(--bg2)', borderBottom: '2px solid var(--border)' }}>
-                  <th className="sticky left-0 px-4 py-3 text-left text-[10px] uppercase tracking-wider font-bold min-w-[120px]"
-                    style={{ background: 'var(--bg2)', color: 'var(--text3)', borderRight: '1px solid var(--border)' }}>
+                <tr style={{ background: '#FAFAFE', borderBottom: '2px solid var(--line)' }}>
+                  <th className="sticky left-0 px-4 py-3 text-left text-[10.5px] uppercase tracking-[0.05em] font-semibold min-w-[120px]"
+                    style={{ background: '#FAFAFE', color: 'var(--text3)', borderRight: '1px solid var(--line)' }}>
                     Source
                   </th>
                   {months.map((m, mi) => (
-                    <th key={m} className="px-3 py-3 text-right text-[10px] uppercase tracking-wider font-bold min-w-[70px]"
+                    <th key={m} className="px-3 py-3 text-right text-[10.5px] uppercase tracking-[0.05em] font-semibold min-w-[70px]"
                       style={{ color: 'var(--text3)', background: m >= fromMonth && m <= toMonth ? 'var(--income-bg)' : 'var(--bg2)' }}>
                       {MONTH_NAMES[Number(m.slice(5)) - 1]}
                       {mi > 0 && <div className="text-[8px] font-normal opacity-60">Δ MoM</div>}
                     </th>
                   ))}
-                  <th className="px-4 py-3 text-right text-[10px] uppercase tracking-wider font-bold"
-                    style={{ color: 'var(--income)', background: 'var(--bg2)', borderLeft: '2px solid var(--border)' }}>
+                  <th className="px-4 py-3 text-right text-[10.5px] uppercase tracking-[0.05em] font-semibold"
+                    style={{ color: 'var(--income)', background: '#FAFAFE', borderLeft: '2px solid var(--line)' }}>
                     Total
                   </th>
                 </tr>
@@ -370,10 +316,10 @@ export default function IncomeReportClient({ transactions }: { transactions: any
                 {activeCats.map((cat, ci) => {
                   const color = CAT_COLORS[cat] ?? '#16A34A'
                   return (
-                    <tr key={cat} style={{ borderBottom: '1px solid var(--border)' }}
+                    <tr key={cat} style={{ borderBottom: '1px solid var(--line)' }}
                       className="hover:bg-stone-50 transition-colors">
                       <td className="sticky left-0 px-4 py-2.5 font-semibold"
-                        style={{ background: ci % 2 === 0 ? '#fff' : 'var(--bg2)', borderRight: '1px solid var(--border)' }}>
+                        style={{ background: ci % 2 === 0 ? '#fff' : 'var(--bg2)', borderRight: '1px solid var(--line)' }}>
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: color }} />
                           <span style={{ color: 'var(--text)' }}>{cat}</span>
@@ -388,7 +334,7 @@ export default function IncomeReportClient({ transactions }: { transactions: any
                           ? Math.round((val - prevVal) / prevVal * 100)
                           : null
                         return (
-                          <td key={m} className="px-3 py-2.5 text-right font-mono"
+                          <td key={m} className="px-3 py-2.5 text-right tabular-nums"
                             style={{
                               color: val > 0 ? 'var(--income)' : 'var(--text3)',
                               background: inSel ? `${color}08` : 'transparent',
@@ -396,7 +342,7 @@ export default function IncomeReportClient({ transactions }: { transactions: any
                             }}>
                             <div>{val > 0 ? `${sym}${fmt(val)}` : '—'}</div>
                             {mi > 0 && val > 0 && delta !== null && (
-                              <div className="text-[9px] font-normal"
+                              <div className="text-[10.5px] font-normal"
                                 style={{ color: delta > 0 ? 'var(--income)' : 'var(--rose)' }}>
                                 {delta > 0 ? `▲ +${delta}%` : `▼ ${delta}%`}
                               </div>
@@ -404,8 +350,8 @@ export default function IncomeReportClient({ transactions }: { transactions: any
                           </td>
                         )
                       })}
-                      <td className="px-4 py-2.5 text-right font-mono font-bold"
-                        style={{ color: 'var(--income)', borderLeft: '2px solid var(--border)' }}>
+                      <td className="px-4 py-2.5 text-right tabular-nums font-bold"
+                        style={{ color: 'var(--income)', borderLeft: '2px solid var(--line)' }}>
                         {sym}{Math.round(rowTotals[cat]).toLocaleString('en-IN')}
                       </td>
                     </tr>
@@ -413,9 +359,9 @@ export default function IncomeReportClient({ transactions }: { transactions: any
                 })}
               </tbody>
               <tfoot>
-                <tr style={{ borderTop: '2px solid var(--border)', background: 'var(--bg2)' }}>
+                <tr style={{ borderTop: '2px solid var(--line)', background: '#FAFAFE' }}>
                   <td className="sticky left-0 px-4 py-3 font-bold text-[11px] uppercase tracking-wider"
-                    style={{ background: 'var(--bg2)', color: 'var(--text)', borderRight: '1px solid var(--border)' }}>
+                    style={{ background: '#FAFAFE', color: 'var(--text)', borderRight: '1px solid var(--line)' }}>
                     Monthly Total
                   </td>
                   {months.map((m, mi) => {
@@ -426,11 +372,11 @@ export default function IncomeReportClient({ transactions }: { transactions: any
                       ? Math.round((val - prevVal) / prevVal * 100)
                       : null
                     return (
-                      <td key={m} className="px-3 py-3 text-right font-mono font-bold"
+                      <td key={m} className="px-3 py-3 text-right tabular-nums font-bold"
                         style={{ color: 'var(--income)', background: m >= fromMonth && m <= toMonth ? 'var(--income-bg)' : 'var(--bg2)' }}>
                         <div>{val > 0 ? `${sym}${fmt(val)}` : '—'}</div>
                         {mi > 0 && val > 0 && delta !== null && (
-                          <div className="text-[9px] font-normal"
+                          <div className="text-[10.5px] font-normal"
                             style={{ color: delta > 0 ? 'var(--income)' : 'var(--rose)' }}>
                             {delta > 0 ? `▲ +${delta}%` : `▼ ${delta}%`}
                           </div>
@@ -438,8 +384,8 @@ export default function IncomeReportClient({ transactions }: { transactions: any
                       </td>
                     )
                   })}
-                  <td className="px-4 py-3 text-right font-mono font-bold text-[13px]"
-                    style={{ color: 'var(--income)', borderLeft: '2px solid var(--border)' }}>
+                  <td className="px-4 py-3 text-right tabular-nums font-bold text-[13px]"
+                    style={{ color: 'var(--income)', borderLeft: '2px solid var(--line)' }}>
                     {sym}{Math.round(grandTotal).toLocaleString('en-IN')}
                   </td>
                 </tr>
@@ -451,8 +397,8 @@ export default function IncomeReportClient({ transactions }: { transactions: any
 
       {/* Source share */}
       {activeCats.length > 0 && (
-        <div className="wl-card p-4">
-          <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>Income Source Share</div>
+        <div className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
+          <div className="text-[14px] md:text-[15px] font-semibold mb-3" style={{ color: 'var(--text)' }}>Income Source Share</div>
           <div className="space-y-2">
             {activeCats.sort((a,b) => rowTotals[b] - rowTotals[a]).map(cat => {
               const pct = grandTotal > 0 ? (rowTotals[cat] / grandTotal) * 100 : 0
@@ -460,13 +406,13 @@ export default function IncomeReportClient({ transactions }: { transactions: any
               return (
                 <div key={cat} className="flex items-center gap-3">
                   <div className="text-[11px] font-medium w-24 flex-shrink-0" style={{ color: 'var(--text2)' }}>{cat}</div>
-                  <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}>
+                  <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: '#FAFAFE' }}>
                     <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
                   </div>
-                  <div className="text-[11px] font-mono font-semibold w-12 text-right" style={{ color }}>
+                  <div className="text-[11px] tabular-nums font-semibold w-12 text-right" style={{ color }}>
                     {pct.toFixed(1)}%
                   </div>
-                  <div className="text-[11px] font-mono w-20 text-right" style={{ color: 'var(--text)' }}>
+                  <div className="text-[11px] tabular-nums w-20 text-right" style={{ color: 'var(--text)' }}>
                     {sym}{Math.round(rowTotals[cat]).toLocaleString('en-IN')}
                   </div>
                 </div>

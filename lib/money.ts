@@ -41,3 +41,25 @@ export const SPEND_TXN_TYPES = ['expense', 'transfer', 'loan']
 // True when a transaction is counted in "Total Monthly Expenses"
 export const isSpend = (t: any) =>
   SPEND_TXN_TYPES.includes(t?.txn_type) && classify(catOf(t)) === 'expense'
+
+// Where counted money went. Splits the isSpend total so screens can show
+// living costs and money sent apart from loan repayments and investments
+// (which build wealth or clear debt rather than being consumed).
+export type SpendGroup = 'living' | 'sent' | 'loans' | 'invest'
+export const SPEND_GROUPS: { key: SpendGroup; label: string; short: string; color: string }[] = [
+  { key: 'living', label: 'Living costs',    short: 'Living',  color: '#6A55E8' },
+  { key: 'sent',   label: 'Money sent',      short: 'Sent',    color: '#3B8EF0' },
+  { key: 'loans',  label: 'Loan repayments', short: 'Loans',   color: '#F29A2E' },
+  { key: 'invest', label: 'Investments',     short: 'Invested', color: '#2FB67C' },
+]
+const SENT_CATS = new Set(['Transfer', 'International Transfer', 'Family Transfer', 'NRO to Family'])
+export function spendGroup(t: any): SpendGroup | null {
+  if (!isSpend(t)) return null
+  const c = catOf(t)
+  if (t.txn_type === 'loan' || c === 'EMI/Loan') return 'loans'
+  if (c === 'Investment') return 'invest'
+  if (t.txn_type === 'transfer' || SENT_CATS.has(c)) return 'sent'
+  return 'living'
+}
+// "Spending" on screens = living costs + money sent (not loans or investing)
+export const isSpending = (t: any) => { const g = spendGroup(t); return g === 'living' || g === 'sent' }
