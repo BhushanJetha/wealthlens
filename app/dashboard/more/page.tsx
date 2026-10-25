@@ -20,6 +20,7 @@ const GROUPS: { label: string; items: Item[] }[] = [
   { label: 'Plan', items: [
     { label: 'Budgets', href: '/dashboard/budgets' },
     { label: 'Cash-flow forecast', href: '/dashboard/cashflow' },
+    { label: 'Tax planner', href: '/dashboard/tax' },
   ] },
   { label: 'Wealth', items: [
     { label: 'Net worth', href: '/dashboard/net-worth' },

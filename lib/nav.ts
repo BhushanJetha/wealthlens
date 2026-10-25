@@ -60,6 +60,7 @@ export const SECTIONS: NavSection[] = [
     { label: 'Budgets',            href: '/dashboard/budgets' },
     { label: 'Goals',              href: '/dashboard/goals' },
     { label: 'Cash-flow forecast', href: '/dashboard/cashflow' },
+    { label: 'Tax planner',        href: '/dashboard/tax' },
   ] },
   { key: 'insights', label: 'Insights', desc: 'Health checks and NRI tools', icon: Sparkles, href: '/dashboard/financial-health', tabs: [
     { label: 'Financial health', href: '/dashboard/financial-health' },
