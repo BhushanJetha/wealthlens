@@ -68,6 +68,7 @@ export const SECTIONS: NavSection[] = [
   ] },
   { key: 'learn', label: 'Learn', desc: 'Courses and guides for every part of WealthLens', icon: BookOpen, href: '/dashboard/learn', tabs: [
     { label: 'Courses', href: '/dashboard/learn', also: ['/dashboard/budgets/learn', '/dashboard/cards/learn', '/dashboard/expenses/learn', '/dashboard/goals/learn'] },
+    { label: 'Calculators', href: '/dashboard/learn/calculators' },
   ] },
   { key: 'settings', label: 'Settings', desc: 'Profile, family and preferences', icon: SlidersHorizontal, href: '/dashboard/settings', tabs: [] },
 ]

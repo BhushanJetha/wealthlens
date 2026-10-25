@@ -1,4 +1,6 @@
 'use client'
+import Link from 'next/link'
+import { PageHeader } from '@/components/ui/kit'
 import { useMemo, useState } from 'react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -383,25 +385,55 @@ export default function LearnClient({ funds }: Props) {
   const [open, setOpen] = useState<string | null>(lessons[0].id)
 
   return (
-    <div className="space-y-5 max-w-3xl">
-      {/* Header */}
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
-        className="wl-card p-6" style={{ borderLeft: '3px solid var(--sage)' }}>
-        <div className="flex items-center gap-2.5 mb-1">
-          <GraduationCap size={20} style={{ color: 'var(--sage)' }} />
-          <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em]" style={{ color: 'var(--text)' }}>Learn — personalized to your portfolio</h1>
+    <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
+      <PageHeader title="Learn" sub="A short course for every part of WealthLens, with calculators that use your own numbers." />
+
+      {/* Hub: courses that exist today + calculator shortcuts */}
+      <section className="rounded-[20px] bg-hero text-white px-5 md:px-6 py-4 md:py-5 flex flex-col md:flex-row md:items-center gap-3 md:gap-6" style={{ boxShadow: 'var(--shadow-hero)' }}>
+        <div className="flex-1">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: '#DAD3FF' }}>Learn with your own numbers</div>
+          <div className="text-[18px] md:text-[22px] font-bold leading-snug mt-0.5">
+            {hasFunds ? `Your ${model.rows.length} fund${model.rows.length === 1 ? '' : 's'} power the investing lessons below.` : 'Start with the investing basics below, or try a calculator.'}
+          </div>
         </div>
-        <p className="text-[13px]" style={{ color: 'var(--text2)' }}>
-          {hasFunds
-            ? <>Bite-size lessons on mutual fund investing, woven around the {model.rows.length} fund{model.rows.length === 1 ? '' : 's'} you actually hold ({abbr(model.totalCurrent, sym)} today). Tap any card to expand.</>
-            : <>Bite-size lessons on mutual fund investing. Add or import your funds to see every lesson tailored to your real money — meanwhile, explore with sample numbers below.</>}
-        </p>
-      </motion.div>
+        <Link href="/dashboard/learn/calculators" className="self-start md:self-auto flex-shrink-0 rounded-[10px] px-5 py-2.5 text-[13.5px] font-semibold" style={{ background: '#fff', color: 'var(--accent2)' }}>
+          Open calculators
+        </Link>
+      </section>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 md:gap-3.5">
+        {[
+          { t: 'Investments', d: 'SIPs, compounding and your own funds — the lessons on this page.', href: '#lessons', c: '#16A34A', bg: '#F0FDF4' },
+          { t: 'Budgets', d: 'Set limits that bend, not break, and build a buffer that lasts.', href: '/dashboard/budgets/learn', c: '#2563EB', bg: '#EFF6FF' },
+          { t: 'Expenses', d: 'See where every dirham and rupee goes, without a spreadsheet.', href: '/dashboard/expenses/learn', c: '#6A55E8', bg: '#F0EDFF' },
+          { t: 'Credit cards', d: 'Statement date, due date, minimum due and utilisation.', href: '/dashboard/cards/learn', c: '#D97706', bg: '#FFF2E2' },
+          { t: 'Goals', d: 'Amount, date, monthly number — the three-line goal plan.', href: '/dashboard/goals/learn', c: '#A855D8', bg: '#F6ECFC' },
+          { t: 'Calculators', d: 'SIP, lump sum, loan EMI, goal planner and FD.', href: '/dashboard/learn/calculators', c: '#0891B2', bg: '#E0F4F8' },
+        ].map(m => (
+          <Link key={m.t} href={m.href} className="wl-card px-4 md:px-5 py-3.5 md:py-[18px] flex flex-col gap-2 transition-colors hover:border-[var(--accent-border)]">
+            <span className="w-[34px] h-[34px] rounded-[9px] flex items-center justify-center text-[15px] font-bold" style={{ background: m.bg, color: m.c }}>{m.t[0]}</span>
+            <span className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>{m.t}</span>
+            <span className="text-[12.5px] leading-snug" style={{ color: 'var(--text3)' }}>{m.d}</span>
+            <span className="text-[12.5px] font-semibold mt-auto" style={{ color: 'var(--accent)' }}>Open →</span>
+          </Link>
+        ))}
+      </div>
+
+      <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-4 px-4 md:mx-0 md:px-0 items-center">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.05em] flex-shrink-0 mr-1" style={{ color: 'var(--text3)' }}>Try a calculator</span>
+        {[['sip', 'SIP'], ['lump', 'Lump sum'], ['emi', 'Loan EMI'], ['goal', 'Goal planner'], ['fd', 'Fixed deposit']].map(([k, l]) => (
+          <Link key={k} href={`/dashboard/learn/calculators?c=${k}`} className="wl-chip flex-shrink-0">{l}</Link>
+        ))}
+      </div>
+
+      <h2 id="lessons" className="text-[17px] md:text-[18px] font-bold mt-1 scroll-mt-4" style={{ color: 'var(--text)' }}>
+        Investing lessons{hasFunds ? `, built from your ${abbr(model.totalCurrent, sym)} in funds` : ''}
+      </h2>
 
       {/* Empty-state nudge */}
       {!hasFunds && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1, duration: 0.35 }}
-          className="wl-card p-5 flex items-start gap-3" style={{ background: 'var(--sage-bg)' }}>
+          className="wl-card p-5 flex items-start gap-3 max-w-3xl" style={{ background: 'var(--sage-bg)' }}>
           <Sparkles size={18} style={{ color: 'var(--sage)', flexShrink: 0, marginTop: 2 }} />
           <div>
             <div className="text-[13px] font-bold" style={{ color: 'var(--text)' }}>No funds yet — that's the perfect place to start</div>
@@ -411,7 +443,7 @@ export default function LearnClient({ funds }: Props) {
       )}
 
       {/* Lesson cards */}
-      <div className="space-y-3">
+      <div className="space-y-3 max-w-3xl">
         {lessons.map((lesson, i) => {
           const Icon = lesson.icon
           const isOpen = open === lesson.id

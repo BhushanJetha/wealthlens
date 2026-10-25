@@ -6,7 +6,7 @@ import { useUiStore } from '@/store/uiStore'
 // Goals aren't listed — they're the Money / Wealth / Plan tabs in the bottom bar.
 type Item = { label: string; href?: string; advisor?: true }
 const GROUPS: { label: string; items: Item[] }[] = [
-  { label: 'Learn', items: [{ label: 'Courses', href: '/dashboard/learn' }] },
+  { label: 'Learn', items: [{ label: 'Courses', href: '/dashboard/learn' }, { label: 'Calculators', href: '/dashboard/learn/calculators' }] },
   { label: 'Insights', items: [{ label: 'Market news', href: '/dashboard/news' }, { label: '✦ AI advisor', advisor: true }] },
   { label: 'Money', items: [
     { label: 'Spending analysis', href: '/dashboard/analysis' },
