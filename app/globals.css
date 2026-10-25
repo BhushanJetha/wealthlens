@@ -180,7 +180,7 @@ body {
   transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 .wl-chip:hover { border-color: var(--border2); color: var(--text); }
-.wl-chip[aria-current='page'] { background: var(--accent-bg); border-color: var(--accent-border); color: var(--accent2); font-weight: 600; }
+.wl-chip[aria-current='page'], .wl-chip[aria-pressed='true'] { background: var(--accent-bg); border-color: var(--accent-border); color: var(--accent2); font-weight: 600; }
 
 /* Keyboard hint */
 .wl-kbd {
@@ -231,8 +231,8 @@ body {
 .prog-expense { background: var(--expense); }
 .prog-blue    { background: var(--blue); }
 
-/* Page-level instant transition */
-main > * { will-change: opacity; }
+/* (No will-change on page wrappers: it creates a stacking context, so a
+   modal's z-50 inside the page could not rise above the phone tab bar.) */
 
 /* Popup animations */
 @keyframes fadeInScaleUp {

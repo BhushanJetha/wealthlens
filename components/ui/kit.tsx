@@ -23,8 +23,9 @@ export type Tone = 'good' | 'bad' | 'neutral'
 const TONE: Record<Tone, string> = { good: '#16A34A', bad: '#DC2626', neutral: '#64748B' }
 
 // ─── KPI tile ───────────────────────────────────────────────────────────────
-export function KpiTile({ label, value, delta, tone = 'neutral', tint = 0, icon: Icon, href }: {
-  label: string; value: React.ReactNode; delta?: React.ReactNode; tone?: Tone; tint?: number; icon?: LucideIcon; href?: string
+export function KpiTile({ label, value, delta, tone = 'neutral', tint = 0, icon: Icon, href, onClick, className = '' }: {
+  label: string; value: React.ReactNode; delta?: React.ReactNode; tone?: Tone; tint?: number; icon?: LucideIcon
+  href?: string; onClick?: () => void; className?: string
 }) {
   const t = TINTS[tint % TINTS.length]
   const body = (
@@ -39,9 +40,11 @@ export function KpiTile({ label, value, delta, tone = 'neutral', tint = 0, icon:
       {delta != null && <div className="text-[11.5px] md:text-[12px] font-medium leading-snug" style={{ color: TONE[tone] }}>{delta}</div>}
     </>
   )
-  const cls = 'block rounded-2xl md:rounded-[20px] px-3.5 py-3 md:px-[18px] md:py-4 min-w-0'
+  const cls = `block text-left rounded-2xl md:rounded-[20px] px-3.5 py-3 md:px-[18px] md:py-4 min-w-0 ${className}`
+  const lift = 'transition-transform hover:-translate-y-0.5'
   const style = { background: t.bg, border: `1px solid ${t.bd}` }
-  return href ? <Link href={href} className={`${cls} transition-transform hover:-translate-y-0.5`} style={style}>{body}</Link>
+  return href ? <Link href={href} className={`${cls} ${lift}`} style={style}>{body}</Link>
+    : onClick ? <button onClick={onClick} className={`${cls} ${lift} w-full`} style={style}>{body}</button>
     : <div className={cls} style={style}>{body}</div>
 }
 
@@ -159,6 +162,27 @@ export function Ring({ pct, size = 92, stroke = 3.5, color = 'var(--accent)', tr
         {p > 0 && <circle cx="18" cy="18" r="15.9155" fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round" pathLength={100} strokeDasharray={`${p} ${100 - p}`} />}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center text-center">{children}</div>
+    </div>
+  )
+}
+
+// Vertical bars that rise from the baseline (design: 0.7s, 50ms stagger).
+// `hi` bars take the accent; others the soft lavender. Hover shows the tip.
+export function Bars({ data, className = 'h-[220px]', label }: {
+  data: { label: string; value: number; tip: string; hi?: boolean }[]; className?: string; label: string
+}) {
+  const max = Math.max(...data.map(d => d.value), 1)
+  return (
+    <div className={`flex gap-1.5 md:gap-2.5 ${className}`} role="img" aria-label={label}>
+      {data.map((d, i) => (
+        <div key={i} className="flex-1 min-w-0 flex flex-col" title={d.tip}>
+          <div className="flex-1 flex items-end justify-center">
+            <div className="w-[44%] max-w-[26px] rounded-t-[5px] wl-rise"
+              style={{ height: `${Math.max(d.value / max * 100, d.value > 0 ? 2 : 0)}%`, background: d.hi ? 'var(--accent)' : '#C9C2F5', animationDelay: `${i * 50}ms` }} />
+          </div>
+          <div className="h-[16px] md:h-[22px] pt-1 md:pt-1.5 text-[9px] md:text-[11px] text-center truncate" style={{ color: 'var(--text4)' }}>{d.label}</div>
+        </div>
+      ))}
     </div>
   )
 }

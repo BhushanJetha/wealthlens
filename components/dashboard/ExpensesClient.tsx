@@ -12,8 +12,13 @@ import TransactionVoiceModal from '@/components/forms/TransactionVoiceModal'
 import CreditCardUploadModal from '@/components/forms/CreditCardUploadModal'
 import MessageParseModal from '@/components/forms/MessageParseModal'
 
-import { Search, Upload, Image, Mic, PenLine, BarChart2, ArrowRight, AlertTriangle, X, CreditCard, Pencil, Trash2, Check, BookOpen, ChevronDown, Plus, Copy, Wallet, Banknote, MessageSquareText } from 'lucide-react'
+import { Search, Upload, Image, Mic, PenLine, BarChart2, ArrowRight, AlertTriangle, X, CreditCard, Pencil, Trash2, Check, BookOpen, ChevronDown, Plus, Copy, Wallet, Banknote, MessageSquareText, ArrowUpRight, Landmark, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
+import { PageHeader, InsightBar, AiActions, KpiTile, Bars, Donut, ProgressRow, LearnStrip, PALETTE } from '@/components/ui/kit'
+import { addMonths } from '@/lib/insights'
+import { fmtCompact } from '@/lib/format'
+
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 const EXPENSE_CATS = ['All','Food','Shopping','Utilities','Transport','Health','Personal Care','Entertainment','Travel','Trip/Vacation','Event/Function','Education','Subscription','Investment','Tax Payment','Credit Card Payment','Loan on Card','EMI/Loan','Family Transfer','Transfer','Refund','Other']
 const CAT_COLORS: Record<string,string> = {
@@ -56,6 +61,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
   const [deletingId,   setDeletingId]   = useState<string | null>(null)
   const [showAddMenu,  setShowAddMenu]  = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const sheetRef = useRef<HTMLDivElement>(null)
   const [sharedText, setSharedText] = useState<string | null>(null)
 
   const supabase = createClient()
@@ -82,8 +88,10 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
   }, [])
 
   useEffect(() => {
+    // The menu is a dropdown on desktop and a bottom sheet on phones
     function onClickOutside(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setShowAddMenu(false)
+      const t = e.target as Node
+      if (!menuRef.current?.contains(t) && !sheetRef.current?.contains(t)) setShowAddMenu(false)
     }
     if (showAddMenu) document.addEventListener('mousedown', onClickOutside)
     return () => document.removeEventListener('mousedown', onClickOutside)
@@ -220,192 +228,244 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
 
   const paged = filteredForMonth.slice((page-1)*pageSize, page*pageSize)
 
+  // ── Design v2 summary: KPIs, monthly bars, category breakdown, insight ──
+  const cur       = view === 'uae' ? 'AED' : 'INR'
+  const short     = (n: number) => fmtCompact(n, cur)
+  const money     = (n: number) => `${sym}${Math.round(n).toLocaleString('en-IN')}`
+  const viewLabel = view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'
+  const isSpend   = (t: any) => t.txn_type === 'expense' && t.category !== 'Credit Card Payment' && t.category !== 'Investment'
+
+  // Same-length period just before the selected one, for "vs previous"
+  const spanMonths = (Number(toMonth.slice(0, 4)) - Number(fromMonth.slice(0, 4))) * 12 + Number(toMonth.slice(5)) - Number(fromMonth.slice(5)) + 1
+  const prevFrom = addMonths(fromMonth, -spanMonths), prevTo = addMonths(fromMonth, -1)
+  const prevLabel = spanMonths === 1 ? 'last month' : `the previous ${spanMonths} months`
+  const prevSpend = useMemo(() => filtered
+    .filter(t => { const m = t.txn_date?.slice(0, 7) ?? ''; return m >= prevFrom && m <= prevTo && isSpend(t) })
+    .reduce((a, t) => a + toDisplay(Number(t.amount), t.currency), 0), [filtered, prevFrom, prevTo, view, FX])
+  const spendChg   = prevSpend > 0 ? Math.round((rangeExpenses - prevSpend) / prevSpend * 1000) / 10 : null
+  const spendDelta = spendChg != null ? `${spendChg > 0 ? '▲' : '▼'} ${Math.abs(spendChg)}% vs ${prevLabel}`
+    : `${realExpensesForMonth.length} transaction${realExpensesForMonth.length === 1 ? '' : 's'}`
+  const spendTone  = spendChg == null ? 'neutral' as const : spendChg > 0 ? 'bad' as const : 'good' as const
+
+  // At least 6 months of bars ending at the selected month; the selection is highlighted
+  const barMonths = useMemo(() => {
+    const n = Math.min(Math.max(spanMonths, 6), 12)
+    const months = Array.from({ length: n }, (_, i) => addMonths(toMonth, i - n + 1))
+    const tot: Record<string, number> = {}
+    filtered.forEach(t => {
+      const m = t.txn_date?.slice(0, 7)
+      if (m && m >= months[0] && m <= toMonth && isSpend(t)) tot[m] = (tot[m] ?? 0) + toDisplay(Number(t.amount), t.currency)
+    })
+    return months.map(m => ({
+      label: MON[Number(m.slice(5)) - 1], value: tot[m] ?? 0, hi: m >= fromMonth && m <= toMonth,
+      tip: `${MON[Number(m.slice(5)) - 1]} ${m.slice(0, 4)}: ${sym}${Math.round(tot[m] ?? 0).toLocaleString('en-IN')}`,
+    }))
+  }, [filtered, fromMonth, toMonth, spanMonths, view, FX])
+
+  // Top five categories + "Other categories"
+  const catRows = useMemo(() => {
+    const m: Record<string, number> = {}
+    realExpensesForMonth.forEach(t => { m[t.category] = (m[t.category] ?? 0) + toDisplay(Number(t.amount), t.currency) })
+    const rows = Object.entries(m).sort((a, b) => b[1] - a[1])
+    const rest = rows.slice(5).reduce((a, r) => a + r[1], 0)
+    return [...rows.slice(0, 5).map(([cat, v]) => ({ cat, v })), ...(rest > 0 ? [{ cat: 'Other categories', v: rest }] : [])]
+  }, [filteredForMonth, view, FX])
+
+  const overBudget = Object.keys(budgetMap).filter(c => (catMonthTotals[c] ?? 0) > budgetMap[c])
+  const top = catRows[0]
+  const insight = realExpensesForMonth.length === 0
+    ? `No spending recorded for ${rangeLabel} yet. Import a statement or add a transaction to see where your money goes.`
+    : [
+        top && `${top.cat} is your biggest category at ${short(top.v)} (${Math.round(top.v / rangeExpenses * 100)}% of spending).`,
+        spendChg != null && `Spending is ${Math.abs(spendChg)}% ${spendChg >= 0 ? 'higher' : 'lower'} than ${prevLabel}.`,
+        overBudget.length > 0 && `${overBudget.length} categor${overBudget.length === 1 ? 'y is' : 'ies are'} over budget.`,
+      ].filter(Boolean).join(' ')
+  const aiContext = `My expenses for ${rangeLabel} (${viewLabel}): ${money(rangeExpenses)} across ${realExpensesForMonth.length} transactions. `
+    + `Top categories: ${catRows.map(r => `${r.cat} ${short(r.v)}`).join(', ') || 'none'}.`
+    + (spendChg != null ? ` ${spendChg >= 0 ? 'Up' : 'Down'} ${Math.abs(spendChg)}% vs ${prevLabel}.` : '')
+    + (overBudget.length ? ` Over budget: ${overBudget.join(', ')}.` : '')
+
+  // Card bills, loan payments and investments: tap a tile to see the payments
+  const panels = [
+    { key: 'cc',     label: 'Card bills paid', color: '#9333EA', total: rangeCCPayments,   txns: ccPaymentsForMonth,  showInrEq: false, showCatBadge: false, icon: CreditCard },
+    { key: 'loan',   label: 'Loan payments',   color: '#F59E0B', total: rangeLoanPayments, txns: loansForMonth,       showInrEq: false, showCatBadge: true,  icon: Landmark },
+    { key: 'invest', label: 'Invested',        color: '#10B981', total: rangeInvestments,  txns: investmentsForMonth, showInrEq: false, showCatBadge: false, icon: TrendingUp },
+  ]
+  const activePanel = panels.find(p => p.key === openPanel && p.txns.length > 0) ?? null
+
+  const addMenuList = (
+    <>
+      <div className="px-4 py-2.5 border-b text-[10px] uppercase tracking-wider font-bold"
+        style={{ borderColor:'var(--line)', color:'var(--text3)', background:'var(--bg2)' }}>
+        How would you like to add?
+      </div>
+      {addButtons.map(({ key, label, desc, icon: Icon, color }) => (
+        <button key={key}
+          onClick={() => { setActiveModal(key); setShowAddMenu(false) }}
+          className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors border-b last:border-b-0 hover:bg-[#F7F6FD]"
+          style={{ borderColor:'var(--line)' }}>
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{ background: color+'15', color }}>
+            <Icon size={17} />
+          </div>
+          <div className="min-w-0">
+            <div className="text-[12.5px] font-semibold" style={{ color:'var(--text)' }}>{label}</div>
+            <div className="text-[11px] leading-snug mt-0.5" style={{ color:'var(--text3)' }}>{desc}</div>
+          </div>
+        </button>
+      ))}
+    </>
+  )
+
   return (
-    <div className="space-y-5 animate-fade-up">
-      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 md:gap-4">
-        <div>
-          <h1 className="text-xl font-bold" style={{ color:'var(--text)' }}>Expenses</h1>
-          <p className="text-[12px] mt-0.5" style={{ color:'var(--text3)' }}>
-            {view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'} · {rangeLabel}
-            {liveRate && (
-              <span className="ml-2 font-mono hidden sm:inline" style={{ color:'var(--gold)' }}>
-                · Live: 1 AED = ₹{liveRate.toFixed(2)}{rateDate ? ` (${rateDate})` : ''}
-              </span>
-            )}
-          </p>
-        </div>
-
-        <div className="flex flex-col items-stretch md:items-end gap-2 flex-shrink-0 w-full md:w-auto">
-          {/* Secondary links */}
-          <div className="flex gap-2">
-            <Link href="/dashboard/expenses/report"
-              className="flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 py-2 md:py-1.5 rounded-lg text-[11px] font-semibold border transition-all"
-              style={{ background:'var(--bg2)', borderColor:'var(--border)', color:'var(--text3)' }}>
-              <BarChart2 size={12} /> Annual Report
-            </Link>
-            <Link href="/dashboard/budgets/learn"
-              className="flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 py-2 md:py-1.5 rounded-lg text-[11px] font-semibold border transition-all"
-              style={{ background:'var(--sage-bg)', borderColor:'var(--sage)', color:'var(--sage)' }}>
-              <BookOpen size={12} /> Learn Categories
-            </Link>
-          </div>
-
-          {/* Primary add dropdown */}
-          <div className="relative w-full md:w-auto" ref={menuRef}>
-            <button
-              onClick={() => setShowAddMenu(v => !v)}
-              className="w-full md:w-auto flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-bold text-white shadow-sm transition-all hover:opacity-90"
-              style={{ background:'var(--sage)' }}>
-              <Plus size={15} />
-              Add Transaction
-              <ChevronDown size={13} style={{ transition:'transform 0.2s', transform: showAddMenu ? 'rotate(180deg)' : 'rotate(0deg)' }} />
-            </button>
-
-            {showAddMenu && (
-              <div className="absolute right-0 top-full mt-2 w-72 rounded-2xl z-50 overflow-hidden"
-                style={{ background:'#fff', border:'1px solid var(--border)', boxShadow:'0 8px 40px rgba(0,0,0,0.15)' }}>
-                <div className="px-4 py-2.5 border-b text-[10px] uppercase tracking-wider font-bold"
-                  style={{ borderColor:'var(--border)', color:'var(--text3)', background:'var(--bg2)' }}>
-                  How would you like to add?
+    // Phones follow the design's order (title · hero chart · KPIs · insight ·
+    // AI actions · breakdown · filters · list · learn) via max-md:order.
+    <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
+      <div className="max-md:order-1">
+        <PageHeader title="Expenses"
+          sub={<>{viewLabel} · {rangeLabel}{liveRate && <span className="hidden sm:inline" style={{ color:'var(--amber-text)' }}> · 1 AED = ₹{liveRate.toFixed(2)}{rateDate ? ` (${rateDate})` : ''}</span>}</>}
+          onAdd={() => setShowAddMenu(true)} addLabel="Add transaction"
+          actions={<>
+            <Link href="/dashboard/expenses/report" className="wl-btn" style={{ height: 34 }}><BarChart2 size={14} />Annual report</Link>
+            <div className="relative" ref={menuRef}>
+              <button onClick={() => setShowAddMenu(v => !v)} aria-expanded={showAddMenu} aria-haspopup="menu"
+                className="wl-btn wl-btn-primary" style={{ height: 34 }}>
+                <Plus size={14} />Add transaction
+                <ChevronDown size={13} style={{ transition:'transform 0.2s', transform: showAddMenu ? 'rotate(180deg)' : 'none' }} />
+              </button>
+              {showAddMenu && (
+                <div className="hidden md:block absolute right-0 top-full mt-2 w-72 rounded-2xl z-50 overflow-hidden"
+                  style={{ background:'#fff', border:'1px solid var(--line)', boxShadow:'0 18px 50px rgba(15,23,42,.2)' }}>
+                  {addMenuList}
                 </div>
-                {addButtons.map(({ key, label, desc, icon: Icon, color }) => (
-                  <button key={key}
-                    onClick={() => { setActiveModal(key); setShowAddMenu(false) }}
-                    className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors border-b last:border-b-0"
-                    style={{ borderColor:'var(--border)' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = '#F9FAFB')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                      style={{ background: color+'15', color }}>
-                      <Icon size={17} />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-[12px] font-semibold" style={{ color:'var(--text)' }}>{label}</div>
-                      <div className="text-[10px] leading-snug mt-0.5" style={{ color:'var(--text3)' }}>{desc}</div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          </>} />
+      </div>
+      {showAddMenu && (
+        <div className="md:hidden fixed inset-0 z-50 wl-sheet" onClick={() => setShowAddMenu(false)}>
+          <div ref={sheetRef} className="wl-sheet-panel bg-white" onClick={e => e.stopPropagation()}>{addMenuList}</div>
         </div>
+      )}
+
+      <div className="max-md:order-4"><InsightBar text={insight} prompt={`Explain my expenses page in plain language. ${aiContext}`} /></div>
+      <div className="max-md:order-5"><AiActions actions={['Find ways to save', 'Flag unusual spends']} context={aiContext} /></div>
+
+      {/* KPIs — on phones the headline number lives on the chart card */}
+      <div className="max-md:order-3 grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
+        <KpiTile className="max-md:hidden" label={`Spent · ${rangeLabel}`} value={money(rangeExpenses)} delta={spendDelta} tone={spendTone} tint={0} icon={ArrowUpRight} />
+        {panels.map((p, i) => (
+          <KpiTile key={p.key} label={p.label} value={money(p.total)} tint={i + 1} icon={p.icon}
+            delta={`${p.txns.length} payment${p.txns.length === 1 ? '' : 's'}${p.txns.length ? ' · view' : ''}`}
+            onClick={p.txns.length ? () => setOpenPanel(p.key) : undefined} />
+        ))}
       </div>
 
-      {/* Unified Financial Overview — primary card + clickable secondary panels */}
-      {(() => {
-        const panels = [
-          { key: 'cc',     label: 'CC Payments',   color: '#9333EA', total: rangeCCPayments,  txns: ccPaymentsForMonth,  showInrEq: false, showCatBadge: false },
-          { key: 'loan',   label: 'Loan Payments', color: '#F59E0B', total: rangeLoanPayments, txns: loansForMonth,      showInrEq: false, showCatBadge: true  },
-          { key: 'invest', label: 'Investments',   color: '#10B981', total: rangeInvestments,  txns: investmentsForMonth, showInrEq: false, showCatBadge: false },
-        ].filter(p => p.txns.length > 0)
+      {/* Monthly bars + where it went */}
+      <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4">
+        <section className="wl-card max-md:order-2 px-4 md:px-5 py-4 md:py-[18px] flex flex-col">
+          <div className="md:hidden">
+            <div className="text-[10.5px] font-semibold uppercase tracking-[0.05em]" style={{ color:'var(--text3)' }}>Spent · {rangeLabel}</div>
+            <div className="text-[30px] font-bold tabular-nums tracking-[-0.02em] my-0.5" style={{ color:'var(--text)' }}>{money(rangeExpenses)}</div>
+            <div className="text-[12px] font-medium" style={{ color: spendTone === 'bad' ? '#DC2626' : spendTone === 'good' ? '#16A34A' : 'var(--text3)' }}>{spendDelta}</div>
+          </div>
+          <div className="hidden md:flex justify-between items-center gap-3">
+            <h2 className="text-[14px] font-semibold" style={{ color:'var(--text)' }}>Spending by month</h2>
+            <div className="flex gap-3.5 text-[11.5px]" style={{ color:'var(--text3)' }}>
+              <span><i className="inline-block w-[9px] h-[9px] rounded-sm mr-1.5" style={{ background:'var(--accent)' }} />Selected period</span>
+              <span><i className="inline-block w-[9px] h-[9px] rounded-sm mr-1.5" style={{ background:'#C9C2F5' }} />Earlier</span>
+            </div>
+          </div>
+          <Bars data={barMonths} className="h-[110px] md:h-auto md:flex-1 md:min-h-[220px] mt-2.5 md:mt-4" label={`Spending by month: ${barMonths.map(b => b.tip).join(', ')}`} />
+        </section>
 
-        const activePanel = panels.find(p => p.key === openPanel) ?? null
+        <section className="wl-card max-md:order-6 px-4 md:px-5 py-4 md:py-[18px] flex flex-col gap-3">
+          <h2 className="text-[14px] font-semibold" style={{ color:'var(--text)' }}>Where it went</h2>
+          {catRows.length === 0 ? (
+            <div className="text-[12.5px] py-6 text-center" style={{ color:'var(--text3)' }}>No spending in {rangeLabel}.</div>
+          ) : (<>
+            <div className="hidden md:flex justify-center">
+              <Donut segments={catRows.map((r, i) => ({ value: r.v, color: PALETTE[i % PALETTE.length] }))} size={128}
+                label={`Spending by category: ${catRows.map(r => `${r.cat} ${short(r.v)}`).join(', ')}`}>
+                <div className="text-[10.5px]" style={{ color:'var(--text3)' }}>Spent</div>
+                <div className="text-[16px] font-bold tracking-[-0.01em]" style={{ color:'var(--text)' }}>{short(rangeExpenses)}</div>
+              </Donut>
+            </div>
+            {catRows.map((r, i) => {
+              const real = r.cat !== 'Other categories'
+              const cap = real ? budgetMap[r.cat] : undefined
+              const share = rangeExpenses > 0 ? r.v / rangeExpenses * 100 : 0
+              const row = <ProgressRow name={r.cat} sub={cap ? `of ${short(cap)} budget` : undefined} value={short(r.v)} right={`${Math.round(share)}%`} pct={share} color={PALETTE[i % PALETTE.length]} />
+              return real
+                ? <button key={r.cat} onClick={() => setCat(r.cat)} className="text-left" title={`Show only ${r.cat}`}>{row}</button>
+                : <div key={r.cat}>{row}</div>
+            })}
+          </>)}
+        </section>
+      </div>
 
-        return (
-          <>
-            <div className="flex gap-3 flex-wrap">
-              {/* Primary: Total Expenses */}
-              <div className="wl-card p-5 relative overflow-hidden min-w-[180px] flex-1"
-                style={{ borderTop: '3px solid var(--rose)' }}>
-                <div className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text3)' }}>
-                  Expenses · {rangeLabel}
+      {/* Transaction detail popup */}
+      {activePanel && (
+        <div className="fixed inset-0 wl-sheet z-50 flex items-end sm:items-center justify-center p-4 wl-popup-overlay"
+          style={{ background: 'rgba(15,23,42,0.45)' }}
+          onClick={() => setOpenPanel(null)}>
+          <div className="wl-sheet-panel wl-popup-panel rounded-2xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden"
+            style={{ background: 'var(--card)', border: '1px solid var(--line)', borderTop: `3px solid ${activePanel.color}`, maxHeight: '80vh' }}
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--line)' }}>
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: activePanel.color }}>
+                  {activePanel.label}
                 </div>
-                <div className="text-[28px] font-bold font-mono leading-none" style={{ color: 'var(--expense)' }}>
-                  {sym}{Math.round(rangeExpenses).toLocaleString('en-IN')}
+                <div className="text-[24px] font-bold font-mono" style={{ color: 'var(--text)' }}>
+                  {money(activePanel.total)}
                 </div>
-                <div className="text-[10px] mt-2" style={{ color: 'var(--text3)' }}>
-                  {realExpensesForMonth.length} transaction{realExpensesForMonth.length !== 1 ? 's' : ''}
+                <div className="text-[11px]" style={{ color: 'var(--text3)' }}>
+                  {activePanel.txns.length} transaction{activePanel.txns.length !== 1 ? 's' : ''} · {rangeLabel}
                 </div>
               </div>
-
-              {/* Secondary: clickable summary panels */}
-              {panels.map(p => (
-                <button key={p.key} onClick={() => setOpenPanel(p.key)}
-                  className="wl-card wl-summary-chip p-4 text-left relative overflow-hidden min-w-[140px] flex-1"
-                  style={{ borderTop: `3px solid ${p.color}` }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.boxShadow = `0 8px 28px ${p.color}28` }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = '' }}>
-                  <div className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: p.color }}>
-                    {p.label}
-                  </div>
-                  <div className="text-[22px] font-bold font-mono leading-none" style={{ color: 'var(--text)' }}>
-                    {sym}{Math.round(p.total).toLocaleString('en-IN')}
-                  </div>
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-[10px]" style={{ color: 'var(--text3)' }}>
-                      {p.txns.length} txn{p.txns.length !== 1 ? 's' : ''}
-                    </span>
-                    <ArrowRight size={11} style={{ color: p.color, opacity: 0.65 }} />
-                  </div>
-                </button>
-              ))}
+              <button onClick={() => setOpenPanel(null)} aria-label="Close"
+                className="p-2 rounded-xl transition-colors hover:bg-gray-100"
+                style={{ color: 'var(--text3)' }}>
+                <X size={16} />
+              </button>
             </div>
-
-            {/* Transaction detail popup */}
-            {activePanel && (
-              <div className="fixed inset-0 wl-sheet z-50 flex items-end sm:items-center justify-center p-4 wl-popup-overlay"
-                style={{ background: 'rgba(0,0,0,0.45)' }}
-                onClick={() => setOpenPanel(null)}>
-                <div className="wl-sheet-panel wl-popup-panel rounded-2xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden"
-                  style={{ background: 'var(--card)', border: '1px solid var(--border)', borderTop: `3px solid ${activePanel.color}`, maxHeight: '80vh' }}
-                  onClick={e => e.stopPropagation()}>
-                  <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
-                    <div>
-                      <div className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: activePanel.color }}>
-                        {activePanel.label}
-                      </div>
-                      <div className="text-[24px] font-bold font-mono" style={{ color: 'var(--text)' }}>
-                        {sym}{Math.round(activePanel.total).toLocaleString('en-IN')}
-                      </div>
-                      <div className="text-[11px]" style={{ color: 'var(--text3)' }}>
-                        {activePanel.txns.length} transaction{activePanel.txns.length !== 1 ? 's' : ''} · {rangeLabel}
+            <div className="overflow-y-auto p-4 space-y-2">
+              {activePanel.txns.map((t: any, i: number) => {
+                const lSym    = t.currency === 'AED' ? 'AED ' : '₹'
+                const inrEq   = activePanel.showInrEq && t.currency === 'AED' && liveRate
+                  ? `≈ ₹${Math.round(Number(t.amount) * liveRate).toLocaleString('en-IN')}` : null
+                const rowColor = activePanel.key === 'loan'
+                  ? (t.category === 'Loan on Card' ? '#F59E0B' : '#F97316')
+                  : activePanel.color
+                return (
+                  <div key={i} className="flex items-center justify-between rounded-xl px-3 py-2.5"
+                    style={{ background: rowColor + '0D', border: `1px solid ${rowColor}25` }}>
+                    <div className="min-w-0 mr-3">
+                      <div className="text-[12px] font-semibold truncate" style={{ color: 'var(--text)' }}>{t.merchant}</div>
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        {activePanel.showCatBadge && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold"
+                            style={{ background: rowColor + '20', color: rowColor }}>
+                            {t.category}
+                          </span>
+                        )}
+                        <span className="text-[10px]" style={{ color: 'var(--text3)' }}>{t.txn_date}</span>
                       </div>
                     </div>
-                    <button onClick={() => setOpenPanel(null)}
-                      className="p-2 rounded-xl transition-colors hover:bg-gray-100"
-                      style={{ color: 'var(--text3)' }}>
-                      <X size={16} />
-                    </button>
+                    <div className="text-right flex-shrink-0">
+                      <div className="font-mono font-bold text-[13px]" style={{ color: rowColor }}>
+                        {lSym}{Number(t.amount).toLocaleString('en-IN')}
+                      </div>
+                      {inrEq && <div className="text-[10px] font-mono" style={{ color: 'var(--text3)' }}>{inrEq}</div>}
+                    </div>
                   </div>
-                  <div className="overflow-y-auto p-4 space-y-2">
-                    {activePanel.txns.map((t: any, i: number) => {
-                      const lSym    = t.currency === 'AED' ? 'AED ' : '₹'
-                      const inrEq   = activePanel.showInrEq && t.currency === 'AED' && liveRate
-                        ? `≈ ₹${Math.round(Number(t.amount) * liveRate).toLocaleString('en-IN')}` : null
-                      const rowColor = activePanel.key === 'loan'
-                        ? (t.category === 'Loan on Card' ? '#F59E0B' : '#F97316')
-                        : activePanel.color
-                      return (
-                        <div key={i} className="flex items-center justify-between rounded-xl px-3 py-2.5"
-                          style={{ background: rowColor + '0D', border: `1px solid ${rowColor}25` }}>
-                          <div className="min-w-0 mr-3">
-                            <div className="text-[12px] font-semibold truncate" style={{ color: 'var(--text)' }}>{t.merchant}</div>
-                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                              {activePanel.showCatBadge && (
-                                <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold"
-                                  style={{ background: rowColor + '20', color: rowColor }}>
-                                  {t.category}
-                                </span>
-                              )}
-                              <span className="text-[10px]" style={{ color: 'var(--text3)' }}>{t.txn_date}</span>
-                            </div>
-                          </div>
-                          <div className="text-right flex-shrink-0">
-                            <div className="font-mono font-bold text-[13px]" style={{ color: rowColor }}>
-                              {lSym}{Number(t.amount).toLocaleString('en-IN')}
-                            </div>
-                            {inrEq && <div className="text-[10px] font-mono" style={{ color: 'var(--text3)' }}>{inrEq}</div>}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
-        )
-      })()}
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Budget alert popover */}
       {alertCat && (() => {
@@ -413,8 +473,8 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
         if (!bs) return null
         const color = budgetColor(bs.pct)
         return (
-          <div className="wl-card p-4 relative" style={{ border: `2px solid ${color}` }}>
-            <button onClick={() => setAlertCat(null)} className="absolute top-3 right-3" style={{ color:'var(--text3)' }}><X size={14}/></button>
+          <div className="wl-card max-md:order-7 p-4 relative" style={{ border: `2px solid ${color}` }}>
+            <button onClick={() => setAlertCat(null)} className="absolute top-3 right-3" aria-label="Close" style={{ color:'var(--text3)' }}><X size={14}/></button>
             <div className="text-[12px] font-bold mb-2" style={{ color }}>
               {alertCat} · Budget Alert
             </div>
@@ -427,7 +487,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
                 </div>
               </div>
             </div>
-            <div className="mt-2 h-2 rounded-full overflow-hidden" style={{ background:'var(--bg2)' }}>
+            <div className="mt-2 h-2 rounded-full overflow-hidden" style={{ background:'var(--track)' }}>
               <div className="h-full rounded-full" style={{ width:`${Math.min(bs.pct,100)}%`, background: color }} />
             </div>
             <div className="text-[10px] mt-1 font-semibold" style={{ color }}>{Math.round(bs.pct)}% of budget used</div>
@@ -436,48 +496,43 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
       })()}
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-2 items-center">
-        <div className="relative w-full md:w-48">
+      <div className="max-md:order-8 flex flex-wrap gap-2 items-center">
+        <div className="relative w-full md:w-52">
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color:'var(--text3)' }} />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search merchant…"
-            className="wl-input pl-8 w-full" style={{ background:'var(--bg2)' }}
-            onFocus={e=>(e.target.style.borderColor='var(--sage)')}
-            onBlur={e=>(e.target.style.borderColor='var(--border)')} />
+            aria-label="Search merchant" className="wl-input pl-8 w-full" style={{ background:'#fff' }} />
         </div>
         {/* Category chips — desktop only */}
-        <div className="hidden md:flex gap-1 flex-wrap">
+        <div className="hidden md:flex gap-1.5 flex-wrap">
           {EXPENSE_CATS.map(c => {
             const bs = c !== 'All' ? getBudgetStatus(c) : null
             const isOver = bs && bs.pct >= 100
             return (
               <button key={c} onClick={() => { setCat(c); if (isOver) setAlertCat(c) }}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all"
-                style={cat === c
-                  ? { background: CAT_COLORS[c] ?? 'var(--sage)', borderColor:'transparent', color:'#fff' }
-                  : { background:'transparent', borderColor:'var(--border)', color:'var(--text3)' }}>
-                {isOver && <AlertTriangle size={10} style={{ color: cat === c ? '#fff' : 'var(--rose)' }} />}
+                aria-pressed={cat === c} className="wl-chip gap-1" style={{ height: 30 }}>
+                {isOver && <AlertTriangle size={11} style={{ color: 'var(--rose)' }} />}
                 {c}
               </button>
             )
           })}
         </div>
         {/* Category dropdown — mobile only (replaces the chip wall) */}
-        <select value={cat} onChange={e => setCat(e.target.value)}
-          className="wl-input md:hidden flex-1" style={{ background:'var(--bg2)' }}>
+        <select value={cat} onChange={e => setCat(e.target.value)} aria-label="Category"
+          className="wl-input md:hidden flex-1 min-w-0" style={{ background:'#fff' }}>
           {EXPENSE_CATS.map(c => {
             const bs = c !== 'All' ? getBudgetStatus(c) : null
-            return <option key={c} value={c}>{c === 'All' ? 'All Categories' : c}{bs && bs.pct >= 100 ? ' ⚠' : ''}</option>
+            return <option key={c} value={c}>{c === 'All' ? 'All categories' : c}{bs && bs.pct >= 100 ? ' ⚠' : ''}</option>
           })}
         </select>
-        <select value={accFilter} onChange={e => setAccFilter(e.target.value)}
-          className="wl-input flex-1 md:flex-none" style={{ background:'var(--bg2)', width:'auto' }}>
-          <option value="All">All Accounts</option>
+        <select value={accFilter} onChange={e => setAccFilter(e.target.value)} aria-label="Account"
+          className="wl-input flex-1 min-w-0 md:flex-none" style={{ background:'#fff', width:'auto' }}>
+          <option value="All">All accounts</option>
           {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
       </div>
 
       {/* Transaction table with pagination */}
-      <div className="wl-card overflow-hidden">
+      <div className="wl-card max-md:order-9 overflow-hidden">
         {filteredForMonth.length === 0 ? (
           <div className="text-center py-16 text-[13px]" style={{ color:'var(--text3)' }}>
             No transactions for {rangeLabel}. Add one using the buttons above.
@@ -624,6 +679,8 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
           </>
         )}
       </div>
+
+      <div className="max-md:order-10"><LearnStrip title="Why categories beat totals" href="/dashboard/expenses/learn" /></div>
 
       {activeModal === 'message'     && <MessageParseModal onClose={() => setActiveModal('none')} initialText={sharedText ?? ''} />}
       {activeModal === 'manual'      && <AddTransactionModal onClose={() => setActiveModal('none')} />}
