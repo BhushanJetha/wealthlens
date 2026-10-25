@@ -1,282 +1,185 @@
 'use client'
 import { useMemo } from 'react'
 import { useViewStore } from '@/store/viewStore'
-import { Wallet, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Info } from 'lucide-react'
-import {
-  AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip,
-  CartesianGrid, ResponsiveContainer, Cell, ReferenceLine,
-} from 'recharts'
-import { computeNetWorth, viewAmount } from '@/lib/netWorth'
-import { PageHeader, InsightBar, AiActions, LearnStrip } from '@/components/ui/kit'
+import { AlertTriangle, Wallet, Landmark, Scale, TrendingUp } from 'lucide-react'
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { computeNetWorth, groupAssets, ASSET_GROUPS } from '@/lib/netWorth'
+import { buildHomeInsights, netWorthHistory, estimateNetWorthBack, fmtDay, type Snapshot } from '@/lib/insights'
+import { fmtMoney, fmtCompact } from '@/lib/format'
+import { PageHeader, InsightBar, AiActions, LearnStrip, HeroStat, KpiTile, Donut, ProgressRow, EmptyState } from '@/components/ui/kit'
+import { ListCard, ListRow } from '@/components/ui/list'
 
 interface Props {
+  today: string; failed: string[]
   accounts: any[]; stocks: any[]; mutualFunds: any[]; etf: any[]; nps: any[]
   fixedDeposits: any[]; recurringDeposits: any[]; ppfEpf: any[]; gold: any[]
-  bonds: any[]; lic: any[]; loans: any[]; transactions: any[]
+  bonds: any[]; lic: any[]; loans: any[]; transactions: any[]; snapshots: Snapshot[]
 }
 
-const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+// Where each net-worth row is managed
+const HREF: Record<string, string> = {
+  bank: '/dashboard/accounts', stock: '/dashboard/stocks', mf: '/dashboard/investments/mutual-funds',
+  etf: '/dashboard/investments/etf', nps: '/dashboard/investments/nps', fd: '/dashboard/investments/fixed-deposits',
+  rd: '/dashboard/investments/recurring-deposits', ppf: '/dashboard/investments/ppf-epf', gold: '/dashboard/investments/gold',
+  bond: '/dashboard/investments/bonds', lic: '/dashboard/investments/lic', loans: '/dashboard/loans', cards: '/dashboard/cards',
+}
 
+// Net worth (design v2): headline + trend in one card on both sizes (same
+// tracked + estimated line as Home), where it sits, tiles, and every asset
+// and liability class with a link to its page.
 export default function NetWorthClient(p: Props) {
   const { view, fxRate: FX } = useViewStore()
-  const sym = view === 'uae' ? 'AED ' : '₹'
+  const cur = view === 'uae' ? 'AED' : 'INR'
+  const money = (n: number) => fmtMoney(n, cur)
+  const short = (n: number) => fmtCompact(n, cur)
+  const viewLabel = view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'
 
-  // View / FX aware value of one amount in a given currency
-  const disp = (amt: number, cur: string) => viewAmount(amt, cur, view, FX)
+  const nw = useMemo(() => computeNetWorth(p, view, FX), [p, view, FX])
+  const { assetRows, liabRows, totalAssets, totalInvested, totalLiab, netWorth } = nw
+  const groups = useMemo(() => groupAssets(assetRows), [assetRows])
 
-  const money = (n: number) => `${sym}${Math.round(n).toLocaleString('en-IN')}`
-  const short = (n: number) => {
-    const v = Math.abs(n)
-    const s = v >= 1e7 ? `${(n / 1e7).toFixed(2)}Cr` : v >= 1e5 ? `${(n / 1e5).toFixed(1)}L` : v >= 1e3 ? `${(n / 1e3).toFixed(0)}K` : String(Math.round(n))
-    return `${sym}${s}`
-  }
+  // Tracked snapshots (solid) + months before tracking estimated from savings (dashed)
+  const hist = useMemo(() => netWorthHistory(p.snapshots, view, p.today), [p.snapshots, view, p.today])
+  const saved = useMemo(() => buildHomeInsights({
+    view, fx: FX, today: p.today, focusMonth: p.today.slice(0, 7), txns: p.transactions,
+    accounts: [], loans: [], insurance: [], fixedDeposits: [], budgets: [], mutualFunds: [], stocks: [],
+    cash: 0, invested: { value: 0, cost: 0 },
+  }).savedByMonth, [p.transactions, view, FX, p.today])
+  const est = useMemo(() => estimateNetWorthBack(netWorth, p.today, saved, hist.series[0]?.date ?? null), [netWorth, p.today, saved, hist.series])
+  const rows = useMemo(() => {
+    const tracked = [...hist.series.slice(0, -1), { date: hist.series[hist.series.length - 1]?.date ?? p.today, value: Math.round(netWorth) }]
+    return [
+      ...est.map(x => ({ date: x.date, est: x.value } as { date: string; value?: number; est?: number })),
+      ...tracked.map((x, i) => (i === 0 && est.length ? { ...x, est: x.value } : { ...x })),
+    ]
+  }, [est, hist.series, netWorth, p.today])
+  // Change vs about a month ago: a tracked point when there is one, else the estimate
+  const ref = hist.ref ?? (est.length ? { ...est[est.length - 1], estimated: true } : null)
+  const change = ref ? netWorth - ref.value : null
 
-  const { assetRows, liabRows, totalAssets, totalInvested, totalLiab, netWorth, trend, netSavings } = useMemo(() => {
-    // Same calculation as Home and the daily snapshot (lib/netWorth.ts)
-    const { assetRows, liabRows, totalAssets, totalInvested, totalLiab, netWorth } = computeNetWorth(p, view, FX)
-
-    // Real monthly net savings (income − expense), view/FX aware, last 12 months
-    const now = new Date()
-    const keys: string[] = []
-    for (let i = 11; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); keys.push(d.toISOString().slice(0, 7)) }
-    const inc: Record<string, number> = {}, exp: Record<string, number> = {}
-    p.transactions.forEach(t => {
-      const m = t.txn_date?.slice(0, 7); if (!m) return
-      const v = disp(Number(t.amount), t.currency)
-      if (t.txn_type === 'income') inc[m] = (inc[m] ?? 0) + v
-      else if (t.txn_type === 'expense') exp[m] = (exp[m] ?? 0) + v
-    })
-    const netSavings = keys.map(m => ({ m, label: MONTHS[Number(m.slice(5)) - 1], value: Math.round((inc[m] ?? 0) - (exp[m] ?? 0)) }))
-
-    // Reconstruct a net-worth trend ending at today's real net worth, by
-    // walking back and removing each month's net savings (estimate — assets
-    // are marked at today's value, so market history isn't captured).
-    const trend: { label: string; value: number }[] = new Array(keys.length)
-    let running = netWorth
-    for (let i = keys.length - 1; i >= 0; i--) {
-      trend[i] = { label: netSavings[i].label, value: Math.round(running) }
-      running -= netSavings[i].value
-    }
-
-    return { assetRows, liabRows, totalAssets, totalInvested, totalLiab, netWorth, trend, netSavings }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p, view, FX])
-
-  const monthChange = netSavings.length ? netSavings[netSavings.length - 1].value : 0
-  const prevNW = trend.length > 1 ? trend[trend.length - 2].value : netWorth
-  const changePct = prevNW !== 0 ? Math.round((netWorth - prevNW) / Math.abs(prevNW) * 1000) / 10 : 0
   const debtRatio = totalAssets > 0 ? Math.round(totalLiab / totalAssets * 100) : 0
-  const investGain = totalAssets - totalInvested
-  const investGainPct = totalInvested > 0 ? Math.round(investGain / totalInvested * 1000) / 10 : 0
+  const gain = totalAssets - totalInvested
+  const gainPct = totalInvested > 0 ? Math.round(gain / totalInvested * 1000) / 10 : 0
   const empty = totalAssets === 0 && totalLiab === 0
+  const groupLabel = (g: string) => ASSET_GROUPS.find(x => x.key === g)?.label ?? ''
+  const labels = rows.length >= 3 ? [rows[0], rows[Math.floor(rows.length / 2)], rows[rows.length - 1]] : []
 
   return (
-    <div className="space-y-5 animate-fade-up">
-      <PageHeader title="Net worth"
-        sub={`Everything you own minus everything you owe · ${view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'}`} />
-      {!empty && <InsightBar
-        text={`Net worth ${short(netWorth)}: assets ${short(totalAssets)} minus liabilities ${short(totalLiab)} — debt is ${debtRatio}% of what you own. Investments are ${investGain >= 0 ? 'up' : 'down'} ${Math.abs(investGainPct)}% on what you put in.`}
-        prompt={`Explain my net worth page in plain language. Net worth ${money(netWorth)}, assets ${money(totalAssets)}, liabilities ${money(totalLiab)}, debt ratio ${debtRatio}%, investment gain ${investGainPct}%. Assets: ${assetRows.filter((r: any) => r.value > 0).map((r: any) => `${r.label} ${short(r.value)}`).join(', ')}. Liabilities: ${liabRows.filter((r: any) => r.value > 0).map((r: any) => `${r.label} ${short(r.value)}`).join(', ') || 'none'}.`} />}
-      {!empty && <AiActions actions={['What moved my net worth?', 'How do I grow it faster?']}
-        context={`Net worth ${money(netWorth)}, assets ${money(totalAssets)}, liabilities ${money(totalLiab)}, debt ratio ${debtRatio}%.`} />}
+    <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
+      <div className="max-md:order-1">
+        <PageHeader title="Net worth" sub={`Assets minus liabilities · ${viewLabel}`} />
+      </div>
+
+      {p.failed.length > 0 && (
+        <div className="max-md:order-1 rounded-xl px-4 py-3 flex items-start gap-2.5 text-[12.5px]" style={{ background: '#FFF7E6', border: '1px solid #F8DDB8', color: '#92560B' }}>
+          <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" />
+          <span>We couldn&apos;t load {p.failed.join(', ')} just now, so net worth may be understated. Refresh the page to try again.</span>
+        </div>
+      )}
+
+      {!empty && <div className="max-md:order-4"><InsightBar
+        text={`Net worth is ${short(netWorth)}: ${short(totalAssets)} of assets minus ${short(totalLiab)} owed. Debt is ${debtRatio}% of what you own${debtRatio < 30 ? ' (healthy)' : debtRatio < 50 ? '' : ' (high)'}, and investments are ${gain >= 0 ? 'up' : 'down'} ${Math.abs(gainPct)}% on what you put in.`}
+        prompt={`Explain my net worth page in plain language. Net worth ${money(netWorth)}, assets ${money(totalAssets)}, liabilities ${money(totalLiab)}, debt ratio ${debtRatio}%, investment gain ${gainPct}%. Assets: ${assetRows.filter(r => r.value > 0).map(r => `${r.label} ${short(r.value)}`).join(', ')}. Liabilities: ${liabRows.filter(r => r.value > 0).map(r => `${r.label} ${short(r.value)}`).join(', ') || 'none'}.`} /></div>}
+      {!empty && <div className="max-md:order-5"><AiActions actions={['What moved my net worth?', 'How do I grow it faster?']}
+        context={`Net worth ${money(netWorth)}, assets ${money(totalAssets)}, liabilities ${money(totalLiab)}, debt ratio ${debtRatio}%.`} /></div>}
 
       {empty ? (
-        <div className="wl-card py-16 text-center text-[13px]" style={{ borderStyle: 'dashed', color: 'var(--text3)' }}>
-          No assets or liabilities in the <strong>{view === 'uae' ? 'UAE (AED)' : view === 'india' ? 'India (INR)' : 'Consolidated'}</strong> view yet.
-          Add bank balances, investments or loans to see your net worth.
+        <div className="max-md:order-2">
+          <EmptyState message={`No assets or liabilities in the ${view === 'uae' ? 'UAE (AED)' : view === 'india' ? 'India (INR)' : 'consolidated'} view yet. Add bank balances, investments or loans to see your net worth.`} />
         </div>
-      ) : (
-        <>
-          {/* Hero */}
-          <div className="wl-card p-5" style={{ borderTop: '3px solid var(--sage)' }}>
-            <div className="flex items-end justify-between flex-wrap gap-4">
-              <div>
-                <div className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>Total Net Worth</div>
-                <div className="text-[34px] leading-none font-black font-mono" style={{ color: netWorth >= 0 ? 'var(--text)' : 'var(--rose)' }}>
-                  {money(netWorth)}
-                </div>
-                <div className="flex items-center gap-1.5 mt-2 text-[12px] font-semibold"
-                  style={{ color: monthChange >= 0 ? 'var(--income)' : 'var(--rose)' }}>
-                  {monthChange >= 0 ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
-                  {money(Math.abs(monthChange))} this month
-                  <span style={{ color: 'var(--text3)' }}>· {changePct >= 0 ? '+' : ''}{changePct}%</span>
-                </div>
+      ) : (<>
+        <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4">
+          <HeroStat className="max-md:order-2" label="Net worth" value={money(netWorth)}
+            tone={change == null ? 'neutral' : change >= 0 ? 'good' : 'bad'}
+            delta={change == null ? 'Your trend builds as you use the app'
+              : `${change >= 0 ? '▲' : '▼'} ${short(Math.abs(change))} since ${fmtDay(ref!.date)}${'estimated' in ref! ? ' (estimated)' : ''}`}
+            right={est.length > 0 ? <span className="text-[11.5px] flex items-center gap-3" style={{ color: 'var(--text3)' }}>
+              <span className="flex items-center gap-1.5"><i className="inline-block w-4 border-t-2" style={{ borderColor: 'var(--accent)' }} />Tracked</span>
+              <span className="flex items-center gap-1.5"><i className="inline-block w-4 border-t-2 border-dashed" style={{ borderColor: '#A99BF0' }} />Estimated</span>
+            </span> : undefined}>
+            {rows.length >= 2 && (<>
+              <div className="h-[110px] md:h-auto md:flex-1 md:min-h-[200px] mt-2.5 md:mt-4 -mx-1" aria-label="Net worth over time">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={rows} margin={{ top: 4, right: 6, bottom: 0, left: 6 }}>
+                    <defs>
+                      <linearGradient id="nwFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0" stopColor="#6A55E8" stopOpacity={0.22} /><stop offset="1" stopColor="#6A55E8" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="date" hide />
+                    <YAxis hide domain={['dataMin', 'dataMax']} />
+                    <Tooltip cursor={{ stroke: 'var(--border2)', strokeWidth: 1 }}
+                      content={({ active, payload }: any) => {
+                        const r = active && payload?.[0]?.payload
+                        if (!r) return null
+                        return (
+                          <div style={{ background: '#fff', border: '1px solid var(--line)', borderRadius: 10, fontSize: 12, padding: '6px 10px', color: 'var(--text)' }}>
+                            <div style={{ color: 'var(--text3)' }}>{fmtDay(String(r.date))}</div>
+                            <div className="font-semibold tabular-nums">{money(Number(r.value ?? r.est))}{r.value == null ? ' · estimated' : ''}</div>
+                          </div>
+                        )
+                      }} />
+                    <Area type="monotone" dataKey="est" stroke="#A99BF0" strokeWidth={2} strokeDasharray="5 4" fill="url(#nwFill)" isAnimationActive={false} dot={false} />
+                    <Area type="monotone" dataKey="value" stroke="#6A55E8" strokeWidth={2.5} fill="url(#nwFill)" isAnimationActive={false} dot={false} />
+                  </AreaChart>
+                </ResponsiveContainer>
               </div>
-              <div className="flex gap-3">
-                <div className="rounded-xl px-4 py-3 text-center" style={{ background: 'var(--income-bg)' }}>
-                  <div className="text-[9px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Assets</div>
-                  <div className="text-[18px] font-black font-mono" style={{ color: 'var(--income)' }}>{short(totalAssets)}</div>
-                </div>
-                <div className="rounded-xl px-4 py-3 text-center" style={{ background: 'var(--rose-bg)' }}>
-                  <div className="text-[9px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Liabilities</div>
-                  <div className="text-[18px] font-black font-mono" style={{ color: 'var(--rose)' }}>{short(totalLiab)}</div>
-                </div>
-                <div className="rounded-xl px-4 py-3 text-center" style={{ background: 'var(--bg2)' }}>
-                  <div className="text-[9px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Debt Ratio</div>
-                  <div className="text-[18px] font-black font-mono" style={{ color: debtRatio > 50 ? 'var(--rose)' : debtRatio > 30 ? 'var(--gold)' : 'var(--income)' }}>{debtRatio}%</div>
-                </div>
-              </div>
-            </div>
-            {/* Assets vs liabilities bar */}
-            <div className="mt-4">
-              <div className="flex h-3 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}>
-                <div style={{ width: `${totalAssets + totalLiab > 0 ? (totalAssets / (totalAssets + totalLiab)) * 100 : 0}%`, background: 'var(--income)' }} />
-                <div style={{ width: `${totalAssets + totalLiab > 0 ? (totalLiab / (totalAssets + totalLiab)) * 100 : 0}%`, background: 'var(--rose)' }} />
-              </div>
-            </div>
-          </div>
-
-          {/* Invested vs Current Value */}
-          <div className="wl-card p-4">
-            <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>Invested vs Current Value</div>
-            <div className="flex items-center flex-wrap gap-x-5 gap-y-3">
-              <div>
-                <div className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Total Invested</div>
-                <div className="text-[22px] font-black font-mono" style={{ color: 'var(--text)' }}>{money(totalInvested)}</div>
-              </div>
-              <span className="text-[18px]" style={{ color: 'var(--text3)' }}>→</span>
-              <div>
-                <div className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Current Value</div>
-                <div className="text-[22px] font-black font-mono" style={{ color: 'var(--text)' }}>{money(totalAssets)}</div>
-              </div>
-              <div className="ml-auto text-right">
-                <div className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Overall Gain</div>
-                <div className="text-[22px] font-black font-mono" style={{ color: investGain >= 0 ? 'var(--income)' : 'var(--rose)' }}>
-                  {investGain >= 0 ? '+' : ''}{investGainPct}%
-                </div>
-                <div className="text-[11px] font-mono" style={{ color: investGain >= 0 ? 'var(--income)' : 'var(--rose)' }}>
-                  {investGain >= 0 ? '+' : '−'}{money(Math.abs(investGain))}
-                </div>
-              </div>
-            </div>
-            <div className="text-[10px] mt-2" style={{ color: 'var(--text3)' }}>
-              Cost basis vs today's value across all segments · fixed-income &amp; cash are held at cost (no gain).
-            </div>
-          </div>
-
-          {/* Trend */}
-          <div className="wl-card p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>
-                Net Worth Trend · 12 months
-              </div>
-              <div className="flex items-center gap-1 text-[10px]" style={{ color: 'var(--text3)' }}>
-                <Info size={11} /> estimated from cash flow
-              </div>
-            </div>
-            <ResponsiveContainer width="100%" height={190}>
-              <AreaChart data={trend} margin={{ top: 4, right: 6, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="nwFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--sage)" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="var(--sage)" stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="label" tick={{ fill: 'var(--text3)', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: 'var(--text3)', fontSize: 10 }} axisLine={false} tickLine={false}
-                  tickFormatter={(v: number) => short(v)} width={52} />
-                <Tooltip
-                  contentStyle={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 8, fontSize: 11 }}
-                  formatter={(v: any) => [money(Number(v)), 'Net worth']} />
-                <Area type="monotone" dataKey="value" stroke="var(--sage)" strokeWidth={2} fill="url(#nwFill)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Composition: assets + liabilities */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="wl-card p-4">
-              <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>
-                Assets — {money(totalAssets)}
-              </div>
-              <div className="space-y-3">
-                {assetRows.map(r => {
-                  const pct = totalAssets > 0 ? (r.value / totalAssets) * 100 : 0
-                  const gain = r.value - r.invested
-                  const gp = r.invested > 0 && Math.abs(gain) >= 1 ? Math.round(gain / r.invested * 1000) / 10 : null
-                  return (
-                    <div key={r.label}>
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: r.color }} />
-                          <span className="text-[12px] font-medium truncate" style={{ color: 'var(--text)' }}>{r.label}</span>
-                        </div>
-                        <div className="flex items-baseline gap-1.5 flex-shrink-0">
-                          <span className="text-[12px] font-mono font-semibold" style={{ color: 'var(--text)' }}>{short(r.value)}</span>
-                          {gp !== null && (
-                            <span className="text-[10px] font-mono" style={{ color: gain >= 0 ? 'var(--income)' : 'var(--rose)' }}>
-                              {gain >= 0 ? '+' : ''}{gp}%
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}>
-                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: r.color }} />
-                        </div>
-                        <span className="text-[9px] font-mono flex-shrink-0" style={{ color: 'var(--text3)' }}>
-                          inv {short(r.invested)} · {pct.toFixed(0)}%
-                        </span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-
-            <div className="wl-card p-4">
-              <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>
-                Liabilities — {money(totalLiab)}
-              </div>
-              {liabRows.length === 0 ? (
-                <div className="py-10 text-center text-[12px]" style={{ color: 'var(--income)' }}>
-                  🎉 Debt-free in this view — no liabilities.
-                </div>
-              ) : (
-                <div className="space-y-2.5">
-                  {liabRows.map(r => {
-                    const pct = totalLiab > 0 ? (r.value / totalLiab) * 100 : 0
-                    return (
-                      <div key={r.label} className="flex items-center gap-3">
-                        <div className="text-[11px] w-32 flex-shrink-0 truncate" style={{ color: 'var(--text2, var(--text))' }}>{r.label}</div>
-                        <div className="flex-1 h-2.5 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}>
-                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: r.color }} />
-                        </div>
-                        <div className="text-[11px] font-mono font-semibold w-11 text-right" style={{ color: r.color }}>{pct.toFixed(0)}%</div>
-                        <div className="text-[11px] font-mono w-20 text-right" style={{ color: 'var(--text)' }}>{short(r.value)}</div>
-                      </div>
-                    )
-                  })}
+              {labels.length > 0 && (
+                <div className="hidden md:flex justify-between text-[11px] mt-1.5" style={{ color: 'var(--text4)' }}>
+                  {labels.map((l, i) => <span key={i}>{fmtDay(l.date)}</span>)}
                 </div>
               )}
-            </div>
-          </div>
+            </>)}
+          </HeroStat>
 
-          {/* Monthly net savings */}
-          <div className="wl-card p-4">
-            <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>
-              Monthly Net Savings <span className="font-normal">(income − expenses)</span>
+          <section className="wl-card max-md:order-6 px-4 md:px-5 py-4 md:py-[18px] flex flex-col gap-3">
+            <h2 className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Where your wealth sits</h2>
+            <div className="hidden md:flex justify-center">
+              <Donut segments={groups.map(g => ({ value: g.value, color: g.color }))} size={128}
+                label={`Assets by type: ${groups.map(g => `${g.label} ${short(g.value)}`).join(', ')}`}>
+                <div className="text-[10.5px]" style={{ color: 'var(--text3)' }}>Assets</div>
+                <div className="text-[16px] font-bold" style={{ color: 'var(--text)' }}>{short(totalAssets)}</div>
+              </Donut>
             </div>
-            <ResponsiveContainer width="100%" height={160}>
-              <BarChart data={netSavings} margin={{ top: 4, right: 6, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="label" tick={{ fill: 'var(--text3)', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: 'var(--text3)', fontSize: 10 }} axisLine={false} tickLine={false}
-                  tickFormatter={(v: number) => short(v)} width={52} />
-                <ReferenceLine y={0} stroke="var(--border)" />
-                <Tooltip
-                  contentStyle={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 8, fontSize: 11 }}
-                  formatter={(v: any) => [money(Number(v)), 'Net saved']} />
-                <Bar dataKey="value" radius={[3, 3, 0, 0]}>
-                  {netSavings.map((d, i) => <Cell key={i} fill={d.value >= 0 ? 'var(--income)' : 'var(--rose)'} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </>
-      )}
-      <LearnStrip title="What net worth really tells you" href="/dashboard/learn" />
+            {[...groups].sort((a, b) => b.value - a.value).map(g => (
+              <ProgressRow key={g.key} name={g.label} value={short(g.value)}
+                right={`${totalAssets > 0 ? Math.round(g.value / totalAssets * 100) : 0}%`}
+                pct={totalAssets > 0 ? g.value / totalAssets * 100 : 0} color={g.color} />
+            ))}
+          </section>
+        </div>
+
+        <div className="max-md:order-3 grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
+          <KpiTile label="Assets" value={short(totalAssets)} delta={`${assetRows.filter(r => r.value > 0).length} kinds of holding`} tint={1} icon={Wallet} />
+          <KpiTile label="Liabilities" value={short(totalLiab)} delta={totalLiab > 0 ? `${liabRows.filter(r => r.value > 0).map(r => r.label.toLowerCase()).join(' and ')}` : 'Debt-free'} tint={2} icon={Landmark} />
+          <KpiTile label="Debt / assets" value={`${debtRatio}%`} delta="Target under 30%" tint={3} icon={Scale}
+            tone={debtRatio < 30 ? 'good' : debtRatio < 50 ? 'neutral' : 'bad'} />
+          <KpiTile label="Investment gain" value={`${gain >= 0 ? '+' : '−'}${short(Math.abs(gain))}`} tint={0} icon={TrendingUp}
+            tone={gain >= 0 ? 'good' : 'bad'} delta={`${gainPct >= 0 ? '+' : ''}${gainPct}% on ${short(totalInvested)} put in`} />
+        </div>
+
+        <ListCard className="max-md:order-7" title="Assets & liabilities" sub="Cash and fixed income are held at cost · tap a row to manage it"
+          head={['Holding', 'Type', 'Return', 'Value']}>
+          {[...assetRows].filter(r => r.value > 0).sort((a, b) => b.value - a.value).map(r => {
+            const g = r.value - r.invested
+            const gp = r.invested > 0 && Math.abs(g) >= 1 ? Math.round(g / r.invested * 1000) / 10 : null
+            return (
+              <ListRow key={r.key} color={r.color} title={r.label} tag={groupLabel(r.group)}
+                sub={r.invested !== r.value ? `${short(r.invested)} put in` : undefined}
+                meta={gp == null ? 'at cost' : `${gp >= 0 ? '+' : ''}${gp}%`} metaColor={gp == null ? undefined : gp >= 0 ? '#16A34A' : '#DC2626'}
+                amount={money(r.value)} amountSub={`${totalAssets > 0 ? Math.round(r.value / totalAssets * 100) : 0}% of assets`}
+                href={HREF[r.key]} />
+            )
+          })}
+          {liabRows.filter(r => r.value > 0).map(r => (
+            <ListRow key={r.key} color={r.color} title={r.label} tag="Liability" meta="—"
+              amount={`−${money(r.value)}`} amountColor="#DC2626"
+              amountSub={`${totalLiab > 0 ? Math.round(r.value / totalLiab * 100) : 0}% of debt`} href={HREF[r.key]} />
+          ))}
+        </ListCard>
+      </>)}
+
+      <div className="max-md:order-8"><LearnStrip title="What net worth really tells you" href="/dashboard/learn" /></div>
     </div>
   )
 }
