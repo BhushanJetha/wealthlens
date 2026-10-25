@@ -1,8 +1,25 @@
 import { NextResponse } from 'next/server'
-import { GoogleGenerativeAI } from '@google/generative-ai'
 import { createClient } from '@/lib/supabase/server'
+import { askClaude, aiErrorResponse } from '@/lib/ai/claude'
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
+// Image types Claude can read; HEIC (iPhone default) must be saved as JPG first
+const SUPPORTED = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'] as const
+type Supported = (typeof SUPPORTED)[number]
+
+const SCHEMA = {
+  type: 'object',
+  properties: {
+    txn_date: { type: 'string', description: 'YYYY-MM-DD' },
+    merchant: { type: 'string' },
+    description: { type: 'string' },
+    amount: { type: 'number' },
+    currency: { type: 'string', enum: ['INR', 'AED'] },
+    txn_type: { type: 'string', enum: ['expense', 'income'] },
+    category: { type: 'string', enum: ['Food', 'Shopping', 'Utilities', 'Transport', 'Health', 'Entertainment', 'Travel', 'Education', 'Investment', 'Other'] },
+  },
+  required: ['txn_date', 'merchant', 'description', 'amount', 'currency', 'txn_type', 'category'],
+  additionalProperties: false,
+}
 
 export async function POST(req: Request) {
   const supabase = createClient()
@@ -10,46 +27,41 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const formData = await req.formData()
-  const file = formData.get('file') as File
+  const file = formData.get('file') as File | null
   const fileType = (formData.get('fileType') as string) ?? 'expense_bill'
-
   if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 })
+  if (!SUPPORTED.includes(file.type as Supported)) {
+    return NextResponse.json({ error: 'Unsupported image', details: 'Use a JPG, PNG or WebP photo (HEIC photos: share or save as JPG first).' }, { status: 400 })
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    return NextResponse.json({ error: 'Image too large', details: 'Use a photo under 5 MB.' }, { status: 400 })
+  }
 
-  const arrayBuffer = await file.arrayBuffer()
-  const base64 = Buffer.from(arrayBuffer).toString('base64')
+  const data = Buffer.from(await file.arrayBuffer()).toString('base64')
   const today = new Date().toISOString().slice(0, 10)
-  const defaultTxnType = fileType === 'income_receipt' ? 'income' : 'expense'
-
-  const prompt = `Extract a single financial transaction from this bill/receipt image. Today's date is ${today}.
-
-Return ONLY valid JSON (no markdown, no code blocks):
-{
-  "txn_date": "YYYY-MM-DD",
-  "merchant": "merchant or payee name",
-  "description": "brief description",
-  "amount": 1234.56,
-  "currency": "INR or AED",
-  "txn_type": "${defaultTxnType}",
-  "category": "Food | Shopping | Utilities | Transport | Health | Entertainment | Travel | Education | Investment | Other"
-}
-
-Rules:
-- Extract the total amount due/paid
-- Positive amounts only
-- Use today's date if no date visible`
+  const txnType = fileType === 'income_receipt' ? 'income' : 'expense'
 
   try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
-    const result = await model.generateContent([
-      { inlineData: { mimeType: file.type as any, data: base64 } },
-      prompt,
-    ])
-    const raw = result.response.text()
-    const jsonMatch = raw.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) throw new Error('Could not parse image')
-    const transaction = JSON.parse(jsonMatch[0])
-    return NextResponse.json({ transaction })
-  } catch (err: any) {
-    return NextResponse.json({ error: 'Parsing failed', details: err.message }, { status: 500 })
+    const raw = await askClaude({
+      effort: 'low',
+      maxTokens: 4000,
+      schema: SCHEMA,
+      system: `Read one bill or receipt photo and return it as a single transaction. Today is ${today}.
+- amount: the total paid or due (positive), not a subtotal or tax line.
+- currency: AED for dirhams/AED, INR for rupees; INR if unclear.
+- txn_date: the date printed on the receipt; today if none is visible.
+- txn_type: "${txnType}".`,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: file.type as Supported, data } },
+          { type: 'text', text: 'Extract the transaction from this receipt.' },
+        ],
+      }],
+    })
+    return NextResponse.json({ transaction: JSON.parse(raw) })
+  } catch (err) {
+    const { body, status } = aiErrorResponse(err)
+    return NextResponse.json(body, { status })
   }
 }

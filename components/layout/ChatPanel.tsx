@@ -69,7 +69,7 @@ export default function ChatPanel() {
   return (
     <aside aria-label="AI advisor"
       className="fixed inset-0 z-50 md:static md:z-auto md:w-[330px] md:flex-shrink-0 flex flex-col animate-slide-right"
-      style={{ background: '#fff', borderLeft: '1px solid var(--border)' }}>
+      style={{ background: '#fff', borderLeft: '1px solid var(--line)' }}>
       <div className="h-[52px] flex items-center justify-between px-4 flex-shrink-0 safe-top" style={{ borderBottom: '1px solid var(--border)' }}>
         <div className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>✦ AI advisor</div>
         <button onClick={closeAdvisor} aria-label="Close AI advisor" className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-slate-50" style={{ color: 'var(--text3)' }}>

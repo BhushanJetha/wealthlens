@@ -1,119 +1,115 @@
 import { NextResponse } from 'next/server'
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import type Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
+import { askClaude, aiErrorResponse } from '@/lib/ai/claude'
+import { computeNetWorth, type Holdings } from '@/lib/netWorth'
+import { buildHomeInsights } from '@/lib/insights'
+import { getAedInr } from '@/lib/fx'
+import { fmtCompact } from '@/lib/format'
+
+// AI advisor (docked panel + every "Explain this page" / AI action button).
+// Context is built from the signed-in user's own records with the same
+// engine as Home, so the advisor quotes the numbers the user sees.
+
+const INSTRUCTIONS = `You are the WealthLens AI advisor for one household that manages money in the UAE and India.
+
+How to answer:
+- Plain language, no jargon without a short explanation, no markdown headings or tables.
+- Keep it under about 90 words unless the user asks for a plan, a comparison or detail (then up to about 200).
+- Use only the figures in the FINANCIAL CONTEXT below or in the user's message. If something isn't there, say what's missing instead of guessing.
+- Amounts in ₹ use lakh/crore (₹2.4L, ₹1.2Cr); AED amounts stay in AED.
+- End with one concrete next step the user can take in WealthLens or with their bank.
+- You give educational guidance, not regulated financial advice; for large or irreversible decisions suggest a licensed adviser.
+
+UAE knowledge: ENBD, ADCB, FAB, Mashreq, DEWA, Etisalat/du, end-of-service gratuity, no personal income tax.
+India knowledge: Section 80C/80D/80CCD(1B), ELSS, PPF, NPS, EPF, HRA, LTCG/STCG, NRE/NRO accounts, repatriation.`
 
 export async function POST(req: Request) {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { message, history } = await req.json()
+  if (!message?.trim()) return NextResponse.json({ error: 'No message' }, { status: 400 })
+
   try {
-    const apiKey = process.env.GEMINI_API_KEY
-    if (!apiKey) {
-      return NextResponse.json({
-        error: 'AI service not configured',
-        details: 'GEMINI_API_KEY is missing from .env.local. Restart the dev server after adding it.',
-      }, { status: 503 })
-    }
+    const context = await buildContext(supabase, user.id)
 
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-    const { message, history } = await req.json()
-    if (!message) return NextResponse.json({ error: 'No message' }, { status: 400 })
-
-    // Fetch financial context in parallel
-    const [txnsRes, loansRes, cardsRes, insRes, goalsRes, budgetsRes] = await Promise.all([
-      supabase.from('transactions').select('category,amount,currency,txn_date').eq('user_id', user.id).order('txn_date', { ascending: false }).limit(200),
-      supabase.from('home_loans').select('*').eq('user_id', user.id).eq('is_active', true),
-      supabase.from('accounts').select('*').eq('user_id', user.id).eq('account_type', 'credit_card'),
-      supabase.from('insurance_policies').select('*').eq('user_id', user.id).eq('is_active', true),
-      supabase.from('goals').select('*').eq('user_id', user.id),
-      supabase.from('budgets').select('*').eq('user_id', user.id),
-    ])
-
-    const fxRate    = 22.80
-    const toINR     = (amt: number, cur: string) => cur === 'AED' ? amt * fxRate : amt
-    const txns      = txnsRes.data ?? []
-    const thisMonth = new Date().toISOString().slice(0, 7)
-
-    const monthlyTxns  = txns.filter(t => t.txn_date?.startsWith(thisMonth))
-    const monthlySpend = monthlyTxns.reduce((a, t) => a + toINR(Number(t.amount), t.currency), 0)
-
-    const catSpend: Record<string, number> = {}
-    monthlyTxns.forEach(t => { catSpend[t.category] = (catSpend[t.category] ?? 0) + toINR(Number(t.amount), t.currency) })
-    const topCats = Object.entries(catSpend).sort((a, b) => b[1] - a[1]).slice(0, 5)
-
-    const cards      = cardsRes.data ?? []
-    const loans      = loansRes.data ?? []
-    const insurance  = insRes.data ?? []
-    const goals      = goalsRes.data ?? []
-    const budgets    = budgetsRes.data ?? []
-
-    const cardUtil = cards.map(c => ({
-      name: c.name,
-      utilization: c.credit_limit ? Math.round((Number(c.outstanding_bal) / Number(c.credit_limit)) * 100) : 0,
-    }))
-
-    const budgetStatus = budgets.map(b => {
-      const spent = catSpend[b.category] ?? 0
-      return { category: b.category, spent: Math.round(spent), cap: Number(b.monthly_cap), pct: Math.round(spent / Number(b.monthly_cap) * 100) }
-    })
-
-    const financialContext = `
-FINANCIAL CONTEXT (read-only snapshot):
-User: ${user.email}
-Month: ${thisMonth}
-
-Monthly spending: ₹${Math.round(monthlySpend).toLocaleString('en-IN')}
-Top categories:
-${topCats.map(([cat, amt]) => `  - ${cat}: ₹${Math.round(amt).toLocaleString('en-IN')}`).join('\n') || '  (no transactions this month)'}
-
-Credit cards:
-${cardUtil.length ? cardUtil.map(c => `  - ${c.name}: ${c.utilization}% utilized ${c.utilization > 30 ? '⚠️' : '✅'}`).join('\n') : '  (none)'}
-
-Loans:
-${loans.length ? loans.map(l => `  - ${l.name} (${l.loan_type ?? 'loan'}): Outstanding ${l.currency} ${Number(l.outstanding_amt).toLocaleString()} @ ${l.interest_rate}% | EMI: ${l.currency} ${Number(l.emi_amount).toLocaleString()}`).join('\n') : '  (none)'}
-
-Insurance:
-${insurance.length ? insurance.map(p => `  - ${p.policy_name} (${p.policy_type}): Expiry ${p.expiry_date}`).join('\n') : '  (none)'}
-
-Goals:
-${goals.length ? goals.map(g => `  - ${g.name}: ${Math.round(Number(g.current_amount) / Number(g.target_amount) * 100)}% complete`).join('\n') : '  (none)'}
-
-Budget status:
-${budgetStatus.length ? budgetStatus.map(b => `  - ${b.category}: ${b.pct}% used ${b.pct > 100 ? '🔴 OVER' : b.pct > 75 ? '🟡' : '🟢'}`).join('\n') : '  (none set)'}
-`
-
-    const systemInstruction = `You are WealthLens AI, a personal financial advisor specializing in UAE and Indian finance. You are powered by Google Gemini.
-
-You have READ-ONLY access to the user's financial data provided in the context. Be specific, reference actual numbers, and give actionable advice. Keep responses concise with bullet points where helpful. Do not make up numbers not present in the context.
-
-UAE expertise: DEWA, Etisalat/du, ENBD, ADCB, FAB, Mashreq, gratuity, DEWS pension, free zone rules
-India expertise: Section 80C, ELSS, PPF, NPS, HRA, LTCG/STCG, SBI, HDFC, ICICI, EPF
-
-Disclaimer: You are an AI assistant, not a SEBI/DFSA-registered advisor. Recommend consulting a certified professional for major financial decisions.
-
-${financialContext}`
-
-    // Build Gemini chat history (role must be 'user' | 'model')
-    const chatHistory = (history ?? [])
+    // Prior turns from the panel (last 10), starting with a user turn
+    const prior: Anthropic.Beta.BetaMessageParam[] = (Array.isArray(history) ? history : [])
+      .filter((m: any) => (m?.role === 'user' || m?.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
       .slice(-10)
-      .map((m: any) => ({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }],
-      }))
+      .map((m: any) => ({ role: m.role, content: m.content }))
+    while (prior.length && prior[0].role !== 'user') prior.shift()
 
-    const genAI = new GoogleGenerativeAI(apiKey)
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-1.5-flash',
-      systemInstruction,
+    const reply = await askClaude({
+      system: `${INSTRUCTIONS}\n\n${context}`,
+      messages: [...prior, { role: 'user', content: message }],
+      effort: 'medium',
     })
-
-    const chat   = model.startChat({ history: chatHistory })
-    const result = await chat.sendMessage(message)
-    const text   = result.response.text()
-
-    return NextResponse.json({ response: text })
-  } catch (err: any) {
+    return NextResponse.json({ response: reply || 'I could not form an answer — try rephrasing the question.' })
+  } catch (err) {
     console.error('AI advisor error:', err)
-    return NextResponse.json({ error: 'AI service error', details: err.message }, { status: 500 })
+    const { body, status } = aiErrorResponse(err)
+    return NextResponse.json(body, { status })
   }
+}
+
+async function buildContext(supabase: ReturnType<typeof createClient>, uid: string) {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' })
+  const start = new Date(); start.setUTCMonth(start.getUTCMonth() - 13)
+  const fromDate = `${start.toISOString().slice(0, 7)}-01`
+
+  const q = (table: string, active = false) => {
+    const b = supabase.from(table).select('*').eq('user_id', uid)
+    return active ? b.eq('is_active', true) : b
+  }
+  const [txnsRes, loans, accs, stocks, mfs, fds, policies, goals, budgets, rds, nps, lic, gold, bonds, etf, ppf, profile, fx] = await Promise.all([
+    supabase.from('transactions').select('id,account_id,txn_date,merchant,category,sub_category,amount,currency,txn_type')
+      .eq('user_id', uid).gte('txn_date', fromDate).order('txn_date', { ascending: false }).limit(3000),
+    q('home_loans', true), q('accounts', true), q('stocks'), q('mutual_funds'), q('fixed_deposits', true),
+    q('insurance_policies', true), q('goals'), supabase.from('budgets').select('*').eq('user_id', uid).gte('month_year', fromDate.slice(0, 7)),
+    q('recurring_deposits', true), q('nps_accounts'), q('lic_policies', true), q('gold_investments'),
+    q('bond_investments'), q('etf_investments'), q('ppf_epf_accounts'),
+    supabase.from('profiles').select('full_name').eq('id', uid).single(),
+    getAedInr(),
+  ])
+
+  const holdings: Holdings = {
+    accounts: accs.data ?? [], stocks: stocks.data ?? [], mutualFunds: mfs.data ?? [], etf: etf.data ?? [],
+    nps: nps.data ?? [], fixedDeposits: fds.data ?? [], recurringDeposits: rds.data ?? [], ppfEpf: ppf.data ?? [],
+    gold: gold.data ?? [], bonds: bonds.data ?? [], lic: lic.data ?? [], loans: loans.data ?? [],
+  }
+  const rate = fx.rate
+  const nw = computeNetWorth(holdings, 'consolidated', rate)
+  const ins = buildHomeInsights({
+    view: 'consolidated', fx: rate, today, focusMonth: today.slice(0, 7),
+    txns: txnsRes.data ?? [], accounts: holdings.accounts, loans: holdings.loans, insurance: policies.data ?? [],
+    fixedDeposits: holdings.fixedDeposits, budgets: budgets.data ?? [], mutualFunds: holdings.mutualFunds, stocks: holdings.stocks,
+    cash: nw.cash, invested: { value: nw.totalAssets - nw.cash, cost: nw.totalInvested - nw.cash },
+  })
+
+  const inr = (n: number) => fmtCompact(n, 'INR')
+  const cur = (n: number, c: string) => fmtCompact(Number(n) || 0, c === 'AED' ? 'AED' : 'INR')
+  const lines: string[] = []
+  const add = (title: string, rows: string[]) => { if (rows.length) lines.push(`${title}:\n${rows.map(r => `  - ${r}`).join('\n')}`) }
+
+  lines.push(`FINANCIAL CONTEXT (consolidated in INR at 1 AED = ₹${rate.toFixed(2)}; today ${today})`)
+  lines.push(`Name: ${(profile.data?.full_name ?? '').split(' ')[0] || 'the user'}`)
+  lines.push(`Net worth ${inr(nw.netWorth)} = assets ${inr(nw.totalAssets)} − liabilities ${inr(nw.totalLiab)}; bank & cash ${inr(nw.cash)}.`)
+  lines.push(`This month so far: income ${inr(ins.income.value)}, spending ${inr(ins.spend.value)}${ins.spend.baseline ? ` (usual by this point ${inr(ins.spend.baseline)})` : ''}, saved ${inr(ins.saved.value)}.`)
+  lines.push(`Last 3 complete months: average income ${inr(ins.trend.avgIncome)}, average spending ${inr(ins.trend.avgSpend)}, savings rate ${ins.trend.savingsRate ?? '—'}% (target 20%). Emergency fund covers ${ins.runway.months ?? '—'} months.`)
+  add('Spending by category this month (vs usual)', ins.categories.slice(0, 8).map(c => `${c.label}: ${inr(c.value)}${c.baseline != null ? ` (usual ${inr(c.baseline)})` : ''}`))
+  add('Needs attention', ins.attention.slice(0, 8).map(a => `${a.title} — ${a.detail}`))
+  add('Observations', ins.insights.slice(0, 6).map(i => `${i.title}${i.detail ? ` — ${i.detail}` : ''}`))
+  add('Coming up (next 30 days)', ins.upcoming.slice(0, 8).map(u => `${u.date} ${u.label}: ${cur(u.amount, u.currency)}`))
+  if (ins.forecast) lines.push(`30-day cash forecast: lowest ${inr(ins.forecast.low.value)} on ${ins.forecast.low.date}${ins.forecast.lowAfter ? ` after ${ins.forecast.lowAfter}` : ''}; ends near ${inr(ins.forecast.end)}.`)
+  add('Holdings by type', nw.assetRows.filter(r => r.value > 0).map(r => `${r.label}: ${inr(r.value)}${r.invested && r.invested !== r.value ? ` (cost ${inr(r.invested)})` : ''}`))
+  add('Loans', holdings.loans.map(l => `${l.name}: outstanding ${cur(l.outstanding_amt, l.currency)} at ${l.interest_rate}%, EMI ${cur(l.emi_amount, l.currency)}`))
+  add('Credit cards', holdings.accounts.filter(a => a.account_type === 'credit_card').map(c =>
+    `${c.name}: ${cur(c.outstanding_bal, c.currency)} of ${cur(c.credit_limit, c.currency)} limit${c.due_date ? `, due ${c.due_date}` : ''}`))
+  add('Insurance', (policies.data ?? []).map(p => `${p.policy_name} (${p.policy_type}): cover ${cur(p.sum_assured, p.currency)}${p.expiry_date ? `, renews ${p.expiry_date}` : ''}`))
+  add('Goals', (goals.data ?? []).map(g => `${g.name}: target ${cur(g.target_amount, g.currency)} by ${g.target_date}${g.status && g.status !== 'active' ? ` (${g.status})` : ''}`))
+  add('SIPs', holdings.mutualFunds.filter(m => m.has_sip && Number(m.sip_amount) > 0).map(m => `${m.fund_name}: ₹${Number(m.sip_amount).toLocaleString('en-IN')} on day ${m.sip_date ?? '?'}`))
+  return lines.join('\n')
 }

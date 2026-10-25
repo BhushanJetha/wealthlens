@@ -59,7 +59,7 @@ export default function TransactionVoiceModal({ onClose, defaultType = 'expense'
         body: JSON.stringify({ text: transcript, defaultType }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Parsing failed')
+      if (!res.ok) throw new Error(data.details ?? data.error ?? 'Parsing failed')
       setParsed(data.transaction ?? {})
       setStatus('review')
     } catch (e: any) {
@@ -95,7 +95,7 @@ export default function TransactionVoiceModal({ onClose, defaultType = 'expense'
       <div className="wl-sheet-panel rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto"
         style={{ background: '#fff', border: '1px solid var(--border)', boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}>
         <div className="flex justify-between items-center mb-5">
-          <h2 className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>Voice Entry</h2>
+          <h2 className="text-[17px] font-bold" style={{ color: 'var(--text)' }}>Speak or type a transaction</h2>
           <button onClick={onClose} style={{ color: 'var(--text3)' }}><X size={18} /></button>
         </div>
 
@@ -118,14 +118,15 @@ export default function TransactionVoiceModal({ onClose, defaultType = 'expense'
               </div>
             </div>
 
-            {transcript && (
-              <div className="p-3 rounded-lg mb-4 text-[12px]" style={{ background: 'var(--bg2)', color: 'var(--text)' }}>
-                <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--text3)' }}>Transcript:</div>
-                {transcript}
-              </div>
-            )}
+            {/* Speech fills this box; it can also be typed or corrected by hand */}
+            <label htmlFor="voice-text" className="block text-[11px] font-semibold uppercase tracking-[0.05em] mb-1.5" style={{ color: 'var(--text3)' }}>
+              {recording ? 'Hearing…' : 'Or type it'}
+            </label>
+            <textarea id="voice-text" value={transcript} onChange={e => setTranscript(e.target.value)} rows={3} readOnly={recording}
+              placeholder="Spent 120 dirhams at Carrefour yesterday"
+              className="wl-input mb-4 resize-none leading-normal" style={{ background: 'var(--bg2)' }} />
 
-            {transcript && !recording && (
+            {transcript.trim() && !recording && (
               <div className="flex gap-3">
                 <button onClick={() => { setTranscript(''); setStatus('idle') }} className="flex-1 py-2.5 rounded-lg border text-[12px] font-semibold"
                   style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>
@@ -133,7 +134,7 @@ export default function TransactionVoiceModal({ onClose, defaultType = 'expense'
                 </button>
                 <button onClick={parse} className="flex-1 py-2.5 rounded-lg text-white text-[12px] font-bold"
                   style={{ background: 'var(--sage)' }}>
-                  Parse with AI
+                  ✦ Understand it
                 </button>
               </div>
             )}

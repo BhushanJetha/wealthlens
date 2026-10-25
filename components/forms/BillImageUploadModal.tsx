@@ -28,7 +28,7 @@ export default function BillImageUploadModal({ onClose, defaultType = 'expense' 
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: { 'image/*': ['.png','.jpg','.jpeg','.webp','.heic'] },
+    accept: { 'image/*': ['.png','.jpg','.jpeg','.webp'] },
     maxFiles: 1,
   })
 
@@ -42,7 +42,7 @@ export default function BillImageUploadModal({ onClose, defaultType = 'expense' 
 
       const res = await fetch('/api/parse-bill-image', { method: 'POST', body: formData })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Parsing failed')
+      if (!res.ok) throw new Error(data.details ?? data.error ?? 'Parsing failed')
       setParsed(data.transaction ?? {})
       setStatus('review')
     } catch (e: any) {
