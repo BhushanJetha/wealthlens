@@ -7,7 +7,7 @@ import { useUiStore } from '@/store/uiStore'
 type Item = { label: string; href?: string; advisor?: true }
 const GROUPS: { label: string; items: Item[] }[] = [
   { label: 'Learn', items: [{ label: 'Courses', href: '/dashboard/learn' }] },
-  { label: 'Insights', items: [{ label: '✦ AI advisor', advisor: true }] },
+  { label: 'Insights', items: [{ label: 'Market news', href: '/dashboard/news' }, { label: '✦ AI advisor', advisor: true }] },
   { label: 'Money', items: [
     { label: 'Spending analysis', href: '/dashboard/analysis' },
     { label: 'Income', href: '/dashboard/income' },

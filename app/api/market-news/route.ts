@@ -8,6 +8,7 @@ const FEEDS = [
   { url: 'https://news.google.com/rss/search?q=mutual+fund+India+NAV+SIP+SEBI&hl=en-IN&gl=IN&ceid=IN:en', source: 'Google News', topic: 'mf' },
   { url: 'https://news.google.com/rss/search?q=NSE+BSE+Nifty+Sensex+stocks+India&hl=en-IN&gl=IN&ceid=IN:en', source: 'Google News', topic: 'stocks' },
   { url: 'https://news.google.com/rss/search?q=Indian+economy+RBI+finance+market&hl=en-IN&gl=IN&ceid=IN:en', source: 'Google News', topic: 'general' },
+  { url: 'https://news.google.com/rss/search?q=UAE+economy+dirham+banks+Dubai+markets&hl=en-AE&gl=AE&ceid=AE:en', source: 'Google News', topic: 'uae' },
 ]
 
 let _cache: { data: NewsItem[]; ts: number } | null = null
@@ -105,7 +106,7 @@ function parseTerms(raw: string | null): string[] {
 
 // Build the final list: optionally rank by relevance to the user's holding terms,
 // then top up with general topic articles so the list stays full (~MAX_ARTICLES).
-function buildArticles(pool: NewsItem[], terms: string[]): NewsItem[] {
+function buildArticles(pool: NewsItem[], terms: string[], limit = MAX_ARTICLES): NewsItem[] {
   let ordered: NewsItem[]
   if (terms.length === 0) {
     ordered = pool
@@ -121,18 +122,20 @@ function buildArticles(pool: NewsItem[], terms: string[]): NewsItem[] {
     // topic articles so the list stays full even when few/none of the terms match.
     ordered = matched.concat(rest)
   }
-  return dedupe(ordered).slice(0, MAX_ARTICLES)
+  return dedupe(ordered).slice(0, limit)
 }
 
 export async function GET(req: NextRequest) {
   const topic = req.nextUrl.searchParams.get('topic') // 'mf' | 'stocks' | null
   const terms = parseTerms(req.nextUrl.searchParams.get('terms'))
+  // The News page asks for more than Home's 12 (capped at 40)
+  const limit = Math.min(Math.max(Number(req.nextUrl.searchParams.get('limit')) || MAX_ARTICLES, 1), 40)
 
   // Serve from cache when warm.
   if (_cache && Date.now() - _cache.ts < TTL) {
     const scoped = topic ? _cache.data.filter(a => a.topic === topic || a.topic === 'general') : _cache.data
     const recent = applyRecency(sortNewestFirst(scoped))
-    return NextResponse.json({ articles: buildArticles(recent, terms), cached: true })
+    return NextResponse.json({ articles: buildArticles(recent, terms, limit), cached: true })
   }
 
   let unique: NewsItem[] = []
@@ -161,5 +164,5 @@ export async function GET(req: NextRequest) {
 
   const scoped = topic ? unique.filter(a => a.topic === topic || a.topic === 'general') : unique
   const recent = applyRecency(sortNewestFirst(scoped))
-  return NextResponse.json({ articles: buildArticles(recent, terms) })
+  return NextResponse.json({ articles: buildArticles(recent, terms, limit) })
 }

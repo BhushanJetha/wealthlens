@@ -64,6 +64,7 @@ export const SECTIONS: NavSection[] = [
     { label: 'Financial health', href: '/dashboard/financial-health' },
     { label: 'NRI toolkit',      href: '/dashboard/nri-toolkit' },
     { label: 'Money mindset',    href: '/dashboard/inspire' },
+    { label: 'Market news',      href: '/dashboard/news' },
   ] },
   { key: 'learn', label: 'Learn', desc: 'Courses and guides for every part of WealthLens', icon: BookOpen, href: '/dashboard/learn', tabs: [
     { label: 'Courses', href: '/dashboard/learn', also: ['/dashboard/budgets/learn', '/dashboard/cards/learn', '/dashboard/expenses/learn', '/dashboard/goals/learn'] },

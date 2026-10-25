@@ -575,7 +575,7 @@ function NewsCard({ holdings, className = '' }: { holdings: Holdings; className?
 
   return (
     <Card aria-labelledby="news-title" className={className}>
-      <CardTitle id="news-title" right={<MoreLink href="/dashboard/investments/mutual-funds"><span className="md:hidden">All</span><span className="hidden md:inline">More news</span></MoreLink>}>
+      <CardTitle id="news-title" right={<MoreLink href="/dashboard/news"><span className="md:hidden">All</span><span className="hidden md:inline">All news</span></MoreLink>}>
         <span className="md:hidden">News for you</span><span className="hidden md:inline">Market news for your holdings</span>
       </CardTitle>
       {items === null ? (
