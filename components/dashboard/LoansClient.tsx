@@ -3,11 +3,12 @@ import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useViewStore } from '@/store/viewStore'
-import { Plus, Pencil, Trash2, Loader2, Landmark, CalendarClock, BadgeCheck, Percent, ChevronRight } from 'lucide-react'
+import { Plus, Pencil, Trash2, Loader2, Landmark, CalendarClock, BadgeCheck, Percent, Flag } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import AddLoanModal from '@/components/forms/AddLoanModal'
 import { useHolderStore } from '@/store/holderStore'
-import { PageHeader, InsightBar, AiActions, KpiTile, Donut, ProgressRow, LearnStrip } from '@/components/ui/kit'
+import { PageHeader, InsightBar, AiActions, KpiTile, HeroStat, Donut, ProgressRow, LearnStrip } from '@/components/ui/kit'
+import { ListCard, ListRow } from '@/components/ui/list'
 import Link from 'next/link'
 
 function toINR(amt: number, cur: string, fx: number) { return cur === 'AED' ? amt * fx : amt }
@@ -141,27 +142,14 @@ export default function LoansClient({ loans }: { loans: any[]; familyMembers?: a
       <div className="max-md:order-4"><InsightBar text={insight} prompt={`Explain my loans page in plain language. ${aiContext}`} /></div>
       {filtered.length > 0 && <div className="max-md:order-5"><AiActions actions={['Best prepayment plan', 'Should I refinance?']} context={aiContext} /></div>}
 
-      <div className="max-md:order-3 grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
-        <KpiTile className="max-md:hidden" label="Outstanding" value={money(totalOutstanding)} delta={`of ${money(totalSanctioned)} borrowed`} tint={0} icon={Landmark} />
-        <KpiTile label="Monthly EMIs" value={money(totalEMI)} delta={`${filtered.length} loan${filtered.length === 1 ? '' : 's'}`} tint={2} icon={CalendarClock} />
-        <KpiTile label="Paid off" value={`${paidPct.toFixed(0)}%`} delta={`${money(Math.max(totalSanctioned - totalOutstanding, 0))} repaid`} tone={paidPct >= 50 ? 'good' : 'neutral'} tint={1} icon={BadgeCheck} />
-        <KpiTile label="Average rate" value={`${avgRate.toFixed(2)}%`} delta="Weighted by balance" tint={3} icon={Percent} />
-      </div>
-
       {filtered.length > 0 && (
         <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4">
-          <section className="wl-card max-md:order-2 px-4 md:px-5 py-4 md:py-[18px] flex flex-col">
-            <div className="md:hidden">
-              <div className="text-[10.5px] font-semibold uppercase tracking-[0.05em]" style={{ color: 'var(--text3)' }}>Outstanding</div>
-              <div className="text-[30px] font-bold tabular-nums tracking-[-0.02em] my-0.5" style={{ color: 'var(--text)' }}>{money(totalOutstanding)}</div>
-            </div>
-            <div className="flex justify-between items-baseline gap-3">
-              <h2 className="hidden md:block text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Your path to debt-free</h2>
-              <div className="text-[12px] font-medium" style={{ color: path.clears ? 'var(--pos-text)' : 'var(--amber-text)' }}>
-                {path.clears ? `Debt-free by ${path.freeBy} at current EMIs` : 'Some EMIs don’t cover the interest — balances won’t clear'}
-              </div>
-            </div>
-            <div className="h-[110px] md:h-auto md:flex-1 md:min-h-[220px] mt-2.5 md:mt-4 -mx-1" aria-label={`Projected total outstanding, ${path.clears ? `reaching zero by ${path.freeBy}` : 'not reaching zero'}`}>
+          {/* Headline number + path to debt-free (same card on desktop and phone) */}
+          <HeroStat className="max-md:order-2" label="Outstanding" value={money(totalOutstanding)}
+            delta={path.clears ? `Debt-free by ${path.freeBy} at current EMIs` : 'Some EMIs don’t cover the interest — balances won’t clear'}
+            tone={path.clears ? 'good' : 'bad'}
+            right={<span className="text-[11.5px]" style={{ color: 'var(--text3)' }}>of {money(totalSanctioned)} borrowed</span>}>
+            <div className="h-[110px] md:h-auto md:flex-1 md:min-h-[200px] mt-2.5 md:mt-4 -mx-1" aria-label={`Projected total outstanding, ${path.clears ? `reaching zero by ${path.freeBy}` : 'not reaching zero'}`}>
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={path.series} margin={{ top: 4, right: 6, bottom: 0, left: 6 }}>
                   <defs>
@@ -178,7 +166,7 @@ export default function LoansClient({ loans }: { loans: any[]; familyMembers?: a
                 </AreaChart>
               </ResponsiveContainer>
             </div>
-          </section>
+          </HeroStat>
 
           <section className="wl-card max-md:order-6 px-4 md:px-5 py-4 md:py-[18px] flex flex-col gap-3">
             <h2 className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>By loan type</h2>
@@ -198,69 +186,44 @@ export default function LoansClient({ loans }: { loans: any[]; familyMembers?: a
         </div>
       )}
 
+      {/* KPIs: same four tiles on both sizes */}
+      <div className="max-md:order-3 grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
+        <KpiTile label="Monthly EMIs" value={money(totalEMI)} delta={`${filtered.length} loan${filtered.length === 1 ? '' : 's'}`} tint={2} icon={CalendarClock} />
+        <KpiTile label="Paid off" value={`${paidPct.toFixed(0)}%`} delta={`${money(Math.max(totalSanctioned - totalOutstanding, 0))} repaid`} tone={paidPct >= 50 ? 'good' : 'neutral'} tint={1} icon={BadgeCheck} />
+        <KpiTile label="Average rate" value={`${avgRate.toFixed(2)}%`} delta="Weighted by balance" tint={3} icon={Percent} />
+        <KpiTile label="Debt-free by" value={filtered.length && path.clears ? path.freeBy : '—'} delta={filtered.length ? 'at current EMIs' : 'No loans'} tint={0} icon={Flag} />
+      </div>
+
       {/* Active loans */}
-      <section className="wl-card max-md:order-7 px-4 md:px-5 py-3.5 md:py-[18px]">
-        <h2 className="text-[14px] font-semibold mb-1.5" style={{ color: 'var(--text)' }}>Active loans</h2>
-        {filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
-            <Landmark size={28} style={{ color: 'var(--border2)' }} />
-            <div className="text-[13px]" style={{ color: 'var(--text3)' }}>No loans added yet</div>
-            <button onClick={() => setShowAdd(true)} className="wl-btn wl-btn-primary">Add loan</button>
-          </div>
-        ) : (<>
-          <div className="hidden md:grid grid-cols-[2fr_0.8fr_1fr_1fr_1.2fr_72px] gap-3 text-[11px] font-semibold uppercase tracking-[0.04em] py-2" style={{ color: 'var(--text3)', borderBottom: '1px solid var(--border)' }}>
-            <span>Loan</span><span>Rate</span><span className="text-right">EMI</span><span className="text-right">Outstanding</span><span>Repaid</span><span />
-          </div>
-          {filtered.map((loan: any) => {
-            const cat = catOf(loan)
-            const sanctioned = Number(loan.sanctioned_amt)
-            const repaid = sanctioned > 0 ? Math.max(0, Math.round((sanctioned - Number(loan.outstanding_amt)) / sanctioned * 100)) : 0
-            const lSym = loan.currency === 'AED' ? 'AED ' : '₹'
-            const actions = (
-              <span className="flex items-center gap-1 justify-end">
-                <button onClick={() => setEditLoan(loan)} aria-label={`Edit ${loan.name}`} title="Edit loan"
-                  className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[var(--accent-bg)]" style={{ color: 'var(--accent)' }}><Pencil size={13} /></button>
-                <button onClick={() => setDeleteId(loan.id)} aria-label={`Delete ${loan.name}`} title="Delete loan"
-                  className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[var(--rose-bg)]" style={{ color: 'var(--rose)' }}><Trash2 size={13} /></button>
-              </span>
-            )
-            return (
-              <div key={loan.id} className="md:grid md:grid-cols-[2fr_0.8fr_1fr_1fr_1.2fr_72px] md:gap-3 md:items-center py-3 md:py-[11px] text-[13px]" style={{ borderBottom: '1px solid #F1F5F9' }}>
-                <Link href={`/dashboard/loans/detail/${loan.id}`} className="flex items-center gap-2.5 min-w-0 group">
-                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: cat.color }} />
-                  <span className="min-w-0">
-                    <span className="block font-semibold truncate group-hover:underline" style={{ color: 'var(--text)' }}>{loan.name}</span>
-                    <span className="block text-[11.5px] truncate" style={{ color: 'var(--text4)' }}>
-                      {cat.label}{loan.bank_name ? ` · ${loan.bank_name}` : ''}{loan.holder_name && loan.holder_name !== 'Self' ? ` · ${loan.holder_name}` : ''}
-                    </span>
-                  </span>
-                  <ChevronRight size={14} className="md:hidden ml-auto flex-shrink-0" style={{ color: '#CBD5E1' }} />
-                </Link>
-                <span className="hidden md:block" style={{ color: 'var(--text3)' }}>{Number(loan.interest_rate)}%</span>
-                <span className="hidden md:block text-right tabular-nums font-semibold" style={{ color: 'var(--text)' }}>{lSym}{Number(loan.emi_amount).toLocaleString('en-IN')}</span>
-                <span className="hidden md:block text-right tabular-nums font-semibold" style={{ color: 'var(--text)' }}>{fmt(Number(loan.outstanding_amt), lSym)}</span>
-                <span className="hidden md:flex items-center gap-2">
-                  <span className="flex-1 h-1.5 rounded-full" style={{ background: 'var(--track)' }}><span className="block h-full rounded-full wl-grow" style={{ width: `${repaid}%`, background: cat.color }} /></span>
-                  <span className="text-[11.5px] w-8 text-right tabular-nums" style={{ color: 'var(--text3)' }}>{repaid}%</span>
-                </span>
-                <span className="hidden md:block">{actions}</span>
-                {/* Phone: figures + actions under the name */}
-                <div className="md:hidden mt-2">
-                  <div className="flex justify-between text-[12px]" style={{ color: 'var(--text3)' }}>
-                    <span>{Number(loan.interest_rate)}% · EMI <b style={{ color: 'var(--text)' }}>{lSym}{Number(loan.emi_amount).toLocaleString('en-IN')}</b></span>
-                    <span>Owe <b style={{ color: 'var(--text)' }}>{fmt(Number(loan.outstanding_amt), lSym)}</b></span>
-                  </div>
-                  <div className="flex items-center gap-2 mt-1.5">
-                    <span className="flex-1 h-1.5 rounded-full" style={{ background: 'var(--track)' }}><span className="block h-full rounded-full" style={{ width: `${repaid}%`, background: cat.color }} /></span>
-                    <span className="text-[11px]" style={{ color: 'var(--text3)' }}>{repaid}% repaid</span>
-                    {actions}
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-        </>)}
-      </section>
+      <ListCard className="max-md:order-7" title="Active loans" sub={`${filtered.length} loan${filtered.length === 1 ? '' : 's'} · tap one for its payoff plan`}
+        head={['Loan', 'Type', 'Rate · EMI', 'Outstanding']}
+        empty={filtered.length === 0
+          ? <div className="flex flex-col items-center justify-center py-10 gap-3 text-center" style={{ borderTop: '1px solid var(--line)' }}>
+              <Landmark size={28} style={{ color: 'var(--border2)' }} />
+              <div className="text-[13px]" style={{ color: 'var(--text3)' }}>No loans added yet</div>
+              <button onClick={() => setShowAdd(true)} className="wl-btn wl-btn-primary">Add loan</button>
+            </div>
+          : undefined}>
+        {filtered.map((loan: any) => {
+          const cat = catOf(loan)
+          const sanctioned = Number(loan.sanctioned_amt)
+          const repaid = sanctioned > 0 ? Math.max(0, Math.round((sanctioned - Number(loan.outstanding_amt)) / sanctioned * 100)) : 0
+          const lSym = loan.currency === 'AED' ? 'AED ' : '₹'
+          const detail = `/dashboard/loans/detail/${loan.id}`
+          return (
+            <ListRow key={loan.id} color={cat.color} title={loan.name}
+              sub={[loan.bank_name, loan.holder_name && loan.holder_name !== 'Self' ? loan.holder_name : null].filter(Boolean).join(' · ') || undefined}
+              tag={cat.label} meta={`${Number(loan.interest_rate)}% · ${lSym}${Number(loan.emi_amount).toLocaleString('en-IN')}/mo`}
+              amount={fmt(Number(loan.outstanding_amt), lSym)} amountSub={`${repaid}% repaid`}
+              href={detail} onOpen={() => router.push(detail)}
+              actions={[
+                { label: 'Open details', icon: Landmark, onClick: () => router.push(detail) },
+                { label: 'Edit', icon: Pencil, onClick: () => setEditLoan(loan) },
+                { label: 'Delete', icon: Trash2, onClick: () => setDeleteId(loan.id), danger: true },
+              ]} />
+          )
+        })}
+      </ListCard>
 
       <div className="max-md:order-8"><LearnStrip title="EMI decoded: where your money goes" href="/dashboard/learn" /></div>
 

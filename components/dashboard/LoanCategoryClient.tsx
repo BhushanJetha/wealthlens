@@ -9,7 +9,10 @@ import { Plus, Building2, ChevronLeft, Pencil, Trash2, Loader2 } from 'lucide-re
 import AddLoanModal from '@/components/forms/AddLoanModal'
 import FilterBar from './FilterBar'
 import Link from 'next/link'
-import { PageHeader, InsightBar, AiActions, LearnStrip } from '@/components/ui/kit'
+import { PageHeader, InsightBar, AiActions, LearnStrip, HeroStat, KpiTile, Bars, EmptyState } from '@/components/ui/kit'
+import { ListCard, ListRow, ListSearch } from '@/components/ui/list'
+import { simulatePayoff } from '@/lib/amortization'
+import { CalendarClock, Percent, Flag, Landmark } from 'lucide-react'
 
 function toINR(amt: number, cur: string, fx: number) { return cur === 'AED' ? amt * fx : amt }
 
@@ -109,6 +112,29 @@ export default function LoanCategoryClient({ loans, title, loanType }: Props) {
     })
   }, [filtered, view])
 
+  // Balance at the end of each year until every loan is cleared (view currency)
+  const payoff = useMemo(() => {
+    const sims = filtered.map(l => ({ l, sim: simulatePayoff(Number(l.outstanding_amt) || 0, Number(l.interest_rate) || 0, Number(l.emi_amount) || 0, 0, 0) }))
+    const months = Math.max(0, ...sims.map(x => Number.isFinite(x.sim.months) ? x.sim.months : 0))
+    const years = Math.min(Math.ceil(months / 12), 30)
+    const step = Math.max(1, Math.ceil(years / 10))
+    const balAt = (l: any, m: number) => {
+      let bal = Number(l.outstanding_amt) || 0
+      const r = (Number(l.interest_rate) || 0) / 1200, emi = Number(l.emi_amount) || 0
+      for (let i = 0; i < m && bal > 0; i++) bal = Math.max(0, bal - Math.max(emi - bal * r, 0))
+      return conv(bal, l.currency)
+    }
+    const now = filtered.reduce((a, l) => a + conv(Number(l.outstanding_amt) || 0, l.currency), 0)
+    const bars = [{ label: 'Now', value: now, hi: true, tip: `Now: ${sym}${Math.round(now).toLocaleString('en-IN')}` }]
+    for (let y = step; y <= years; y += step) {
+      const v = filtered.reduce((a, l) => a + balAt(l, y * 12), 0)
+      bars.push({ label: `+${y}y`, value: v, hi: true, tip: `In ${y} year${y === 1 ? '' : 's'}: ${sym}${Math.round(v).toLocaleString('en-IN')}` })
+    }
+    const interest = sims.reduce((a, x) => a + (Number.isFinite(x.sim.interest) ? conv(x.sim.interest, x.l.currency) : 0), 0)
+    const end = new Date(); end.setMonth(end.getMonth() + months)
+    return { bars, interest, months, end: months > 0 ? end.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) : '—' }
+  }, [filtered, view, FX])
+
   async function handleDelete() {
     if (!deleteId) return
     setDeleting(true)
@@ -127,170 +153,70 @@ export default function LoanCategoryClient({ loans, title, loanType }: Props) {
   return (
     <div className="space-y-5 animate-fade-up">
       <PageHeader title={title}
-        sub={`${filtered.length} loan${filtered.length !== 1 ? 's' : ''} · ${sym}${Math.round(totalEMI).toLocaleString('en-IN')} EMI a month · payoff simulation`}
+        sub={`${filtered.length} loan${filtered.length !== 1 ? 's' : ''} · ${sym}${Math.round(totalEMI).toLocaleString('en-IN')} EMI a month`}
         onAdd={() => setShowAdd(true)} addLabel={`Add ${title}`}
         actions={<button onClick={() => setShowAdd(true)} className="wl-btn wl-btn-primary" style={{ height: 34 }}><Plus size={14} />Add {title.toLowerCase()}</button>} />
       {filtered.length > 0 && <InsightBar
-        text={`You owe ${sym}${Math.round(totalOutstanding).toLocaleString('en-IN')} on ${filtered.length === 1 ? 'this loan' : `these ${filtered.length} loans`} and have repaid ${totalSanctioned > 0 ? Math.max(0, Math.round((totalSanctioned - totalOutstanding) / totalSanctioned * 100)) : 0}% of what you borrowed. Try an extra payment below to see how much sooner it clears.`}
+        text={`You owe ${sym}${Math.round(totalOutstanding).toLocaleString('en-IN')} on ${filtered.length === 1 ? 'this loan' : `these ${filtered.length} loans`} and have repaid ${totalSanctioned > 0 ? Math.max(0, Math.round((totalSanctioned - totalOutstanding) / totalSanctioned * 100)) : 0}% of what you borrowed. Open a loan to try an extra payment and see how much sooner it clears.`}
         prompt={`Explain my ${title} page. ${filtered.map((l: any) => `${l.name}: outstanding ${l.currency} ${l.outstanding_amt} at ${l.interest_rate}%, EMI ${l.emi_amount}`).join('; ')}.`} />}
       {filtered.length > 0 && <AiActions actions={['Best prepayment plan', 'Should I refinance?']}
         context={`${title}: ${filtered.map((l: any) => `${l.name} outstanding ${l.currency} ${l.outstanding_amt} at ${l.interest_rate}%, EMI ${l.emi_amount}`).join('; ')}.`} />}
 
 
-      <FilterBar
-        search={search} onSearch={setSearch}
-        sort={sort} onSort={setSort} sortOptions={LOAN_SORT_OPTS}
-        resultCount={filtered.length} totalCount={base.length}
-        searchPlaceholder="Search by loan name or bank…"
-      />
-
-      {filtered.length === 0 ? (
-        <div className="wl-card py-16 text-center" style={{ borderStyle: 'dashed' }}>
-          <Building2 size={32} className="mx-auto mb-3" style={{ color: 'var(--border2)' }} />
-          <div className="text-[13px] mb-4" style={{ color: 'var(--text3)' }}>No {title.toLowerCase()} added yet</div>
-          <button onClick={() => setShowAdd(true)} className="px-4 py-2 rounded-lg text-white text-[12px] font-bold" style={{ background: 'var(--sage)' }}>
-            Add Your First Loan
-          </button>
-        </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-            {[
-              { label: 'Total Outstanding', value: `${sym}${Math.round(totalOutstanding).toLocaleString('en-IN')}`, bg: 'var(--rose-bg)', color: 'var(--rose)' },
-              { label: 'Monthly EMIs',      value: `${sym}${Math.round(totalEMI).toLocaleString('en-IN')}`,        bg: 'var(--gold-bg)', color: 'var(--gold)' },
-              { label: 'Total Sanctioned',  value: `${sym}${Math.round(totalSanctioned).toLocaleString('en-IN')}`, bg: 'var(--blue-bg)', color: 'var(--blue)' },
-            ].map(c => (
-              <div key={c.label} className="wl-card p-4">
-                <div className="text-[10px] uppercase tracking-wider mb-1 font-semibold" style={{ color: 'var(--text3)' }}>{c.label}</div>
-                <div className="text-[22px] font-bold font-mono" style={{ color: c.color }}>{c.value}</div>
-              </div>
-            ))}
+      {base.length === 0 ? (
+        <EmptyState message={`No ${title.toLowerCase()} yet. Add one to see your EMIs, payoff date and interest left.`}
+          cta={`Add ${title.toLowerCase()}`} onCta={() => setShowAdd(true)} />
+      ) : (<>
+        <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-3.5 md:gap-4">
+          <HeroStat label="Outstanding" value={`${sym}${Math.round(totalOutstanding).toLocaleString('en-IN')}`}
+            delta={`${totalSanctioned > 0 ? Math.max(0, Math.round((totalSanctioned - totalOutstanding) / totalSanctioned * 100)) : 0}% repaid of ${sym}${Math.round(totalSanctioned).toLocaleString('en-IN')} borrowed`}
+            tone="good" right={<span className="text-[11.5px]" style={{ color: 'var(--text3)' }}>Balance each year at current EMIs</span>}>
+            {payoff.bars.length > 1 && <Bars data={payoff.bars} className="h-[110px] md:h-auto md:flex-1 md:min-h-[150px] mt-3"
+              label={`Path to zero: ${payoff.bars.map(b => b.tip).join(', ')}`} />}
+          </HeroStat>
+          <div className="grid grid-cols-2 lg:grid-cols-1 gap-2.5 md:gap-3.5 lg:content-start">
+            <KpiTile label="Monthly EMIs" value={`${sym}${Math.round(totalEMI).toLocaleString('en-IN')}`} tint={2} icon={CalendarClock}
+              delta={`${filtered.length} loan${filtered.length === 1 ? '' : 's'}`} />
+            <KpiTile label="Interest left" value={`${sym}${Math.round(payoff.interest).toLocaleString('en-IN')}`} tint={3} icon={Percent}
+              delta="at current EMIs" />
+            <KpiTile className="max-lg:col-span-2" label="Debt-free by" value={payoff.end} tint={1} icon={Flag}
+              delta={payoff.months > 0 ? `${Math.floor(payoff.months / 12)} yr ${payoff.months % 12} mo to go` : 'Nothing outstanding'} />
           </div>
+        </div>
 
+        <ListCard title={`Your ${title.toLowerCase()}`} sub={filtered.length === base.length ? `${base.length} active` : `${filtered.length} of ${base.length}`}
+          head={['Loan', 'Repaid', 'EMI', 'Outstanding']}
+          toolbar={<ListSearch value={search} onChange={setSearch} placeholder="Search loan or bank…">
+            <select value={sort} onChange={e => setSort(e.target.value)} aria-label="Sort"
+              className="wl-input max-w-[44%]" style={{ width: 'auto', height: 36, background: '#fff' }}>
+              {LOAN_SORT_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </ListSearch>}
+          empty={filtered.length === 0
+            ? <div className="text-center py-12 text-[13px]" style={{ color: 'var(--text3)', borderTop: '1px solid var(--line)' }}>No loans match your search.</div>
+            : undefined}>
           {filtered.map((loan: any, i: number) => {
             const lSym = loan.currency === 'AED' ? 'AED ' : '₹'
             const paidPct = paidPctOf(loan)
             const loanBase = Number(loan.disbursed_amt) || Number(loan.sanctioned_amt) || 0
-            const repaid   = Math.max(0, loanBase - Number(loan.outstanding_amt || 0))
             const monthsRem = Number(loan.tenure_months) > 0 ? Math.max(0, Number(loan.tenure_months) - (loan.months_paid ?? 0)) : null
-            const money = (n: number) => `${lSym}${Math.round(Number(n) || 0).toLocaleString('en-IN')}`
-            const ag = agg[loan.id] ?? { own: 0, disb: 0 }
-            const disbTo = ag.disb > 0 ? ag.disb : (Number(loan.disbursed_amt) || 0)
-            const propVal = Number(loan.property_cost) || 0
-            const outToBuilder = propVal > 0 ? Math.max(0, propVal - (disbTo + ag.own)) : 0
-            const isHomeLoan = loan.loan_type === 'home_loan'
-            const extra = extraPayments[loan.id] ?? 0
-            const interestSaved = calcInterestSaved(loan, extra)
-            const monthsSaved = extra > 0 ? Math.round(interestSaved / Number(loan.emi_amount) * 1.5) : 0
+            const detail = `/dashboard/loans/detail/${loan.id}`
             return (
-              <div key={loan.id ?? i} className="wl-card p-5 space-y-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <Building2 size={16} style={{ color: 'var(--blue)' }} />
-                      <span className="text-[15px] font-bold truncate" style={{ color: 'var(--text)' }}>{loan.name}</span>
-                    </div>
-                    <div className="text-[11px] mt-0.5" style={{ color: 'var(--text3)' }}>
-                      {loan.bank_name} · {loan.interest_rate}% p.a. · {loan.tenure_months}mo tenure
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <span className="text-[12px] font-bold px-2.5 py-1 rounded-lg"
-                      style={{ background: 'var(--gold-bg)', color: 'var(--gold)' }}>{paidPct}% paid</span>
-                    <Link href={`/dashboard/loans/detail/${loan.id}`}
-                      className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg"
-                      style={{ background: 'var(--blue-bg)', color: 'var(--blue)' }}
-                      title="Open loan details, amortization & funding">Details</Link>
-                    <button onClick={() => setEditLoan(loan)}
-                      className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
-                      style={{ background: 'var(--blue-bg)', color: 'var(--blue)' }}
-                      title="Edit loan">
-                      <Pencil size={13} />
-                    </button>
-                    <button onClick={() => setDeleteId(loan.id)}
-                      className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
-                      style={{ background: 'var(--rose-bg)', color: 'var(--rose)' }}
-                      title="Delete loan">
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="h-2.5 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}>
-                    <div className="h-full rounded-full" style={{ width: `${paidPct}%`, background: 'linear-gradient(90deg,var(--sage),var(--blue))' }} />
-                  </div>
-                  <div className="flex justify-between text-[10px] mt-1" style={{ color: 'var(--text3)' }}>
-                    <span>Repaid: {lSym}{Math.round(repaid).toLocaleString('en-IN')}</span>
-                    <span>Outstanding: {lSym}{Number(loan.outstanding_amt).toLocaleString('en-IN')}</span>
-                    <span>{loan.disbursed_amt ? 'Disbursed' : 'Sanctioned'}: {lSym}{Math.round(loanBase).toLocaleString('en-IN')}</span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {[
-                    ...(isHomeLoan ? [{ label: 'Property Value', val: propVal > 0 ? money(propVal) : '—' }] : []),
-                    { label: 'Sanctioned',   val: money(loan.sanctioned_amt) },
-                    { label: 'Disbursed',    val: money(disbTo) },
-                    { label: 'Outstanding',  val: money(loan.outstanding_amt) },
-                    ...(isHomeLoan ? [
-                      { label: 'To Builder',   val: propVal > 0 ? money(outToBuilder) : '—' },
-                      { label: 'Own Contrib.', val: money(ag.own) },
-                    ] : []),
-                    { label: 'Current EMI',  val: money(loan.emi_amount) },
-                    { label: 'EMIs Paid / Left', val: `${loan.months_paid ?? 0} / ${monthsRem ?? '—'}` },
-                  ].map(item => (
-                    <div key={item.label} className="rounded-xl p-3" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-                      <div className="text-[9px] uppercase tracking-wider font-bold mb-1" style={{ color: 'var(--text3)' }}>{item.label}</div>
-                      <div className="text-[13px] font-bold font-mono" style={{ color: 'var(--text)' }}>{item.val}</div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="rounded-xl p-4" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-                  <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>Early Payoff Simulation</div>
-                  <div className="flex items-center gap-4 flex-wrap">
-                    <span className="text-[12px]" style={{ color: 'var(--text2)' }}>Extra monthly payment:</span>
-                    <input type="range" min={0} max={Math.round(Number(loan.emi_amount) * 0.5)} step={1000}
-                      value={extra} onChange={e => setExtraPayments(prev => ({ ...prev, [loan.id]: Number(e.target.value) }))}
-                      className="flex-1 max-w-[200px]" style={{ accentColor: 'var(--sage)' }} />
-                    <span className="text-[14px] font-bold font-mono" style={{ color: 'var(--sage)' }}>{lSym}{extra.toLocaleString()}</span>
-                  </div>
-                  {extra > 0 && (
-                    <div className="mt-3 flex gap-4 text-[12px]" style={{ color: 'var(--text3)' }}>
-                      <span>Interest saved: <strong style={{ color: 'var(--income)' }}>{lSym}{interestSaved.toLocaleString()}</strong></span>
-                      <span>Ends: <strong style={{ color: 'var(--sage)' }}>{monthsSaved} months earlier</strong></span>
-                    </div>
-                  )}
-                </div>
-              </div>
+              <ListRow key={loan.id ?? i} color="#6A55E8" title={loan.name}
+                sub={[loan.bank_name, `${loan.interest_rate}% p.a.`, monthsRem != null ? `${loan.months_paid ?? 0} paid · ${monthsRem} EMIs left` : null].filter(Boolean).join(' · ')}
+                tag={`${paidPct}% repaid`} meta={`${lSym}${Math.round(Number(loan.emi_amount) || 0).toLocaleString('en-IN')}/mo`}
+                amount={`${lSym}${Math.round(Number(loan.outstanding_amt) || 0).toLocaleString('en-IN')}`}
+                amountSub={`of ${lSym}${Math.round(loanBase).toLocaleString('en-IN')}`}
+                href={detail} onOpen={() => router.push(detail)}
+                actions={[
+                  { label: 'Open details', icon: Landmark, onClick: () => router.push(detail) },
+                  { label: 'Edit', icon: Pencil, onClick: () => setEditLoan(loan) },
+                  { label: 'Delete', icon: Trash2, onClick: () => setDeleteId(loan.id), danger: true },
+                ]} />
             )
           })}
-
-          {amortData.length > 0 && (
-            <div className="wl-card p-4">
-              <div className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--text3)' }}>Amortization — Next 12 Months</div>
-              <div className="flex gap-4 mb-3 text-[11px]" style={{ color: 'var(--text3)' }}>
-                <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm" style={{ background: 'var(--sage)' }} /> Principal</span>
-                <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm" style={{ background: 'var(--rose)' }} /> Interest</span>
-              </div>
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={amortData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                  <XAxis dataKey="month" tick={{ fill: 'var(--text3)', fontSize: 10 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: 'var(--text3)', fontSize: 10 }} axisLine={false} tickLine={false}
-                    tickFormatter={v => v >= 100000 ? `${(v/100000).toFixed(0)}L` : v.toLocaleString()} />
-                  <Tooltip contentStyle={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 8, fontSize: 11 }}
-                    formatter={(v: any, name: string) => [`${sym}${Number(v).toLocaleString('en-IN')}`, name]}
-                    labelStyle={{ color: 'var(--text)' }} />
-                  <Bar dataKey="principal" name="Principal" stackId="a" fill="var(--sage)" radius={[0,0,0,0]} />
-                  <Bar dataKey="interest"  name="Interest"  stackId="a" fill="var(--rose)" radius={[4,4,0,0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </>
-      )}
+        </ListCard>
+      </>)}
 
       {/* Add modal */}
       {showAdd && <AddLoanModal onClose={() => setShowAdd(false)} defaultLoanType={loanType} />}
