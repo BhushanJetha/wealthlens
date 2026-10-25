@@ -10,6 +10,7 @@ const GROUPS: { label: string; items: Item[] }[] = [
   { label: 'Insights', items: [{ label: 'Market news', href: '/dashboard/news' }, { label: '✦ AI advisor', advisor: true }] },
   { label: 'Money', items: [
     { label: 'Spending analysis', href: '/dashboard/analysis' },
+    { label: 'Bills & subscriptions', href: '/dashboard/bills' },
     { label: 'Income', href: '/dashboard/income' },
     { label: 'Transfers', href: '/dashboard/transfers' },
     { label: 'Reports', href: '/dashboard/reports' },

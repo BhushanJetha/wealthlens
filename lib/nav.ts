@@ -16,6 +16,7 @@ export const SECTIONS: NavSection[] = [
   { key: 'money', label: 'Money', desc: 'Spending, income and transfers', icon: Receipt, href: '/dashboard/expenses', tabs: [
     { label: 'Expenses',     href: '/dashboard/expenses' },
     { label: 'Spending analysis', href: '/dashboard/analysis' },
+    { label: 'Bills & subscriptions', href: '/dashboard/bills' },
     { label: 'Income',       href: '/dashboard/income' },
     { label: 'Transfers',    href: '/dashboard/transfers' },
     { label: 'Reports',      href: '/dashboard/reports', subs: [

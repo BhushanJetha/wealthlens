@@ -75,6 +75,56 @@ export interface HomeInsights {
 const SEV_RANK = { high: 0, medium: 1, low: 2 }
 const normMerchant = (s: string) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 24)
 
+// Bills & subscriptions: same merchant in ≥3 of the last 4 complete months, a
+// steady amount (±15%), and charged at most twice a month (not a supermarket
+// you visit every week). Expenses only — remittances and family support are
+// money moved, not bills. Shared by Home's insight and the Bills page.
+export interface Recurring {
+  key: string; name: string; category: string
+  n: number            // complete months seen (3 or 4)
+  med: number          // usual monthly amount (in `amt` units)
+  last: number         // most recent complete month's amount
+  day: number          // usual day of the month it's charged
+  paidThisMonth: boolean
+  rose: number | null  // % the latest month is above usual (≥5%), else null
+}
+export function findRecurring(txns: any[], thisMonth: string, amt: (t: any) => number): Recurring[] {
+  const recentMonths = [1, 2, 3, 4].map(i => addMonths(thisMonth, -i))
+  const NOT_BILLS = new Set(['Family Transfer', 'Investment', 'Credit Card Payment'])
+  const per: Record<string, { name: string; cats: Record<string, number>; months: Record<string, number>; counts: Record<string, number>; days: number[]; thisMonth: boolean }> = {}
+  for (const t of txns) {
+    const m = ymOf(t.txn_date)
+    if (t.txn_type !== 'expense' || !isSpend(t) || NOT_BILLS.has(t.category)) continue
+    const k = normMerchant(t.merchant)
+    if (!k) continue
+    if (m === thisMonth) { if (per[k]) per[k].thisMonth = true; else per[k] = { name: String(t.merchant).trim(), cats: {}, months: {}, counts: {}, days: [], thisMonth: true }; continue }
+    if (!recentMonths.includes(m)) continue
+    const e = per[k] ?? (per[k] = { name: String(t.merchant).trim(), cats: {}, months: {}, counts: {}, days: [], thisMonth: false })
+    e.months[m] = (e.months[m] ?? 0) + amt(t)
+    e.counts[m] = (e.counts[m] ?? 0) + 1
+    e.cats[t.category] = (e.cats[t.category] ?? 0) + 1
+    e.days.push(Number(String(t.txn_date).slice(8, 10)))
+  }
+  return Object.entries(per).map(([key, e]) => {
+    const vals = Object.values(e.months).sort((a, b) => a - b)
+    const med = vals[Math.floor(vals.length / 2)] ?? 0
+    const steady = vals.length > 0 && vals.every(v => med > 0 && Math.abs(v - med) / med <= 0.15)
+    const billLike = Object.values(e.counts).every(c => c <= 2)
+    const latestMonth = recentMonths.find(m => e.months[m] != null)
+    const last = latestMonth ? e.months[latestMonth] : 0
+    const days = [...e.days].sort((a, b) => a - b)
+    const rosePct = med > 0 ? Math.round((last - med) / med * 100) : 0
+    return {
+      key, name: e.name, n: vals.length, med, last, steady: steady && billLike,
+      category: Object.entries(e.cats).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'Other',
+      day: days[Math.floor(days.length / 2)] ?? 1, paidThisMonth: e.thisMonth,
+      rose: rosePct >= 5 ? rosePct : null,
+    }
+  }).filter(r => r.n >= 3 && r.steady && r.med > 0)
+    .map(({ steady, ...r }) => r)
+    .sort((a, b) => b.med - a.med)
+}
+
 export function buildHomeInsights(inp: InsightInput): HomeInsights {
   const { view, fx, today, focusMonth } = inp
   const inView = (cur: string) => view === 'consolidated' || (view === 'uae' ? cur === 'AED' : cur === 'INR')
@@ -294,34 +344,12 @@ export function buildHomeInsights(inp: InsightInput): HomeInsights {
     else if (runway.months > 12) insights.push({ id: 'ef', tone: 'neutral', title: `${money(inp.cash - 6 * avgSpendFull)} is idle beyond a 6-month cushion`, detail: `Cash covers ${runway.months} months of spending — consider investing the surplus`, href: '/dashboard/investments' })
   }
 
-  // Bills & subscriptions: same merchant in ≥3 of the last 4 complete months, a
-  // steady amount, and charged at most twice a month (not a supermarket you
-  // visit every week). Expenses only — remittances and family support are
-  // money moved, not bills.
-  const recentMonths = [1, 2, 3, 4].map(i => addMonths(thisMonth, -i))
-  const NOT_BILLS = new Set(['Family Transfer', 'Investment', 'Credit Card Payment'])
-  const perMerchant: Record<string, { name: string; months: Record<string, number>; counts: Record<string, number> }> = {}
-  for (const t of txns) {
-    const m = ymOf(t.txn_date)
-    if (!recentMonths.includes(m) || t.txn_type !== 'expense' || !isSpend(t) || NOT_BILLS.has(t.category)) continue
-    const k = normMerchant(t.merchant)
-    if (!k) continue
-    const e = perMerchant[k] ?? (perMerchant[k] = { name: String(t.merchant).trim(), months: {}, counts: {} })
-    e.months[m] = (e.months[m] ?? 0) + amt(t)
-    e.counts[m] = (e.counts[m] ?? 0) + 1
-  }
-  const recurring = Object.values(perMerchant).map(e => {
-    const vals = Object.values(e.months).sort((a, b) => a - b)
-    const med = vals[Math.floor(vals.length / 2)] ?? 0
-    const steady = vals.every(v => med > 0 && Math.abs(v - med) / med <= 0.15)
-    const billLike = Object.values(e.counts).every(c => c <= 2)
-    return { name: e.name, n: vals.length, med, steady: steady && billLike }
-  }).filter(r => r.n >= 3 && r.steady && r.med > 0).sort((a, b) => b.med - a.med)
+  const recurring = findRecurring(txns, thisMonth, amt)
   if (recurring.length >= 2) insights.push({
     id: 'recurring', tone: 'neutral',
     title: `${recurring.length} bills & subscriptions ≈ ${money(recurring.reduce((a, r) => a + r.med, 0))}/month`,
     detail: recurring.slice(0, 4).map(r => r.name).join(', ') + (recurring.length > 4 ? '…' : ''),
-    href: '/dashboard/expenses',
+    href: '/dashboard/bills',
   })
 
   const { value: invVal, cost: invCost } = inp.invested
