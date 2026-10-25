@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { extractStructuredText } from '@/lib/pdfText'
 
 const BANK_HINTS: Record<string, string> = {
   'HDFC':               'Customer ID or Date of birth — DDMMYYYY',
@@ -30,44 +31,6 @@ function detectBank(filename: string, hint?: string | null): string | null {
   if (n.includes('adcb'))                                 return 'ADCB'
   if (n.includes('fab') || n.includes('first abu dhabi')) return 'FAB'
   return null
-}
-
-async function extractStructuredText(bytes: Uint8Array, password?: string): Promise<string> {
-  const { getDocumentProxy } = await import('unpdf')
-  const pdfDoc = await getDocumentProxy(bytes, password ? { password } : {}) as any
-
-  let fullText = ''
-  for (let p = 1; p <= pdfDoc.numPages; p++) {
-    const page        = await pdfDoc.getPage(p)
-    const textContent = await page.getTextContent()
-
-    const rawItems: Array<{ x: number; y: number; str: string }> = []
-    for (const item of textContent.items) {
-      const i = item as any
-      if (!i.str?.trim() || !i.transform) continue
-      rawItems.push({ x: i.transform[4], y: i.transform[5], str: i.str })
-    }
-    rawItems.sort((a, b) => b.y - a.y || a.x - b.x)
-
-    const rowMap = new Map<number, Array<{ x: number; str: string }>>()
-    let rowKey = -1, lastY = NaN
-    for (const item of rawItems) {
-      if (isNaN(lastY) || Math.abs(item.y - lastY) > 3) {
-        rowKey = Math.round(item.y); lastY = item.y
-      }
-      if (!rowMap.has(rowKey)) rowMap.set(rowKey, [])
-      rowMap.get(rowKey)!.push({ x: item.x, str: item.str })
-    }
-
-    const sortedYs = Array.from(rowMap.keys()).sort((a, b) => b - a)
-    for (const y of sortedYs) {
-      const cells = rowMap.get(y)!.sort((a, b) => a.x - b.x)
-      const line  = cells.map(c => c.str).join(' ').trim()
-      if (line) fullText += line + '\n'
-    }
-    fullText += '\n'
-  }
-  return fullText
 }
 
 const MONTH_MAP: Record<string, string> = {

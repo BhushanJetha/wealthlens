@@ -58,9 +58,10 @@ interface Props {
   onClose: () => void
   initialData?: any
   policyId?: string
+  note?: string        // e.g. what was filled in from a policy PDF
 }
 
-export default function AddInsuranceModal({ onClose, initialData, policyId }: Props) {
+export default function AddInsuranceModal({ onClose, initialData, policyId, note }: Props) {
   const isEdit = !!policyId
   const supabase = createClient()
   const router = useRouter()
@@ -142,7 +143,7 @@ export default function AddInsuranceModal({ onClose, initialData, policyId }: Pr
               {isEdit ? 'Edit Policy' : 'Add Policy'}
             </div>
             <div className="text-[11px] mt-0.5" style={{ color: 'var(--text3)' }}>
-              {isEdit ? 'Update insurance policy details' : 'Enter policy details manually'}
+              {isEdit ? 'Update insurance policy details' : note ?? 'Enter policy details manually'}
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg transition-colors"

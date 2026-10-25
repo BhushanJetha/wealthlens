@@ -1,12 +1,12 @@
 'use client'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { useViewStore } from '@/store/viewStore'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import MetricCard from '@/components/dashboard/MetricCard'
 import AddInsuranceModal from '@/components/forms/AddInsuranceModal'
-import { Shield, Upload, CheckCircle, AlertCircle, Loader2, X, Plus, Pencil, Trash2 } from 'lucide-react'
+import { Shield, Upload, AlertCircle, Loader2, Plus, Pencil, Trash2 } from 'lucide-react'
 import { PageHeader, InsightBar, AiActions, LearnStrip } from '@/components/ui/kit'
 
 function toINR(amt: number, cur: string, fx: number) { return cur === 'AED' ? amt * fx : amt }
@@ -31,9 +31,14 @@ export default function InsuranceClient({ policies }: { policies: any[] }) {
   const supabase = createClient()
 
   const [uploading,     setUploading]     = useState(false)
-  const [uploadResult,  setUploadResult]  = useState<any>(null)
   const [uploadError,   setUploadError]   = useState('')
+  const [pendingFile,   setPendingFile]   = useState<File | null>(null)   // waiting for a PDF password
+  const [password,      setPassword]      = useState('')
+  const [wrongPwd,      setWrongPwd]      = useState(false)
+  const [prefill,       setPrefill]       = useState<any | null>(null)    // parsed fields → Add-policy form
+  const [filledNote,    setFilledNote]    = useState('')
   const [localPolicies, setLocalPolicies] = useState(policies)
+  useEffect(() => { setLocalPolicies(policies) }, [policies])
   const [showAdd,       setShowAdd]       = useState(false)
   const [editPolicy,    setEditPolicy]    = useState<any | null>(null)
   const [deleteId,      setDeleteId]      = useState<string | null>(null)
@@ -65,23 +70,32 @@ export default function InsuranceClient({ policies }: { policies: any[] }) {
     router.refresh()
   }
 
-  const onDrop = useCallback(async (files: File[]) => {
-    if (!files[0]) return
-    setUploading(true); setUploadError(''); setUploadResult(null)
+  // Read the PDF locally on the server, then open the Add-policy form with
+  // what was found so the user checks it before anything is saved
+  const readPolicy = useCallback(async (file: File, pwd?: string) => {
+    setUploading(true); setUploadError(''); setFilledNote('')
     const fd = new FormData()
-    fd.append('file', files[0])
+    fd.append('file', file)
+    if (pwd) fd.append('password', pwd)
     try {
       const res  = await fetch('/api/parse-insurance', { method: 'POST', body: fd })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Failed')
-      setUploadResult(data.policy)
-      if (data.policy) setLocalPolicies(prev => [data.policy, ...prev])
+      if (data.encrypted || data.wrongPassword) {
+        setPendingFile(file); setWrongPwd(!!data.wrongPassword); setPassword('')
+      } else if (!res.ok) {
+        throw new Error(data.error ?? 'Could not read this PDF.')
+      } else {
+        setPendingFile(null); setWrongPwd(false)
+        setFilledNote(`Filled in ${data.found} of ${data.of} key details from your PDF. Check them before saving.`)
+        setPrefill(data.policy ?? {})
+      }
     } catch (e: any) { setUploadError(e.message) }
     setUploading(false)
   }, [])
+  const onDrop = useCallback((files: File[]) => { if (files[0]) readPolicy(files[0]) }, [readPolicy])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop, accept: { 'application/pdf': ['.pdf'], 'image/*': ['.jpg', '.jpeg', '.png'] },
+    onDrop, accept: { 'application/pdf': ['.pdf'] },
     maxFiles: 1, maxSize: 20 * 1024 * 1024,
   })
 
@@ -107,49 +121,51 @@ export default function InsuranceClient({ policies }: { policies: any[] }) {
           accent={daysToNext !== null && daysToNext <= 30 ? 'rose' : 'teal'} />
       </div>
 
-      {/* Upload Zone */}
-      <div className="wl-card p-5">
-        <div className="text-[12px] font-bold mb-3 flex items-center gap-2" style={{ color: 'var(--text2)' }}>
-          <Upload size={14} style={{ color: 'var(--sage)' }} /> Upload Insurance Document (AI Auto-fill)
+      {/* Upload zone: local reader fills the Add-policy form */}
+      <section className="wl-card px-4 md:px-5 py-3.5 md:py-[18px]">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <h2 className="text-[14px] md:text-[15px] font-semibold flex items-center gap-2" style={{ color: 'var(--text)' }}>
+            <Upload size={15} style={{ color: 'var(--accent)' }} /> Fill in from a policy PDF
+          </h2>
+          <span className="rounded-full px-2 py-0.5 text-[10.5px] font-semibold" style={{ background: '#E7F7EF', color: '#1E8F5F' }}>Read on our server, no AI</span>
         </div>
-        <div {...getRootProps()} className="border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all"
-          style={isDragActive
-            ? { borderColor: 'var(--sage)', background: 'var(--sage-bg)' }
-            : { borderColor: 'var(--border2)', background: 'var(--bg2)' }}>
+        <div {...getRootProps()} className="mt-3 rounded-[14px] p-6 md:p-8 text-center cursor-pointer transition-colors"
+          style={{ border: `1.5px dashed ${isDragActive ? 'var(--accent)' : 'var(--border2)'}`, background: isDragActive ? 'var(--accent-bg)' : 'var(--canvas)' }}>
           <input {...getInputProps()} />
-          <Shield size={24} className="mx-auto mb-2" style={{ color: isDragActive ? 'var(--sage)' : 'var(--border2)' }} />
-          <p className="text-[12px]" style={{ color: 'var(--text3)' }}>
-            {isDragActive ? 'Drop to parse…' : 'Drop your insurance PDF here, or click to browse'}
+          <Shield size={24} className="mx-auto mb-2" style={{ color: 'var(--accent)' }} />
+          <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
+            {isDragActive ? 'Drop to read it…' : 'Drop your policy schedule PDF, or click to browse'}
           </p>
-          <p className="text-[10px] mt-1" style={{ color: 'var(--text3)' }}>
-            AI extracts policy number, coverage, expiry, premiums automatically
+          <p className="text-[11.5px] mt-1 max-w-[460px] mx-auto" style={{ color: 'var(--text3)' }}>
+            We fill in the insurer, policy number, cover, premium and dates. You check the form before saving, and the PDF isn&apos;t kept.
           </p>
         </div>
 
         {uploading && (
-          <div className="mt-4 flex items-center gap-3 text-[12px]" style={{ color: 'var(--text2)' }}>
-            <Loader2 size={16} className="animate-spin" style={{ color: 'var(--sage)' }} />
-            Parsing your insurance document with AI…
+          <div className="mt-3 flex items-center gap-2.5 text-[12.5px]" style={{ color: 'var(--text2)' }}>
+            <Loader2 size={16} className="animate-spin" style={{ color: 'var(--accent)' }} /> Reading your policy…
           </div>
         )}
-        {uploadResult && (
-          <div className="mt-4 rounded-lg p-4 flex items-start gap-3"
-            style={{ background: 'var(--income-bg)', border: '1px solid var(--income)' }}>
-            <CheckCircle size={16} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--income)' }} />
-            <div>
-              <div className="text-[12px] font-bold" style={{ color: 'var(--text)' }}>Policy added: {uploadResult.policy_name}</div>
-              <div className="text-[11px] mt-1" style={{ color: 'var(--text3)' }}>Provider: {uploadResult.provider} · Expires: {uploadResult.expiry_date}</div>
-            </div>
-            <button onClick={() => setUploadResult(null)} className="ml-auto" style={{ color: 'var(--text3)' }}><X size={14} /></button>
-          </div>
+        {pendingFile && !uploading && (
+          <form onSubmit={e => { e.preventDefault(); if (password) readPolicy(pendingFile, password) }}
+            className="mt-3 flex flex-col sm:flex-row gap-2 sm:items-center">
+            <span className="text-[12.5px]" style={{ color: wrongPwd ? '#D9482F' : 'var(--text2)' }}>
+              {wrongPwd ? "That password didn't work. Try again:" : `${pendingFile.name} is password-protected. Enter its password:`}
+            </span>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoFocus
+              className="wl-input sm:!w-[200px]" aria-label="PDF password" />
+            <span className="flex gap-2">
+              <button type="submit" disabled={!password} className="wl-btn wl-btn-primary disabled:opacity-60" style={{ height: 36 }}>Open</button>
+              <button type="button" onClick={() => setPendingFile(null)} className="wl-btn" style={{ height: 36 }}>Cancel</button>
+            </span>
+          </form>
         )}
         {uploadError && (
-          <div className="mt-4 rounded-lg p-3 flex items-center gap-2 text-[12px]"
-            style={{ background: 'var(--rose-bg)', border: '1px solid var(--rose)', color: 'var(--rose)' }}>
-            <AlertCircle size={14} /> {uploadError}
+          <div className="mt-3 rounded-[10px] px-3 py-2.5 flex items-center gap-2 text-[12.5px]" style={{ background: '#FDECE8', color: '#D9482F' }}>
+            <AlertCircle size={14} className="flex-shrink-0" /> {uploadError}
           </div>
         )}
-      </div>
+      </section>
 
       {/* Policy List */}
       {filtered.length === 0 ? (
@@ -259,6 +275,9 @@ export default function InsuranceClient({ policies }: { policies: any[] }) {
 
       {/* Add modal */}
       {showAdd && <AddInsuranceModal onClose={() => { setShowAdd(false); router.refresh() }} />}
+
+      {/* Add modal, pre-filled from a policy PDF */}
+      {prefill && <AddInsuranceModal initialData={prefill} note={filledNote} onClose={() => { setPrefill(null); setFilledNote(''); router.refresh() }} />}
 
       {/* Edit modal */}
       {editPolicy && (
