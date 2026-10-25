@@ -168,9 +168,9 @@ export default function AddInvestmentModal({ onClose, defaultType = 'stock', edi
   } as React.CSSProperties)
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 overflow-y-auto">
-      <div className="flex min-h-full items-start sm:items-center justify-center p-4 py-8">
-        <div className="wl-card p-6 w-full max-w-lg">
+    <div className="fixed inset-0 wl-sheet bg-black/40 z-50 overflow-y-auto">
+      <div className="wl-sheet-wrap flex min-h-full items-start sm:items-center justify-center p-4 py-8">
+        <div className="wl-sheet-panel wl-card p-6 w-full max-w-lg">
           <div className="flex justify-between items-center mb-5">
             <h2 className="text-[15px] font-bold" style={{ color:'var(--text)' }}>
               {isEdit ? `Edit ${TYPE_LABELS[type]}` : 'Add Investment'}

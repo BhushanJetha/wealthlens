@@ -188,9 +188,9 @@ export default function LinkInvestmentModal({ goalId, goal, allInvestments, link
   }, [filtered])
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 overflow-y-auto">
-      <div className="flex min-h-full items-center justify-center p-4 py-8">
-        <div className="wl-card w-full max-w-xl" style={{ maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+    <div className="fixed inset-0 wl-sheet bg-black/40 z-50 overflow-y-auto">
+      <div className="wl-sheet-wrap flex min-h-full items-center justify-center p-4 py-8">
+        <div className="wl-sheet-panel wl-card w-full max-w-xl" style={{ maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
 
           {/* Header */}
           <div className="p-5" style={{ borderBottom: '1px solid var(--border)' }}>

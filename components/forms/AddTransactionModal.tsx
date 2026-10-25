@@ -172,8 +172,8 @@ export default function AddTransactionModal({ onClose, onAdded, defaults }: {
   const inrEquiv = liveRate && aedAmt > 0 ? Math.round(aedAmt * liveRate) : null
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto"
+    <div className="fixed inset-0 wl-sheet bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="wl-sheet-panel rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto"
         style={{ background: '#fff', border: '1px solid var(--border)', boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}>
 
         <div className="flex justify-between items-center mb-5">

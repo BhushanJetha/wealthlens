@@ -163,9 +163,9 @@ export default function AddGoalModal({ onClose, editData, allInvestments, defaul
   const termLabel = form.target_date ? getGoalTerm(form.target_date) : null
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 overflow-y-auto">
-      <div className="flex min-h-full items-center justify-center p-4 py-8">
-        <div className="wl-card p-6 w-full max-w-md">
+    <div className="fixed inset-0 wl-sheet bg-black/40 z-50 overflow-y-auto">
+      <div className="wl-sheet-wrap flex min-h-full items-center justify-center p-4 py-8">
+        <div className="wl-sheet-panel wl-card p-6 w-full max-w-md">
           <div className="flex justify-between items-center mb-5">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-sm"

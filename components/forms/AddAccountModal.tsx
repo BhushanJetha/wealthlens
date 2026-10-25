@@ -97,8 +97,8 @@ export default function AddAccountModal({ onClose, type = 'credit_card', initial
     : (isEdit ? 'Edit Bank Account' : 'Add Bank Account')
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="rounded-2xl p-6 w-full max-w-md"
+    <div className="fixed inset-0 wl-sheet bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="wl-sheet-panel rounded-2xl p-6 w-full max-w-md"
         style={{ background: '#fff', border: '1px solid var(--border)', boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}>
         <div className="flex justify-between items-center mb-5">
           <h2 className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>{title}</h2>

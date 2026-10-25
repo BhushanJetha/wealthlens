@@ -431,8 +431,8 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
 
       {/* Edit income modal */}
       {editTxn && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="rounded-2xl w-full max-w-md" style={{ background:'#fff', border:'1px solid var(--border)', boxShadow:'0 8px 40px rgba(0,0,0,0.15)' }}>
+        <div className="fixed inset-0 wl-sheet bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="wl-sheet-panel rounded-2xl w-full max-w-md" style={{ background:'#fff', border:'1px solid var(--border)', boxShadow:'0 8px 40px rgba(0,0,0,0.15)' }}>
             <div className="flex justify-between items-center px-5 py-4 border-b" style={{ borderColor:'var(--border)' }}>
               <div className="text-[14px] font-bold" style={{ color:'var(--text)' }}>{isDup ? 'Duplicate Income' : 'Edit Income'}</div>
               <button onClick={closeEdit} style={{ color:'var(--text3)' }}><X size={16} /></button>

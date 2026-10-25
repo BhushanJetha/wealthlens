@@ -232,8 +232,8 @@ function PpfEpfModal({ editData, onClose, onSaved }: { editData: any | null; onC
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.35)' }} onClick={onClose}>
-      <div className="wl-card w-full max-w-md p-5 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 wl-sheet z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.35)' }} onClick={onClose}>
+      <div className="wl-sheet-panel wl-card w-full max-w-md p-5 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-[16px] font-bold" style={{ color: 'var(--text)' }}>{isEdit ? 'Edit PPF/EPF Account' : 'Add PPF/EPF Account'}</h2>
           <button onClick={onClose} style={{ color: 'var(--text3)' }}><X size={18} /></button>

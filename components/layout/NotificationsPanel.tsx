@@ -18,7 +18,8 @@ const SEV_STYLE = {
   low:    { bg: 'var(--sage-bg)',  color: 'var(--sage)' },
 }
 
-export default function NotificationsPanel() {
+// `round`: the phone design's 36px circle button
+export default function NotificationsPanel({ round }: { round?: boolean }) {
   const [open, setOpen]     = useState(false)
   const [items, setItems]   = useState<Notif[]>([])
   const [loading, setLoading] = useState(false)
@@ -113,9 +114,11 @@ export default function NotificationsPanel() {
 
   return (
     <div ref={ref} className="relative">
-      <button onClick={() => setOpen(o => !o)}
-        className="relative p-1.5 rounded-lg transition-all"
-        style={{ color: open ? 'var(--sage)' : 'var(--text3)', background: open ? 'var(--sage-bg)' : 'transparent' }}>
+      <button onClick={() => setOpen(o => !o)} aria-label="Notifications" aria-expanded={open}
+        className={round ? 'relative w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0' : 'relative p-1.5 rounded-lg transition-all'}
+        style={round
+          ? { background: open ? 'var(--accent-bg)' : '#fff', border: '1px solid var(--border)', color: open ? 'var(--accent)' : 'var(--text2)' }
+          : { color: open ? 'var(--sage)' : 'var(--text3)', background: open ? 'var(--sage-bg)' : 'transparent' }}>
         <Bell size={16} />
         {fetched && items.length > 0 ? (
           <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full text-[9px] font-bold text-white flex items-center justify-center"
@@ -123,12 +126,12 @@ export default function NotificationsPanel() {
             {items.length > 9 ? '9+' : items.length}
           </span>
         ) : (
-          <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full" style={{ background: 'var(--rose)' }} />
+          <span className={`absolute rounded-full ${round ? 'top-[7px] right-2 w-[7px] h-[7px]' : 'top-0.5 right-0.5 w-2 h-2'}`} style={{ background: 'var(--rose)' }} />
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-[340px] rounded-xl z-50 overflow-hidden"
+        <div className="absolute right-0 top-full mt-2 w-[340px] rounded-xl z-50 overflow-hidden max-md:fixed max-md:left-3 max-md:right-3 max-md:top-16 max-md:mt-0 max-md:w-auto"
           style={{ background: '#fff', border: '1px solid var(--border)', boxShadow: '0 12px 40px rgba(0,0,0,0.14)' }}>
 
           {/* Header */}

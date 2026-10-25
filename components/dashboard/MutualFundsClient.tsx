@@ -455,10 +455,10 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
 
   // ── modals ────────────────────────────────────────────────────────────────────
   const Overlay = ({ children }: { children: React.ReactNode }) => (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>{children}</div>
+    <div className="fixed inset-0 wl-sheet z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>{children}</div>
   )
   const Modal = ({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) => (
-    <div className="rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+    <div className="wl-sheet-panel rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
       <div className="flex items-center justify-between">
         <div className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>{title}</div>
         <button onClick={onClose} style={{ color: 'var(--text3)' }}><X size={16} /></button>

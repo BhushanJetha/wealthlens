@@ -1,44 +1,57 @@
 'use client'
 import Link from 'next/link'
-import { ChevronRight } from 'lucide-react'
-import { SECTIONS } from '@/lib/nav'
 import { useUiStore } from '@/store/uiStore'
 
-// Phone "More" hub (design: mobile More) — every section's pages as grouped
-// lists, reached from the bottom tab bar.
-const ORDER = ['learn', 'insights', 'money', 'plan', 'wealth', 'settings']
+// Phone "More" hub, grouped as in the mobile design. Expenses, Investments and
+// Goals aren't listed — they're the Money / Wealth / Plan tabs in the bottom bar.
+type Item = { label: string; href?: string; advisor?: true }
+const GROUPS: { label: string; items: Item[] }[] = [
+  { label: 'Learn', items: [{ label: 'Courses', href: '/dashboard/learn' }] },
+  { label: 'Insights', items: [{ label: '✦ AI advisor', advisor: true }] },
+  { label: 'Money', items: [
+    { label: 'Income', href: '/dashboard/income' },
+    { label: 'Transfers', href: '/dashboard/transfers' },
+    { label: 'Reports', href: '/dashboard/reports' },
+    { label: 'FX optimizer', href: '/dashboard/fx' },
+    { label: 'Import statements', href: '/dashboard/ingest' },
+  ] },
+  { label: 'Plan', items: [
+    { label: 'Budgets', href: '/dashboard/budgets' },
+    { label: 'Cash-flow forecast', href: '/dashboard/cashflow' },
+  ] },
+  { label: 'Wealth', items: [
+    { label: 'Net worth', href: '/dashboard/net-worth' },
+    { label: 'Debt vs equity', href: '/dashboard/debt-equity' },
+    { label: 'Loans', href: '/dashboard/loans' },
+    { label: 'Credit cards', href: '/dashboard/cards' },
+    { label: 'Bank accounts', href: '/dashboard/accounts' },
+    { label: 'Insurance', href: '/dashboard/insurance' },
+  ] },
+  { label: 'Insights & account', items: [
+    { label: 'Financial health', href: '/dashboard/financial-health' },
+    { label: 'NRI toolkit', href: '/dashboard/nri-toolkit' },
+    { label: 'Money mindset', href: '/dashboard/inspire' },
+    { label: 'Settings & family', href: '/dashboard/settings' },
+  ] },
+]
 
 export default function MorePage() {
   const { openAdvisor } = useUiStore()
-  const groups = ORDER.map(k => SECTIONS.find(s => s.key === k)!).filter(Boolean)
-
-  const row = (label: string, href: string) => (
-    <Link key={href + label} href={href}
-      className="flex items-center justify-between px-4 py-3.5 text-[14px] font-medium active:bg-slate-50"
-      style={{ borderTop: '1px solid #F1F5F9', color: 'var(--text)' }}>
-      {label}
-      <ChevronRight size={16} style={{ color: 'var(--text4)' }} />
-    </Link>
-  )
+  const cls = 'w-full flex items-center justify-between px-4 py-3.5 text-[14px] font-medium text-left active:bg-slate-50'
+  const style = { borderTop: '1px solid #F1F5F9', color: 'var(--text)' }
+  const chevron = <span aria-hidden style={{ color: 'var(--text4)' }}>›</span>
 
   return (
-    <div className="max-w-xl mx-auto space-y-5 animate-fade-up">
+    <div className="max-w-xl mx-auto flex flex-col gap-3.5 animate-fade-up">
       <h1 className="text-[22px] font-bold" style={{ color: 'var(--text)' }}>More</h1>
-      {groups.map(s => (
-        <section key={s.key}>
-          <div className="wl-eyebrow mx-1 mb-1.5">{s.label}</div>
-          <div className="wl-card overflow-hidden" style={{ borderRadius: 14 }}>
+      {GROUPS.map(g => (
+        <section key={g.label} aria-label={g.label}>
+          <div className="text-[10.5px] font-semibold uppercase tracking-[0.06em] mx-1 mb-1.5" style={{ color: 'var(--text4)' }}>{g.label}</div>
+          <div className="wl-card overflow-hidden">
             <div className="-mt-px">
-              {s.tabs.length === 0 && row(s.label, s.href)}
-              {s.tabs.map(t => row(t.label, t.href))}
-              {s.key === 'insights' && (
-                <button onClick={() => openAdvisor()}
-                  className="w-full flex items-center justify-between px-4 py-3.5 text-[14px] font-medium text-left"
-                  style={{ borderTop: '1px solid #F1F5F9', color: 'var(--text)' }}>
-                  ✦ AI advisor
-                  <ChevronRight size={16} style={{ color: 'var(--text4)' }} />
-                </button>
-              )}
+              {g.items.map(it => it.advisor
+                ? <button key={it.label} onClick={() => openAdvisor()} className={cls} style={style}>{it.label}{chevron}</button>
+                : <Link key={it.label} href={it.href!} className={cls} style={style}>{it.label}{chevron}</Link>)}
             </div>
           </div>
         </section>

@@ -99,9 +99,9 @@ export default function ManageFamilyModal({ onClose }: Props) {
   if (!mounted) return null
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4"
+    <div className="fixed inset-0 wl-sheet z-[9999] bg-black/50 flex items-center justify-center p-4"
       onClick={onClose}>
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl"
+      <div className="wl-sheet-panel w-full max-w-md bg-white rounded-2xl shadow-2xl"
         style={{ border: '1px solid var(--border)' }}
         onClick={e => e.stopPropagation()}>
 

@@ -87,8 +87,8 @@ export function VoiceInputModal({ onClose, investmentType }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="wl-card p-6 w-full max-w-md">
+    <div className="fixed inset-0 wl-sheet bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="wl-sheet-panel wl-card p-6 w-full max-w-md">
         <div className="flex justify-between items-center mb-5">
           <h2 className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>Voice Input</h2>
           <button onClick={onClose} style={{ color: 'var(--text3)' }}><X size={18} /></button>

@@ -227,12 +227,12 @@ function TxnDetailPopup({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 wl-popup-overlay"
+      className="fixed inset-0 wl-sheet z-50 flex items-end sm:items-center justify-center p-4 wl-popup-overlay"
       style={{ background: 'rgba(0,0,0,0.45)' }}
       onClick={onClose}
     >
       <div
-        className="wl-popup-panel rounded-2xl shadow-2xl w-full max-w-sm flex flex-col overflow-hidden"
+        className="wl-sheet-panel wl-popup-panel rounded-2xl shadow-2xl w-full max-w-sm flex flex-col overflow-hidden"
         style={{
           background: 'var(--card)',
           border: '1px solid var(--border)',

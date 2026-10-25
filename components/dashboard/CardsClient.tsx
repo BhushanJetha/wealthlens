@@ -210,8 +210,8 @@ export default function CardsClient({ cards }: { cards: any[] }) {
 
       {/* Delete confirm dialog */}
       {deleteId && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="rounded-2xl p-6 w-full max-w-sm"
+        <div className="fixed inset-0 wl-sheet bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="wl-sheet-panel rounded-2xl p-6 w-full max-w-sm"
             style={{ background: '#fff', border: '1px solid var(--border)', boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}>
             <div className="flex items-center gap-3 mb-3">
               <div className="w-10 h-10 rounded-xl flex items-center justify-center"

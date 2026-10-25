@@ -83,7 +83,7 @@ body {
 /* Fast page transitions */
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
+  to   { opacity: 1; transform: none; }
 }
 @keyframes slideInRight {
   from { transform: translateX(100%); }
@@ -94,7 +94,9 @@ body {
   50%      { opacity: 1; }
 }
 
-.animate-fade-up     { animation: fadeUp 0.15s ease-out forwards; }
+/* No `forwards`: a filling transform animation keeps the page as the containing
+   block for position:fixed, which trapped every modal inside the page. */
+.animate-fade-up     { animation: fadeUp 0.15s ease-out; }
 .animate-slide-right { animation: slideInRight 0.2s ease-out; }
 
 /* Typing dots */
@@ -109,6 +111,8 @@ body {
   border-radius: 12px;
   box-shadow: 0 1px 2px rgba(15,23,42,0.04);
 }
+/* Phones: slightly rounder cards on the #F7F8FA canvas (mobile design) */
+@media (max-width: 767px) { .wl-card { border-radius: 14px; } }
 
 /* Component classes live in Tailwind's components layer so utilities (hidden,
    md:inline-flex, h-9 …) can still override them per breakpoint. */
@@ -293,4 +297,25 @@ main > * { will-change: opacity; }
 .chat-fab { bottom: 1.5rem; right: 1.5rem; }
 @media (max-width: 767px) {
   .chat-fab { bottom: calc(env(safe-area-inset-bottom, 0px) + 68px); right: 1rem; }
+}
+
+/* Phones: modals become bottom sheets (mobile design). Overlay = .wl-sheet,
+   panel = .wl-sheet-panel, and any centring wrapper between them =
+   .wl-sheet-wrap. !important beats the modals' own Tailwind / inline layout. */
+@keyframes sheetUp { from { transform: translateY(40px); opacity: .6; } to { transform: none; opacity: 1; } }
+@media (max-width: 767px) {
+  .wl-sheet {
+    display: flex !important; flex-direction: column !important;
+    justify-content: flex-end !important; align-items: stretch !important;
+    padding: 0 !important; overflow: hidden !important;
+    background: rgba(15,23,42,.45) !important;
+  }
+  .wl-sheet-wrap { display: contents !important; }
+  .wl-sheet-panel {
+    width: 100% !important; max-width: none !important; margin: 0 !important;
+    max-height: 92dvh !important; overflow-y: auto !important;
+    border-radius: 22px 22px 0 0 !important;
+    border-bottom: env(safe-area-inset-bottom, 0px) solid #fff !important;
+    animation: sheetUp .25s cubic-bezier(0.16,1,0.3,1);
+  }
 }

@@ -254,7 +254,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
   )
 
   const Overlay = ({ children }: { children: React.ReactNode }) => (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>{children}</div>
+    <div className="fixed inset-0 wl-sheet z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>{children}</div>
   )
 
   return (
@@ -263,7 +263,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
       {/* Lumpsum modal */}
       {lumpsumStock && (
         <Overlay>
-          <div className="rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+          <div className="wl-sheet-panel rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
             <div className="flex items-center justify-between">
               <div className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>Buy More Shares</div>
               <button onClick={() => { setLumpsumStock(null); setLumpsumQty(''); setLumpsumPrice(''); setLumpsumDate(new Date().toISOString().slice(0, 10)) }} style={{ color: 'var(--text3)' }}><X size={16} /></button>
@@ -954,7 +954,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
       {editStock && <EditHoldingModal kind="stock" row={editStock} onClose={() => { setEditStock(null); router.refresh() }} />}
       {deleteStock && (
         <Overlay>
-          <div className="rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+          <div className="wl-sheet-panel rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
             <div className="flex items-center justify-between">
               <div className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>Delete Stock?</div>
               <button onClick={() => setDeleteStock(null)} style={{ color: 'var(--text3)' }}><X size={16} /></button>

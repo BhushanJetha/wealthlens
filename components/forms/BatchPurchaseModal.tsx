@@ -177,9 +177,9 @@ export default function BatchPurchaseModal({ kind, onClose, existing }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 overflow-y-auto">
-      <div className="flex min-h-full items-start sm:items-center justify-center p-4 py-8">
-        <div className="wl-card p-5 w-full max-w-lg">
+    <div className="fixed inset-0 wl-sheet bg-black/40 z-50 overflow-y-auto">
+      <div className="wl-sheet-wrap flex min-h-full items-start sm:items-center justify-center p-4 py-8">
+        <div className="wl-sheet-panel wl-card p-5 w-full max-w-lg">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-[15px] font-bold flex items-center gap-2" style={{ color: 'var(--text)' }}>
               <CalendarPlus size={16} style={{ color: 'var(--sage)' }} />

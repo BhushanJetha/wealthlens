@@ -8,6 +8,8 @@ import { SECTIONS, MOBILE_TABS, resolveNav } from '@/lib/nav'
 // Wealth / Plan, and "More" → the /dashboard/more hub (Insights, Learn,
 // Settings and every other page).
 const TABS = SECTIONS.filter(s => MOBILE_TABS.includes(s.key))
+// Where each tab lands on phones (design: Wealth → Investments, Plan → Goals)
+const LANDING: Record<string, string> = { wealth: '/dashboard/investments', plan: '/dashboard/goals' }
 
 export default function MobileTabBar() {
   const pathname = usePathname()
@@ -27,7 +29,7 @@ export default function MobileTabBar() {
     <nav aria-label="Main" className="md:hidden fixed bottom-0 inset-x-0 z-30 safe-bottom no-print"
       style={{ background: '#fff', borderTop: '1px solid var(--border)' }}>
       <div className="flex items-stretch">
-        {TABS.map(t => item(t.key, t.href, t.label, t.icon, !moreActive && activeKey === t.key))}
+        {TABS.map(t => item(t.key, LANDING[t.key] ?? t.href, t.label, t.icon, !moreActive && activeKey === t.key))}
         {item('more', '/dashboard/more', 'More', LayoutGrid, moreActive)}
       </div>
     </nav>

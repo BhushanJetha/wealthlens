@@ -493,8 +493,8 @@ export default function LoanDetailClient({ loan, txns, plan = [] }: { loan: any;
 
       {/* Add/edit txn modal */}
       {adding !== 'none' && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => !saving && closeModal()}>
-          <div className="rounded-2xl w-full max-w-md" onClick={e => e.stopPropagation()} style={{ background: '#fff', border: '1px solid var(--border)', boxShadow: '0 8px 40px rgba(0,0,0,0.15)' }}>
+        <div className="fixed inset-0 wl-sheet bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => !saving && closeModal()}>
+          <div className="wl-sheet-panel rounded-2xl w-full max-w-md" onClick={e => e.stopPropagation()} style={{ background: '#fff', border: '1px solid var(--border)', boxShadow: '0 8px 40px rgba(0,0,0,0.15)' }}>
             <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
               <div className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>{editingId ? 'Edit' : 'Add'} {adding === 'disbursement' ? 'Disbursement' : adding === 'own_contribution' ? 'Own Contribution' : 'Prepayment'}</div>
               <button onClick={closeModal} style={{ color: 'var(--text3)' }}><X size={16} /></button>
@@ -516,8 +516,8 @@ export default function LoanDetailClient({ loan, txns, plan = [] }: { loan: any;
 
       {/* Payment plan slab modal */}
       {planModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => !saving && setPlanModal(null)}>
-          <div className="rounded-2xl w-full max-w-md" onClick={e => e.stopPropagation()} style={{ background: '#fff', border: '1px solid var(--border)', boxShadow: '0 8px 40px rgba(0,0,0,0.15)' }}>
+        <div className="fixed inset-0 wl-sheet bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => !saving && setPlanModal(null)}>
+          <div className="wl-sheet-panel rounded-2xl w-full max-w-md" onClick={e => e.stopPropagation()} style={{ background: '#fff', border: '1px solid var(--border)', boxShadow: '0 8px 40px rgba(0,0,0,0.15)' }}>
             <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
               <div className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>{planModal === 'add' ? 'Add' : 'Edit'} plan slab</div>
               <button onClick={() => setPlanModal(null)} style={{ color: 'var(--text3)' }}><X size={16} /></button>

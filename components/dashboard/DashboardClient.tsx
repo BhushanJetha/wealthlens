@@ -16,6 +16,8 @@ import { fmtMoney, fmtCompact } from '@/lib/format'
 import { newGoalHref } from '@/lib/goalInterests'
 import AddTransactionModal from '@/components/forms/AddTransactionModal'
 import TransactionVoiceModal from '@/components/forms/TransactionVoiceModal'
+import NotificationsPanel from '@/components/layout/NotificationsPanel'
+import { MobileControls, SearchButton, AskAiButton } from '@/components/layout/MobileHeader'
 
 interface Props {
   firstName: string | null
@@ -149,31 +151,42 @@ export default function DashboardClient(p: Props) {
         </div>
       </div>
 
-      {/* Header — phone */}
-      <div className="md:hidden">
-        <div className="text-[12.5px]" style={{ color: 'var(--text3)' }}>{greeting}</div>
-        <div className="text-[20px] font-bold" style={{ color: 'var(--text)' }}>{p.firstName || 'Welcome'}</div>
+      {/* Phone layout follows the mobile design's order: greeting · net worth ·
+          view/period · weekly review · quick actions · attention · health ·
+          learn · news. Row wrappers become `contents` below md so each card can
+          take its own `order`; desktop is untouched. */}
+      <div className="md:hidden max-md:order-1 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[12.5px]" style={{ color: 'var(--text3)' }}>{greeting}</div>
+          <div className="text-[20px] font-bold truncate" style={{ color: 'var(--text)' }}>{p.firstName || 'Welcome'}</div>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <SearchButton />
+          <NotificationsPanel round />
+          <AskAiButton wide />
+        </div>
       </div>
-      <div className="md:hidden grid grid-cols-4 gap-2">
+      <div className="md:hidden max-md:order-3"><MobileControls actions={false} /></div>
+      <div className="md:hidden max-md:order-5 grid grid-cols-4 gap-2">
         {([
           ['Add', Plus, () => setModal('add')],
           ['Upload', Upload, () => setUploadOpen(true)],
           ['Speak', Mic, () => setModal('voice')],
           ['Ask AI', Sparkles, () => openAdvisor()],
         ] as [string, LucideIcon, () => void][]).map(([label, Icon, fn]) => (
-          <button key={label} onClick={fn} className="wl-card py-2.5 flex flex-col items-center gap-1 text-[11px] font-medium" style={{ color: 'var(--text2)' }}>
+          <button key={label} onClick={fn} className="wl-card !rounded-xl py-2.5 px-1 flex flex-col items-center gap-1 text-[11px] font-medium" style={{ color: 'var(--text2)' }}>
             <Icon size={18} style={{ color: 'var(--accent)' }} />{label}
           </button>
         ))}
       </div>
 
-      {isEmpty ? <Onboarding onImport={() => setUploadOpen(true)} goalInterests={p.goalInterests} /> : (<>
+      {isEmpty ? <Onboarding onImport={() => setUploadOpen(true)} goalInterests={p.goalInterests} className="max-md:order-6" /> : (<>
       {/* Weekly review */}
-      <section className="rounded-xl px-4 md:px-[22px] py-4 md:py-[18px] flex flex-col md:flex-row gap-3 md:gap-4 md:items-center"
+      <section className="max-md:order-4 rounded-[14px] md:rounded-xl px-4 md:px-[22px] py-3.5 md:py-[18px] flex flex-col md:flex-row gap-2.5 md:gap-4 md:items-center"
         style={{ background: '#312E81', color: '#fff' }}>
         <div className="flex-1">
           <div className="text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: '#C7D2FE' }}>✦ Your weekly review</div>
-          <p className="text-[13px] md:text-[14px] leading-relaxed mt-1.5" style={{ color: '#E0E7FF' }}>{review}</p>
+          <p className="text-[12.5px] md:text-[14px] leading-[1.55] md:leading-relaxed mt-1 md:mt-1.5" style={{ color: '#E0E7FF' }}>{review}</p>
         </div>
         <button onClick={() => openAdvisor(reviewPrompt)}
           className="self-start md:self-auto flex-shrink-0 rounded-full px-4 py-2 text-[12.5px] font-semibold"
@@ -183,23 +196,24 @@ export default function DashboardClient(p: Props) {
       </section>
 
       {/* Row 1: Net worth + Needs attention */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4">
+      <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4">
         <NetWorthCard nw={nw} hist={hist} historyReady={p.historyReady} holderLabel={holder ? holderLabel : null}
-          savingsRate={ins.trend.savingsRate} money={money} short={short} />
-        <AttentionCard items={ins.attention} onImport={() => setUploadOpen(true)} />
+          savingsRate={ins.trend.savingsRate} money={money} short={short} className="max-md:order-2" />
+        <AttentionCard items={ins.attention} onImport={() => setUploadOpen(true)} className="max-md:order-6" />
       </div>
 
       {/* Row 2: Health, Goals, 30-day cash flow */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <HealthCard score={health.score} parts={health.parts} />
-        <GoalsCard goals={goals} short={short} interests={p.goalInterests} />
-        <CashFlowCard forecast={ins.forecast} short={short} money={money} />
+      <div className="max-md:contents grid grid-cols-1 md:grid-cols-3 gap-4">
+        <HealthCard score={health.score} parts={health.parts} className="max-md:order-7" />
+        {/* Not on the phone Home in the design — Goals and Cash flow live under Plan */}
+        <GoalsCard goals={goals} short={short} interests={p.goalInterests} className="max-md:hidden" />
+        <CashFlowCard forecast={ins.forecast} short={short} money={money} className="max-md:hidden" />
       </div>
 
       {/* Row 3: News + Learn */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_1fr] gap-4">
-        <NewsCard holdings={h} />
-        <LearnCard ins={ins} hasSip={h.mutualFunds.some(x => x.has_sip)} />
+      <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.3fr_1fr] gap-4">
+        <NewsCard holdings={h} className="max-md:order-9" />
+        <LearnCard ins={ins} hasSip={h.mutualFunds.some(x => x.has_sip)} className="max-md:order-8" />
       </div>
       </>)}
 
@@ -226,7 +240,7 @@ function weeklyReview(ins: HomeInsights, score: number) {
 // ─── Cards ────────────────────────────────────────────────────────────────────
 
 function Card({ children, className = '', ...rest }: React.HTMLAttributes<HTMLElement>) {
-  return <section className={`wl-card px-[18px] md:px-5 py-[18px] ${className}`} {...rest}>{children}</section>
+  return <section className={`wl-card px-4 md:px-5 py-3.5 md:py-[18px] ${className}`} {...rest}>{children}</section>
 }
 
 function CardTitle({ id, children, right }: { id?: string; children: React.ReactNode; right?: React.ReactNode }) {
@@ -242,9 +256,9 @@ function MoreLink({ href, children }: { href: string; children: React.ReactNode 
   return <Link href={href} className="text-[12.5px] font-semibold hover:underline" style={{ color: 'var(--accent)' }}>{children} →</Link>
 }
 
-function NetWorthCard({ nw, hist, historyReady, holderLabel, savingsRate, money, short }: {
+function NetWorthCard({ nw, hist, historyReady, holderLabel, savingsRate, money, short, className = '' }: {
   nw: ReturnType<typeof computeNetWorth>; hist: ReturnType<typeof netWorthHistory>; historyReady: boolean
-  holderLabel: string | null; savingsRate: number | null; money: (n: number) => string; short: (n: number) => string
+  holderLabel: string | null; savingsRate: number | null; money: (n: number) => string; short: (n: number) => string; className?: string
 }) {
   const change = hist.ref ? nw.netWorth - hist.ref.value : null
   const changePct = hist.ref && hist.ref.value !== 0 ? Math.round(change! / Math.abs(hist.ref.value) * 1000) / 10 : null
@@ -257,8 +271,8 @@ function NetWorthCard({ nw, hist, historyReady, holderLabel, savingsRate, money,
   const labels = series.length >= 3 ? [series[0], series[Math.floor(series.length / 2)], series[series.length - 1]] : []
 
   return (
-    <Card className="!px-[22px] !py-5" aria-labelledby="nw-title">
-      <div id="nw-title" className="wl-eyebrow">Net worth{holderLabel ? ` · ${holderLabel}` : ''}</div>
+    <Card className={`!p-4 md:!px-[22px] md:!py-5 ${className}`} aria-labelledby="nw-title">
+      <div id="nw-title" className="wl-eyebrow">Net worth · {holderLabel ?? 'Family'}</div>
       <div className="flex items-baseline gap-3 flex-wrap mt-1 mb-0.5">
         <div className="text-[30px] md:text-[34px] font-bold tracking-tight font-mono" style={{ color: nw.netWorth < 0 ? 'var(--expense)' : 'var(--text)', letterSpacing: '-0.02em' }}>
           {money(nw.netWorth)}
@@ -279,7 +293,7 @@ function NetWorthCard({ nw, hist, historyReady, holderLabel, savingsRate, money,
 
       {series.length >= 2 && (
         <>
-          <div className="h-[120px] md:h-[150px] mt-3 -mx-1" aria-label="Net worth over time">
+          <div className="h-[90px] md:h-[150px] mt-2 md:mt-3 -mx-1" aria-label="Net worth over time">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
                 <XAxis dataKey="date" hide />
@@ -294,14 +308,14 @@ function NetWorthCard({ nw, hist, historyReady, holderLabel, savingsRate, money,
             </ResponsiveContainer>
           </div>
           {labels.length > 0 && (
-            <div className="flex justify-between text-[11px] mt-1.5" style={{ color: 'var(--text4)' }}>
+            <div className="hidden md:flex justify-between text-[11px] mt-1.5" style={{ color: 'var(--text4)' }}>
               {labels.map((l, i) => <span key={i}>{l.date === 'today' ? 'Today' : fmtDay(l.date)}</span>)}
             </div>
           )}
         </>
       )}
 
-      <div className="grid grid-cols-3 gap-3 mt-3.5 pt-3.5" style={{ borderTop: '1px solid #F1F5F9' }}>
+      <div className="hidden md:grid grid-cols-3 gap-3 mt-3.5 pt-3.5" style={{ borderTop: '1px solid #F1F5F9' }}>
         {([
           ['Assets', short(nw.totalAssets), 'var(--text)'],
           ['Liabilities', short(nw.totalLiab), nw.totalLiab > 0 ? 'var(--expense)' : 'var(--text)'],
@@ -313,16 +327,16 @@ function NetWorthCard({ nw, hist, historyReady, holderLabel, savingsRate, money,
           </div>
         ))}
       </div>
-      <div className="mt-3 flex justify-end"><MoreLink href="/dashboard/net-worth">Net worth breakdown</MoreLink></div>
+      <div className="mt-3 hidden md:flex justify-end"><MoreLink href="/dashboard/net-worth">Net worth breakdown</MoreLink></div>
     </Card>
   )
 }
 
-function AttentionCard({ items, onImport }: { items: Attention[]; onImport: () => void }) {
+function AttentionCard({ items, onImport, className = '' }: { items: Attention[]; onImport: () => void; className?: string }) {
   const [all, setAll] = useState(false)
   const shown = all ? items : items.slice(0, 4)
   return (
-    <Card aria-labelledby="att-title" className="flex flex-col">
+    <Card aria-labelledby="att-title" className={`flex flex-col ${className}`}>
       <CardTitle id="att-title" right={items.length > 0 && (
         <span className="text-[11px] font-semibold px-2 py-[3px] rounded-full" style={{ background: '#FEF2F2', color: '#DC2626' }}>{items.length}</span>
       )}>Needs attention</CardTitle>
@@ -334,19 +348,29 @@ function AttentionCard({ items, onImport }: { items: Attention[]; onImport: () =
         </div>
       ) : (
         <ul className="mt-2.5">
-          {shown.map(it => (
-            <li key={it.id} className="flex gap-2.5 items-start py-[9px]" style={{ borderTop: '1px solid #F1F5F9' }}>
+          {shown.map(it => {
+            const body = (<>
               <span className="w-2 h-2 rounded-full mt-[5px] flex-shrink-0" style={{ background: SEV_DOT[it.severity] }}
                 aria-label={it.severity === 'high' ? 'Urgent' : it.severity === 'medium' ? 'Soon' : 'To do'} />
-              <div className="flex-1 min-w-0">
-                <div className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{it.title}</div>
-                <div className="text-[12px] mt-px" style={{ color: 'var(--text3)' }}>{it.detail}</div>
-              </div>
-              {it.action === 'upload'
-                ? <button onClick={onImport} className="text-[12px] font-semibold whitespace-nowrap" style={{ color: 'var(--accent)' }}>{it.actionLabel}</button>
-                : it.href ? <Link href={it.href} className="text-[12px] font-semibold whitespace-nowrap" style={{ color: 'var(--accent)' }}>{it.actionLabel ?? 'Open'}</Link> : null}
-            </li>
-          ))}
+              <span className="flex-1 min-w-0">
+                <span className="block text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{it.title}</span>
+                <span className="block text-[12px] mt-px" style={{ color: 'var(--text3)' }}>{it.detail}</span>
+              </span>
+              {(it.action === 'upload' || it.href) && (
+                <span className="hidden md:inline text-[12px] font-semibold whitespace-nowrap" style={{ color: 'var(--accent)' }}>
+                  {it.action === 'upload' ? it.actionLabel : it.actionLabel ?? 'Open'}
+                </span>
+              )}
+            </>)
+            const cls = 'w-full flex gap-2.5 items-start py-[9px] text-left'
+            return (
+              <li key={it.id} style={{ borderTop: '1px solid #F1F5F9' }}>
+                {it.action === 'upload' ? <button onClick={onImport} className={cls}>{body}</button>
+                  : it.href ? <Link href={it.href} className={cls}>{body}</Link>
+                  : <div className={cls}>{body}</div>}
+              </li>
+            )
+          })}
         </ul>
       )}
       {items.length > 4 && (
@@ -358,21 +382,42 @@ function AttentionCard({ items, onImport }: { items: Attention[]; onImport: () =
   )
 }
 
-function HealthCard({ score, parts }: { score: number; parts: { label: string; value: string; tone: Tone }[] }) {
+function Donut({ score, big }: { score: number; big?: boolean }) {
   return (
-    <Card aria-labelledby="health-title">
+    <div className="relative flex-shrink-0" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={score} aria-label="Financial health score">
+      <svg viewBox="0 0 36 36" className={`${big ? 'w-[92px] h-[92px]' : 'w-[72px] h-[72px]'} -rotate-90`}>
+        <circle cx="18" cy="18" r="15.9155" fill="none" stroke="#EEF2FF" strokeWidth="3.5" />
+        <circle cx="18" cy="18" r="15.9155" fill="none" stroke="#4F46E5" strokeWidth="3.5" strokeLinecap="round" strokeDasharray={`${score} ${100 - score}`} />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <div className={`${big ? 'text-[24px]' : 'text-[20px]'} font-bold leading-none`} style={{ color: 'var(--text)' }}>{score}</div>
+        {big && <div className="text-[10px] mt-0.5" style={{ color: 'var(--text3)' }}>of 100</div>}
+      </div>
+    </div>
+  )
+}
+
+function healthSummary(score: number, parts: { label: string; value: string; tone: Tone }[]) {
+  const verdict = score >= 80 ? 'Strong' : score >= 60 ? 'Good' : score >= 40 ? 'Fair' : 'Needs work'
+  const weak = parts.find(p => p.tone === 'bad') ?? parts.find(p => p.tone === 'warn')
+  return weak ? `${verdict}. Weakest: ${weak.label.toLowerCase()} at ${weak.value}.` : `${verdict}. All four pillars look healthy.`
+}
+
+function HealthCard({ score, parts, className = '' }: { score: number; parts: { label: string; value: string; tone: Tone }[]; className?: string }) {
+  return (
+    <Card aria-labelledby="health-title" className={className}>
+      {/* Phone: compact donut + one-line summary */}
+      <Link href="/dashboard/financial-health" className="md:hidden flex gap-3.5 items-center">
+        <Donut score={score} />
+        <span>
+          <span className="block text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Financial health</span>
+          <span className="block text-[12px] leading-snug mt-0.5" style={{ color: 'var(--text3)' }}>{healthSummary(score, parts)}</span>
+        </span>
+      </Link>
+      <div className="hidden md:block">
       <CardTitle id="health-title" right={<MoreLink href="/dashboard/financial-health">Details</MoreLink>}>Financial health</CardTitle>
       <div className="flex flex-wrap gap-4 items-center mt-3">
-        <div className="relative flex-shrink-0" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={score} aria-label="Financial health score">
-          <svg viewBox="0 0 36 36" className="w-[84px] h-[84px] md:w-[92px] md:h-[92px] -rotate-90">
-            <circle cx="18" cy="18" r="15.9155" fill="none" stroke="#EEF2FF" strokeWidth="3.5" />
-            <circle cx="18" cy="18" r="15.9155" fill="none" stroke="#4F46E5" strokeWidth="3.5" strokeLinecap="round" strokeDasharray={`${score} ${100 - score}`} />
-          </svg>
-          <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <div className="text-[24px] font-bold leading-none" style={{ color: 'var(--text)' }}>{score}</div>
-            <div className="text-[10px] mt-0.5" style={{ color: 'var(--text3)' }}>of 100</div>
-          </div>
-        </div>
+        <Donut score={score} big />
         <ul className="flex-1 flex flex-col gap-[7px] min-w-[170px]">
           {parts.map(pt => (
             <li key={pt.label} className="flex justify-between gap-2 text-[12px]">
@@ -381,6 +426,7 @@ function HealthCard({ score, parts }: { score: number; parts: { label: string; v
             </li>
           ))}
         </ul>
+      </div>
       </div>
     </Card>
   )
@@ -399,9 +445,9 @@ function InterestChips({ interests }: { interests: string[] }) {
   )
 }
 
-function GoalsCard({ goals, short, interests }: { goals: any[]; short: (n: number) => string; interests: string[] }) {
+function GoalsCard({ goals, short, interests, className = '' }: { goals: any[]; short: (n: number) => string; interests: string[]; className?: string }) {
   return (
-    <Card aria-labelledby="goals-title" className="flex flex-col">
+    <Card aria-labelledby="goals-title" className={`flex flex-col ${className}`}>
       <CardTitle id="goals-title" right={goals.length > 0 && <MoreLink href="/dashboard/goals">All goals</MoreLink>}>Goals</CardTitle>
       {goals.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center text-center py-6 gap-2">
@@ -435,10 +481,10 @@ function GoalsCard({ goals, short, interests }: { goals: any[]; short: (n: numbe
   )
 }
 
-function CashFlowCard({ forecast, short, money }: { forecast: HomeInsights['forecast']; short: (n: number) => string; money: (n: number) => string }) {
+function CashFlowCard({ forecast, short, money, className = '' }: { forecast: HomeInsights['forecast']; short: (n: number) => string; money: (n: number) => string; className?: string }) {
   const shortfall = forecast ? forecast.low.value < 0 : false
   return (
-    <Card aria-labelledby="cf-title">
+    <Card aria-labelledby="cf-title" className={className}>
       <CardTitle id="cf-title" right={forecast && (
         <span className="text-[11px] font-semibold" style={{ color: shortfall ? 'var(--expense)' : 'var(--income)' }}>
           {shortfall ? 'Shortfall ahead' : 'No shortfall'}
@@ -481,7 +527,7 @@ function timeAgo(iso: string) {
   return mins < 60 ? `${mins}m` : mins < 1440 ? `${Math.round(mins / 60)}h` : `${Math.round(mins / 1440)}d`
 }
 
-function NewsCard({ holdings }: { holdings: Holdings }) {
+function NewsCard({ holdings, className = '' }: { holdings: Holdings; className?: string }) {
   const terms = useMemo(() => Array.from(new Set([
     ...holdings.mutualFunds.map(f => String(f.fund_name || '').split(' ').slice(0, 2).join(' ')),
     ...holdings.stocks.map(s => String(s.name || s.symbol || '')),
@@ -499,8 +545,10 @@ function NewsCard({ holdings }: { holdings: Holdings }) {
   const tagOf = (t: string) => terms.find(term => t.toLowerCase().includes(term.toLowerCase().split(' ')[0]))
 
   return (
-    <Card aria-labelledby="news-title">
-      <CardTitle id="news-title" right={<MoreLink href="/dashboard/investments/mutual-funds">More news</MoreLink>}>Market news for your holdings</CardTitle>
+    <Card aria-labelledby="news-title" className={className}>
+      <CardTitle id="news-title" right={<MoreLink href="/dashboard/investments/mutual-funds"><span className="md:hidden">All</span><span className="hidden md:inline">More news</span></MoreLink>}>
+        <span className="md:hidden">News for you</span><span className="hidden md:inline">Market news for your holdings</span>
+      </CardTitle>
       {items === null ? (
         <ul className="mt-2">{[0, 1, 2].map(i => <li key={i} className="h-12 my-2 rounded-lg animate-pulse" style={{ background: 'var(--bg2)' }} />)}</ul>
       ) : items.length === 0 ? (
@@ -530,7 +578,7 @@ function NewsCard({ holdings }: { holdings: Holdings }) {
 }
 
 // Two lessons chosen from what's going on in the user's data
-function LearnCard({ ins, hasSip }: { ins: HomeInsights; hasSip: boolean }) {
+function LearnCard({ ins, hasSip, className = '' }: { ins: HomeInsights; hasSip: boolean; className?: string }) {
   const picks: { mod: string; color: string; title: string; why: string; href: string }[] = []
   const has = (prefix: string) => ins.attention.some(a => a.id.startsWith(prefix))
   if (has('card') || has('util')) picks.push({ mod: 'Credit cards', color: '#D97706', title: 'Statement date vs due date', why: has('card') ? 'Your card bill is due soon.' : 'Card utilisation is above 30%.', href: '/dashboard/cards/learn' })
@@ -540,11 +588,13 @@ function LearnCard({ ins, hasSip }: { ins: HomeInsights; hasSip: boolean }) {
   picks.push({ mod: 'Expenses', color: '#4F46E5', title: 'Why categories beat totals', why: 'See where every dirham and rupee goes.', href: '/dashboard/expenses/learn' })
 
   return (
-    <Card aria-labelledby="learn-title" className="flex flex-col gap-2.5">
-      <CardTitle id="learn-title" right={<MoreLink href="/dashboard/learn">Learn hub</MoreLink>}>Learn, picked from your data</CardTitle>
-      {picks.slice(0, 2).map(pk => (
-        <Link key={pk.title} href={pk.href} className="block rounded-[10px] px-3.5 py-3 transition-colors hover:border-[var(--accent-border)]"
-          style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+    <Card aria-labelledby="learn-title" className={`flex flex-col md:gap-2.5 ${className}`}>
+      <CardTitle id="learn-title" right={<MoreLink href="/dashboard/learn"><span className="md:hidden">All</span><span className="hidden md:inline">Learn hub</span></MoreLink>}>
+        <span className="md:hidden">Learn, picked for you</span><span className="hidden md:inline">Learn, picked from your data</span>
+      </CardTitle>
+      {picks.slice(0, 2).map((pk, i) => (
+        <Link key={pk.title} href={pk.href}
+          className={`block py-2.5 md:px-3.5 md:py-3 md:rounded-[10px] md:bg-[var(--bg2)] md:border md:border-[var(--border)] transition-colors md:hover:border-[var(--accent-border)] max-md:border-t max-md:border-[#F1F5F9] ${i === 0 ? 'max-md:mt-2' : ''}`}>
           <div className="text-[11px] font-semibold uppercase tracking-[0.05em]" style={{ color: pk.color }}>{pk.mod}</div>
           <div className="text-[13.5px] font-semibold my-0.5" style={{ color: 'var(--text)' }}>{pk.title}</div>
           <div className="text-[12px]" style={{ color: 'var(--text3)' }}>{pk.why}</div>
@@ -554,7 +604,7 @@ function LearnCard({ ins, hasSip }: { ins: HomeInsights; hasSip: boolean }) {
   )
 }
 
-function Onboarding({ onImport, goalInterests }: { onImport: () => void; goalInterests: string[] }) {
+function Onboarding({ onImport, goalInterests, className = '' }: { onImport: () => void; goalInterests: string[]; className?: string }) {
   const steps: { icon: LucideIcon; title: string; body: string; cta: React.ReactNode }[] = [
     { icon: Upload, title: 'Import a bank statement', body: 'PDF or Excel from any UAE or Indian bank. Transactions are read and categorised for you.',
       cta: <button onClick={onImport} className="wl-btn wl-btn-primary wl-btn-sm"><Upload size={12} />Import</button> },
@@ -564,7 +614,7 @@ function Onboarding({ onImport, goalInterests }: { onImport: () => void; goalInt
       cta: <Link href="/dashboard/accounts" className="wl-btn wl-btn-sm">Add accounts</Link> },
   ]
   return (
-    <Card>
+    <Card className={className}>
       <h2 className="text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Let&apos;s set up WealthLens</h2>
       <p className="text-[13px] mt-1" style={{ color: 'var(--text3)' }}>Three steps and Home fills in with your net worth, cash flow and what needs attention.</p>
       <ol className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">

@@ -80,9 +80,9 @@ export default function EditLotModal({ kind = 'stock', holding, lot, onClose }: 
   const u = Number(qty) || 0, p = Number(price) || 0
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-[60] overflow-y-auto">
-      <div className="flex min-h-full items-start sm:items-center justify-center p-4 py-8">
-        <div className="wl-card p-5 w-full max-w-sm">
+    <div className="fixed inset-0 wl-sheet bg-black/40 z-[60] overflow-y-auto">
+      <div className="wl-sheet-wrap flex min-h-full items-start sm:items-center justify-center p-4 py-8">
+        <div className="wl-sheet-panel wl-card p-5 w-full max-w-sm">
           <div className="flex justify-between items-center mb-1">
             <h2 className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>Edit purchase</h2>
             <button onClick={onClose} style={{ color: 'var(--text3)' }}><X size={18} /></button>

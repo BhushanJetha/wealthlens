@@ -34,7 +34,7 @@ export default function Sidebar({ user }: { user?: any }) {
         onClick={() => setSidebarOpen(false)} />
     )}
     <aside
-      className={`fixed md:static inset-y-0 left-0 z-50 w-[220px] min-w-[220px] flex flex-col overflow-y-auto pb-3 transform transition-transform duration-200 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 safe-top`}
+      className={`fixed md:static inset-y-0 left-0 z-50 md:z-auto w-[220px] min-w-[220px] flex flex-col overflow-y-auto pb-3 transform transition-transform duration-200 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 safe-top`}
       style={{ background: '#fff', borderRight: '1px solid var(--border)' }}>
 
       {/* Logo */}

@@ -343,10 +343,10 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
 
             {/* Transaction detail popup */}
             {activePanel && (
-              <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 wl-popup-overlay"
+              <div className="fixed inset-0 wl-sheet z-50 flex items-end sm:items-center justify-center p-4 wl-popup-overlay"
                 style={{ background: 'rgba(0,0,0,0.45)' }}
                 onClick={() => setOpenPanel(null)}>
-                <div className="wl-popup-panel rounded-2xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden"
+                <div className="wl-sheet-panel wl-popup-panel rounded-2xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden"
                   style={{ background: 'var(--card)', border: '1px solid var(--border)', borderTop: `3px solid ${activePanel.color}`, maxHeight: '80vh' }}
                   onClick={e => e.stopPropagation()}>
                   <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
@@ -636,8 +636,8 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
 
       {/* Edit transaction modal */}
       {editTxn && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="rounded-2xl w-full max-w-md"
+        <div className="fixed inset-0 wl-sheet bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="wl-sheet-panel rounded-2xl w-full max-w-md"
             style={{ background:'#fff', border:'1px solid var(--border)', boxShadow:'0 8px 40px rgba(0,0,0,0.15)' }}>
             <div className="flex justify-between items-center px-5 py-4 border-b" style={{ borderColor:'var(--border)' }}>
               <div className="text-[14px] font-bold" style={{ color:'var(--text)' }}>{isDup ? 'Duplicate Transaction' : 'Edit Transaction'}</div>

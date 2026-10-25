@@ -454,9 +454,9 @@ function AddPinModal({ onClose, onAdded }: { onClose: () => void; onAdded: (pin:
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 overflow-y-auto" onClick={onClose}>
-      <div className="flex min-h-full items-center justify-center p-4 py-8">
-        <div className="wl-card p-5 w-full max-w-md" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 wl-sheet bg-black/40 z-50 overflow-y-auto" onClick={onClose}>
+      <div className="wl-sheet-wrap flex min-h-full items-center justify-center p-4 py-8">
+        <div className="wl-sheet-panel wl-card p-5 w-full max-w-md" onClick={e => e.stopPropagation()}>
           <div className="flex items-center justify-between mb-4">
             <div className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>Add a pin to your board</div>
             <button onClick={onClose} style={{ color: 'var(--text3)' }} aria-label="Close"><X size={16} /></button>

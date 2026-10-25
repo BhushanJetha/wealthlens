@@ -15,8 +15,8 @@ export default function TxnDrillModal({
   const sorted = [...items].sort((a, b) => (a.txn_date < b.txn_date ? 1 : -1))
   const total = sorted.reduce((a, t) => a + amt(t), 0)
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="rounded-2xl w-full max-w-lg max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}
+    <div className="fixed inset-0 wl-sheet bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="wl-sheet-panel rounded-2xl w-full max-w-lg max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}
         style={{ background: '#fff', border: '1px solid var(--border)', boxShadow: '0 8px 40px rgba(0,0,0,0.15)' }}>
         <div className="flex items-center justify-between px-5 py-4 border-b flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
           <div className="min-w-0">

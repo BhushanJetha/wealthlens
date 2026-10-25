@@ -406,9 +406,9 @@ function CheckupWizard({ answers, resolved: r, detected, fx, onClose, onSave }: 
   const s = steps[step]
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 overflow-y-auto" onClick={onClose}>
-      <div className="flex min-h-full items-center justify-center p-4 py-8">
-        <div className="wl-card w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 wl-sheet bg-black/40 z-50 overflow-y-auto" onClick={onClose}>
+      <div className="wl-sheet-wrap flex min-h-full items-center justify-center p-4 py-8">
+        <div className="wl-sheet-panel wl-card w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
           <div className="px-5 pt-4">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>Freedom check-up · {step + 1} of {steps.length}</span>

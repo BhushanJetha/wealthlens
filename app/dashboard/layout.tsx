@@ -5,6 +5,7 @@ import Topbar from '@/components/layout/Topbar'
 import ChatPanel from '@/components/layout/ChatPanel'
 import MobileTabBar from '@/components/layout/MobileTabBar'
 import SectionTabs from '@/components/layout/SectionTabs'
+import MobileHeader from '@/components/layout/MobileHeader'
 import CommandPalette from '@/components/layout/CommandPalette'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -34,7 +35,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <Topbar user={profile} />
         {/* Content + docked AI advisor (design: advisor sits right of the page) */}
         <div className="flex flex-1 min-h-0">
-          <main className="flex-1 min-w-0 overflow-y-auto px-4 md:px-7 pt-4 md:pt-6 pb-24 md:pb-8" style={{ background: 'var(--bg)' }}>
+          {/* Phones: no app bar, #F7F8FA canvas, content starts under the status bar */}
+          <main className="flex-1 min-w-0 overflow-y-auto px-4 md:px-7 pt-[calc(10px+env(safe-area-inset-top))] md:pt-6 pb-24 md:pb-8 bg-[var(--bg2)] md:bg-[var(--bg)]">
+            <MobileHeader firstName={(profile?.full_name ?? '').split(' ')[0] || null} />
             <SectionTabs />
             {children}
           </main>

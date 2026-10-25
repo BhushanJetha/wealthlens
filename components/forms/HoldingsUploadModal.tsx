@@ -279,8 +279,8 @@ export default function HoldingsUploadModal({ onClose, kind }: Props) {
   const showMfFirst = kind === 'mutual_funds'
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col"
+    <div className="fixed inset-0 wl-sheet bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="wl-sheet-panel rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col"
         style={{ background: '#fff', border: '1px solid var(--border)', boxShadow: '0 8px 40px rgba(0,0,0,0.15)' }}>
 
         {/* Header */}

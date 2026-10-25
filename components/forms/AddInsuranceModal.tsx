@@ -127,10 +127,10 @@ export default function AddInsuranceModal({ onClose, initialData, policyId }: Pr
   if (!mounted) return null
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] bg-black/50 flex items-start justify-center overflow-y-auto"
+    <div className="fixed inset-0 wl-sheet z-[9999] bg-black/50 flex items-start justify-center overflow-y-auto"
       style={{ paddingTop: '64px', paddingLeft: '16px', paddingRight: '16px', paddingBottom: '16px' }}
       onClick={onClose}>
-      <div className="relative w-full max-w-xl bg-white flex flex-col rounded-2xl shadow-2xl flex-shrink-0"
+      <div className="wl-sheet-panel relative w-full max-w-xl bg-white flex flex-col rounded-2xl shadow-2xl flex-shrink-0"
         style={{ border: '1px solid var(--border)' }}
         onClick={e => e.stopPropagation()}>
 
