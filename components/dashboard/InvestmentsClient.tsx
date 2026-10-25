@@ -15,18 +15,22 @@ import {
 import AddInvestmentModal from '@/components/forms/AddInvestmentModal'
 import { PageHeader, KpiTile, Bars, Donut, Segmented } from '@/components/ui/kit'
 import { useUiStore } from '@/store/uiStore'
-import { Layers, CandlestickChart, BarChart3, Landmark, Repeat, Coins, ScrollText, PiggyBank, ShieldCheck, ArrowUpRight, Gauge, type LucideIcon } from 'lucide-react'
+import { Layers, CandlestickChart, BarChart3, Landmark, Repeat, Coins, ScrollText, PiggyBank, ShieldCheck, ArrowUpRight, Gauge, Briefcase, type LucideIcon } from 'lucide-react'
 import ManageFamilyModal from '@/components/forms/ManageFamilyModal'
 import { useHolderStore } from '@/store/holderStore'
 import Link from 'next/link'
+import { holdingValue as V, holdingCost as C } from '@/lib/netWorth'
+import { investmentFlows, flowMonths, flowYears, FLOW_KEYS, type FlowKey } from '@/lib/investFlows'
+import InvestFlowChart from './InvestFlowChart'
 
 const COLORS = ['#3D7A58','#3B7DD8','#D4920A','#C96A3A','#7C5CBF','#2E7D52','#B45309','#0891B2','#6D28D9']
-const TYPE_COLORS: Record<string, string> = {
-  mf: '#6A55E8', stocks: '#3B8EF0', etf: '#0891B2', fd: '#F29A2E',
-  rd: '#EC5B8C', gold: '#D97706', bonds: '#14B8A6', nps: '#2FB67C', lic: '#7C3AED',
+// One fixed colour per investment type, used by every chart and list here
+const TYPE_COLORS: Record<FlowKey, string> = {
+  mf: '#6A55E8', stocks: '#3B8EF0', etf: '#A855D8', fd: '#F29A2E', rd: '#EC5B8C',
+  gold: '#C98A0B', bonds: '#0891B2', nps: '#2FB67C', ppf: '#1E40AF', lic: '#64748B',
 }
-const TYPE_NAMES: Record<string, string> = {
-  mf: 'Mutual funds', stocks: 'Stocks', etf: 'ETF', fd: 'FDs', rd: 'RDs', gold: 'Gold', bonds: 'Bonds', nps: 'NPS', lic: 'LIC',
+const TYPE_NAMES: Record<FlowKey, string> = {
+  mf: 'Mutual funds', stocks: 'Stocks', etf: 'ETF', fd: 'FDs', rd: 'RDs', gold: 'Gold', bonds: 'Bonds', nps: 'NPS', ppf: 'PPF / EPF', lic: 'LIC',
 }
 
 function toINR(amt: number, cur: string, fx: number) { return cur === 'AED' ? amt * fx : amt }
@@ -95,7 +99,7 @@ function last5Years() {
 
 export default function InvestmentsClient({
   stocks, mutualFunds, fixedDeposits, recurringDeposits, npsAccounts, licPolicies,
-  goldInvestments = [], bondInvestments = [], etfInvestments = [], transactions = [],
+  goldInvestments = [], bondInvestments = [], etfInvestments = [], ppfEpf = [], invTxns = [], transactions = [],
   goalInvestments = [], goals = [], familyMembers = [],
 }: any) {
   const { view, fxRate: FX } = useViewStore()
@@ -123,31 +127,26 @@ export default function InvestmentsClient({
   const fGold = filterH(filter(goldInvestments))
   const fBond = filterH(filter(bondInvestments))
   const fEtf  = filterH(filter(etfInvestments))
+  const fPPF  = filterH(filter(ppfEpf))
 
-  const stCurr  = fSt.reduce((a: number, s: any) => a + conv(s.quantity * (s.current_price ?? s.avg_buy_price), s.currency), 0)
-  const stInv   = fSt.reduce((a: number, s: any) => a + conv(s.quantity * s.avg_buy_price, s.currency), 0)
-  const mfCurr  = fMF.reduce((a: number, m: any) => a + m.units * (m.current_nav ?? m.avg_nav), 0)
-  const mfInv   = fMF.reduce((a: number, m: any) => a + Number(m.invested_amount), 0)
-  const fdVal   = fFD.reduce((a: number, f: any) => a + conv(Number(f.principal), f.currency), 0)
-  const rdVal   = fRD.reduce((a: number, r: any) => a + conv(Number(r.monthly_amount) * r.tenure_months, r.currency), 0)
-  const npsVal  = fNPS.reduce((a: number, n: any) => a + Number(n.corpus_amount), 0)
-  const npsInv  = fNPS.reduce((a: number, n: any) => a + Number(n.invested_amount), 0)
-  const licPaid = fLIC.reduce((a: number, l: any) => a + Number(l.total_paid ?? 0), 0)
-  const goldVal = fGold.reduce((a: number, g: any) => {
-    if (g.current_price_per_gram && g.quantity_grams)
-      return a + Number(g.current_price_per_gram) * Number(g.quantity_grams)
-    return a + Number(g.invested_amount || 0)
-  }, 0)
-  const goldInv = fGold.reduce((a: number, g: any) => a + Number(g.invested_amount || 0), 0)
-  const bondVal = fBond.reduce((a: number, b: any) => a + Number(b.current_value || b.invested_amount || 0), 0)
-  const bondInv = fBond.reduce((a: number, b: any) => a + Number(b.invested_amount || 0), 0)
-  const etfCurr = fEtf.reduce((a: number, e: any) => a + Number(e.units || 0) * Number(e.current_price || e.avg_buy_price || 0), 0)
-  const etfInv  = fEtf.reduce((a: number, e: any) => a + Number(e.invested_amount || 0), 0)
+  // Same value / cost rules as Net worth, so the two pages agree
+  const S = (arr: any[], f: (x: any) => number) => arr.reduce((a: number, x: any) => a + conv(f(x), x.currency || 'INR'), 0)
+  const stCurr  = S(fSt, V.stock),  stInv   = S(fSt, C.stock)
+  const mfCurr  = S(fMF, V.mf),     mfInv   = S(fMF, C.mf)
+  const etfCurr = S(fEtf, V.etf),   etfInv  = S(fEtf, C.etf)
+  const npsVal  = S(fNPS, V.nps),   npsInv  = S(fNPS, C.nps)
+  const goldVal = S(fGold, V.gold), goldInv = S(fGold, C.gold)
+  const bondVal = S(fBond, V.bond), bondInv = S(fBond, C.bond)
+  const fdVal   = S(fFD, V.fd)
+  const rdVal   = S(fRD, V.rd)
+  const ppfVal  = S(fPPF, V.ppf)
+  const licPaid = S(fLIC, V.lic)
   const rdMonthly  = fRD.reduce((a: number, r: any) => a + conv(Number(r.monthly_amount), r.currency), 0)
   const licMonthly = fLIC.reduce((a: number, l: any) => a + conv(Number(l.annual_premium) / 12, l.currency ?? 'INR'), 0)
 
-  const totalCurr = stCurr + mfCurr + fdVal + rdVal + npsVal + goldVal + bondVal + etfCurr + licPaid
-  const totalInv  = stInv  + mfInv  + fdVal + rdVal + npsInv + goldInv + bondInv + etfInv
+  // Cash-like holdings (FD, RD, PPF/EPF, LIC) count at cost: no gain, no loss
+  const totalCurr = stCurr + mfCurr + etfCurr + npsVal + goldVal + bondVal + fdVal + rdVal + ppfVal + licPaid
+  const totalInv  = stInv  + mfInv  + etfInv  + npsInv + goldInv + bondInv + fdVal + rdVal + ppfVal + licPaid
   const totalRet  = totalInv > 0 ? (totalCurr - totalInv) / totalInv * 100 : 0
   const dailyPnL  = fSt.reduce((a: number, s: any) => a + (s.daily_change ?? 0), 0)
 
@@ -160,114 +159,31 @@ export default function InvestmentsClient({
     { name: 'Gold',         value: Math.round(goldVal), key: 'gold'   },
     { name: 'Bonds',        value: Math.round(bondVal), key: 'bonds'  },
     { name: 'NPS',          value: Math.round(npsVal),  key: 'nps'    },
+    { name: 'PPF / EPF',    value: Math.round(ppfVal),  key: 'ppf'    },
     { name: 'LIC',          value: Math.round(licPaid), key: 'lic'    },
   ].filter(d => d.value > 0)
 
-  // ── Monthly trend ──────────────────────────────────────────────────────────
-  type MonthSlot = { mf: number; stocks: number; etf: number; fd: number; rd: number; gold: number; bonds: number; nps: number; lic: number; total: number }
-  const monthlyData = useMemo(() => {
-    const months = last12Months()
-    const map: Record<string, MonthSlot> = {}
-    months.forEach(m => {
-      map[m] = { mf: 0, stocks: 0, etf: 0, fd: 0, rd: 0, gold: 0, bonds: 0, nps: 0, lic: 0, total: 0 }
-    })
+  // ── Money put in, month by month (shared with the overview chart) ──────
+  const flows = useMemo(() => investmentFlows({
+    stocks: fSt, mutualFunds: fMF, etf: fEtf, fixedDeposits: fFD, recurringDeposits: fRD,
+    nps: fNPS, lic: fLIC, ppfEpf: fPPF, gold: fGold, bonds: fBond, invTxns,
+  }, conv), [fSt, fMF, fEtf, fFD, fRD, fNPS, fLIC, fPPF, fGold, fBond, invTxns, view, FX])
 
-    const place = (date: string | undefined | null, amt: number, key: keyof MonthSlot) => {
-      if (!date || amt <= 0) return
-      const m = date.slice(0, 7)
-      if (!map[m]) return
-      map[m][key] += amt
-      map[m].total += amt
-    }
+  const monthlyData = useMemo(() => flowMonths(flows, 12).map(r => ({
+    ...r, month: r.key,
+    label: new Date(`${r.key}-01T00:00:00`).toLocaleDateString('en', { month: 'short', year: '2-digit' }),
+  })), [flows])
 
-    fSt.forEach((s: any) => place(s.created_at, conv(s.quantity * s.avg_buy_price, s.currency), 'stocks'))
-    fMF.forEach((m: any) => place(m.created_at, conv(Number(m.invested_amount), m.currency ?? 'INR'), 'mf'))
-    fFD.forEach((f: any) => place(f.start_date ?? f.created_at, conv(Number(f.principal), f.currency), 'fd'))
-    fGold.forEach((g: any) => place(g.purchase_date ?? g.created_at, conv(Number(g.invested_amount || 0), g.currency ?? 'INR'), 'gold'))
-    fBond.forEach((b: any) => place(b.purchase_date ?? b.created_at, conv(Number(b.invested_amount || 0), b.currency ?? 'INR'), 'bonds'))
-    fEtf.forEach((e: any) => place(e.purchase_date ?? e.created_at, conv(Number(e.invested_amount || 0), e.currency ?? 'INR'), 'etf'))
-    fNPS.forEach((n: any) => place(n.start_date ?? n.created_at, conv(Number(n.invested_amount || 0), n.currency ?? 'INR'), 'nps'))
-
-    fRD.forEach((r: any) => {
-      const start   = (r.start_date ?? r.created_at)?.slice(0, 7)
-      const end     = r.maturity_date?.slice(0, 7) ?? new Date().toISOString().slice(0, 7)
-      const monthly = conv(Number(r.monthly_amount), r.currency)
-      months.forEach(m => {
-        if (start && m >= start && m <= end) { map[m].rd += monthly; map[m].total += monthly }
-      })
-    })
-
-    fLIC.forEach((l: any) => {
-      const start   = l.start_date?.slice(0, 7)
-      const end     = l.maturity_date?.slice(0, 7) ?? new Date().toISOString().slice(0, 7)
-      const monthly = conv(Number(l.annual_premium) / 12, l.currency ?? 'INR')
-      months.forEach(m => {
-        if (start && m >= start && m <= end) { map[m].lic += monthly; map[m].total += monthly }
-      })
-    })
-
-    return months.map(m => ({
-      month: m,
-      label: new Date(m + '-01').toLocaleDateString('en', { month: 'short', year: '2-digit' }),
-      ...map[m],
-    }))
-  }, [fSt, fMF, fFD, fRD, fNPS, fLIC, fGold, fBond, fEtf, view])
-
-  // ── Yearly trend ───────────────────────────────────────────────────────────
   const yearlyData = useMemo(() => {
-    const years = last5Years()
-    const map: Record<string, number> = {}
-    years.forEach(y => { map[y] = 0 })
-
-    const placeY = (date: string | undefined | null, amt: number) => {
-      if (!date || amt <= 0) return
-      const y = date.slice(0, 4)
-      if (map[y] !== undefined) map[y] += amt
-    }
-
-    fSt.forEach((s: any) => placeY(s.created_at, conv(s.quantity * s.avg_buy_price, s.currency)))
-    fMF.forEach((m: any) => placeY(m.created_at, conv(Number(m.invested_amount), m.currency ?? 'INR')))
-    fFD.forEach((f: any) => placeY(f.start_date ?? f.created_at, conv(Number(f.principal), f.currency)))
-    fGold.forEach((g: any) => placeY(g.purchase_date ?? g.created_at, conv(Number(g.invested_amount || 0), g.currency ?? 'INR')))
-    fBond.forEach((b: any) => placeY(b.purchase_date ?? b.created_at, conv(Number(b.invested_amount || 0), b.currency ?? 'INR')))
-    fEtf.forEach((e: any) => placeY(e.purchase_date ?? e.created_at, conv(Number(e.invested_amount || 0), e.currency ?? 'INR')))
-    fNPS.forEach((n: any) => placeY(n.start_date ?? n.created_at, conv(Number(n.invested_amount || 0), n.currency ?? 'INR')))
-
-    fRD.forEach((r: any) => {
-      years.forEach(yr => {
-        const start = (r.start_date ?? r.created_at)?.slice(0, 7)
-        const end   = r.maturity_date?.slice(0, 7) ?? new Date().toISOString().slice(0, 7)
-        if (!start) return
-        let count = 0
-        for (let mo = 1; mo <= 12; mo++) {
-          const m = `${yr}-${String(mo).padStart(2, '0')}`
-          if (m >= start && m <= end) count++
-        }
-        map[yr] += count * conv(Number(r.monthly_amount), r.currency)
-      })
+    const ys = flowYears(flows, 5), thisYear = String(new Date().getFullYear())
+    return ys.map((r, i) => {
+      // The current year isn't over, so it isn't compared with a full year
+      const partial = r.key === thisYear
+      const prevTot = i > 0 && !partial ? ys[i - 1].total : 0
+      const growth  = prevTot > 0 ? ((r.total - prevTot) / prevTot) * 100 : null
+      return { year: r.key, total: r.total, growth, partial, fdBench: prevTot > 0 ? prevTot * 1.07 : null, inflBench: prevTot > 0 ? prevTot * 1.05 : null }
     })
-
-    fLIC.forEach((l: any) => {
-      years.forEach(yr => {
-        const start = l.start_date?.slice(0, 7)
-        const end   = l.maturity_date?.slice(0, 7) ?? new Date().toISOString().slice(0, 7)
-        if (!start) return
-        let count = 0
-        for (let mo = 1; mo <= 12; mo++) {
-          const m = `${yr}-${String(mo).padStart(2, '0')}`
-          if (m >= start && m <= end) count++
-        }
-        map[yr] += count * conv(Number(l.annual_premium) / 12, l.currency ?? 'INR')
-      })
-    })
-
-    return years.map((yr, i) => {
-      const total    = map[yr]
-      const prevTot  = i > 0 ? map[years[i - 1]] : 0
-      const growth   = prevTot > 0 ? ((total - prevTot) / prevTot) * 100 : null
-      return { year: yr, total, growth, fdBench: prevTot > 0 ? prevTot * 1.07 : null, inflBench: prevTot > 0 ? prevTot * 1.05 : null }
-    })
-  }, [fSt, fMF, fFD, fRD, fNPS, fLIC, fGold, fBond, fEtf, view])
+  }, [flows])
 
   // ── Income 20-30-50 ────────────────────────────────────────────────────────
   const incomeData = useMemo(() => {
@@ -287,14 +203,15 @@ export default function InvestmentsClient({
     const months = new Set(incomeTxns.map((t: any) => (t.txn_date as string).slice(0, 7))).size
     const avgInc = totalInc / Math.max(months, 1)
     const avgExp = totalExp / Math.max(months, 1)
-    const monthlyInvest = rdMonthly + licMonthly
+    // Average put in over the last 6 months, from the same figures as the chart
+    const monthlyInvest = flowMonths(flows, 6).reduce((a, r) => a + r.total, 0) / 6
 
     const invPct   = avgInc > 0 ? Math.min((monthlyInvest / avgInc) * 100, 100) : 0
     const needsPct = avgInc > 0 ? Math.min((avgExp / avgInc) * 100, 100) : 0
     const wantsPct = Math.max(0, 100 - needsPct - invPct)
 
     return { avgInc, avgExp, monthlyInvest, invPct, needsPct, wantsPct }
-  }, [transactions, view, rdMonthly, licMonthly])
+  }, [transactions, view, flows])
 
   // ── Analytics ──────────────────────────────────────────────────────────────
   const analytics = useMemo(() => {
@@ -305,9 +222,9 @@ export default function InvestmentsClient({
       return ['equity','elss','large_cap','mid_cap','small_cap','flexi_cap','multi_cap',
         'index','smallcap','midcap','largecap','growth'].some(k => t.includes(k))
     }
-    const equityMfVal = fMF.filter(isEquityMF).reduce((a: number, m: any) => a + m.units * (m.current_nav ?? m.avg_nav), 0)
+    const equityMfVal = S(fMF.filter(isEquityMF), V.mf)
     const equityTotal = stCurr + etfCurr + equityMfVal
-    const stableTotal = fdVal + rdVal + bondVal
+    const stableTotal = fdVal + rdVal + bondVal + ppfVal
     const altTotal    = goldVal + npsVal + licPaid
     const equityPct   = equityTotal / totalCurr * 100
     const stablePct   = stableTotal / totalCurr * 100
@@ -347,7 +264,7 @@ export default function InvestmentsClient({
     }
     fMF.forEach((m: any) => {
       const cat = MF_CAT_LABEL[(m.fund_type ?? 'equity').toLowerCase()] ?? 'Other'
-      mfCatMap[cat] = (mfCatMap[cat] ?? 0) + m.units * (m.current_nav ?? m.avg_nav)
+      mfCatMap[cat] = (mfCatMap[cat] ?? 0) + conv(V.mf(m), m.currency || 'INR')
     })
     const mfCatData = Object.entries(mfCatMap).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value)
     const hasElss = (mfCatMap['ELSS (Tax Saver)'] ?? 0) > 0
@@ -362,8 +279,8 @@ export default function InvestmentsClient({
 
     const underMF = fMF
       .map((m: any) => {
-        const curV = m.units * (m.current_nav ?? m.avg_nav)
-        const invV = Number(m.invested_amount)
+        const curV = conv(V.mf(m), m.currency || 'INR')
+        const invV = conv(C.mf(m), m.currency || 'INR')
         return { ...m, curV, invV, retPct: invV > 0 ? (curV - invV) / invV * 100 : 0 }
       })
       .filter((m: any) => m.retPct < 0).sort((a: any, b: any) => a.retPct - b.retPct)
@@ -373,7 +290,7 @@ export default function InvestmentsClient({
            .sort((a: any, b: any) => b.val - a.val)[0] : null
     const topStPct = topSt && stCurr > 0 ? topSt.val / stCurr * 100 : 0
     const topMF = fMF.length > 0
-      ? fMF.map((m: any) => ({ ...m, val: m.units * (m.current_nav ?? m.avg_nav) }))
+      ? fMF.map((m: any) => ({ ...m, val: conv(V.mf(m), m.currency || 'INR') }))
            .sort((a: any, b: any) => b.val - a.val)[0] : null
     const topMFPct = topMF && mfCurr > 0 ? topMF.val / mfCurr * 100 : 0
 
@@ -435,7 +352,7 @@ export default function InvestmentsClient({
       recs: recs.slice(0, 5),
     }
   }, [fSt, fMF, fFD, fRD, fNPS, fLIC, fGold, fBond, fEtf,
-    stCurr, mfCurr, etfCurr, fdVal, rdVal, npsVal, goldVal, bondVal, licPaid,
+    stCurr, mfCurr, etfCurr, fdVal, rdVal, npsVal, goldVal, bondVal, licPaid, ppfVal,
     stInv, mfInv, etfInv, npsInv, goldInv, bondInv,
     totalCurr, totalRet, allocData, view])
 
@@ -448,22 +365,14 @@ export default function InvestmentsClient({
       const hSt   = h(stocks ?? []);   const hMF  = h(mutualFunds ?? [])
       const hFD   = h(fixedDeposits ?? []); const hRD  = h(recurringDeposits ?? [])
       const hNPS  = h(npsAccounts ?? []); const hLIC = h(licPolicies ?? [])
-      const hGold = h(goldInvestments);  const hBond = h(bondInvestments); const hEtf = h(etfInvestments)
-      const val =
-        hSt.reduce((a: number, s: any)   => a + conv(s.quantity * (s.current_price ?? s.avg_buy_price), s.currency), 0) +
-        hMF.reduce((a: number, m: any)   => a + m.units * (m.current_nav ?? m.avg_nav), 0) +
-        hFD.reduce((a: number, f: any)   => a + conv(Number(f.principal), f.currency), 0) +
-        hRD.reduce((a: number, r: any)   => a + conv(Number(r.monthly_amount) * r.tenure_months, r.currency), 0) +
-        hNPS.reduce((a: number, n: any)  => a + Number(n.corpus_amount), 0) +
-        hLIC.reduce((a: number, l: any)  => a + Number(l.total_paid ?? 0), 0) +
-        hGold.reduce((a: number, g: any) => a + (g.current_price_per_gram && g.quantity_grams ? Number(g.current_price_per_gram) * Number(g.quantity_grams) : Number(g.invested_amount || 0)), 0) +
-        hBond.reduce((a: number, b: any) => a + Number(b.current_value || b.invested_amount || 0), 0) +
-        hEtf.reduce((a: number, e: any)  => a + Number(e.units || 0) * Number(e.current_price || e.avg_buy_price || 0), 0)
-      const count = hSt.length + hMF.length + hFD.length + hRD.length + hNPS.length + hLIC.length + hGold.length + hBond.length + hEtf.length
+      const hGold = h(goldInvestments);  const hBond = h(bondInvestments); const hEtf = h(etfInvestments); const hPPF = h(ppfEpf)
+      const val = S(hSt, V.stock) + S(hMF, V.mf) + S(hEtf, V.etf) + S(hNPS, V.nps) + S(hGold, V.gold) + S(hBond, V.bond)
+        + S(hFD, V.fd) + S(hRD, V.rd) + S(hPPF, V.ppf) + S(hLIC, V.lic)
+      const count = hSt.length + hMF.length + hFD.length + hRD.length + hNPS.length + hLIC.length + hGold.length + hBond.length + hEtf.length + hPPF.length
       const rel = familyMembers.find((m: any) => m.name === name)?.relationship ?? 'self'
       return { name, val, count, rel }
     }).filter(m => m.val > 0 || m.count > 0)
-  }, [familyMembers, stocks, mutualFunds, fixedDeposits, recurringDeposits, npsAccounts, licPolicies, goldInvestments, bondInvestments, etfInvestments, view])
+  }, [familyMembers, stocks, mutualFunds, fixedDeposits, recurringDeposits, npsAccounts, licPolicies, goldInvestments, bondInvestments, etfInvestments, ppfEpf, view, FX])
 
   // ── Shared pieces ──────────────────────────────────────────────────────────
   const PROF_COLOR = { aggressive: '#EF4444', moderate: '#F59E0B', conservative: '#3B7DD8' } as const
@@ -498,19 +407,19 @@ export default function InvestmentsClient({
 
   // ── Design v2 overview data ───────────────────────────────────────────────
   // Fixed colour + icon per asset type (colour follows the type, never rank)
-  const TYPES: { key: string; label: string; href: string; icon: LucideIcon; color: string; bg: string; val: number; inv: number | null; count: number }[] = [
-    { key: 'mf',     label: 'Mutual funds',       href: '/dashboard/investments/mutual-funds',       icon: Layers,           color: '#6A55E8', bg: '#F0EDFF', val: mfCurr,  inv: mfInv,   count: fMF.length },
-    { key: 'stocks', label: 'Stocks',             href: '/dashboard/investments/stocks',             icon: CandlestickChart, color: '#3B8EF0', bg: '#E7F1FE', val: stCurr,  inv: stInv,   count: fSt.length },
-    { key: 'etf',    label: 'ETF',                href: '/dashboard/investments/etf',                icon: BarChart3,        color: '#A855D8', bg: '#F6ECFC', val: etfCurr, inv: etfInv,  count: fEtf.length },
-    { key: 'fd',     label: 'Fixed deposits',     href: '/dashboard/investments/fixed-deposits',     icon: Landmark,         color: '#F29A2E', bg: '#FFF2E2', val: fdVal,   inv: null,    count: fFD.length },
-    { key: 'rd',     label: 'Recurring deposits', href: '/dashboard/investments/recurring-deposits', icon: Repeat,           color: '#EC5B8C', bg: '#FDECF2', val: rdVal,   inv: null,    count: fRD.length },
-    { key: 'gold',   label: 'Gold',               href: '/dashboard/investments/gold',               icon: Coins,            color: '#C98A0B', bg: '#FFF6DB', val: goldVal, inv: goldInv, count: fGold.length },
-    { key: 'bonds',  label: 'Bonds',              href: '/dashboard/investments/bonds',              icon: ScrollText,       color: '#0891B2', bg: '#E0F4F8', val: bondVal, inv: bondInv, count: fBond.length },
-    { key: 'nps',    label: 'NPS',                href: '/dashboard/investments/nps',                icon: PiggyBank,        color: '#2FB67C', bg: '#E7F7EF', val: npsVal,  inv: npsInv,  count: fNPS.length },
-    { key: 'lic',    label: 'LIC',                href: '/dashboard/investments/lic',                icon: ShieldCheck,      color: '#64748B', bg: '#F1F5F9', val: licPaid, inv: null,    count: fLIC.length },
-  ]
+  const TYPES: { key: FlowKey; label: string; href: string; icon: LucideIcon; color: string; bg: string; val: number; inv: number | null; count: number }[] = [
+    { key: 'mf',     label: 'Mutual funds',       href: '/dashboard/investments/mutual-funds',       icon: Layers,           val: mfCurr,  inv: mfInv,   count: fMF.length },
+    { key: 'stocks', label: 'Stocks',             href: '/dashboard/investments/stocks',             icon: CandlestickChart, val: stCurr,  inv: stInv,   count: fSt.length },
+    { key: 'etf',    label: 'ETF',                href: '/dashboard/investments/etf',                icon: BarChart3,        val: etfCurr, inv: etfInv,  count: fEtf.length },
+    { key: 'fd',     label: 'Fixed deposits',     href: '/dashboard/investments/fixed-deposits',     icon: Landmark,         val: fdVal,   inv: null,    count: fFD.length },
+    { key: 'rd',     label: 'Recurring deposits', href: '/dashboard/investments/recurring-deposits', icon: Repeat,           val: rdVal,   inv: null,    count: fRD.length },
+    { key: 'gold',   label: 'Gold',               href: '/dashboard/investments/gold',               icon: Coins,            val: goldVal, inv: goldInv, count: fGold.length },
+    { key: 'bonds',  label: 'Bonds',              href: '/dashboard/investments/bonds',              icon: ScrollText,       val: bondVal, inv: bondInv, count: fBond.length },
+    { key: 'nps',    label: 'NPS',                href: '/dashboard/investments/nps',                icon: PiggyBank,        val: npsVal,  inv: npsInv,  count: fNPS.length },
+    { key: 'ppf',    label: 'PPF / EPF',          href: '/dashboard/investments/ppf-epf',            icon: Briefcase,        val: ppfVal,  inv: null,    count: fPPF.length },
+    { key: 'lic',    label: 'LIC',                href: '/dashboard/investments/lic',                icon: ShieldCheck,      val: licPaid, inv: null,    count: fLIC.length },
+  ].map(t => ({ ...t, color: TYPE_COLORS[t.key as FlowKey], bg: TYPE_COLORS[t.key as FlowKey] + '1A' })) as any
   const held = TYPES.filter(t => t.val > 0).sort((a, b) => b.val - a.val)
-  const SHORT: Record<string, string> = { mf: 'MFs', stocks: 'Stocks', etf: 'ETF', fd: 'FDs', rd: 'RDs', gold: 'Gold', bonds: 'Bonds', nps: 'NPS', lic: 'LIC' }
   const retPct = (t: { val: number; inv: number | null }) => t.inv && t.inv > 0 ? (t.val - t.inv) / t.inv * 100 : null
   const scopeLabel = view === 'uae' ? 'UAE' : view === 'india' ? 'India' : 'All'
 
@@ -584,17 +493,8 @@ export default function InvestmentsClient({
                   {totalRet >= 0 ? '▲' : '▼'} {Math.abs(totalRet).toFixed(1)}% · {fmtV(Math.abs(totalCurr - totalInv), sym)} {totalCurr >= totalInv ? 'gain' : 'loss'}
                 </span>
               </div>
-              <div className="hidden md:flex justify-between items-center mt-4">
-                <div className="text-[13px] font-semibold" style={{ color: 'var(--text2)' }}>Invested vs today, by type</div>
-                <div className="flex gap-3.5 text-[11.5px]" style={{ color: 'var(--text3)' }}>
-                  <span><i className="inline-block w-[9px] h-[9px] rounded-sm mr-1.5" style={{ background: '#C9C2F5' }} />Invested</span>
-                  <span><i className="inline-block w-[9px] h-[9px] rounded-sm mr-1.5" style={{ background: 'var(--accent)' }} />Value today</span>
-                </div>
-              </div>
-              <Bars className="h-[120px] md:h-auto md:flex-1 md:min-h-[200px] mt-3"
-                data={held.slice(0, 7).map(t => ({ label: SHORT[t.key] ?? t.label, value: t.val, before: t.inv ?? t.val,
-                  tip: `${t.label}: invested ${fmtV(t.inv ?? t.val, sym)}, today ${fmtV(t.val, sym)}` }))}
-                label={`Invested vs value today: ${held.map(t => `${t.label} ${fmtV(t.inv ?? t.val, sym)} to ${fmtV(t.val, sym)}`).join(', ')}`} />
+              <InvestFlowChart className="mt-4 pt-4 md:flex-1 border-t border-[var(--track)]" flows={flows} colors={TYPE_COLORS} names={TYPE_NAMES}
+                fmt={n => fmtV(n, sym)} fmtAxis={n => fmtS(n, sym)} />
             </section>
 
             <section className="wl-card max-md:order-8 px-4 md:px-[22px] py-4 md:py-5 flex flex-col gap-3">
@@ -828,23 +728,17 @@ export default function InvestmentsClient({
                     <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
                     <YAxis tickFormatter={v => fmtS(v, sym)} tick={{ fontSize: 10, fill: '#94A3B8' }} width={48} axisLine={false} tickLine={false} />
                     <Tooltip content={<ChartTip />} />
-                    <Bar dataKey="mf"     name="Mutual Funds"      fill={TYPE_COLORS.mf}     stackId="a" />
-                    <Bar dataKey="stocks" name="Stocks"            fill={TYPE_COLORS.stocks}  stackId="a" />
-                    <Bar dataKey="etf"    name="ETF"               fill={TYPE_COLORS.etf}     stackId="a" />
-                    <Bar dataKey="fd"     name="Fixed Dep"         fill={TYPE_COLORS.fd}      stackId="a" />
-                    <Bar dataKey="rd"     name="Recurring Dep"     fill={TYPE_COLORS.rd}      stackId="a" />
-                    <Bar dataKey="gold"   name="Gold"              fill={TYPE_COLORS.gold}    stackId="a" />
-                    <Bar dataKey="bonds"  name="Bonds"             fill={TYPE_COLORS.bonds}   stackId="a" />
-                    <Bar dataKey="nps"    name="NPS"               fill={TYPE_COLORS.nps}     stackId="a" />
-                    <Bar dataKey="lic"    name="LIC"               fill={TYPE_COLORS.lic}     stackId="a" radius={[3,3,0,0]} />
+                    {FLOW_KEYS.filter(k => monthlyData.some(m => m[k] > 0)).map(k => (
+                      <Bar key={k} dataKey={k} name={TYPE_NAMES[k]} fill={TYPE_COLORS[k]} stackId="a" stroke="#fff" strokeWidth={1} isAnimationActive={false} />
+                    ))}
                   </BarChart>
                 </ResponsiveContainer>
 
                 {/* Legend: only the types that appear */}
                 <div className="flex flex-wrap gap-x-3 gap-y-1.5 mt-2">
-                  {Object.entries(TYPE_COLORS).filter(([k]) => monthlyData.some((m: any) => (m[k] ?? 0) > 0)).map(([key, color]) => (
+                  {FLOW_KEYS.filter(k => monthlyData.some(m => m[k] > 0)).map(key => (
                     <span key={key} className="flex items-center gap-1.5 text-[11.5px]" style={{ color: 'var(--text3)' }}>
-                      <i className="w-2.5 h-2.5 rounded-sm" style={{ background: color }} />{TYPE_NAMES[key]}
+                      <i className="w-2.5 h-2.5 rounded-sm" style={{ background: TYPE_COLORS[key] }} />{TYPE_NAMES[key]}
                     </span>
                   ))}
                 </div>
@@ -852,7 +746,7 @@ export default function InvestmentsClient({
                 {/* Last 6 months as rows */}
                 <div className="-mx-4 md:-mx-5 -mb-1 mt-3">
                   {monthlyData.slice(-6).reverse().map((row: any, i: number) => {
-                    const parts = Object.keys(TYPE_COLORS).filter(k => (row[k] ?? 0) > 0)
+                    const parts = FLOW_KEYS.filter(k => (row[k] ?? 0) > 0)
                     return (
                       <div key={i} className="flex items-center gap-3 px-4 md:px-5 py-2.5" style={{ borderTop: i ? '1px solid var(--track)' : '1px solid var(--line)' }}>
                         <div className="flex-1 min-w-0">
@@ -908,7 +802,7 @@ export default function InvestmentsClient({
                             {row.growth !== null && <span className="text-[12px] font-semibold" style={{ color: row.growth >= 0 ? '#16A34A' : '#DC2626' }}>{row.growth > 0 ? '+' : ''}{row.growth.toFixed(1)}%</span>}
                           </div>
                           <div className="text-[11.5px] truncate" style={{ color: 'var(--text3)' }}>
-                            {row.fdBench ? `FD would be ${fmtS(row.fdBench, sym)} · inflation ${fmtS(row.inflBench, sym)}` : 'First year on record'}
+                            {row.partial ? 'So far this year' : row.fdBench ? `FD would be ${fmtS(row.fdBench, sym)} · inflation ${fmtS(row.inflBench, sym)}` : 'First year on record'}
                           </div>
                         </div>
                         <div className="text-right flex-shrink-0 flex flex-col items-end gap-1">
@@ -1308,39 +1202,39 @@ export default function InvestmentsClient({
         const allInvRows: InvRow[] = [
           ...(filter(stocks ?? [])).map((s: any) => ({
             type: 'stocks', typeKey: 'Stocks', id: s.id,
-            name: s.name, value: conv(s.quantity * (s.current_price ?? s.avg_buy_price), s.currency), currency: s.currency,
+            name: s.name, value: conv(V.stock(s), s.currency), currency: s.currency,
           })),
           ...(filter(mutualFunds ?? [])).map((m: any) => ({
             type: 'mutual_funds', typeKey: 'Mutual Funds', id: m.id,
-            name: m.fund_name ?? m.name ?? 'MF', value: m.units * (m.current_nav ?? m.avg_nav), currency: 'INR',
+            name: m.fund_name ?? m.name ?? 'MF', value: conv(V.mf(m), m.currency || 'INR'), currency: m.currency || 'INR',
           })),
           ...(filter(etfInvestments)).map((e: any) => ({
             type: 'etf_investments', typeKey: 'ETF', id: e.id,
-            name: e.name ?? e.etf_name ?? 'ETF', value: Number(e.units || 0) * Number(e.current_price || e.avg_buy_price || 0), currency: 'INR',
+            name: e.name ?? e.etf_name ?? 'ETF', value: conv(V.etf(e), e.currency || 'INR'), currency: e.currency || 'INR',
           })),
           ...(filter(fixedDeposits ?? [])).map((f: any) => ({
             type: 'fixed_deposits', typeKey: 'Fixed Deposits', id: f.id,
-            name: f.name ?? `FD · ${f.bank_name}`, value: conv(Number(f.principal), f.currency), currency: f.currency,
+            name: f.name ?? `FD · ${f.bank_name}`, value: conv(V.fd(f), f.currency), currency: f.currency,
           })),
           ...(filter(recurringDeposits ?? [])).map((r: any) => ({
             type: 'recurring_deposits', typeKey: 'Recurring Deposits', id: r.id,
-            name: r.name ?? `RD · ${r.bank_name}`, value: conv(Number(r.monthly_amount) * r.tenure_months, r.currency), currency: r.currency,
+            name: r.name ?? `RD · ${r.bank_name}`, value: conv(V.rd(r), r.currency), currency: r.currency,
           })),
           ...(filter(goldInvestments)).map((g: any) => ({
             type: 'gold_investments', typeKey: 'Gold', id: g.id,
-            name: g.name ?? 'Gold', value: Number(g.current_price_per_gram || 0) * Number(g.quantity_grams || 0) || Number(g.invested_amount || 0), currency: 'INR',
+            name: g.name ?? 'Gold', value: conv(V.gold(g), g.currency || 'INR'), currency: g.currency || 'INR',
           })),
           ...(filter(bondInvestments)).map((b: any) => ({
             type: 'bond_investments', typeKey: 'Bonds', id: b.id,
-            name: b.name ?? b.bond_name ?? 'Bond', value: Number(b.current_value || b.invested_amount || 0), currency: 'INR',
+            name: b.name ?? b.bond_name ?? 'Bond', value: conv(V.bond(b), b.currency || 'INR'), currency: b.currency || 'INR',
           })),
           ...(filter(npsAccounts ?? [])).map((n: any) => ({
             type: 'nps_accounts', typeKey: 'NPS', id: n.id,
-            name: n.name ?? `NPS · ${n.fund_manager}`, value: Number(n.corpus_amount || 0), currency: 'INR',
+            name: n.name ?? `NPS · ${n.fund_manager}`, value: conv(V.nps(n), n.currency || 'INR'), currency: n.currency || 'INR',
           })),
           ...(filter(licPolicies ?? [])).map((l: any) => ({
             type: 'lic_policies', typeKey: 'LIC', id: l.id,
-            name: l.name ?? l.policy_name ?? 'LIC Policy', value: Number(l.total_paid || 0), currency: l.currency ?? 'INR',
+            name: l.name ?? l.policy_name ?? 'LIC Policy', value: conv(V.lic(l), l.currency ?? 'INR'), currency: l.currency ?? 'INR',
           })),
         ]
 

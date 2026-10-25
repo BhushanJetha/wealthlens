@@ -13,6 +13,7 @@ import FilterBar from './FilterBar'
 import { Pencil, Trash2 } from 'lucide-react'
 import { useViewStore } from '@/store/viewStore'
 import { useHolderStore } from '@/store/holderStore'
+import { rdPaidIn, rdInstalments } from '@/lib/netWorth'
 
 const SORT_OPTS = [
   { value: 'monthly_desc',  label: 'Monthly ↓' },
@@ -45,7 +46,7 @@ export default function RecurringDepositsClient({ data }: { data: any[] }) {
   const filtered = useMemo(() => {
     let arr = [...base]
     if (search) arr = arr.filter(r => `${r.name} ${r.bank_name ?? ''}`.toLowerCase().includes(search.toLowerCase()))
-    const pct = (r: any) => Math.min(100, ((r.months_paid ?? 0) / r.tenure_months) * 100)
+    const pct = (r: any) => Math.min(100, (rdInstalments(r) / r.tenure_months) * 100)
     return arr.sort((a, b) => {
       if (sort === 'monthly_desc')  return Number(b.monthly_amount) - Number(a.monthly_amount)
       if (sort === 'progress_desc') return pct(b) - pct(a)
@@ -56,7 +57,8 @@ export default function RecurringDepositsClient({ data }: { data: any[] }) {
 
   const totalMonthly   = filtered.reduce((a, r) => a + Number(r.monthly_amount), 0)
   const totalCommitted = filtered.reduce((a, r) => a + Number(r.monthly_amount) * r.tenure_months, 0)
-  const totalPaid      = filtered.reduce((a, r) => a + (r.current_amount != null ? Number(r.current_amount) : Number(r.monthly_amount) * (r.months_paid ?? 0)), 0)
+  // Same paid-in rule as Net worth and the Investments overview
+  const totalPaid      = filtered.reduce((a, r) => a + rdPaidIn(r), 0)
 
   async function deleteItem(id: string) {
     if (!confirm('Delete this RD entry?')) return
@@ -82,11 +84,11 @@ export default function RecurringDepositsClient({ data }: { data: any[] }) {
         ]}
         items={filtered.map((x, i) => {
           const s = x.currency === 'AED' ? 'AED ' : '₹'
-          const paid = x.current_amount != null ? Number(x.current_amount) : Number(x.monthly_amount) * (x.months_paid ?? 0)
+          const paid = rdPaidIn(x)
           return {
             key: x.id ?? String(i), name: x.name, color: '#16A34A',
             sub: [x.bank_name, x.maturity_date ? `matures ${fullDate(x.maturity_date)}` : null, x.holder_name && x.holder_name !== 'Self' ? x.holder_name : null].filter(Boolean).join(' · '),
-            tag: `${x.interest_rate}% p.a.`, meta: `${x.months_paid ?? 0}/${x.tenure_months} months`,
+            tag: `${x.interest_rate}% p.a.`, meta: `${rdInstalments(x)}/${x.tenure_months} months`,
             value: paid, valueText: `${s}${Math.round(paid).toLocaleString('en-IN')}`,
             valueSub: `${s}${Number(x.monthly_amount).toLocaleString('en-IN')}/mo`,
             onEdit: () => setEditItem({ ...x, _type: 'recurring_deposit' }), onDelete: () => deleteItem(x.id),

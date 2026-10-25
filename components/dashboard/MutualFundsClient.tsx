@@ -407,6 +407,8 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
         await Promise.all([
           supabase.from('transactions').insert({ user_id: user.id, txn_date: ds, merchant: fund.fund_name, description: `Monthly SIP - ${fund.fund_name}`, category: 'Investment', sub_category: 'SIP', amount: Number(fund.sip_amount), currency: fund.currency ?? 'INR', country: fund.country ?? 'India', txn_type: 'expense', source: 'manual' }),
           supabase.from('mutual_funds').update({ units: newUnits, invested_amount: Number(fund.invested_amount) + Number(fund.sip_amount) }).eq('id', fund.id),
+          // Dated record so the monthly investment chart shows this SIP
+          supabase.from('investment_transactions').insert({ user_id: user.id, asset_type: 'mutual_fund', asset_id: fund.id, asset_name: fund.fund_name, txn_date: ds, txn_type: 'sip', amount: Number(fund.sip_amount), units: nav > 0 ? Number(fund.sip_amount) / nav : null, nav, currency: fund.currency ?? 'INR', source: 'buy_action' }).then(() => {}, () => {}),
         ])
         setFunds(prev => prev.map(f => f.id === fund.id ? { ...f, units: Number(f.units) + Number(fund.sip_amount) / nav, invested_amount: Number(f.invested_amount) + Number(fund.sip_amount) } : f))
       }

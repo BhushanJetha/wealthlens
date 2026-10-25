@@ -28,7 +28,7 @@ export default async function NetWorthPage() {
     'Loans': supabase.from('home_loans').select('*').eq('user_id', uid).eq('is_active', true),
     'Transactions': supabase.from('transactions').select('txn_type,amount,currency,txn_date,category,sub_category,merchant')
       .eq('user_id', uid).gte('txn_date', fromDate).order('txn_date', { ascending: true }).limit(5000),
-    'History': supabase.from('net_worth_snapshots').select('snap_date,fx,uae_assets,uae_liab,india_assets,india_liab')
+    'History': supabase.from('net_worth_snapshots').select('snap_date,fx,uae_assets,uae_liab,india_assets,india_liab,breakdown')
       .eq('user_id', uid).gte('snap_date', histFrom).order('snap_date', { ascending: true }),
   }
   const keys = Object.keys(named) as (keyof typeof named)[]

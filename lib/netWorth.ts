@@ -3,6 +3,11 @@
 
 export type View = 'uae' | 'india' | 'consolidated'
 
+// Bump when a valuation rule changes. Daily snapshots store it, and history
+// skips snapshots made under older rules so the line never jumps because the
+// maths changed. (2: RDs count instalments since the start date.)
+export const NW_RULES = 2
+
 export interface Holdings {
   accounts: any[]; stocks: any[]; mutualFunds: any[]; etf: any[]; nps: any[]
   fixedDeposits: any[]; recurringDeposits: any[]; ppfEpf: any[]; gold: any[]
@@ -40,6 +45,53 @@ export function viewAmount(amt: number, cur: string, view: View, fx: number) {
   return c === 'INR' ? a : 0    // india
 }
 
+// Instalments an RD has taken so far. Uses the recorded count when there is
+// one; otherwise counts months from the start date (the first instalment is
+// on the start date), capped at the tenure.
+export function rdInstalments(r: any, today = new Date()): number {
+  const tenure = Number(r.tenure_months) || Infinity
+  const monthly = Number(r.monthly_amount) || 0
+  if (Number(r.current_amount) > 0 && monthly > 0) return Math.min(Math.round(Number(r.current_amount) / monthly), tenure)
+  if (Number(r.months_paid) > 0) return Math.min(Number(r.months_paid), tenure)
+  const start = String(r.start_date ?? '')
+  if (!/^\d{4}-\d{2}-\d{2}/.test(start)) return 0
+  const [y, m, d] = start.slice(0, 10).split('-').map(Number)
+  const n = (today.getFullYear() - y) * 12 + (today.getMonth() + 1 - m) + (today.getDate() >= d ? 1 : 0)
+  return Math.max(0, Math.min(n, tenure))
+}
+export function rdPaidIn(r: any, today = new Date()): number {
+  if (Number(r.current_amount) > 0) return Number(r.current_amount)
+  return (Number(r.monthly_amount) || 0) * rdInstalments(r, today)
+}
+
+// Value today and amount put in for ONE holding, in its own currency. Net
+// worth, Home, the Investments overview and the category pages all use these,
+// so every screen shows the same totals. Cash-like holdings sit at cost.
+export const holdingValue = {
+  stock: (x: any) => Number(x.quantity || 0) * Number(x.current_price ?? x.avg_buy_price ?? 0),
+  mf:    (m: any) => Number(m.units || 0) * Number(m.current_nav ?? m.avg_nav ?? 0),
+  etf:   (e: any) => Number(e.units || 0) * Number(e.current_price || e.avg_buy_price || 0),
+  nps:   (n: any) => Number(n.corpus_amount) || Number(n.invested_amount) || Number(n.current_value) || 0,
+  fd:    (f: any) => Number(f.principal ?? f.principal_amount ?? 0),
+  rd:    (r: any) => rdPaidIn(r),
+  ppf:   (x: any) => Number(x.current_balance ?? x.balance ?? 0),
+  gold:  (g: any) => (g.current_price_per_gram && g.quantity_grams) ? Number(g.current_price_per_gram) * Number(g.quantity_grams) : Number(g.invested_amount ?? 0),
+  bond:  (b: any) => Number(b.current_value || b.invested_amount || 0),
+  lic:   (l: any) => Number(l.total_paid ?? 0),
+}
+export const holdingCost: typeof holdingValue = {
+  stock: (x: any) => Number(x.quantity || 0) * Number(x.avg_buy_price ?? 0),
+  mf:    (m: any) => Number(m.invested_amount) || Number(m.units || 0) * Number(m.avg_nav ?? 0),
+  etf:   (e: any) => Number(e.invested_amount) || Number(e.units || 0) * Number(e.avg_buy_price ?? 0),
+  nps:   (n: any) => Number(n.invested_amount) || Number(n.corpus_amount ?? 0),
+  fd:    holdingValue.fd,
+  rd:    holdingValue.rd,
+  ppf:   holdingValue.ppf,
+  gold:  (g: any) => Number(g.invested_amount ?? 0),
+  bond:  (b: any) => Number(b.invested_amount || b.current_value || 0),
+  lic:   holdingValue.lic,
+}
+
 export function computeNetWorth(h: Holdings, view: View, fx: number): NetWorth {
   const disp = (amt: number, cur: string) => viewAmount(amt, cur, view, fx)
   const sumBy = (rows: any[], val: (r: any) => number) =>
@@ -49,30 +101,21 @@ export function computeNetWorth(h: Holdings, view: View, fx: number): NetWorth {
   const bankCash = (h.accounts ?? []).filter(a => a.account_type !== 'credit_card')
   const cards    = (h.accounts ?? []).filter(a => a.account_type === 'credit_card')
 
-  // Current value of each holding — computed exactly as each category page does
-  // (these tables have no single "current_value" column; it's units × live price
-  // etc.), so we never fall back to 0 the way column-name reads did.
+  // Current value and cost of each kind — see holdingValue / holdingCost.
   // Bank/cash balance lives in current_balance (outstanding_bal is 0 for these
   // and holds the DEBT on credit cards). Use || so a 0 falls through, not ??.
-  const bankVal  = sumBy(bankCash,            a => Number(a.current_balance) || Number(a.outstanding_bal) || 0)
-  const stockVal = sumBy(h.stocks,            x => Number(x.quantity || 0) * Number(x.current_price ?? x.avg_buy_price ?? 0))
-  const mfVal    = sumBy(h.mutualFunds,       m => Number(m.units || 0) * Number(m.current_nav ?? m.avg_nav ?? 0))
-  const etfVal   = sumBy(h.etf,               e => Number(e.units || 0) * Number(e.current_price ?? e.avg_buy_price ?? 0))
-  const npsVal   = sumBy(h.nps,               n => Number(n.corpus_amount) || Number(n.invested_amount) || Number(n.current_value) || 0)
-  const fdVal    = sumBy(h.fixedDeposits,     f => Number(f.principal ?? f.principal_amount ?? 0))
-  const rdVal    = sumBy(h.recurringDeposits, r => r.current_amount != null ? Number(r.current_amount) : Number(r.monthly_amount || 0) * Number(r.months_paid || 0))
-  const ppfVal   = sumBy(h.ppfEpf,            x => Number(x.current_balance ?? x.balance ?? 0))
-  const goldVal  = sumBy(h.gold,              g => (g.current_price_per_gram && g.quantity_grams) ? Number(g.current_price_per_gram) * Number(g.quantity_grams) : Number(g.invested_amount ?? 0))
-  const bondVal  = sumBy(h.bonds,             b => Number(b.current_value ?? b.invested_amount ?? 0))
-  const licVal   = sumBy(h.lic,               l => Number(l.total_paid ?? 0))
-
-  // Invested (cost basis) per segment — for the invested-vs-current view
-  const stockInv = sumBy(h.stocks,            x => Number(x.quantity || 0) * Number(x.avg_buy_price ?? 0))
-  const mfInv    = sumBy(h.mutualFunds,       m => Number(m.invested_amount) || Number(m.units || 0) * Number(m.avg_nav ?? 0))
-  const etfInv   = sumBy(h.etf,               e => Number(e.invested_amount) || Number(e.units || 0) * Number(e.avg_buy_price ?? 0))
-  const npsInv   = sumBy(h.nps,               n => Number(n.invested_amount) || Number(n.corpus_amount ?? 0))
-  const goldInv  = sumBy(h.gold,              g => Number(g.invested_amount ?? 0))
-  const bondInv  = sumBy(h.bonds,             b => Number(b.invested_amount ?? b.current_value ?? 0))
+  const V = holdingValue, C = holdingCost
+  const bankVal  = sumBy(bankCash, a => Number(a.current_balance) || Number(a.outstanding_bal) || 0)
+  const stockVal = sumBy(h.stocks, V.stock),            stockInv = sumBy(h.stocks, C.stock)
+  const mfVal    = sumBy(h.mutualFunds, V.mf),          mfInv    = sumBy(h.mutualFunds, C.mf)
+  const etfVal   = sumBy(h.etf, V.etf),                 etfInv   = sumBy(h.etf, C.etf)
+  const npsVal   = sumBy(h.nps, V.nps),                 npsInv   = sumBy(h.nps, C.nps)
+  const fdVal    = sumBy(h.fixedDeposits, V.fd)
+  const rdVal    = sumBy(h.recurringDeposits, V.rd)
+  const ppfVal   = sumBy(h.ppfEpf, V.ppf)
+  const goldVal  = sumBy(h.gold, V.gold),               goldInv  = sumBy(h.gold, C.gold)
+  const bondVal  = sumBy(h.bonds, V.bond),              bondInv  = sumBy(h.bonds, C.bond)
+  const licVal   = sumBy(h.lic, V.lic)
 
   const assetRows: AssetRow[] = ([
     { key: 'bank',  label: 'Bank & Cash',        value: bankVal,  invested: bankVal,  color: '#16A34A', group: 'cash' },

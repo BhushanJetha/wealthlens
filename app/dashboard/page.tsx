@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import DashboardClient from '@/components/dashboard/DashboardClient'
-import { computeNetWorth, groupAssets, type Holdings } from '@/lib/netWorth'
+import { computeNetWorth, groupAssets, NW_RULES, type Holdings } from '@/lib/netWorth'
 import { getAedInr } from '@/lib/fx'
 import { isMissingTable } from '@/lib/supabase/missingTable'
 import { goalInterestsOf } from '@/lib/goalInterests'
@@ -81,13 +81,13 @@ export default async function DashboardPage() {
       user_id: uid, snap_date: today, fx,
       uae_assets: Math.round(uae.totalAssets), uae_liab: Math.round(uae.totalLiab),
       india_assets: Math.round(india.totalAssets), india_liab: Math.round(india.totalLiab),
-      breakdown: Object.fromEntries(groupAssets(all.assetRows).map(g => [g.key, Math.round(g.value)])),
+      breakdown: { ...Object.fromEntries(groupAssets(all.assetRows).map(g => [g.key, Math.round(g.value)])), rules: NW_RULES },
       updated_at: new Date().toISOString(),
     }, { onConflict: 'user_id,snap_date' })
     if (isMissingTable(error)) historyReady = false
   }
   const snapsRes = historyReady
-    ? await supabase.from('net_worth_snapshots').select('snap_date,fx,uae_assets,uae_liab,india_assets,india_liab')
+    ? await supabase.from('net_worth_snapshots').select('snap_date,fx,uae_assets,uae_liab,india_assets,india_liab,breakdown')
         .eq('user_id', uid).gte('snap_date', histFrom).order('snap_date', { ascending: true })
     : { data: [], error: null }
   if (isMissingTable(snapsRes.error)) historyReady = false

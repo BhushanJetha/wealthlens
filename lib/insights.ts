@@ -3,7 +3,7 @@
 // the Expense Report's rules (lib/money.ts, lib/nro.ts) so numbers always match.
 import { isSpend, catOf, labelOf } from './money'
 import { isNroSettled } from './nro'
-import { viewAmount, type View } from './netWorth'
+import { viewAmount, NW_RULES, type View } from './netWorth'
 
 // ─── Dates (string-based so server/browser time zones can't shift a day) ─────
 export const ymOf = (d: string) => d?.slice(0, 7) ?? ''
@@ -452,7 +452,7 @@ function ordinal(n: number) {
 }
 
 // ─── Net-worth history from daily snapshots ──────────────────────────────────
-export interface Snapshot { snap_date: string; fx: number; uae_assets: number; uae_liab: number; india_assets: number; india_liab: number }
+export interface Snapshot { snap_date: string; fx: number; uae_assets: number; uae_liab: number; india_assets: number; india_liab: number; breakdown?: Record<string, number> | null }
 
 export function snapshotValue(s: Snapshot, view: View) {
   const uae = Number(s.uae_assets) - Number(s.uae_liab)
@@ -462,7 +462,8 @@ export function snapshotValue(s: Snapshot, view: View) {
 
 // Series for the chart + change vs ~30 days ago (or the oldest snapshot ≥ 7 days old)
 export function netWorthHistory(snaps: Snapshot[], view: View, today: string) {
-  const series = [...snaps].sort((a, b) => a.snap_date.localeCompare(b.snap_date))
+  const series = snaps.filter(s => (s.breakdown?.rules ?? 1) >= NW_RULES)
+    .sort((a, b) => a.snap_date.localeCompare(b.snap_date))
     .map(s => ({ date: s.snap_date, value: Math.round(snapshotValue(s, view)) }))
   const target = addMonthsToDate(today, -1)
   const older = series.filter(p => daysBetween(p.date, today) >= 7)
@@ -471,18 +472,21 @@ export function netWorthHistory(snaps: Snapshot[], view: View, today: string) {
 }
 
 // Net worth at past month-ends before tracking began, estimated by walking
-// back from today's figure one month of savings at a time. Market moves and
-// loan principal aren't modelled, so callers must label these points as
-// estimated. Stops at the first month with no transactions.
-export function estimateNetWorthBack(nwToday: number, today: string, savedByMonth: HomeInsights['savedByMonth'], trackedFrom: string | null): ForecastPoint[] {
+// back one month of savings at a time from `anchor`: the first tracked
+// snapshot when there is one (so the dashed line joins the tracked one),
+// else today's figure. Market moves and loan principal aren't modelled, so
+// callers must label these points as estimated. Stops at the first month
+// with no transactions.
+export function estimateNetWorthBack(anchor: { date: string; value: number }, today: string, savedByMonth: HomeInsights['savedByMonth']): ForecastPoint[] {
   const out: ForecastPoint[] = []
-  let v = nwToday
+  const from = ymOf(anchor.date)
+  let v = anchor.value
   for (const s of savedByMonth) {   // newest first
+    if (s.month > from) continue
     if (!s.hasData && s.month !== ymOf(today)) break
     v -= s.saved
     const prev = addMonths(s.month, -1)
-    const end = `${prev}-${String(daysInMonth(prev)).padStart(2, '0')}`
-    if (!trackedFrom || end < trackedFrom) out.push({ date: end, value: Math.round(v) })
+    out.push({ date: `${prev}-${String(daysInMonth(prev)).padStart(2, '0')}`, value: Math.round(v) })
   }
   return out.reverse()
 }

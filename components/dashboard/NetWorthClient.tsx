@@ -35,7 +35,7 @@ export default function NetWorthClient(p: Props) {
   const viewLabel = view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'
 
   const nw = useMemo(() => computeNetWorth(p, view, FX), [p, view, FX])
-  const { assetRows, liabRows, totalAssets, totalInvested, totalLiab, netWorth } = nw
+  const { assetRows, liabRows, totalAssets, totalInvested, totalLiab, netWorth, cash } = nw
   const groups = useMemo(() => groupAssets(assetRows), [assetRows])
 
   // Tracked snapshots (solid) + months before tracking estimated from savings (dashed)
@@ -45,7 +45,7 @@ export default function NetWorthClient(p: Props) {
     accounts: [], loans: [], insurance: [], fixedDeposits: [], budgets: [], mutualFunds: [], stocks: [],
     cash: 0, invested: { value: 0, cost: 0 },
   }).savedByMonth, [p.transactions, view, FX, p.today])
-  const est = useMemo(() => estimateNetWorthBack(netWorth, p.today, saved, hist.series[0]?.date ?? null), [netWorth, p.today, saved, hist.series])
+  const est = useMemo(() => estimateNetWorthBack(hist.series[0] ?? { date: p.today, value: netWorth }, p.today, saved), [netWorth, p.today, saved, hist.series])
   const rows = useMemo(() => {
     const tracked = [...hist.series.slice(0, -1), { date: hist.series[hist.series.length - 1]?.date ?? p.today, value: Math.round(netWorth) }]
     return [
@@ -58,8 +58,10 @@ export default function NetWorthClient(p: Props) {
   const change = ref ? netWorth - ref.value : null
 
   const debtRatio = totalAssets > 0 ? Math.round(totalLiab / totalAssets * 100) : 0
-  const gain = totalAssets - totalInvested
-  const gainPct = totalInvested > 0 ? Math.round(gain / totalInvested * 1000) / 10 : 0
+  // Investments = everything except bank & cash; matches the Investments page total
+  const investedNow = totalAssets - cash, putIn = totalInvested - cash
+  const gain = investedNow - putIn
+  const gainPct = putIn > 0 ? Math.round(gain / putIn * 1000) / 10 : 0
   const empty = totalAssets === 0 && totalLiab === 0
   const groupLabel = (g: string) => ASSET_GROUPS.find(x => x.key === g)?.label ?? ''
   const labels = rows.length >= 3 ? [rows[0], rows[Math.floor(rows.length / 2)], rows[rows.length - 1]] : []
@@ -150,12 +152,12 @@ export default function NetWorthClient(p: Props) {
         </div>
 
         <div className="max-md:order-3 grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
-          <KpiTile label="Assets" value={short(totalAssets)} delta={`${assetRows.filter(r => r.value > 0).length} kinds of holding`} tint={1} icon={Wallet} />
+          <KpiTile label="Assets" value={short(totalAssets)} delta={`${short(investedNow)} invested · ${short(cash)} in bank`} tint={1} icon={Wallet} href="/dashboard/investments" />
           <KpiTile label="Liabilities" value={short(totalLiab)} delta={totalLiab > 0 ? `${liabRows.filter(r => r.value > 0).map(r => r.label.toLowerCase()).join(' and ')}` : 'Debt-free'} tint={2} icon={Landmark} />
           <KpiTile label="Debt / assets" value={`${debtRatio}%`} delta="Target under 30%" tint={3} icon={Scale}
             tone={debtRatio < 30 ? 'good' : debtRatio < 50 ? 'neutral' : 'bad'} />
           <KpiTile label="Investment gain" value={`${gain >= 0 ? '+' : '−'}${short(Math.abs(gain))}`} tint={0} icon={TrendingUp}
-            tone={gain >= 0 ? 'good' : 'bad'} delta={`${gainPct >= 0 ? '+' : ''}${gainPct}% on ${short(totalInvested)} put in`} />
+            tone={gain >= 0 ? 'good' : 'bad'} delta={`${gainPct >= 0 ? '+' : ''}${gainPct}% on ${short(putIn)} put in`} />
         </div>
 
         <ListCard className="max-md:order-7" title="Assets & liabilities" sub="Cash and fixed income are held at cost · tap a row to manage it"
