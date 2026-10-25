@@ -78,6 +78,27 @@ export function HeroCard({ children, className = '' }: { children: React.ReactNo
   return <section className={`relative overflow-hidden rounded-[22px] bg-hero shadow-hero text-white p-4 md:px-6 md:py-[22px] ${className}`}>{children}</section>
 }
 
+// Headline number + its chart in one white card, identical on desktop and
+// phone (Spent, Income, Outstanding…). `right` = legend or a small control.
+export function HeroStat({ label, value, delta, tone = 'neutral', right, children, className = '' }: {
+  label: React.ReactNode; value: React.ReactNode; delta?: React.ReactNode; tone?: Tone
+  right?: React.ReactNode; children?: React.ReactNode; className?: string
+}) {
+  return (
+    <section className={`wl-card px-4 md:px-5 py-4 md:py-[18px] flex flex-col ${className}`}>
+      <div className="flex justify-between items-start gap-3">
+        <div className="min-w-0">
+          <div className="text-[10.5px] md:text-[11px] font-semibold uppercase tracking-[0.05em]" style={{ color: 'var(--text3)' }}>{label}</div>
+          <div className="text-[30px] md:text-[32px] font-bold tabular-nums tracking-[-0.02em] leading-tight mt-0.5" style={{ color: 'var(--text)' }}>{value}</div>
+          {delta != null && <div className="text-[12px] md:text-[12.5px] font-medium" style={{ color: TONE[tone] }}>{delta}</div>}
+        </div>
+        {right && <div className="hidden md:flex flex-shrink-0 pt-0.5">{right}</div>}
+      </div>
+      {children}
+    </section>
+  )
+}
+
 // ─── Page header ────────────────────────────────────────────────────────────
 // Desktop: title + sub left, action buttons right. Phone: title + round "+".
 export function PageHeader({ title, sub, actions, onAdd, addLabel = 'Add' }: {

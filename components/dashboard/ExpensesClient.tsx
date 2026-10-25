@@ -12,10 +12,11 @@ import TransactionVoiceModal from '@/components/forms/TransactionVoiceModal'
 import CreditCardUploadModal from '@/components/forms/CreditCardUploadModal'
 import MessageParseModal from '@/components/forms/MessageParseModal'
 
-import { Search, Upload, Image, Mic, PenLine, BarChart2, ArrowRight, AlertTriangle, X, CreditCard, Pencil, Trash2, Check, BookOpen, ChevronDown, Plus, Copy, Wallet, Banknote, MessageSquareText, ArrowUpRight, Landmark, TrendingUp } from 'lucide-react'
+import { Search, Upload, Image, Mic, PenLine, BarChart2, ArrowRight, AlertTriangle, X, CreditCard, Pencil, Trash2, Check, BookOpen, ChevronDown, Plus, Copy, Wallet, Banknote, MessageSquareText, ArrowUpRight, Landmark, TrendingUp, CalendarDays } from 'lucide-react'
 import Link from 'next/link'
-import { PageHeader, InsightBar, AiActions, KpiTile, Bars, Donut, ProgressRow, LearnStrip, PALETTE } from '@/components/ui/kit'
-import { addMonths } from '@/lib/insights'
+import { PageHeader, InsightBar, AiActions, KpiTile, HeroStat, Bars, Donut, ProgressRow, LearnStrip, PALETTE } from '@/components/ui/kit'
+import { ListCard, ListRow, ListSearch, ChipFilter } from '@/components/ui/list'
+import { addMonths, daysInMonth, localToday, fmtDay } from '@/lib/insights'
 import { fmtCompact } from '@/lib/format'
 
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -262,6 +263,30 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
     }))
   }, [filtered, fromMonth, toMonth, spanMonths, view, FX])
 
+  // Daily average over the days the period has had so far
+  const periodDays = useMemo(() => {
+    const today = localToday(), thisM = today.slice(0, 7)
+    let d = 0
+    for (let m = fromMonth; m <= toMonth; m = addMonths(m, 1)) d += m < thisM ? daysInMonth(m) : m === thisM ? Number(today.slice(8, 10)) : 0
+    return Math.max(d, 1)
+  }, [fromMonth, toMonth])
+  const dailyAvg = rangeExpenses / periodDays
+
+  // Category chips: only categories this period actually has, with counts
+  const catOptions = useMemo(() => {
+    const n: Record<string, number> = {}
+    let all = 0
+    transactions.forEach(t => {
+      if (view === 'uae' && t.currency !== 'AED') return
+      if (view === 'india' && t.currency !== 'INR') return
+      if (!inRange(t.txn_date) || (accFilter !== 'All' && t.account_id !== accFilter)) return
+      n[t.category] = (n[t.category] ?? 0) + 1; all++
+    })
+    if (cat !== 'All' && !n[cat]) n[cat] = 0
+    return [{ key: 'All', label: 'All', count: all },
+      ...Object.entries(n).sort((a, b) => b[1] - a[1]).map(([c, k]) => ({ key: c, label: c, count: k, warn: (getBudgetStatus(c)?.pct ?? 0) >= 100 }))]
+  }, [transactions, view, accFilter, fromMonth, toMonth, cat, budgetMap, catMonthTotals])
+
   // Top five categories + "Other categories"
   const catRows = useMemo(() => {
     const m: Record<string, number> = {}
@@ -351,33 +376,15 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
       <div className="max-md:order-4"><InsightBar text={insight} prompt={`Explain my expenses page in plain language. ${aiContext}`} /></div>
       <div className="max-md:order-5"><AiActions actions={['Find ways to save', 'Flag unusual spends']} context={aiContext} /></div>
 
-      {/* KPIs — on phones the headline number lives on the chart card */}
-      <div className="max-md:order-3 grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
-        <KpiTile className="max-md:hidden" label={`Spent · ${rangeLabel}`} value={money(rangeExpenses)} delta={spendDelta} tone={spendTone} tint={0} icon={ArrowUpRight} />
-        {panels.map((p, i) => (
-          <KpiTile key={p.key} label={p.label} value={money(p.total)} tint={i + 1} icon={p.icon}
-            delta={`${p.txns.length} payment${p.txns.length === 1 ? '' : 's'}${p.txns.length ? ' · view' : ''}`}
-            onClick={p.txns.length ? () => setOpenPanel(p.key) : undefined} />
-        ))}
-      </div>
-
-      {/* Monthly bars + where it went */}
+      {/* Headline number + monthly bars (same card on desktop and phone) + where it went */}
       <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4">
-        <section className="wl-card max-md:order-2 px-4 md:px-5 py-4 md:py-[18px] flex flex-col">
-          <div className="md:hidden">
-            <div className="text-[10.5px] font-semibold uppercase tracking-[0.05em]" style={{ color:'var(--text3)' }}>Spent · {rangeLabel}</div>
-            <div className="text-[30px] font-bold tabular-nums tracking-[-0.02em] my-0.5" style={{ color:'var(--text)' }}>{money(rangeExpenses)}</div>
-            <div className="text-[12px] font-medium" style={{ color: spendTone === 'bad' ? '#DC2626' : spendTone === 'good' ? '#16A34A' : 'var(--text3)' }}>{spendDelta}</div>
-          </div>
-          <div className="hidden md:flex justify-between items-center gap-3">
-            <h2 className="text-[14px] font-semibold" style={{ color:'var(--text)' }}>Spending by month</h2>
-            <div className="flex gap-3.5 text-[11.5px]" style={{ color:'var(--text3)' }}>
-              <span><i className="inline-block w-[9px] h-[9px] rounded-sm mr-1.5" style={{ background:'var(--accent)' }} />Selected period</span>
-              <span><i className="inline-block w-[9px] h-[9px] rounded-sm mr-1.5" style={{ background:'#C9C2F5' }} />Earlier</span>
-            </div>
-          </div>
-          <Bars data={barMonths} className="h-[110px] md:h-auto md:flex-1 md:min-h-[220px] mt-2.5 md:mt-4" label={`Spending by month: ${barMonths.map(b => b.tip).join(', ')}`} />
-        </section>
+        <HeroStat className="max-md:order-2" label={`Spent · ${rangeLabel}`} value={money(rangeExpenses)} delta={spendDelta} tone={spendTone}
+          right={<div className="flex gap-3.5 text-[11.5px]" style={{ color:'var(--text3)' }}>
+            <span><i className="inline-block w-[9px] h-[9px] rounded-sm mr-1.5" style={{ background:'var(--accent)' }} />Selected period</span>
+            <span><i className="inline-block w-[9px] h-[9px] rounded-sm mr-1.5" style={{ background:'#C9C2F5' }} />Earlier</span>
+          </div>}>
+          <Bars data={barMonths} className="h-[110px] md:h-auto md:flex-1 md:min-h-[200px] mt-2.5 md:mt-4" label={`Spending by month: ${barMonths.map(b => b.tip).join(', ')}`} />
+        </HeroStat>
 
         <section className="wl-card max-md:order-6 px-4 md:px-5 py-4 md:py-[18px] flex flex-col gap-3">
           <h2 className="text-[14px] font-semibold" style={{ color:'var(--text)' }}>Where it went</h2>
@@ -402,6 +409,17 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
             })}
           </>)}
         </section>
+      </div>
+
+      {/* KPIs: same four tiles on both sizes */}
+      <div className="max-md:order-3 grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
+        <KpiTile label="Daily average" value={money(dailyAvg)} tint={0} icon={CalendarDays}
+          delta={`over ${periodDays} day${periodDays === 1 ? '' : 's'}`} />
+        {panels.map((p, i) => (
+          <KpiTile key={p.key} label={p.label} value={money(p.total)} tint={i + 1} icon={p.icon}
+            delta={`${p.txns.length} payment${p.txns.length === 1 ? '' : 's'}${p.txns.length ? ' · view' : ''}`}
+            onClick={p.txns.length ? () => setOpenPanel(p.key) : undefined} />
+        ))}
       </div>
 
       {/* Transaction detail popup */}
@@ -495,190 +513,57 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
         )
       })()}
 
-      {/* Filters */}
-      <div className="max-md:order-8 flex flex-wrap gap-2 items-center">
-        <div className="relative w-full md:w-52">
-          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color:'var(--text3)' }} />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search merchant…"
-            aria-label="Search merchant" className="wl-input pl-8 w-full" style={{ background:'#fff' }} />
-        </div>
-        {/* Category chips — desktop only */}
-        <div className="hidden md:flex gap-1.5 flex-wrap">
-          {EXPENSE_CATS.map(c => {
-            const bs = c !== 'All' ? getBudgetStatus(c) : null
-            const isOver = bs && bs.pct >= 100
-            return (
-              <button key={c} onClick={() => { setCat(c); if (isOver) setAlertCat(c) }}
-                aria-pressed={cat === c} className="wl-chip gap-1" style={{ height: 30 }}>
-                {isOver && <AlertTriangle size={11} style={{ color: 'var(--rose)' }} />}
-                {c}
-              </button>
-            )
-          })}
-        </div>
-        {/* Category dropdown — mobile only (replaces the chip wall) */}
-        <select value={cat} onChange={e => setCat(e.target.value)} aria-label="Category"
-          className="wl-input md:hidden flex-1 min-w-0" style={{ background:'#fff' }}>
-          {EXPENSE_CATS.map(c => {
-            const bs = c !== 'All' ? getBudgetStatus(c) : null
-            return <option key={c} value={c}>{c === 'All' ? 'All categories' : c}{bs && bs.pct >= 100 ? ' ⚠' : ''}</option>
-          })}
-        </select>
-        <select value={accFilter} onChange={e => setAccFilter(e.target.value)} aria-label="Account"
-          className="wl-input flex-1 min-w-0 md:flex-none" style={{ background:'#fff', width:'auto' }}>
-          <option value="All">All accounts</option>
-          {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </select>
-      </div>
-
-      {/* Transaction table with pagination */}
-      <div className="wl-card max-md:order-9 overflow-hidden">
-        {filteredForMonth.length === 0 ? (
-          <div className="text-center py-16 text-[13px]" style={{ color:'var(--text3)' }}>
-            No transactions for {rangeLabel}. Add one using the buttons above.
-          </div>
-        ) : (
-          <>
-            {/* Desktop table */}
-            <div className="overflow-x-auto hidden md:block">
-              <table className="w-full text-[12px]">
-                <thead>
-                  <tr style={{ borderBottom:'1px solid var(--border)', background:'var(--bg2)' }}>
-                    {['Date','Merchant / Label','Category','Account','Amount','Source',''].map(h => (
-                      <th key={h} className="px-4 py-3 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color:'var(--text3)' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {paged.map((t, i) => {
-                    const isTransfer = t.txn_type === 'transfer'
-                    const isLoan     = t.txn_type === 'loan'
-                    const catColor   = isTransfer
-                      ? (t.category === 'Family Transfer' ? '#0EA5E9' : TRANSFER_SUBTYPE_COLORS[t.sub_category] ?? '#3B7DD8')
-                      : (CAT_COLORS[t.category] ?? '#6B7280')
-                    const bs = !isTransfer && !isLoan && t.category !== 'Credit Card Payment' ? getBudgetStatus(t.category) : null
-                    const amtColor   = bs
-                      ? budgetColor(bs.pct)
-                      : t.category === 'Credit Card Payment' ? '#9333EA'
-                      : isLoan ? (CAT_COLORS[t.category] ?? '#F59E0B')
-                      : isTransfer ? catColor : 'var(--expense)'
-                    const lSym  = t.currency === 'AED' ? 'AED ' : '₹'
-                    const inrEq = isTransfer && t.currency === 'AED' && liveRate
-                      ? `≈ ₹${Math.round(Number(t.amount)*liveRate).toLocaleString('en-IN')}` : null
-                    return (
-                      <tr key={i} style={{ borderBottom:'1px solid var(--border)' }} className="hover:bg-stone-50 transition-colors">
-                        <td className="px-4 py-3 font-mono text-[11px]" style={{ color:'var(--text3)' }}>{t.txn_date}</td>
-                        <td className="px-4 py-3">
-                          <div className="font-semibold" style={{ color:'var(--text)' }}>{t.merchant}</div>
-                          {isTransfer && t.description && (
-                            <div className="flex items-center gap-1 text-[10px] mt-0.5" style={{ color:'var(--text3)' }}>
-                              <ArrowRight size={9} />{t.description}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          <button
-                            onClick={() => { if (bs) setAlertCat(alertCat === t.category ? null : t.category) }}
-                            className="flex items-center gap-1">
-                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ background:catColor+'18', color:catColor }}>
-                              {isTransfer ? (t.category === 'Family Transfer' ? 'Family Transfer' : t.sub_category || t.category || 'Transfer') : t.category}
-                            </span>
-                            {bs && bs.pct >= 100 && <AlertTriangle size={11} style={{ color:'var(--rose)' }} />}
-                            {bs && bs.pct >= 75 && bs.pct < 100 && <AlertTriangle size={11} style={{ color:'var(--gold)' }} />}
-                          </button>
-                        </td>
-                        <td className="px-4 py-3 text-[11px]" style={{ color:'var(--text3)' }}>
-                          {accounts.find(a => a.id === t.account_id)?.name ?? '—'}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="font-bold font-mono" style={{ color: amtColor }}>
-                            {lSym}{Number(t.amount).toLocaleString('en-IN')}
-                          </div>
-                          {inrEq && <div className="text-[10px] font-mono mt-0.5" style={{ color:'var(--text3)' }}>{inrEq}</div>}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold"
-                            style={t.source === 'statement_upload' ? { background:'var(--income-bg)', color:'var(--income)' }
-                              : t.source === 'voice'       ? { background:'var(--sage-bg)', color:'var(--sage)' }
-                              : t.source === 'bill_upload' ? { background:'#FEF3C7', color:'#D97706' }
-                              : { background:'var(--bg2)', color:'var(--text3)' }}>
-                            {t.source === 'statement_upload' ? 'Parsed' : t.source === 'voice' ? 'Voice' : t.source === 'bill_upload' ? 'Bill Scan' : 'Manual'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-1.5">
-                            <button onClick={() => openDuplicate(t)} title="Duplicate"
-                              className="p-1 rounded hover:bg-stone-100 transition-colors"
-                              style={{ color: 'var(--text3)' }}>
-                              <Copy size={12} />
-                            </button>
-                            <button onClick={() => openEdit(t)} title="Edit"
-                              className="p-1 rounded hover:bg-blue-50 transition-colors"
-                              style={{ color: 'var(--blue)' }}>
-                              <Pencil size={12} />
-                            </button>
-                            <button onClick={() => deleteTxn(t.id)} title="Delete"
-                              disabled={deletingId === t.id}
-                              className="p-1 rounded hover:bg-red-50 transition-colors disabled:opacity-40"
-                              style={{ color: 'var(--rose)' }}>
-                              <Trash2 size={12} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+      {/* Transactions: search, account and category filters live in the card */}
+      <ListCard className="max-md:order-9" title="Transactions"
+        sub={`${filteredForMonth.length} in ${rangeLabel}${cat !== 'All' ? ` · ${cat}` : ''}`}
+        head={['Merchant', 'Category', 'Date', 'Amount']}
+        toolbar={<>
+          <ListSearch value={search} onChange={setSearch} placeholder="Search…">
+            <select value={accFilter} onChange={e => setAccFilter(e.target.value)} aria-label="Account"
+              className="wl-input max-w-[44%] md:max-w-[220px]" style={{ background:'#fff', width:'auto', height: 36 }}>
+              <option value="All">All accounts</option>
+              {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </ListSearch>
+          <ChipFilter label="Category" value={cat} options={catOptions}
+            onChange={c => { setCat(c); if ((getBudgetStatus(c)?.pct ?? 0) >= 100) setAlertCat(c) }} />
+        </>}
+        empty={filteredForMonth.length === 0
+          ? <div className="text-center py-12 text-[13px]" style={{ color:'var(--text3)', borderTop: '1px solid var(--line)' }}>
+              No transactions{cat !== 'All' ? ` in ${cat}` : ''} for {rangeLabel}.
             </div>
-
-            {/* Mobile card list */}
-            <div className="md:hidden divide-y" style={{ borderColor:'var(--border)' }}>
-              {paged.map((t, i) => {
-                const isTransfer = t.txn_type === 'transfer'
-                const isLoan     = t.txn_type === 'loan'
-                const catColor   = isTransfer
-                  ? (t.category === 'Family Transfer' ? '#0EA5E9' : TRANSFER_SUBTYPE_COLORS[t.sub_category] ?? '#3B7DD8')
-                  : (CAT_COLORS[t.category] ?? '#6B7280')
-                const bs = !isTransfer && !isLoan && t.category !== 'Credit Card Payment' ? getBudgetStatus(t.category) : null
-                const amtColor = bs ? budgetColor(bs.pct)
-                  : t.category === 'Credit Card Payment' ? '#9333EA'
-                  : isLoan ? (CAT_COLORS[t.category] ?? '#F59E0B')
-                  : isTransfer ? catColor : 'var(--expense)'
-                const lSym  = t.currency === 'AED' ? 'AED ' : '₹'
-                const inrEq = isTransfer && t.currency === 'AED' && liveRate
-                  ? `≈ ₹${Math.round(Number(t.amount)*liveRate).toLocaleString('en-IN')}` : null
-                const label = isTransfer ? (t.category === 'Family Transfer' ? 'Family Transfer' : t.sub_category || t.category || 'Transfer') : t.category
-                const account = accounts.find((a:any) => a.id === t.account_id)?.name ?? null
-                return (
-                  <div key={i} className="px-3 py-3 active:bg-stone-50">
-                    <div className="min-w-0" onClick={() => openEdit(t)}>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-semibold text-[13px] truncate" style={{ color:'var(--text)' }}>{t.merchant}</span>
-                        <span className="font-bold font-mono text-[13px] flex-shrink-0" style={{ color:amtColor }}>{lSym}{Number(t.amount).toLocaleString('en-IN')}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ background:catColor+'18', color:catColor }}>{label}</span>
-                        {bs && bs.pct >= 75 && <AlertTriangle size={10} style={{ color: bs.pct >= 100 ? 'var(--rose)' : 'var(--gold)' }} />}
-                        <span className="text-[10px] font-mono" style={{ color:'var(--text3)' }}>{t.txn_date}</span>
-                        {account && <span className="text-[10px] truncate" style={{ color:'var(--text3)' }}>· {account}</span>}
-                      </div>
-                      {inrEq && <div className="text-[10px] font-mono mt-0.5" style={{ color:'var(--text3)' }}>{inrEq}</div>}
-                    </div>
-                    <div className="flex items-center justify-end gap-2 mt-2">
-                      <button onClick={() => openEdit(t)} className="p-2 rounded-lg" style={{ color:'var(--blue)', background:'var(--bg2)' }} aria-label="Edit"><Pencil size={14} /></button>
-                      <button onClick={() => openDuplicate(t)} className="p-2 rounded-lg" style={{ color:'var(--text3)', background:'var(--bg2)' }} aria-label="Duplicate"><Copy size={14} /></button>
-                      <button onClick={() => deleteTxn(t.id)} disabled={deletingId === t.id} className="p-2 rounded-lg disabled:opacity-40" style={{ color:'var(--rose)', background:'var(--bg2)' }} aria-label="Delete"><Trash2 size={14} /></button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-            <Pagination total={filteredForMonth.length} page={page} pageSize={pageSize}
-              onPage={setPage} onPageSize={s => { setPageSize(s); setPage(1) }} />
-          </>
-        )}
-      </div>
+          : undefined}
+        footer={filteredForMonth.length > 0 && <div style={{ borderTop: '1px solid var(--line)' }}>
+          <Pagination total={filteredForMonth.length} page={page} pageSize={pageSize}
+            onPage={setPage} onPageSize={s => { setPageSize(s); setPage(1) }} />
+        </div>}>
+        {paged.map(t => {
+          const isTransfer = t.txn_type === 'transfer'
+          const isLoan     = t.txn_type === 'loan'
+          const catColor   = isTransfer
+            ? (t.category === 'Family Transfer' ? '#0EA5E9' : TRANSFER_SUBTYPE_COLORS[t.sub_category] ?? '#3B7DD8')
+            : (CAT_COLORS[t.category] ?? '#6B7280')
+          const bs = !isTransfer && !isLoan && t.category !== 'Credit Card Payment' ? getBudgetStatus(t.category) : null
+          const lSym  = t.currency === 'AED' ? 'AED ' : '₹'
+          const inrEq = t.currency === 'AED' && view !== 'uae' && liveRate
+            ? `≈ ₹${Math.round(Number(t.amount) * liveRate).toLocaleString('en-IN')}` : undefined
+          const label = isTransfer ? (t.category === 'Family Transfer' ? 'Family Transfer' : t.sub_category || t.category || 'Transfer') : t.category
+          const account = accounts.find((a: any) => a.id === t.account_id)?.name ?? null
+          return (
+            <ListRow key={t.id} color={catColor} title={t.merchant}
+              sub={[account, isTransfer && t.description && t.description !== t.merchant ? `→ ${t.description}` : null].filter(Boolean).join(' · ') || undefined}
+              tag={label} warn={bs && bs.pct >= 75 ? `${t.category}: ${Math.round(bs.pct)}% of this month's budget used` : null}
+              meta={fmtDay(t.txn_date)} amount={`−${lSym}${Number(t.amount).toLocaleString('en-IN')}`}
+              amountColor={t.category === 'Credit Card Payment' ? 'var(--text3)' : '#DC2626'} amountSub={inrEq}
+              onOpen={() => openEdit(t)}
+              actions={[
+                { label: 'Edit', icon: Pencil, onClick: () => openEdit(t) },
+                { label: 'Duplicate', icon: Copy, onClick: () => openDuplicate(t) },
+                { label: 'Delete', icon: Trash2, onClick: () => deleteTxn(t.id), danger: true, disabled: deletingId === t.id },
+              ]} />
+          )
+        })}
+      </ListCard>
 
       <div className="max-md:order-10"><LearnStrip title="Why categories beat totals" href="/dashboard/expenses/learn" /></div>
 
