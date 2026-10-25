@@ -457,9 +457,9 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                             <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                               <span className="text-[10px] truncate max-w-[140px]" style={{ color: 'var(--text3)' }}>{s.name}</span>
                               {s.sector && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
-                                  style={{ background: sColor + '18', color: sColor }}>
-                                  {SECTOR_EMOJI[s.sector] ?? '🏭'} {s.sector}
+                                <span className="text-[10.5px] px-2 py-0.5 rounded-full font-semibold"
+                                  style={{ background: sColor + '1A', color: sColor }}>
+                                  {s.sector}
                                 </span>
                               )}
                             </div>

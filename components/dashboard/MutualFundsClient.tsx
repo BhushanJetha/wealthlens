@@ -1,5 +1,5 @@
 'use client'
-import { PageHeader, InsightBar, AiActions, HeroStat, KpiTile, Bars } from '@/components/ui/kit'
+import { PageHeader, InsightBar, AiActions, HeroStat, KpiTile, Bars, EmptyState } from '@/components/ui/kit'
 import { ListSearch } from '@/components/ui/list'
 import { Wallet as IcWallet, TrendingUp as IcUp, CalendarClock as IcCal } from 'lucide-react'
 import { useState, useEffect, useMemo } from 'react'
@@ -445,19 +445,9 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
 
   // ── empty state ───────────────────────────────────────────────────────────────
   if (funds.length === 0) return (
-    <div className="flex flex-col items-center justify-center py-24 space-y-4">
-      <div className="text-6xl">📈</div>
-      <div className="text-[18px] font-bold" style={{ color: 'var(--text)' }}>No mutual funds yet</div>
-      <div className="text-[13px]" style={{ color: 'var(--text3)' }}>Add your first fund to track NAV, returns, and SIP payments</div>
-      <div className="flex items-center gap-2">
-        <button onClick={() => setShowAdd(true)} className="px-6 py-2.5 rounded-xl text-white font-semibold" style={{ background: 'var(--sage)' }}>
-          <Plus size={14} className="inline mr-1.5" /> Add Mutual Fund
-        </button>
-        <button onClick={() => setShowImport(true)} className="px-6 py-2.5 rounded-xl font-semibold border"
-          style={{ borderColor: 'var(--line)', color: 'var(--text3)', background: 'var(--bg2)' }}>
-          <FileUp size={14} className="inline mr-1.5" /> Import from PDF
-        </button>
-      </div>
+    <div>
+      <EmptyState message="Add your first fund, or import a CAMS / KFintech statement, to track NAV, returns and SIP payments."
+        cta="Add a fund" onCta={() => setShowAdd(true)} onImport={() => setShowImport(true)} />
       {showAdd && <BatchPurchaseModal kind="mutual_fund" onClose={() => { setShowAdd(false); router.refresh(); loadMfTxns() }} />}
       {showImport && <HoldingsUploadModal kind="mutual_funds" onClose={() => { setShowImport(false); router.refresh() }} />}
     </div>
@@ -483,7 +473,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
       {/* SIP Reminder */}
       {sipReminder && (
         <Overlay>
-          <Modal title="SIP Reminder 📅" onClose={() => setSipReminder(null)}>
+          <Modal title="SIP due today" onClose={() => setSipReminder(null)}>
             <div className="p-4 rounded-xl" style={{ background: 'var(--sage-bg)', border: '1px solid var(--sage)30' }}>
               <div className="text-[12px]" style={{ color: 'var(--text3)' }}>Monthly SIP due today</div>
               <div className="text-[14px] font-bold mt-1" style={{ color: 'var(--text)' }}>{sipReminder.fund_name}</div>
