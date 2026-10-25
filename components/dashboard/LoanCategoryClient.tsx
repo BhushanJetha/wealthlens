@@ -9,6 +9,7 @@ import { Plus, Building2, ChevronLeft, Pencil, Trash2, Loader2 } from 'lucide-re
 import AddLoanModal from '@/components/forms/AddLoanModal'
 import FilterBar from './FilterBar'
 import Link from 'next/link'
+import { PageHeader, InsightBar, AiActions, LearnStrip } from '@/components/ui/kit'
 
 function toINR(amt: number, cur: string, fx: number) { return cur === 'AED' ? amt * fx : amt }
 
@@ -125,22 +126,15 @@ export default function LoanCategoryClient({ loans, title, loanType }: Props) {
 
   return (
     <div className="space-y-5 animate-fade-up">
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <Link href="/dashboard/loans" className="flex items-center gap-1 text-[11px] mb-2" style={{ color: 'var(--sage)' }}>
-            <ChevronLeft size={13} /> All Loans
-          </Link>
-          <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em]" style={{ color: 'var(--text)' }}>{title}</h1>
-          <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
-            {filtered.length} loan{filtered.length !== 1 ? 's' : ''} · EMI Tracker · Payoff Simulation
-          </p>
-        </div>
-        <button onClick={() => setShowAdd(true)}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg text-white text-[12px] font-bold"
-          style={{ background: 'var(--sage)' }}>
-          <Plus size={14} /> Add {title}
-        </button>
-      </div>
+      <PageHeader title={title}
+        sub={`${filtered.length} loan${filtered.length !== 1 ? 's' : ''} · ${sym}${Math.round(totalEMI).toLocaleString('en-IN')} EMI a month · payoff simulation`}
+        onAdd={() => setShowAdd(true)} addLabel={`Add ${title}`}
+        actions={<button onClick={() => setShowAdd(true)} className="wl-btn wl-btn-primary" style={{ height: 34 }}><Plus size={14} />Add {title.toLowerCase()}</button>} />
+      {filtered.length > 0 && <InsightBar
+        text={`You owe ${sym}${Math.round(totalOutstanding).toLocaleString('en-IN')} on ${filtered.length === 1 ? 'this loan' : `these ${filtered.length} loans`} and have repaid ${totalSanctioned > 0 ? Math.max(0, Math.round((totalSanctioned - totalOutstanding) / totalSanctioned * 100)) : 0}% of what you borrowed. Try an extra payment below to see how much sooner it clears.`}
+        prompt={`Explain my ${title} page. ${filtered.map((l: any) => `${l.name}: outstanding ${l.currency} ${l.outstanding_amt} at ${l.interest_rate}%, EMI ${l.emi_amount}`).join('; ')}.`} />}
+      {filtered.length > 0 && <AiActions actions={['Best prepayment plan', 'Should I refinance?']}
+        context={`${title}: ${filtered.map((l: any) => `${l.name} outstanding ${l.currency} ${l.outstanding_amt} at ${l.interest_rate}%, EMI ${l.emi_amount}`).join('; ')}.`} />}
 
 
       <FilterBar
@@ -341,6 +335,7 @@ export default function LoanCategoryClient({ loans, title, loanType }: Props) {
           </div>
         </div>
       )}
+      <LearnStrip title="EMI decoded: where your money goes" href="/dashboard/learn" />
     </div>
   )
 }
