@@ -1,5 +1,7 @@
 'use client'
-import { PageHeader, InsightBar, AiActions } from '@/components/ui/kit'
+import { PageHeader, InsightBar, AiActions, HeroStat, KpiTile, Bars } from '@/components/ui/kit'
+import { ListSearch } from '@/components/ui/list'
+import { Wallet as IcWallet, TrendingUp as IcUp, HeartPulse as IcHealth } from 'lucide-react'
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -39,7 +41,7 @@ const SECTOR_EMOJI: Record<string, string> = {
   FMCG: '🛒', Pharma: '💊', Auto: '🚗', Realty: '🏢', Metals: '🔩',
   Telecom: '📡', Defence: '🛡', Consumer: '🛍', Healthcare: '🏥',
 }
-const SECTOR_COLORS = ['#3D7A58','#3B7DD8','#D4920A','#C96A3A','#7C5CBF','#2E7D52','#B45309','#0891B2','#6D28D9']
+const SECTOR_COLORS = ['#6A55E8','#3B8EF0','#D97706','#16A34A','#EC5B8C','#0891B2','#7C3AED','#64748B','#DC2626']
 
 function computeHealth(stocks: any[], prices: Record<string, number>): { score: number; label: string; color: string; insights: string[] } {
   if (!stocks.length) return { score: 0, label: 'No data', color: 'var(--text3)', insights: [] }
@@ -342,30 +344,35 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
       {stocks.length > 0 && <InsightBar text={`${stocks.length} stock${stocks.length === 1 ? '' : 's'} worth ${fmt(currentValue)}, ${totalRet >= 0 ? 'up' : 'down'} ${Math.abs(totalRet).toFixed(1)}% overall.${bySector[0] ? ` ${bySector[0].sector} is ${bySector[0].pct}% of the portfolio.` : ''}`} prompt={`My stocks: ${stocks.slice(0, 20).map(s => `${s.symbol ?? s.name}${s.sector ? ` (${s.sector})` : ''}`).join(', ')}. Invested ${fmt(totalInvested)}, worth ${fmt(currentValue)}.`} />}
       {stocks.length > 0 && <AiActions actions={['Am I too concentrated?', 'Which stocks should I review?']} context={`My stocks: ${stocks.slice(0, 20).map(s => `${s.symbol ?? s.name}${s.sector ? ` (${s.sector})` : ''}`).join(', ')}. Invested ${fmt(totalInvested)}, worth ${fmt(currentValue)}.`} />}
 
-      {/* Summary strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        {[
-          { label: 'Invested',        value: fmt(totalInvested),                                          accent: '#6B7280' },
-          { label: 'Current Value',   value: fmt(currentValue),                                           accent: absRet >= 0 ? '#3D7A58' : '#E11D48' },
-          { label: 'Total Return',    value: `${totalRet >= 0 ? '+' : ''}${totalRet.toFixed(2)}%`,       accent: totalRet >= 0 ? '#3D7A58' : '#E11D48' },
-          { label: 'Gain / Loss',     value: `${absRet >= 0 ? '+' : '−'}${fmt(Math.abs(absRet))}`,       accent: absRet >= 0 ? '#3D7A58' : '#E11D48' },
-          { label: 'Portfolio Health', value: `${health.score}/100`,                                      accent: health.score >= 75 ? '#3D7A58' : health.score >= 50 ? '#D4920A' : '#E11D48' },
-        ].map(k => (
-          <div key={k.label} className="wl-card px-4 py-3" style={{ borderLeft: `3px solid ${k.accent}` }}>
-            <div className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text3)' }}>{k.label}</div>
-            <div className="text-[18px] font-bold font-mono mt-0.5" style={{ color: k.accent }}>{k.value}</div>
+      {/* ── Headline value + chart by stock (same card on desktop and phone), tiles ── */}
+      {stocks.length > 0 && (() => {
+        const bars = stocks.map(st => {
+          const v = Number(st.quantity) * (livePrices[st.id] ?? Number(st.current_price ?? st.avg_buy_price))
+          return { label: String(st.symbol), value: v, hi: true, tip: `${st.symbol}: ${fmt(v)}` }
+        }).sort((a, b) => b.value - a.value).slice(0, 8)
+        return (
+          <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-3.5 md:gap-4">
+            <HeroStat label="Value today" value={fmt(currentValue)} tone={totalRet >= 0 ? 'good' : 'bad'}
+              delta={`${totalRet >= 0 ? '▲' : '▼'} ${Math.abs(totalRet).toFixed(2)}% on ${fmt(totalInvested)} invested`}
+              right={<span className="text-[11.5px]" style={{ color: 'var(--text3)' }}>Value by stock</span>}>
+              {bars.length > 1 && <Bars data={bars} className="h-[110px] md:h-auto md:flex-1 md:min-h-[150px] mt-3" label={`Value by stock: ${bars.map(b => b.tip).join(', ')}`} />}
+            </HeroStat>
+            <div className="grid grid-cols-2 lg:grid-cols-1 gap-2.5 md:gap-3.5 lg:content-start">
+              <KpiTile label="Invested" value={fmt(totalInvested)} delta={`${stocks.length} stock${stocks.length === 1 ? '' : 's'}`} tint={1} icon={IcWallet} />
+              <KpiTile label="Gain / loss" value={`${absRet >= 0 ? '+' : '−'}${fmt(Math.abs(absRet))}`} tint={2} icon={IcUp}
+                tone={absRet >= 0 ? 'good' : 'bad'} delta={`${totalRet >= 0 ? '+' : ''}${totalRet.toFixed(2)}% overall`} />
+              <KpiTile className="max-lg:col-span-2" label="Portfolio health" value={`${health.score}/100`} tint={3} icon={IcHealth}
+                tone={health.score >= 75 ? 'good' : health.score >= 50 ? 'neutral' : 'bad'} delta={bySector[0] ? `${bySector[0].sector} is ${bySector[0].pct}% of value` : 'Spread across sectors'} />
+            </div>
           </div>
-        ))}
-      </div>
+        )
+      })()}
 
       {/* Tabs */}
-      <div className="flex gap-1 p-1 rounded-xl wl-tabs" style={{ background: 'var(--bg2)', width: 'fit-content' }}>
+      <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-4 px-4 md:mx-0 md:px-0" role="tablist" aria-label="Stock views">
         {([['portfolio', 'Portfolio', ListFilter], ['analytics', 'Analytics', BarChart2], ['growth', 'Growth', TrendingUp], ['news', 'News', Newspaper]] as const).map(([key, label, Icon]) => (
-          <button key={key} onClick={() => setTab(key as Tab)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[12px] font-semibold transition-all"
-            style={tab === key
-              ? { background: 'var(--card)', color: 'var(--sage)', boxShadow: '0 1px 4px rgba(0,0,0,0.1)' }
-              : { color: 'var(--text3)' }}>
+          <button key={key} onClick={() => setTab(key as Tab)} role="tab" aria-selected={tab === key} aria-pressed={tab === key}
+            className="wl-chip flex-shrink-0 gap-1.5" style={{ height: 32 }}>
             <Icon size={13} /> {label}
           </button>
         ))}
@@ -374,36 +381,31 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
       {/* ── PORTFOLIO TAB ─────────────────────────────────────────────────────── */}
       {tab === 'portfolio' && (
         <div className="space-y-3">
-          {/* Search + sort */}
-          <div className="flex flex-wrap gap-2 items-center">
-            <div className="relative flex-1 min-w-[180px]">
-              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text3)' }} />
-              <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search stock, symbol or sector…"
-                className="wl-input pl-8 w-full" style={{ background: 'var(--bg2)' }} />
-              {query && (
-                <button onClick={() => setQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text3)' }} aria-label="Clear">
-                  <X size={13} />
-                </button>
-              )}
-            </div>
-            <select value={`${sortBy}-${sortDir}`}
-              onChange={e => { const [k, d] = e.target.value.split('-'); setSortBy(k as SortKey); setSortDir(d as 'asc' | 'desc') }}
-              className="wl-input" style={{ background: 'var(--bg2)', width: 'auto' }}>
-              <option value="return-desc">Returns: High → Low</option>
-              <option value="return-asc">Returns: Low → High</option>
-              <option value="value-desc">Value: High → Low</option>
-              <option value="invested-desc">Invested: High → Low</option>
-              <option value="price-desc">Price: High → Low</option>
-              <option value="name-asc">Name: A → Z</option>
-            </select>
-          </div>
-          {query && <div className="text-[11px]" style={{ color: 'var(--text3)' }}>{visible.length} of {stocks.length} stocks</div>}
-
         <div className="wl-card overflow-hidden">
+          <div className="px-4 md:px-5 pt-3.5 md:pt-[18px] pb-2.5 flex flex-col gap-2.5">
+            <div>
+              <h2 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Your stocks</h2>
+              <div className="text-[11.5px] md:text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>
+                {visible.length === stocks.length ? `${stocks.length} stock${stocks.length === 1 ? '' : 's'}` : `${visible.length} of ${stocks.length}`} · tap a stock for details and purchases
+              </div>
+            </div>
+            <ListSearch value={query} onChange={setQuery} placeholder="Search stock, symbol or sector…">
+              <select value={`${sortBy}-${sortDir}`} aria-label="Sort"
+                onChange={e => { const [k, d] = e.target.value.split('-'); setSortBy(k as SortKey); setSortDir(d as 'asc' | 'desc') }}
+                className="wl-input max-w-[44%]" style={{ background: '#fff', width: 'auto', height: 36 }}>
+                <option value="return-desc">Returns ↓</option>
+                <option value="return-asc">Returns ↑</option>
+                <option value="value-desc">Value ↓</option>
+                <option value="invested-desc">Invested ↓</option>
+                <option value="price-desc">Price ↓</option>
+                <option value="name-asc">Name A–Z</option>
+              </select>
+            </ListSearch>
+          </div>
           <div className="overflow-x-auto hidden md:block">
             <table className="w-full text-[12px]">
               <thead>
-                <tr style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
+                <tr style={{ background: '#FAFAFE', borderTop: '1px solid var(--line)', borderBottom: '1px solid var(--line)' }}>
                   {([
                     ['name',     'Stock',         '260px', 'left'  ],
                     ['price',    'Price',         '110px', 'right' ],
@@ -413,8 +415,8 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                     [null,       'Qty',           '70px',  'right' ],
                     [null,       'Actions',       '100px', 'center'],
                   ] as const).map(([key, label, w, align]) => (
-                    <th key={label} className="px-4 py-3 font-semibold"
-                      style={{ minWidth: w, textAlign: align, color: 'var(--text3)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', cursor: key ? 'pointer' : 'default' }}
+                    <th key={label} className="px-4 py-2 font-semibold"
+                      style={{ minWidth: w, textAlign: align, color: 'var(--text4)', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.05em', cursor: key ? 'pointer' : 'default' }}
                       onClick={() => key && toggleSort(key as SortKey)}>
                       <span className="flex items-center gap-1"
                         style={{ justifyContent: align === 'right' ? 'flex-end' : align === 'center' ? 'center' : 'flex-start' }}>
@@ -440,14 +442,14 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                   const isExpanded = expandedId === s.id
 
                   return [
-                    <tr key={s.id}
-                      style={{ borderBottom: isExpanded ? 'none' : '1px solid var(--border)', background: idx % 2 === 0 ? 'transparent' : 'var(--bg2)11', cursor: 'pointer' }}
+                    <tr key={s.id} className="transition-colors hover:bg-[#FAFAFE]"
+                      style={{ borderBottom: isExpanded ? 'none' : '1px solid var(--track)', cursor: 'pointer' }}
                       onClick={() => setExpandedId(isExpanded ? null : s.id)}>
 
                       {/* Stock name */}
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <div className="w-1 h-10 rounded-full flex-shrink-0" style={{ background: sColor }} />
+                          <span className="w-[34px] h-[34px] rounded-[10px] flex items-center justify-center flex-shrink-0 text-[14px] font-bold" style={{ background: sColor + '1A', color: sColor }}>{String(s.symbol).trim()[0]}</span>
                           <div>
                             <div className="font-bold" style={{ color: 'var(--text)', fontSize: 13 }}>{s.symbol}</div>
                             <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
@@ -515,11 +517,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                       {/* Actions */}
                       <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
-                          <button onClick={() => setAddLots(s)}
-                            className="px-2.5 py-1 rounded text-[10px] font-semibold border transition-all hover:shadow-sm"
-                            style={{ borderColor: 'var(--sage)', color: 'var(--sage)', background: 'var(--sage-bg)' }}>
-                            + Buy
-                          </button>
+                          <button onClick={() => setAddLots(s)} className="wl-btn wl-btn-sm" style={{ color: 'var(--accent2)', borderColor: 'var(--accent-border)', background: 'var(--accent-bg)' }}>+ Buy</button>
                           <div style={{ color: 'var(--text3)' }}>
                             {isExpanded ? <ArrowUpDown size={12} /> : <ArrowUpDown size={12} style={{ opacity: 0.3 }} />}
                           </div>
@@ -528,7 +526,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                     </tr>,
 
                     isExpanded && (
-                      <tr key={`${s.id}-detail`} style={{ background: 'var(--bg2)40', borderBottom: '1px solid var(--border)' }}>
+                      <tr key={`${s.id}-detail`} style={{ background: '#FAFAFE', borderBottom: '1px solid var(--track)' }}>
                         <td colSpan={7} className="px-6 py-4">
                           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                             {[
@@ -605,7 +603,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
           </div>
 
           {/* Mobile holdings cards */}
-          <div className="md:hidden divide-y" style={{ borderColor: 'var(--border)' }}>
+          <div className="md:hidden divide-y divide-[var(--track)] border-t border-[var(--line)]">
             {visible.map(s => {
               const price     = livePrices[s.id] ?? Number(s.current_price ?? s.avg_buy_price)
               const invested  = Number(s.quantity) * Number(s.avg_buy_price)
@@ -621,58 +619,24 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
               const weight    = currentValue > 0 ? currVal / currentValue * 100 : 0
               return (
                 <div key={s.id} className="py-3">
-                  <div className="flex items-start gap-2.5 active:opacity-70"
+                  <div className="flex items-center gap-3 px-4 active:bg-[#FAFAFE]" role="button" aria-expanded={isExpanded}
                     onClick={() => setExpandedId(isExpanded ? null : s.id)}>
-                    <div className="w-1 self-stretch rounded-full flex-shrink-0" style={{ background: sColor, minHeight: 42 }} />
+                    <span className="w-9 h-9 rounded-[10px] flex items-center justify-center flex-shrink-0 text-[14px] font-bold" style={{ background: sColor + '1A', color: sColor }}>{String(s.symbol).trim()[0]}</span>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="font-bold text-[13px] leading-snug" style={{ color: 'var(--text)' }}>{s.symbol}</div>
-                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                            <span className="text-[10px] truncate max-w-[150px]" style={{ color: 'var(--text3)' }}>{s.name}</span>
-                            {s.sector && (
-                              <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold" style={{ background: sColor + '18', color: sColor }}>
-                                {SECTOR_EMOJI[s.sector] ?? '🏭'} {s.sector}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <ChevronDown size={16} className={`transition-transform flex-shrink-0 mt-0.5 ${isExpanded ? 'rotate-180' : ''}`} style={{ color: 'var(--text3)' }} />
+                      <div className="font-semibold text-[13.5px] truncate" style={{ color: 'var(--text)' }}>{s.symbol} <span className="font-normal text-[12px]" style={{ color: 'var(--text3)' }}>{s.name}</span></div>
+                      <div className="text-[11.5px] truncate flex items-center gap-1" style={{ color: 'var(--text3)' }}>
+                        {s.sector && <><span className="font-medium" style={{ color: sColor }}>{s.sector}</span><span>·</span></>}
+                        <span className="font-semibold" style={{ color: retColor }}>{retPct >= 0 ? '+' : ''}{retPct.toFixed(1)}%</span>
                       </div>
-                      <div className="flex items-end justify-between gap-2 mt-2">
-                        <div>
-                          <div className="text-[9px]" style={{ color: 'var(--text3)' }}>Current</div>
-                          <div className="font-mono font-bold text-[14px]" style={{ color: retColor }}>{fmt(currVal)}</div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-[9px]" style={{ color: 'var(--text3)' }}>Return</div>
-                          <div className="font-mono font-bold text-[13px]" style={{ color: retColor }}>{retPct >= 0 ? '+' : ''}{retPct.toFixed(2)}%</div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-[9px]" style={{ color: 'var(--text3)' }}>Price</div>
-                          <div className="font-mono font-semibold text-[12px] flex items-center gap-1 justify-end" style={{ color: 'var(--text)' }}>
-                            <span className="w-1.5 h-1.5 rounded-full" style={{ background: hasLive ? '#10B981' : 'var(--text3)' }} />₹{price.toFixed(2)}
-                          </div>
-                          {todayChg && (
-                            <div className="text-[9px] font-mono" style={{ color: todayChg.changePct >= 0 ? 'var(--income)' : 'var(--rose)' }}>
-                              {todayChg.changePct >= 0 ? '+' : ''}{todayChg.changePct.toFixed(2)}% today
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      <div className="mt-2">
-                        <div className="flex items-center justify-between text-[9px] mb-0.5" style={{ color: 'var(--text3)' }}>
-                          <span>{fmt(invested)} @ ₹{Number(s.avg_buy_price).toFixed(2)}</span><span>{weight.toFixed(1)}% of portfolio</span>
-                        </div>
-                        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--bg2)' }}>
-                          <div className="h-full rounded-full" style={{ width: `${Math.min(100, weight)}%`, background: sColor }} />
-                        </div>
-                      </div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div className="text-[13.5px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{fmt(currVal)}</div>
+                      <div className="text-[11px] tabular-nums" style={{ color: 'var(--text4)' }}>{weight.toFixed(1)}% · ₹{price.toFixed(2)}</div>
                     </div>
                   </div>
 
                   {isExpanded && (
-                    <div className="mt-3 rounded-xl p-3 space-y-3" style={{ background: 'var(--bg2)' }}>
+                    <div className="mt-3 mx-4 rounded-xl p-3 space-y-3" style={{ background: 'var(--canvas)', border: '1px solid var(--line)' }}>
                       <div className="grid grid-cols-3 gap-y-2 gap-x-2">
                         {([
                           ['Qty', Number(s.quantity).toFixed(s.exchange === 'NSE' ? 0 : 3)],
