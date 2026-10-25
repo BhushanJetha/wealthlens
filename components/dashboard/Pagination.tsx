@@ -34,17 +34,17 @@ export default function Pagination({
   return (
     <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: '1px solid var(--border)' }}>
       <div className="flex items-center gap-2 text-[12px]" style={{ color: 'var(--text3)' }}>
-        Show
+        <span className="hidden md:inline">Show</span>
         <select
           value={pageSize}
           onChange={e => { onPageSize(Number(e.target.value)); onPage(1) }}
-          className="wl-input py-1 px-2 text-[12px]"
+          className="wl-input py-1 px-2 text-[12px] max-md:!hidden"
           style={{ width: 'auto', background: 'var(--bg2)' }}
           onFocus={e => (e.target.style.borderColor = 'var(--sage)')}
           onBlur={e => (e.target.style.borderColor = 'var(--border)')}>
           {pageSizeOptions.map(n => <option key={n} value={n}>{n} rows</option>)}
         </select>
-        <span>· {start}–{end} of {total}</span>
+        <span><span className="hidden md:inline">· </span>{start}–{end} of {total}</span>
       </div>
 
       <div className="flex items-center gap-1">

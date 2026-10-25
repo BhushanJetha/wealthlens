@@ -533,7 +533,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
               No transactions{cat !== 'All' ? ` in ${cat}` : ''} for {rangeLabel}.
             </div>
           : undefined}
-        footer={filteredForMonth.length > 0 && <div style={{ borderTop: '1px solid var(--line)' }}>
+        footer={filteredForMonth.length > 0 && <div>
           <Pagination total={filteredForMonth.length} page={page} pageSize={pageSize}
             onPage={setPage} onPageSize={s => { setPageSize(s); setPage(1) }} />
         </div>}>

@@ -11,10 +11,11 @@ import TransactionVoiceModal from '@/components/forms/TransactionVoiceModal'
 import Pagination from '@/components/dashboard/Pagination'
 import { Search, PenLine, BarChart2, Plus, Pencil, Trash2, X, Check, Upload, Image, Mic, ChevronDown, Copy } from 'lucide-react'
 import Link from 'next/link'
-import { PageHeader, InsightBar, AiActions, KpiTile, Bars, Donut, ProgressRow, LearnStrip, PALETTE } from '@/components/ui/kit'
-import { addMonths } from '@/lib/insights'
+import { PageHeader, InsightBar, AiActions, KpiTile, HeroStat, Bars, Donut, ProgressRow, LearnStrip, PALETTE } from '@/components/ui/kit'
+import { ListCard, ListRow, ListSearch, ChipFilter } from '@/components/ui/list'
+import { addMonths, fmtDay } from '@/lib/insights'
 import { fmtCompact } from '@/lib/format'
-import { ArrowDownLeft, Star, Hash, Divide } from 'lucide-react'
+import { Star, Hash, Divide, Sprout } from 'lucide-react'
 
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -198,6 +199,24 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
       ))}
     </>
   )
+  // Passive income: interest, dividends and rent
+  const PASSIVE = ['Interest', 'Dividend', 'Rental']
+  const passive = filteredForMonth.filter(t => PASSIVE.includes(t.category)).reduce((a, t) => a + toDisplay(Number(t.amount), t.currency), 0)
+
+  // Category chips: only categories this period has, with counts
+  const catOptions = useMemo(() => {
+    const n: Record<string, number> = {}
+    let all = 0
+    transactions.forEach(t => {
+      if (view === 'uae' && t.currency !== 'AED') return
+      if (view === 'india' && t.currency !== 'INR') return
+      if (!inRange(t.txn_date) || (accFilter !== 'All' && t.account_id !== accFilter)) return
+      n[t.category || 'Other'] = (n[t.category || 'Other'] ?? 0) + 1; all++
+    })
+    if (cat !== 'All' && !n[cat]) n[cat] = 0
+    return [{ key: 'All', label: 'All', count: all }, ...Object.entries(n).sort((a, b) => b[1] - a[1]).map(([c, k]) => ({ key: c, label: c, count: k }))]
+  }, [transactions, view, accFilter, fromMonth, toMonth, cat])
+
   const chgText = chg != null ? `${chg >= 0 ? '▲' : '▼'} ${Math.abs(chg)}% vs ${prevLabel}` : `${filteredForMonth.length} entr${filteredForMonth.length === 1 ? 'y' : 'ies'}`
   const chgTone = chg == null ? 'neutral' as const : chg >= 0 ? 'good' as const : 'bad' as const
 
@@ -232,29 +251,15 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
       <div className="max-md:order-4"><InsightBar text={insight} prompt={`Explain my income page in plain language. ${aiContext}`} /></div>
       <div className="max-md:order-5"><AiActions actions={['Forecast next quarter', 'How can I grow my income?']} context={aiContext} /></div>
 
-      <div className="max-md:order-3 grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
-        <KpiTile className="max-md:hidden" label={`Income · ${rangeLabel}`} value={money(rangeTotal)} delta={chgText} tone={chgTone} tint={1} icon={ArrowDownLeft} />
-        <KpiTile label="Top source" value={top ? top.cat : '—'} delta={top ? `${short(top.v)} · ${Math.round(top.v / Math.max(rangeTotal, 1) * 100)}%` : 'No income yet'} tint={0} icon={Star} />
-        <KpiTile label="Entries" value={String(filteredForMonth.length)} delta={`${sources.length} source${sources.length === 1 ? '' : 's'}`} tint={3} icon={Hash} />
-        <KpiTile label="Average entry" value={filteredForMonth.length ? money(rangeTotal / filteredForMonth.length) : '—'} delta={`All filtered: ${short(total)}`} tint={2} icon={Divide} />
-      </div>
-
+      {/* Headline number + monthly bars (same card on desktop and phone) + sources */}
       <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4">
-        <section className="wl-card max-md:order-2 px-4 md:px-5 py-4 md:py-[18px] flex flex-col">
-          <div className="md:hidden">
-            <div className="text-[10.5px] font-semibold uppercase tracking-[0.05em]" style={{ color: 'var(--text3)' }}>Income · {rangeLabel}</div>
-            <div className="text-[30px] font-bold tabular-nums tracking-[-0.02em] my-0.5" style={{ color: 'var(--text)' }}>{money(rangeTotal)}</div>
-            <div className="text-[12px] font-medium" style={{ color: chgTone === 'good' ? '#16A34A' : chgTone === 'bad' ? '#DC2626' : 'var(--text3)' }}>{chgText}</div>
-          </div>
-          <div className="hidden md:flex justify-between items-center gap-3">
-            <h2 className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Income by month</h2>
-            <div className="flex gap-3.5 text-[11.5px]" style={{ color: 'var(--text3)' }}>
-              <span><i className="inline-block w-[9px] h-[9px] rounded-sm mr-1.5" style={{ background: 'var(--accent)' }} />Selected period</span>
-              <span><i className="inline-block w-[9px] h-[9px] rounded-sm mr-1.5" style={{ background: '#C9C2F5' }} />Earlier</span>
-            </div>
-          </div>
-          <Bars data={barMonths} className="h-[110px] md:h-auto md:flex-1 md:min-h-[220px] mt-2.5 md:mt-4" label={`Income by month: ${barMonths.map(b => b.tip).join(', ')}`} />
-        </section>
+        <HeroStat className="max-md:order-2" label={`Income · ${rangeLabel}`} value={money(rangeTotal)} delta={chgText} tone={chgTone}
+          right={<div className="flex gap-3.5 text-[11.5px]" style={{ color: 'var(--text3)' }}>
+            <span><i className="inline-block w-[9px] h-[9px] rounded-sm mr-1.5" style={{ background: 'var(--accent)' }} />Selected period</span>
+            <span><i className="inline-block w-[9px] h-[9px] rounded-sm mr-1.5" style={{ background: '#C9C2F5' }} />Earlier</span>
+          </div>}>
+          <Bars data={barMonths} className="h-[110px] md:h-auto md:flex-1 md:min-h-[200px] mt-2.5 md:mt-4" label={`Income by month: ${barMonths.map(b => b.tip).join(', ')}`} />
+        </HeroStat>
 
         <section className="wl-card max-md:order-6 px-4 md:px-5 py-4 md:py-[18px] flex flex-col gap-3">
           <h2 className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Where it came from</h2>
@@ -279,219 +284,78 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
         </section>
       </div>
 
-      {/* Filters */}
-      <div className="max-md:order-8 flex flex-wrap gap-2 items-center">
-        <div className="relative w-full md:w-48">
-          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color:'var(--text3)' }} />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search source…"
-            className="wl-input pl-8 w-full" style={{ background:'var(--bg2)' }}
-            onFocus={e=>(e.target.style.borderColor='var(--sage)')}
-            onBlur={e=>(e.target.style.borderColor='var(--border)')} />
-        </div>
-        {/* Category chips — desktop only */}
-        <div className="hidden md:flex gap-1 flex-wrap">
-          {INCOME_CATS.map(c => (
-            <button key={c} onClick={() => setCat(c)} aria-pressed={cat === c} className="wl-chip">
-              {c}
-            </button>
-          ))}
-        </div>
-        {/* Category dropdown — mobile only (replaces the chip row) */}
-        <select value={cat} onChange={e => setCat(e.target.value)}
-          className="wl-input md:hidden flex-1" style={{ background:'var(--bg2)' }}>
-          {INCOME_CATS.map(c => <option key={c} value={c}>{c === 'All' ? 'All Categories' : c}</option>)}
-        </select>
-        <select value={accFilter} onChange={e => setAccFilter(e.target.value)}
-          className="wl-input flex-1 md:flex-none" style={{ background:'var(--bg2)', width:'auto' }}>
-          <option value="All">All Accounts</option>
-          {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </select>
+      {/* KPIs: same four tiles on both sizes */}
+      <div className="max-md:order-3 grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
+        <KpiTile label="Top source" value={top ? top.cat : '—'} delta={top ? `${short(top.v)} · ${Math.round(top.v / Math.max(rangeTotal, 1) * 100)}%` : 'No income yet'} tint={0} icon={Star} />
+        <KpiTile label="Passive income" value={money(passive)} tint={1} icon={Sprout}
+          delta={rangeTotal > 0 ? `${Math.round(passive / rangeTotal * 100)}% · interest, dividends, rent` : 'Interest, dividends, rent'} />
+        <KpiTile label="Entries" value={String(filteredForMonth.length)} delta={`${sources.length} source${sources.length === 1 ? '' : 's'}`} tint={3} icon={Hash} />
+        <KpiTile label="Average entry" value={filteredForMonth.length ? money(rangeTotal / filteredForMonth.length) : '—'} delta={`All filtered: ${short(total)}`} tint={2} icon={Divide} />
       </div>
 
-      {/* Table with pagination */}
-      <div className="wl-card max-md:order-9 overflow-hidden">
-        {filteredForMonth.length === 0 ? (
-          <div className="text-center py-16 text-[13px]" style={{ color:'var(--text3)' }}>
-            No income for {rangeLabel}. Add an entry using the buttons above.
-          </div>
-        ) : (
-          <>
-            {/* Desktop table */}
-            <div className="overflow-x-auto hidden md:block">
-              <table className="w-full text-[12px]">
-                <thead>
-                  <tr style={{ borderBottom:'1px solid var(--border)', background:'var(--bg2)' }}>
-                    {['Date','Source','Category','Account','Amount','Entry','Actions'].map(h => (
-                      <th key={h} className="px-4 py-3 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color:'var(--text3)' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredForMonth.slice((page-1)*pageSize, page*pageSize).map((t, i) => {
-                    const c = CAT_COLORS[t.category] ?? '#16A34A'
-                    return (
-                      <tr key={i} style={{ borderBottom:'1px solid var(--border)' }} className="hover:bg-stone-50 transition-colors">
-                        <td className="px-4 py-3 font-mono text-[11px]" style={{ color:'var(--text3)' }}>{t.txn_date}</td>
-                        <td className="px-4 py-3 font-semibold" style={{ color:'var(--text)' }}>{t.merchant}</td>
-                        <td className="px-4 py-3">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ background:c+'18', color:c }}>
-                            {t.category}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-[11px]" style={{ color:'var(--text3)' }}>{accounts.find(a => a.id === t.account_id)?.name ?? '—'}</td>
-                        <td className="px-4 py-3 font-bold font-mono" style={{ color:'var(--income)' }}>
-                          +{t.currency === 'AED' ? 'AED ' : '₹'}{Number(t.amount).toLocaleString('en-IN')}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold"
-                            style={t.source === 'statement_upload' ? { background:'var(--income-bg)', color:'var(--income)' }
-                              : t.source === 'voice' ? { background:'var(--sage-bg)', color:'var(--sage)' }
-                              : t.source === 'bill_upload' ? { background:'#FEF3C7', color:'#D97706' }
-                              : { background:'var(--bg2)', color:'var(--text3)' }}>
-                            {t.source === 'statement_upload' ? 'AI Parsed'
-                              : t.source === 'voice' ? 'Voice'
-                              : t.source === 'bill_upload' ? 'Receipt Scan'
-                              : 'Manual'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          {t._autoNro ? (
-                            <span className="text-[9px] px-2 py-1 rounded-full whitespace-nowrap" title="Auto-linked from an NRE → NRO transfer; manage it in Transfers"
-                              style={{ background: 'var(--bg2)', color: 'var(--text3)', border: '1px solid var(--border)' }}>
-                              via NRE→NRO
-                            </span>
-                          ) : (
-                          <div className="flex items-center gap-1.5">
-                            <button onClick={() => openDuplicate(t)} title="Duplicate"
-                              className="p-1 rounded hover:bg-stone-100 transition-colors" style={{ color: 'var(--text3)' }}>
-                              <Copy size={12} />
-                            </button>
-                            <button onClick={() => openEdit(t)} title="Edit"
-                              className="p-1 rounded hover:bg-blue-50 transition-colors" style={{ color: 'var(--blue)' }}>
-                              <Pencil size={12} />
-                            </button>
-                            <button onClick={() => deleteTxn(t.id)} title="Delete" disabled={deletingId === t.id}
-                              className="p-1 rounded hover:bg-red-50 transition-colors disabled:opacity-40" style={{ color: 'var(--rose)' }}>
-                              <Trash2 size={12} />
-                            </button>
-                          </div>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+      {/* Income list: search, account and category filters live in the card */}
+      <ListCard className="max-md:order-9" title="Income"
+        sub={`${filteredForMonth.length} in ${rangeLabel}${cat !== 'All' ? ` · ${cat}` : ''}`}
+        head={['Source', 'Category', 'Date', 'Amount']}
+        toolbar={<>
+          <ListSearch value={search} onChange={setSearch} placeholder="Search…">
+            <select value={accFilter} onChange={e => setAccFilter(e.target.value)} aria-label="Account"
+              className="wl-input max-w-[44%] md:max-w-[220px]" style={{ background: '#fff', width: 'auto', height: 36 }}>
+              <option value="All">All accounts</option>
+              {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </ListSearch>
+          <ChipFilter label="Category" value={cat} onChange={setCat} options={catOptions} />
+        </>}
+        empty={filteredForMonth.length === 0
+          ? <div className="text-center py-12 text-[13px]" style={{ color: 'var(--text3)', borderTop: '1px solid var(--line)' }}>
+              No income{cat !== 'All' ? ` in ${cat}` : ''} for {rangeLabel}.
             </div>
+          : undefined}
+        footer={filteredForMonth.length > 0 && <div>
+          <Pagination total={filteredForMonth.length} page={page} pageSize={pageSize}
+            onPage={setPage} onPageSize={s => { setPageSize(s); setPage(1) }} />
+        </div>}>
+        {filteredForMonth.slice((page - 1) * pageSize, page * pageSize).map((t, i) => {
+          const c = CAT_COLORS[t.category] ?? '#16A34A'
+          const account = accounts.find((a: any) => a.id === t.account_id)?.name ?? null
+          const lSym = t.currency === 'AED' ? 'AED ' : '₹'
+          return (
+            <ListRow key={t.id ?? i} color={c} title={t.merchant} tag={t.category} meta={fmtDay(t.txn_date)}
+              sub={[account, t._autoNro ? 'via NRE → NRO, managed in Transfers' : null].filter(Boolean).join(' · ') || undefined}
+              amount={`+${lSym}${Number(t.amount).toLocaleString('en-IN')}`} amountColor="#16A34A"
+              amountSub={t.currency === 'AED' && view !== 'uae' ? `≈ ₹${Math.round(Number(t.amount) * FX).toLocaleString('en-IN')}` : undefined}
+              href={t._autoNro ? '/dashboard/transfers' : undefined}
+              onOpen={t._autoNro ? undefined : () => openEdit(t)}
+              actions={t._autoNro ? [] : [
+                { label: 'Edit', icon: Pencil, onClick: () => openEdit(t) },
+                { label: 'Duplicate', icon: Copy, onClick: () => openDuplicate(t) },
+                { label: 'Delete', icon: Trash2, onClick: () => deleteTxn(t.id), danger: true, disabled: deletingId === t.id },
+              ]} />
+          )
+        })}
+      </ListCard>
 
-            {/* Mobile card list */}
-            <div className="md:hidden divide-y" style={{ borderColor:'var(--border)' }}>
-              {filteredForMonth.slice((page-1)*pageSize, page*pageSize).map((t, i) => {
-                const c = CAT_COLORS[t.category] ?? '#16A34A'
-                const account = accounts.find((a:any) => a.id === t.account_id)?.name ?? null
-                return (
-                  <div key={i} className="px-3 py-3 active:bg-stone-50">
-                    <div className="min-w-0" onClick={() => { if (!t._autoNro) openEdit(t) }}>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-semibold text-[13px] truncate" style={{ color:'var(--text)' }}>{t.merchant}</span>
-                        <span className="font-bold font-mono text-[13px] flex-shrink-0" style={{ color:'var(--income)' }}>+{t.currency === 'AED' ? 'AED ' : '₹'}{Number(t.amount).toLocaleString('en-IN')}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ background:c+'18', color:c }}>{t.category}</span>
-                        <span className="text-[10px] font-mono" style={{ color:'var(--text3)' }}>{t.txn_date}</span>
-                        {account && <span className="text-[10px] truncate" style={{ color:'var(--text3)' }}>· {account}</span>}
-                        {t._autoNro && <span className="text-[9px]" style={{ color:'var(--text3)' }}>· via NRE→NRO</span>}
-                      </div>
-                    </div>
-                    {!t._autoNro && (
-                    <div className="flex items-center justify-end gap-2 mt-2">
-                      <button onClick={() => openEdit(t)} className="p-2 rounded-lg" style={{ color:'var(--blue)', background:'var(--bg2)' }} aria-label="Edit"><Pencil size={14} /></button>
-                      <button onClick={() => openDuplicate(t)} className="p-2 rounded-lg" style={{ color:'var(--text3)', background:'var(--bg2)' }} aria-label="Duplicate"><Copy size={14} /></button>
-                      <button onClick={() => deleteTxn(t.id)} disabled={deletingId === t.id} className="p-2 rounded-lg disabled:opacity-40" style={{ color:'var(--rose)', background:'var(--bg2)' }} aria-label="Delete"><Trash2 size={14} /></button>
-                    </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-            <Pagination
-              total={filteredForMonth.length}
-              page={page}
-              pageSize={pageSize}
-              onPage={setPage}
-              onPageSize={s => { setPageSize(s); setPage(1) }}
-            />
-          </>
-        )}
-      </div>
-
-      {/* UAE → India Remittances (NRI view) */}
+      {/* UAE → India remittances (NRI view) */}
       {(() => {
         const remittances = transfers.filter(t => inRange(t.txn_date))
         if (remittances.length === 0 || view === 'uae') return null
-        const totalINR = remittances.reduce((a, t) =>
-          a + (t.currency === 'AED' ? Number(t.amount) * FX : Number(t.amount)), 0)
-        const totalAED = remittances
-          .filter(t => t.currency === 'AED')
-          .reduce((a, t) => a + Number(t.amount), 0)
+        const totalINR = remittances.reduce((a, t) => a + (t.currency === 'AED' ? Number(t.amount) * FX : Number(t.amount)), 0)
+        const totalAED = remittances.filter(t => t.currency === 'AED').reduce((a, t) => a + Number(t.amount), 0)
         return (
-          <div className="wl-card max-md:order-10 overflow-hidden">
-            <div className="px-4 py-3 border-b flex items-center justify-between"
-              style={{ borderColor: 'var(--border)', background: '#EFF6FF' }}>
-              <div>
-                <div className="text-[13px] font-bold flex items-center gap-1.5" style={{ color: '#1D4ED8' }}>
-                  ✈️ UAE → India Remittances
-                </div>
-                <div className="text-[10px] mt-0.5" style={{ color: '#6B86C5' }}>
-                  International transfers sent to India · {rangeLabel}
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-[14px] font-black font-mono" style={{ color: '#1D4ED8' }}>
-                  ₹{Math.round(totalINR).toLocaleString('en-IN')}
-                </div>
-                {totalAED > 0 && (
-                  <div className="text-[10px] font-mono" style={{ color: '#6B86C5' }}>
-                    AED {totalAED.toLocaleString('en-IN')} sent
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-[11px]">
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg2)' }}>
-                    {['Date','Label','Amount','INR Equiv','Recipient'].map(h => (
-                      <th key={h} className="px-4 py-2.5 text-left text-[9px] uppercase tracking-wider font-bold"
-                        style={{ color: 'var(--text3)' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {remittances.map((t, i) => (
-                    <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}
-                      className="hover:bg-blue-50 transition-colors">
-                      <td className="px-4 py-2.5 font-mono text-[10px]" style={{ color: 'var(--text3)' }}>{t.txn_date}</td>
-                      <td className="px-4 py-2.5 font-semibold" style={{ color: 'var(--text)' }}>{t.merchant}</td>
-                      <td className="px-4 py-2.5 font-mono font-bold" style={{ color: '#2563EB' }}>
-                        {t.currency === 'AED'
-                          ? `AED ${Number(t.amount).toLocaleString('en-IN')}`
-                          : `₹${Number(t.amount).toLocaleString('en-IN')}`}
-                      </td>
-                      <td className="px-4 py-2.5 font-mono font-semibold" style={{ color: 'var(--income)' }}>
-                        {t.currency === 'AED'
-                          ? `₹${Math.round(Number(t.amount) * FX).toLocaleString('en-IN')}`
-                          : '—'}
-                      </td>
-                      <td className="px-4 py-2.5 text-[10px]" style={{ color: 'var(--text3)' }}>
-                        {t.description || '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <ListCard className="max-md:order-10" title="UAE → India remittances" sub={`Money sent home · ${rangeLabel}`}
+            head={['Transfer', 'Type', 'Date', 'Amount']}
+            right={<div className="text-right">
+              <div className="text-[15px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>₹{Math.round(totalINR).toLocaleString('en-IN')}</div>
+              {totalAED > 0 && <div className="text-[11px] tabular-nums" style={{ color: 'var(--text3)' }}>AED {totalAED.toLocaleString('en-IN')} sent</div>}
+            </div>}>
+            {remittances.map((t, i) => (
+              <ListRow key={t.id ?? i} color="#2563EB" title={t.merchant} tag="Remittance" meta={fmtDay(t.txn_date)}
+                sub={t.description || undefined} href="/dashboard/transfers"
+                amount={t.currency === 'AED' ? `AED ${Number(t.amount).toLocaleString('en-IN')}` : `₹${Number(t.amount).toLocaleString('en-IN')}`}
+                amountSub={t.currency === 'AED' ? `≈ ₹${Math.round(Number(t.amount) * FX).toLocaleString('en-IN')}` : undefined} />
+            ))}
+          </ListCard>
         )
       })()}
 
