@@ -16,5 +16,10 @@ export default async function CardsPage() {
         .eq('user_id', uid).in('account_id', ids).gte('txn_date', `${from.toISOString().slice(0, 7)}-01`).limit(5000)
     : { data: [] }
 
-  return <CardsClient cards={cards} txns={txns ?? []} />
+  // Saved card details (migration 025); a missing table just means none yet
+  const { data: details } = ids.length
+    ? await supabase.from('account_details').select('*').in('account_id', ids)
+    : { data: [] }
+
+  return <CardsClient cards={cards} txns={txns ?? []} details={details ?? []} />
 }

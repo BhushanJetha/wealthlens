@@ -7,7 +7,8 @@ import { Building2, Plus, Pencil, Trash2, Loader2 } from 'lucide-react'
 import MetricCard from '@/components/dashboard/MetricCard'
 import AddAccountModal from '@/components/forms/AddAccountModal'
 import { PageHeader, InsightBar, AiActions, LearnStrip, HeroStat, KpiTile, Bars, Donut, ProgressRow, EmptyState, PALETTE } from '@/components/ui/kit'
-import { ListCard, ListRow } from '@/components/ui/list'
+import { AccountCardFace } from '@/components/ui/BankCards'
+import AccountDetailsSheet from '@/components/forms/AccountDetailsSheet'
 import { fmtCompact } from '@/lib/format'
 import { Wallet, Landmark, Coins, Layers } from 'lucide-react'
 
@@ -17,11 +18,13 @@ const TYPE_COLORS: Record<string, string> = {
 }
 
 
-export default function BankAccountsClient({ accounts }: { accounts: any[] }) {
+export default function BankAccountsClient({ accounts, details = [] }: { accounts: any[]; details?: any[] }) {
   const [showAdd,      setShowAdd]      = useState(false)
   const [editAccount,  setEditAccount]  = useState<any | null>(null)
   const [deleteId,     setDeleteId]     = useState<string | null>(null)
   const [deleting,     setDeleting]     = useState(false)
+  const [openAcc,      setOpenAcc]      = useState<any | null>(null)
+  const detailsOf = (id: string) => details.find((d: any) => d.account_id === id) ?? null
   const { view, fxRate: FX } = useViewStore()
   const router   = useRouter()
   const supabase = createClient()
@@ -110,26 +113,37 @@ export default function BankAccountsClient({ accounts }: { accounts: any[] }) {
           <KpiTile label="Accounts" value={String(filtered.length)} delta={`${new Set(filtered.map(a => a.account_type)).size} type(s)`} tint={3} icon={Layers} />
         </div>
 
-        <ListCard className="max-md:order-7" title="Your accounts" sub={`${filtered.length} account${filtered.length === 1 ? '' : 's'}`}
-          head={['Account', 'Type', 'Country', 'Balance']}>
-          {filtered.map((acc: any) => {
-            const l = acc.currency === 'AED' ? 'AED ' : '₹'
-            const type = String(acc.account_type ?? 'savings').replace('_', ' ')
-            return (
-              <ListRow key={acc.id} color={TYPE_COLORS[acc.account_type] ?? '#64748B'} initial={<Building2 size={16} />} title={acc.name}
-                sub={[acc.bank_name, acc.last_four ? `••••${acc.last_four}` : null].filter(Boolean).join(' · ')}
-                tag={type[0].toUpperCase() + type.slice(1)} meta={acc.country ?? (acc.currency === 'AED' ? 'UAE' : 'India')}
-                amount={`${l}${bal(acc).toLocaleString('en-IN')}`}
-                amountSub={view === 'consolidated' && acc.currency === 'AED' ? `≈ ₹${Math.round(toConv(bal(acc), 'AED')).toLocaleString('en-IN')}` : undefined}
-                onOpen={() => setEditAccount(acc)}
-                actions={[
-                  { label: 'Edit', icon: Pencil, onClick: () => setEditAccount(acc) },
-                  { label: 'Remove', icon: Trash2, onClick: () => setDeleteId(acc.id), danger: true },
-                ]} />
-            )
-          })}
-        </ListCard>
+        {/* Your accounts as bank cards — tap one for its bank details */}
+        <section className="max-md:order-7 flex flex-col gap-2.5 md:gap-3">
+          <div className="flex items-baseline justify-between gap-2 px-0.5">
+            <h2 className="text-[15px] md:text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Your accounts</h2>
+            <span className="text-[12px]" style={{ color: 'var(--text3)' }}>Tap an account for its details</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4">
+            {[...filtered].sort((a, b) => toConv(bal(b), b.currency) - toConv(bal(a), a.currency)).map((acc: any) => {
+              const l = acc.currency === 'AED' ? 'AED ' : '₹'
+              const sub = view === 'consolidated' && acc.currency === 'AED' ? `≈ ₹${Math.round(toConv(bal(acc), 'AED')).toLocaleString('en-IN')}` : (acc.country ?? (acc.currency === 'AED' ? 'UAE' : 'India'))
+              return (
+                <button key={acc.id} onClick={() => setOpenAcc(acc)} className="group text-left rounded-[18px] transition-transform focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+                  aria-label={`${acc.name}: ${l}${bal(acc).toLocaleString('en-IN')}. Open details`}>
+                  <AccountCardFace account={acc} details={detailsOf(acc.id)} balance={`${l}${bal(acc).toLocaleString(acc.currency === 'AED' ? 'en-US' : 'en-IN')}`} sub={sub}
+                    className="transition-shadow group-hover:shadow-xl" />
+                </button>
+              )
+            })}
+          </div>
+        </section>
       </>)}
+
+      {openAcc && (() => {
+        const a = openAcc, l = a.currency === 'AED' ? 'AED ' : '₹'
+        const type = String(a.account_type ?? 'savings').replace('_', ' ')
+        return <AccountDetailsSheet account={a} details={detailsOf(a.id)} isCard={false}
+          face={<AccountCardFace account={a} details={detailsOf(a.id)} balance={`${l}${bal(a).toLocaleString(a.currency === 'AED' ? 'en-US' : 'en-IN')}`} />}
+          facts={[['Balance', `${l}${bal(a).toLocaleString(a.currency === 'AED' ? 'en-US' : 'en-IN')}`], ['Type', type[0].toUpperCase() + type.slice(1)],
+            ['Bank', a.bank_name || '—'], ['Country', a.country ?? (a.currency === 'AED' ? 'UAE' : 'India')]]}
+          onClose={() => setOpenAcc(null)} onEdit={() => { setOpenAcc(null); setEditAccount(a) }} onDelete={() => { setOpenAcc(null); setDeleteId(a.id) }} />
+      })()}
 
       {/* Modals */}
       {showAdd && (

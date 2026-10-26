@@ -8,7 +8,8 @@ import MetricCard from '@/components/dashboard/MetricCard'
 import { CreditCard, Plus, AlertTriangle, Clock, Pencil, Trash2, BookOpen, Loader2 } from 'lucide-react'
 import AddAccountModal from '@/components/forms/AddAccountModal'
 import { PageHeader, InsightBar, AiActions, LearnStrip, HeroStat, KpiTile, Bars, ProgressRow, EmptyState } from '@/components/ui/kit'
-import { ListCard, ListRow } from '@/components/ui/list'
+import { CreditCardFace } from '@/components/ui/BankCards'
+import AccountDetailsSheet from '@/components/forms/AccountDetailsSheet'
 import { addMonths, fmtDay } from '@/lib/insights'
 import { fmtCompact } from '@/lib/format'
 import { Gauge, CalendarClock, Wallet } from 'lucide-react'
@@ -18,7 +19,7 @@ function toINR(amt: number, cur: string, fx: number) { return cur === 'AED' ? am
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const utilColor = (u: number) => u > 50 ? '#DC2626' : u > 30 ? '#D97706' : '#16A34A'
 
-export default function CardsClient({ cards, txns = [] }: { cards: any[]; txns?: any[] }) {
+export default function CardsClient({ cards, txns = [], details = [] }: { cards: any[]; txns?: any[]; details?: any[] }) {
   const { view, fxRate: FX } = useViewStore()
   const router = useRouter()
   const supabase = createClient()
@@ -27,6 +28,8 @@ export default function CardsClient({ cards, txns = [] }: { cards: any[]; txns?:
   const [editCard, setEditCard]   = useState<any | null>(null)
   const [deleteId, setDeleteId]   = useState<string | null>(null)
   const [deleting, setDeleting]   = useState(false)
+  const [openCard, setOpenCard]   = useState<any | null>(null)
+  const detailsOf = (id: string) => details.find((d: any) => d.account_id === id) ?? null
 
   const filtered = view === 'uae'   ? cards.filter(c => c.currency === 'AED')
     : view === 'india' ? cards.filter(c => c.currency === 'INR') : cards
@@ -121,29 +124,49 @@ export default function CardsClient({ cards, txns = [] }: { cards: any[]; txns?:
           <KpiTile label="Credit limit" value={short(totalLimit)} delta={`${short(Math.max(totalLimit - totalBal, 0))} available`} tint={1} icon={Wallet} />
         </div>
 
-        <ListCard className="max-md:order-7" title="Your cards" sub={`${filtered.length} card${filtered.length === 1 ? '' : 's'}`}
-          head={['Card', 'Utilisation', 'Due', 'Outstanding']}>
-          {filtered.map((c: any) => {
-            const u = Number(c.credit_limit) > 0 ? Math.round(Number(c.outstanding_bal) / Number(c.credit_limit) * 100) : 0
-            const l = c.currency === 'AED' ? 'AED ' : '₹'
-            const d = dueOf(c)
-            const days = d ? Math.ceil((new Date(d).getTime() - today.getTime()) / 86400000) : null
-            return (
-              <ListRow key={c.id} color={utilColor(u)} initial={<CreditCard size={16} />} title={c.name}
-                sub={[c.bank_name, c.country, c.last_four ? `•••• ${c.last_four}` : null].filter(Boolean).join(' · ')}
-                tag={`${u}% used`} meta={d ? `${fmtDay(d)}${days != null && days <= 7 ? ` · ${days}d` : ''}` : '—'}
-                metaColor={days != null && days <= 5 ? '#DC2626' : undefined}
-                amount={`${l}${Number(c.outstanding_bal ?? 0).toLocaleString('en-IN')}`}
-                amountSub={Number(c.minimum_due) > 0 ? `min ${l}${Number(c.minimum_due).toLocaleString('en-IN')}` : undefined}
-                onOpen={() => setEditCard(c)}
-                actions={[
-                  { label: 'Edit', icon: Pencil, onClick: () => setEditCard(c) },
-                  { label: 'Delete', icon: Trash2, onClick: () => setDeleteId(c.id), danger: true },
-                ]} />
-            )
-          })}
-        </ListCard>
+        {/* Your cards, drawn like the real thing — tap one for its details */}
+        <section className="max-md:order-7 flex flex-col gap-2.5 md:gap-3">
+          <div className="flex items-baseline justify-between gap-2 px-0.5">
+            <h2 className="text-[15px] md:text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Your cards</h2>
+            <span className="text-[12px]" style={{ color: 'var(--text3)' }}>Tap a card for its details</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4">
+            {filtered.map((c: any) => {
+              const u = Number(c.credit_limit) > 0 ? Math.round(Number(c.outstanding_bal) / Number(c.credit_limit) * 100) : 0
+              const l = c.currency === 'AED' ? 'AED ' : '₹'
+              const d = dueOf(c)
+              const days = d ? Math.ceil((new Date(d).getTime() - today.getTime()) / 86400000) : null
+              return (
+                <button key={c.id} onClick={() => setOpenCard(c)} className="group text-left wl-card p-3 md:p-3.5 transition-shadow hover:shadow-lg"
+                  aria-label={`${c.name}: ${l}${Number(c.outstanding_bal ?? 0).toLocaleString('en-IN')} outstanding. Open details`}>
+                  <CreditCardFace card={c} details={detailsOf(c.id)} />
+                  <div className="px-1 pt-3">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-[12px]" style={{ color: 'var(--text3)' }}>Outstanding</span>
+                      <span className="text-[16px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{l}{Number(c.outstanding_bal ?? 0).toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="h-1.5 rounded-full mt-1.5" style={{ background: 'var(--track)' }}><div className="h-full rounded-full" style={{ width: `${Math.min(Math.max(u, 2), 100)}%`, background: utilColor(u) }} /></div>
+                    <div className="flex justify-between gap-2 text-[11.5px] mt-1.5">
+                      <span style={{ color: utilColor(u) }}>{u}% of {l}{Number(c.credit_limit ?? 0).toLocaleString('en-IN')} used</span>
+                      <span style={{ color: days != null && days <= 5 ? '#DC2626' : 'var(--text3)' }}>{d ? `Due ${fmtDay(d)}${days != null && days <= 7 ? ` · ${days}d` : ''}` : 'No due date'}</span>
+                    </div>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </section>
       </>)}
+
+      {openCard && (() => {
+        const c = openCard, l = c.currency === 'AED' ? 'AED ' : '₹', d = dueOf(c)
+        const lim = Number(c.credit_limit) || 0, bal = Number(c.outstanding_bal) || 0
+        const fmtN = (n: number) => `${l}${Math.round(n).toLocaleString('en-IN')}`
+        return <AccountDetailsSheet account={c} details={detailsOf(c.id)} isCard face={<CreditCardFace card={c} details={detailsOf(c.id)} />}
+          facts={[['Outstanding', fmtN(bal)], ['Credit limit', lim ? fmtN(lim) : '—'], ['Available', lim ? fmtN(Math.max(lim - bal, 0)) : '—'],
+            ['Minimum due', Number(c.minimum_due) > 0 ? fmtN(Number(c.minimum_due)) : '—'], ['Due date', d ? fmtDay(d) : '—'], ['Used', lim ? `${Math.round(bal / lim * 100)}%` : '—']]}
+          onClose={() => setOpenCard(null)} onEdit={() => { setOpenCard(null); setEditCard(c) }} onDelete={() => { setOpenCard(null); setDeleteId(c.id) }} />
+      })()}
 
       {/* Add modal */}
       {showAdd && <AddAccountModal onClose={() => setShowAdd(false)} type="credit_card" />}
