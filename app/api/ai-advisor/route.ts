@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import type Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
+import { fetchAll } from '@/lib/supabase/fetchAll'
 import { askClaude, aiErrorResponse } from '@/lib/ai/claude'
 import { computeNetWorth, type Holdings } from '@/lib/netWorth'
 import { buildHomeInsights } from '@/lib/insights'
@@ -65,8 +66,8 @@ async function buildContext(supabase: ReturnType<typeof createClient>, uid: stri
     return active ? b.eq('is_active', true) : b
   }
   const [txnsRes, loans, accs, stocks, mfs, fds, policies, goals, budgets, rds, nps, lic, gold, bonds, etf, ppf, profile, fx] = await Promise.all([
-    supabase.from('transactions').select('id,account_id,txn_date,merchant,category,sub_category,amount,currency,txn_type')
-      .eq('user_id', uid).gte('txn_date', fromDate).order('txn_date', { ascending: false }).limit(3000),
+    fetchAll((a, b) => supabase.from('transactions').select('id,account_id,txn_date,merchant,category,sub_category,amount,currency,txn_type')
+      .eq('user_id', uid).gte('txn_date', fromDate).order('txn_date', { ascending: false }).order('id').range(a, b)),
     q('home_loans', true), q('accounts', true), q('stocks'), q('mutual_funds'), q('fixed_deposits', true),
     q('insurance_policies', true), q('goals'), supabase.from('budgets').select('*').eq('user_id', uid).gte('month_year', fromDate.slice(0, 7)),
     q('recurring_deposits', true), q('nps_accounts'), q('lic_policies', true), q('gold_investments'),

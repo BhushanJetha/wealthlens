@@ -132,7 +132,7 @@ export async function withLedgerBalances(supabase: any, userId: string, accounts
     for (let i = 0; i < 10; i++) {
       let q = supabase.from('transactions').select(sel).eq('user_id', userId)
       if (since) q = q.gte('txn_date', since)
-      const { data, error } = await q.order('txn_date', { ascending: true }).range(i * 1000, i * 1000 + 999)
+      const { data, error } = await q.order('txn_date', { ascending: true }).order('id').range(i * 1000, i * 1000 + 999)
       if (error) return { rows, error }
       rows.push(...(data ?? []))
       if (!data || data.length < 1000) break

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { fetchAll } from '@/lib/supabase/fetchAll'
 import { activeAccountsWithLedger } from '@/lib/ledger'
 import { getAedInr } from '@/lib/fx'
 import NetWorthClient from '@/components/dashboard/NetWorthClient'
@@ -29,8 +30,8 @@ export default async function NetWorthPage() {
     'Bonds': supabase.from('bond_investments').select('*').eq('user_id', uid),
     'LIC': supabase.from('lic_policies').select('*').eq('user_id', uid).eq('is_active', true),
     'Loans': supabase.from('home_loans').select('*').eq('user_id', uid).eq('is_active', true),
-    'Transactions': supabase.from('transactions').select('txn_type,amount,currency,txn_date,category,sub_category,merchant')
-      .eq('user_id', uid).gte('txn_date', fromDate).order('txn_date', { ascending: true }).limit(5000),
+    'Transactions': fetchAll((a, b) => supabase.from('transactions').select('txn_type,amount,currency,txn_date,category,sub_category,merchant')
+      .eq('user_id', uid).gte('txn_date', fromDate).order('txn_date', { ascending: true }).order('id').range(a, b)),
     'History': supabase.from('net_worth_snapshots').select('snap_date,fx,uae_assets,uae_liab,india_assets,india_liab,breakdown')
       .eq('user_id', uid).gte('snap_date', histFrom).order('snap_date', { ascending: true }),
   }

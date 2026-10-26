@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { fetchAll } from '@/lib/supabase/fetchAll'
 import IncomeReportClient from '@/components/dashboard/IncomeReportClient'
 
 export default async function IncomeReportPage() {
@@ -7,12 +8,12 @@ export default async function IncomeReportPage() {
   const uid = user!.id
 
   const [incomeRes, transfersRes] = await Promise.all([
-    supabase.from('transactions').select('*')
+    fetchAll((a, b) => supabase.from('transactions').select('*')
       .eq('user_id', uid).eq('txn_type', 'income')
-      .order('txn_date', { ascending: true }),
-    supabase.from('transactions').select('*')
+      .order('txn_date', { ascending: true }).order('id').range(a, b)),
+    fetchAll((a, b) => supabase.from('transactions').select('*')
       .eq('user_id', uid).eq('txn_type', 'transfer')
-      .order('txn_date', { ascending: true }).limit(2000),
+      .order('txn_date', { ascending: true }).order('id').range(a, b)),
   ])
 
   // Transfers come along so UAE → India remittances can be paired into

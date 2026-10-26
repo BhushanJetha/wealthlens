@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { fetchAll } from '@/lib/supabase/fetchAll'
 import { activeLoansWithEmi } from '@/lib/loans'
 import CashFlowClient from '@/components/dashboard/CashFlowClient'
 
@@ -13,10 +14,10 @@ export default async function CashFlowPage() {
   const [accountsRes, loansRes, txnsRes] = await Promise.all([
     supabase.from('accounts').select('*').eq('user_id', uid).eq('is_active', true),
     activeLoansWithEmi(supabase, uid),
-    supabase.from('transactions')
+    fetchAll((a, b) => supabase.from('transactions')
       .select('merchant,category,amount,currency,txn_date,txn_type')
       .eq('user_id', uid).gte('txn_date', sinceDate)
-      .order('txn_date', { ascending: true }).limit(5000),
+      .order('txn_date', { ascending: true }).order('id').range(a, b)),
   ])
 
   return (

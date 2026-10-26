@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { fetchAll } from '@/lib/supabase/fetchAll'
 import { activeLoansWithEmi } from '@/lib/loans'
 
 const FX = 22.80
@@ -15,9 +16,9 @@ export async function GET() {
   const [loansRes, insRes, txnsRes, cardsRes] = await Promise.all([
     activeLoansWithEmi(supabase, user.id),
     supabase.from('insurance_policies').select('*').eq('user_id', user.id).eq('is_active', true),
-    supabase.from('transactions').select('amount,currency,txn_date,category').eq('user_id', user.id)
+    fetchAll((a, b) => supabase.from('transactions').select('amount,currency,txn_date,category').eq('user_id', user.id)
       .gte('txn_date', new Date(Date.now() - 90*24*60*60*1000).toISOString().slice(0,10))
-      .eq('txn_type', 'expense'),
+      .eq('txn_type', 'expense').order('txn_date').order('id').range(a, b)),
     supabase.from('accounts').select('*').eq('user_id', user.id).eq('account_type', 'credit_card').eq('is_active', true),
   ])
 

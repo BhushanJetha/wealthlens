@@ -2,6 +2,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { fetchAll } from '@/lib/supabase/fetchAll'
 import { buildCategoryMemory } from '@/lib/categoryMemory'
 import { useViewStore } from '@/store/viewStore'
 import { useCategoryStore } from '@/store/categoryStore'
@@ -157,13 +158,14 @@ export default function BankStatementUploadModal({ onClose }: Props) {
       let dupCount = 0
       if (rawTxns.length > 0 && user) {
         const dates   = rawTxns.map(t => t.date).sort()
-        const { data: existing } = await supabase
+        const { data: existing } = await fetchAll((a, b) => supabase
           .from('transactions')
           .select('txn_date, merchant, amount')
           .eq('user_id', user.id)
           .eq('currency', data.currency)
           .gte('txn_date', dates[0])
           .lte('txn_date', dates[dates.length - 1])
+          .order('txn_date').order('id').range(a, b))
 
         // Match on date + amount only — robust to merchant-name differences
         // (e.g. a leading date that used to be kept), re-categorisation and edits.

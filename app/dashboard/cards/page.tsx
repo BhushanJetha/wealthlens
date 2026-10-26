@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { fetchAll } from '@/lib/supabase/fetchAll'
 import { activeAccountsWithLedger } from '@/lib/ledger'
 import { getAedInr } from '@/lib/fx'
 import CardsClient from '@/components/dashboard/CardsClient'
@@ -16,8 +17,8 @@ export default async function CardsPage() {
   const from = new Date(); from.setUTCMonth(from.getUTCMonth() - 5)
   const ids = cards.map(c => c.id)
   const { data: txns } = ids.length
-    ? await supabase.from('transactions').select('account_id,amount,currency,txn_date,txn_type,category')
-        .eq('user_id', uid).in('account_id', ids).gte('txn_date', `${from.toISOString().slice(0, 7)}-01`).limit(5000)
+    ? await fetchAll((a, b) => supabase.from('transactions').select('account_id,amount,currency,txn_date,txn_type,category')
+        .eq('user_id', uid).in('account_id', ids).gte('txn_date', `${from.toISOString().slice(0, 7)}-01`).order('txn_date').order('id').range(a, b))
     : { data: [] }
 
   // Saved card details (migration 025); a missing table just means none yet

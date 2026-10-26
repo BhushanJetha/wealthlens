@@ -4,6 +4,8 @@
 // apart) it remembers the category they most often chose, then auto-applies it to
 // matching merchants in a freshly-parsed statement.
 
+import { fetchAll } from '@/lib/supabase/fetchAll'
+
 // Normalise a merchant for matching: drop any embedded date tokens (so a stray
 // "27/02/2026 POS Calicut" matches a clean "POS Calicut"), then keep alphanumerics.
 export const normMerchant = (s: unknown) => String(s ?? '')
@@ -25,13 +27,13 @@ export interface CategoryMemory {
 export async function buildCategoryMemory(supabase: any, userId: string): Promise<CategoryMemory> {
   let data: any[] = []
   try {
-    const res = await supabase
+    const res = await fetchAll((a: number, b: number) => supabase
       .from('transactions')
       .select('merchant, category, txn_type')
       .eq('user_id', userId)
       .not('category', 'is', null)
       .order('txn_date', { ascending: false })
-      .limit(4000)
+      .order('id').range(a, b), 4)
     data = res.data ?? []
   } catch { data = [] }
 

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { fetchAll } from '@/lib/supabase/fetchAll'
 import ExpensesClient from '@/components/dashboard/ExpensesClient'
 import { markUnitemisedCardBills } from '@/lib/money'
 
@@ -7,7 +8,7 @@ export default async function ExpensesPage() {
   const { data: { user } } = await supabase.auth.getUser()
 
   const [txnsRes, accsRes] = await Promise.all([
-    supabase.from('transactions').select('*').eq('user_id', user!.id).in('txn_type', ['expense','transfer','loan']).order('txn_date', { ascending: false }).limit(5000),
+    fetchAll((a, b) => supabase.from('transactions').select('*').eq('user_id', user!.id).in('txn_type', ['expense','transfer','loan']).order('txn_date', { ascending: false }).order('id').range(a, b)),
     supabase.from('accounts').select('id,name,bank_name,account_type').eq('user_id', user!.id),
   ])
 

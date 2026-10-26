@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { fetchAll } from '@/lib/supabase/fetchAll'
 import InvestmentsClient from '@/components/dashboard/InvestmentsClient'
 
 export default async function InvestmentsPage() {
@@ -36,13 +37,13 @@ export default async function InvestmentsPage() {
     supabase.from('bond_investments').select('*').eq('user_id', user!.id),
     supabase.from('etf_investments').select('*').eq('user_id', user!.id),
     supabase.from('ppf_epf_accounts').select('*').eq('user_id', user!.id),
-    supabase.from('transactions')
+    fetchAll((a, b) => supabase.from('transactions')
       .select('txn_date, amount, currency, country, txn_type, category')
       .eq('user_id', user!.id)
       .in('txn_type', ['income', 'expense'])
       .gte('txn_date', cutoff)
       .order('txn_date', { ascending: false })
-      .limit(500),
+      .order('id').range(a, b)),
     supabase.from('goal_investments').select('*').eq('user_id', user!.id),
     supabase.from('goals').select('id, name, icon, color, category, target_amount, target_date, status').eq('user_id', user!.id).eq('status', 'active'),
     supabase.from('family_members').select('id, name, relationship').eq('user_id', user!.id).eq('is_active', true).order('created_at'),

@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { fetchAllRows } from '@/lib/supabase/fetchAll'
 import { withLedgerBalances } from '@/lib/ledger'
 import { activeLoansWithEmi } from '@/lib/loans'
 import DashboardClient from '@/components/dashboard/DashboardClient'
@@ -7,19 +8,6 @@ import { computeNetWorth, groupAssets, NW_RULES, type Holdings } from '@/lib/net
 import { getAedInr } from '@/lib/fx'
 import { isMissingTable } from '@/lib/supabase/missingTable'
 import { goalInterestsOf } from '@/lib/goalInterests'
-
-// PostgREST caps a response at 1000 rows — page through so 13 months of
-// transactions are never silently truncated.
-async function fetchAllRows(page: (from: number, to: number) => any): Promise<any[]> {
-  const out: any[] = []
-  for (let i = 0; i < 5; i++) {
-    const { data, error } = await page(i * 1000, i * 1000 + 999)
-    if (error || !data) break
-    out.push(...data)
-    if (data.length < 1000) break
-  }
-  return out
-}
 
 export default async function DashboardPage() {
   const supabase = createClient()
@@ -38,7 +26,7 @@ export default async function DashboardPage() {
     fetchAllRows((a, b) => supabase.from('transactions')
       .select('id,account_id,txn_date,merchant,category,sub_category,amount,currency,txn_type')
       .eq('user_id', uid).gte('txn_date', fromDate)
-      .order('txn_date', { ascending: false }).range(a, b)),
+      .order('txn_date', { ascending: false }).order('id').range(a, b)),
     activeLoansWithEmi(supabase, uid),
     supabase.from('accounts').select('*').eq('user_id', uid).eq('is_active', true),
     supabase.from('stocks').select('*').eq('user_id', uid),

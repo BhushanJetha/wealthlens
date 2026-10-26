@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { fetchAll } from '@/lib/supabase/fetchAll'
 import BudgetsClient from '@/components/dashboard/BudgetsClient'
 
 export default async function BudgetsPage() {
@@ -16,22 +17,20 @@ export default async function BudgetsPage() {
 
   const [budgetsRes, txnsRes, incomeRes] = await Promise.all([
     supabase.from('budgets').select('*').eq('user_id', user!.id).eq('month_year', thisMonth),
-    supabase.from('transactions')
+    fetchAll((a, b) => supabase.from('transactions')
       .select('category,amount,currency,txn_date,merchant,txn_type,sub_category')
       .eq('user_id', user!.id)
       .in('txn_type', ['expense', 'transfer', 'loan'])
       .gte('txn_date', yearStart)
       .lte('txn_date', yearEnd)
-      .order('txn_date', { ascending: true })
-      .limit(5000),
-    supabase.from('transactions')
+      .order('txn_date', { ascending: true }).order('id').range(a, b)),
+    fetchAll((a, b) => supabase.from('transactions')
       .select('id,amount,currency,txn_date,category,txn_type')
       .eq('user_id', user!.id)
       .eq('txn_type', 'income')
       .gte('txn_date', incomeStart)
       .lte('txn_date', yearEnd)
-      .order('txn_date', { ascending: true })
-      .limit(5000),
+      .order('txn_date', { ascending: true }).order('id').range(a, b)),
   ])
 
   // Income rows plus transfers: the client keeps what counts as income in the

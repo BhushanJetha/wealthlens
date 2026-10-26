@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { fetchAll } from '@/lib/supabase/fetchAll'
 import { activeLoansWithEmi } from '@/lib/loans'
 import FinancialHealthClient from '@/components/dashboard/FinancialHealthClient'
 import FinancialHealthTabs from '@/components/dashboard/FinancialHealthTabs'
@@ -38,9 +39,9 @@ export default async function FinancialHealthPage() {
     supabase.from('accounts').select('*').eq('user_id', uid).eq('is_active', true),
     supabase.from('insurance_policies').select('policy_type,sum_assured,currency,expiry_date,is_active').eq('user_id', uid).eq('is_active', true),
     supabase.from('ppf_epf_accounts').select('*').eq('user_id', uid),
-    supabase.from('transactions').select('txn_type,amount,currency,txn_date,category,sub_category').eq('user_id', uid)
+    fetchAll((a, b) => supabase.from('transactions').select('txn_type,amount,currency,txn_date,category,sub_category').eq('user_id', uid)
       .in('txn_type', ['income', 'expense', 'transfer']).gte('txn_date', fromDate)
-      .order('txn_date', { ascending: false }).limit(8000),
+      .order('txn_date', { ascending: false }).order('id').range(a, b)),
     supabase.from('financial_profile').select('answers,updated_at').eq('user_id', uid).maybeSingle(),
   ])
 

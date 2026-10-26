@@ -1,16 +1,17 @@
 import { normMerchant } from '@/lib/categoryMemory'
+import { fetchAll } from '@/lib/supabase/fetchAll'
 
 // Finds duplicate transactions (same date + amount + merchant, ignoring any
 // leading date that used to be kept in the merchant name) and deletes all but
 // one per group — keeping the most recently created row (the clean copy).
 // Returns the number of rows removed.
 export async function removeDuplicateTransactions(supabase: any, userId: string): Promise<number> {
-  const { data, error } = await supabase
+  const { data, error } = await fetchAll((a, b) => supabase
     .from('transactions')
     .select('id, txn_date, amount, merchant, created_at')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })   // newest first → newest is kept
-    .limit(20000)
+    .order('id').range(a, b))
 
   if (error || !Array.isArray(data)) return 0
 
