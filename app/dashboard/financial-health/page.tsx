@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { activeLoansWithEmi } from '@/lib/loans'
 import FinancialHealthClient from '@/components/dashboard/FinancialHealthClient'
 import FinancialHealthTabs from '@/components/dashboard/FinancialHealthTabs'
 import FreedomCheckClient from '@/components/dashboard/FreedomCheckClient'
@@ -29,7 +30,7 @@ export default async function FinancialHealthPage() {
     supabase.from('gold_investments').select('*').eq('user_id', uid),
     supabase.from('bond_investments').select('*').eq('user_id', uid),
     supabase.from('etf_investments').select('*').eq('user_id', uid),
-    supabase.from('home_loans').select('*').eq('user_id', uid).eq('is_active', true),
+    activeLoansWithEmi(supabase, uid),
     supabase.from('transactions').select('txn_type,amount,currency,txn_date').eq('user_id', uid)
       .eq('txn_type', 'income').order('txn_date', { ascending: false }).limit(200),
     supabase.from('goals').select('id,name,target_amount,currency').eq('user_id', uid).eq('status', 'active'),

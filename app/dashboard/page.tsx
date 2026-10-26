@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { activeLoansWithEmi } from '@/lib/loans'
 import DashboardClient from '@/components/dashboard/DashboardClient'
 import { computeNetWorth, groupAssets, NW_RULES, type Holdings } from '@/lib/netWorth'
 import { getAedInr } from '@/lib/fx'
@@ -37,7 +38,7 @@ export default async function DashboardPage() {
       .select('id,account_id,txn_date,merchant,category,sub_category,amount,currency,txn_type')
       .eq('user_id', uid).gte('txn_date', fromDate)
       .order('txn_date', { ascending: false }).range(a, b)),
-    supabase.from('home_loans').select('*').eq('user_id', uid).eq('is_active', true),
+    activeLoansWithEmi(supabase, uid),
     supabase.from('accounts').select('*').eq('user_id', uid).eq('is_active', true),
     supabase.from('stocks').select('*').eq('user_id', uid),
     supabase.from('mutual_funds').select('*').eq('user_id', uid),

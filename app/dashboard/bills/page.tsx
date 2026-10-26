@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { activeLoansWithEmi } from '@/lib/loans'
 import BillsClient from '@/components/dashboard/BillsClient'
 
 // PostgREST caps a response at 1000 rows — page through the last 5 months
@@ -27,7 +28,7 @@ export default async function BillsPage() {
       .eq('user_id', uid).eq('txn_type', 'expense').gte('txn_date', fromDate)
       .order('txn_date', { ascending: false }).range(a, b)),
     supabase.from('accounts').select('*').eq('user_id', uid).eq('is_active', true).eq('account_type', 'credit_card'),
-    supabase.from('home_loans').select('*').eq('user_id', uid).eq('is_active', true),
+    activeLoansWithEmi(supabase, uid),
     supabase.from('insurance_policies').select('*').eq('user_id', uid).eq('is_active', true),
   ])
 

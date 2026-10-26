@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
-import { Plus, Upload, Mic, Sparkles, TrendingUp, Wallet, Target, ExternalLink, ArrowDownLeft, ArrowUpRight, PiggyBank, type LucideIcon } from 'lucide-react'
+import { Plus, Upload, Mic, Sparkles, TrendingUp, Wallet, Target, ExternalLink, ArrowDownLeft, ArrowUpRight, PiggyBank, ChevronRight, type LucideIcon } from 'lucide-react'
 import { useViewStore } from '@/store/viewStore'
 import { useUiStore } from '@/store/uiStore'
 import { useHolderStore } from '@/store/holderStore'
@@ -405,12 +405,15 @@ function AttentionCard({ items, onImport, className = '' }: { items: Attention[]
                 <span className="block text-[12px] mt-px" style={{ color: 'var(--text3)' }}>{it.detail}</span>
               </span>
               {(it.action === 'upload' || it.href) && (
-                <span className="hidden md:inline text-[12px] font-semibold whitespace-nowrap" style={{ color: 'var(--accent)' }}>
-                  {it.action === 'upload' ? it.actionLabel : it.actionLabel ?? 'Open'}
-                </span>
+                <>
+                  <span className="hidden md:inline text-[12px] font-semibold whitespace-nowrap" style={{ color: 'var(--accent)' }}>
+                    {it.action === 'upload' ? it.actionLabel : it.actionLabel ?? 'Open'}
+                  </span>
+                  <ChevronRight size={16} className="md:hidden flex-shrink-0 mt-0.5" style={{ color: 'var(--text4)' }} />
+                </>
               )}
             </>)
-            const cls = 'w-full flex gap-2.5 items-start py-[9px] text-left'
+            const cls = 'w-full flex gap-2.5 items-start py-[9px] text-left -mx-2 px-2 rounded-lg hover:bg-[#F5F3FE] transition-colors'
             return (
               <li key={it.id} style={{ borderTop: '1px solid #F1F5F9' }}>
                 {it.action === 'upload' ? <button onClick={onImport} className={cls}>{body}</button>

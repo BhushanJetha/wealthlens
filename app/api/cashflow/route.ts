@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { activeLoansWithEmi } from '@/lib/loans'
 
 const FX = 22.80
 function toINR(amt: number, cur: string) { return cur === 'AED' ? amt * FX : amt }
@@ -12,7 +13,7 @@ export async function GET() {
   const today = new Date()
 
   const [loansRes, insRes, txnsRes, cardsRes] = await Promise.all([
-    supabase.from('home_loans').select('*').eq('user_id', user.id).eq('is_active', true),
+    activeLoansWithEmi(supabase, user.id),
     supabase.from('insurance_policies').select('*').eq('user_id', user.id).eq('is_active', true),
     supabase.from('transactions').select('amount,currency,txn_date,category').eq('user_id', user.id)
       .gte('txn_date', new Date(Date.now() - 90*24*60*60*1000).toISOString().slice(0,10))

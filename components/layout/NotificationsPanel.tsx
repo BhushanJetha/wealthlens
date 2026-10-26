@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Bell, AlertTriangle, Clock, Shield, CheckCircle2, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { activeLoansWithEmi } from '@/lib/loans'
 
 interface Notif {
   id: string
@@ -48,7 +49,7 @@ export default function NotificationsPanel({ round }: { round?: boolean }) {
       const [txnRes, budgetRes, loanRes, insRes] = await Promise.all([
         supabase.from('transactions').select('category,amount,currency').eq('user_id', user.id).gte('txn_date', `${thisMonth}-01`),
         supabase.from('budgets').select('*').eq('user_id', user.id),
-        supabase.from('home_loans').select('name,emi_amount,next_emi_date,currency').eq('user_id', user.id).eq('is_active', true),
+        activeLoansWithEmi(supabase, user.id),
         supabase.from('insurance_policies').select('policy_name,expiry_date').eq('user_id', user.id).eq('is_active', true),
       ])
 

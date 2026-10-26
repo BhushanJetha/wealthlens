@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { activeLoansWithEmi } from '@/lib/loans'
 import TaxClient from '@/components/dashboard/TaxClient'
 import { fyOf } from '@/lib/tax'
 
@@ -17,7 +18,7 @@ export default async function TaxPage() {
     supabase.from('nps_contributions').select('nps_account_id,amount,contribution_date').eq('user_id', uid).gte('contribution_date', fy.start),
     supabase.from('lic_policies').select('*').eq('user_id', uid).eq('is_active', true),
     supabase.from('insurance_policies').select('*').eq('user_id', uid).eq('is_active', true),
-    supabase.from('home_loans').select('*').eq('user_id', uid).eq('is_active', true),
+    activeLoansWithEmi(supabase, uid),
   ])
 
   return <TaxClient input={{

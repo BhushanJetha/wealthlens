@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import LoanDetailClient from '@/components/dashboard/LoanDetailClient'
+import { withPaidEmi } from '@/lib/loans'
 
 export default async function LoanDetailPage({ params }: { params: { id: string } }) {
   const supabase = createClient()
@@ -28,5 +29,7 @@ export default async function LoanDetailPage({ params }: { params: { id: string 
     plan = data ?? []
   } catch { plan = [] }
 
-  return <LoanDetailClient loan={loan} txns={txns} plan={plan} />
+  // EMI shown = the last one actually paid (recorded or from a statement)
+  const [withEmi] = await withPaidEmi(supabase, user.id, [loan])
+  return <LoanDetailClient loan={withEmi} txns={txns} plan={plan} />
 }

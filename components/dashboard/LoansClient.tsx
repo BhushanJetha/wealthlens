@@ -8,22 +8,13 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import AddLoanModal from '@/components/forms/AddLoanModal'
 import { useHolderStore } from '@/store/holderStore'
 import { PageHeader, InsightBar, AiActions, KpiTile, HeroStat, Donut, ProgressRow, LearnStrip } from '@/components/ui/kit'
-import { ListCard, ListRow } from '@/components/ui/list'
+import LoanCard, { LOAN_TYPES, loanTypeOf } from './LoanCard'
 import Link from 'next/link'
 
 function toINR(amt: number, cur: string, fx: number) { return cur === 'AED' ? amt * fx : amt }
 
-// Fixed colour per loan type (colour follows the type)
-const LOAN_CATEGORIES = [
-  { type: 'home_loan',     label: 'Home loan',     color: '#6A55E8', href: '/dashboard/loans/home'     },
-  { type: 'car_loan',      label: 'Car loan',      color: '#3B8EF0', href: '/dashboard/loans/car'      },
-  { type: 'bike_loan',     label: 'Bike loan',     color: '#0891B2', href: '/dashboard/loans/car'      },
-  { type: 'gold_loan',     label: 'Gold loan',     color: '#F29A2E', href: '/dashboard/loans/gold'     },
-  { type: 'loan_on_card',  label: 'Loan on card',  color: '#EC5B8C', href: '/dashboard/loans/card'     },
-  { type: 'personal_loan', label: 'Personal loan', color: '#2FB67C', href: '/dashboard/loans/personal' },
-  { type: 'other_loan',    label: 'Other loan',    color: '#94A3B8', href: '/dashboard/loans/other'    },
-]
-const catOf = (l: any) => LOAN_CATEGORIES.find(c => c.type === (l.loan_type || 'home_loan')) ?? LOAN_CATEGORIES[6]
+const LOAN_CATEGORIES = LOAN_TYPES
+const catOf = loanTypeOf
 
 function fmt(n: number, sym: string) {
   if (Math.abs(n) >= 10000000) return `${sym}${(n/10000000).toFixed(2)}Cr`
@@ -194,36 +185,26 @@ export default function LoansClient({ loans }: { loans: any[]; familyMembers?: a
         <KpiTile label="Debt-free by" value={filtered.length && path.clears ? path.freeBy : '—'} delta={filtered.length ? 'at current EMIs' : 'No loans'} tint={0} icon={Flag} />
       </div>
 
-      {/* Active loans */}
-      <ListCard className="max-md:order-7" title="Active loans" sub={`${filtered.length} loan${filtered.length === 1 ? '' : 's'} · tap one for its payoff plan`}
-        head={['Loan', 'Type', 'Rate · EMI', 'Outstanding']}
-        empty={filtered.length === 0
-          ? <div className="flex flex-col items-center justify-center py-10 gap-3 text-center" style={{ borderTop: '1px solid var(--line)' }}>
-              <Landmark size={28} style={{ color: 'var(--border2)' }} />
-              <div className="text-[13px]" style={{ color: 'var(--text3)' }}>No loans added yet</div>
-              <button onClick={() => setShowAdd(true)} className="wl-btn wl-btn-primary">Add loan</button>
-            </div>
-          : undefined}>
-        {filtered.map((loan: any) => {
-          const cat = catOf(loan)
-          const sanctioned = Number(loan.sanctioned_amt)
-          const repaid = sanctioned > 0 ? Math.max(0, Math.round((sanctioned - Number(loan.outstanding_amt)) / sanctioned * 100)) : 0
-          const lSym = loan.currency === 'AED' ? 'AED ' : '₹'
-          const detail = `/dashboard/loans/detail/${loan.id}`
-          return (
-            <ListRow key={loan.id} color={cat.color} title={loan.name}
-              sub={[loan.bank_name, loan.holder_name && loan.holder_name !== 'Self' ? loan.holder_name : null].filter(Boolean).join(' · ') || undefined}
-              tag={cat.label} meta={`${Number(loan.interest_rate)}% · ${lSym}${Number(loan.emi_amount).toLocaleString('en-IN')}/mo`}
-              amount={fmt(Number(loan.outstanding_amt), lSym)} amountSub={`${repaid}% repaid`}
-              href={detail} onOpen={() => router.push(detail)}
-              actions={[
-                { label: 'Open details', icon: Landmark, onClick: () => router.push(detail) },
-                { label: 'Edit', icon: Pencil, onClick: () => setEditLoan(loan) },
-                { label: 'Delete', icon: Trash2, onClick: () => setDeleteId(loan.id), danger: true },
-              ]} />
-          )
-        })}
-      </ListCard>
+      {/* Active loans: one card each — tap a card to open its payoff plan */}
+      <section className="max-md:order-7 flex flex-col gap-2.5 md:gap-3">
+        <div className="flex items-baseline justify-between gap-2 px-0.5">
+          <h2 className="text-[15px] md:text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Your loans</h2>
+          {filtered.length > 0 && <span className="text-[12px]" style={{ color: 'var(--text3)' }}>Tap a loan for its payoff plan</span>}
+        </div>
+        {filtered.length === 0 ? (
+          <div className="wl-card flex flex-col items-center justify-center py-10 gap-3 text-center">
+            <Landmark size={28} style={{ color: 'var(--border2)' }} />
+            <div className="text-[13px]" style={{ color: 'var(--text3)' }}>No loans added yet</div>
+            <button onClick={() => setShowAdd(true)} className="wl-btn wl-btn-primary">Add loan</button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5 md:gap-3.5">
+            {[...filtered].sort((a, b) => conv(Number(b.outstanding_amt), b.currency) - conv(Number(a.outstanding_amt), a.currency)).map((loan: any) => (
+              <LoanCard key={loan.id} loan={loan} onEdit={() => setEditLoan(loan)} onDelete={() => setDeleteId(loan.id)} />
+            ))}
+          </div>
+        )}
+      </section>
 
       <div className="max-md:order-8"><LearnStrip title="EMI decoded: where your money goes" href="/dashboard/learn" /></div>
 

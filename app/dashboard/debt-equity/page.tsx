@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import DebtEquityClient from '@/components/dashboard/DebtEquityClient'
+import { activeLoansWithEmi } from '@/lib/loans'
 
 export default async function DebtEquityPage() {
   const supabase = createClient()
@@ -14,7 +15,7 @@ export default async function DebtEquityPage() {
     active('accounts'), sel('mutual_funds'), sel('stocks'), sel('etf_investments'),
     active('fixed_deposits'), active('recurring_deposits'), sel('nps_accounts'),
     active('lic_policies'), sel('gold_investments'), sel('bond_investments'),
-    sel('ppf_epf_accounts'), active('home_loans'),
+    sel('ppf_epf_accounts'), activeLoansWithEmi(supabase, uid),
   ])
 
   return (

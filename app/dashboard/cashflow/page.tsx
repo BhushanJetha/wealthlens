@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { activeLoansWithEmi } from '@/lib/loans'
 import CashFlowClient from '@/components/dashboard/CashFlowClient'
 
 export default async function CashFlowPage() {
@@ -11,7 +12,7 @@ export default async function CashFlowPage() {
 
   const [accountsRes, loansRes, txnsRes] = await Promise.all([
     supabase.from('accounts').select('*').eq('user_id', uid).eq('is_active', true),
-    supabase.from('home_loans').select('*').eq('user_id', uid).eq('is_active', true),
+    activeLoansWithEmi(supabase, uid),
     supabase.from('transactions')
       .select('merchant,category,amount,currency,txn_date,txn_type')
       .eq('user_id', uid).gte('txn_date', sinceDate)

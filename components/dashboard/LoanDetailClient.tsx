@@ -5,11 +5,14 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { amortize, simulatePayoff } from '@/lib/amortization'
+import { loanJourney } from '@/lib/loans'
+import { ComposedChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceDot } from 'recharts'
 import Pagination from '@/components/dashboard/Pagination'
 import {
   ChevronLeft, Building2, Plus, Trash2, Loader2, Pencil, Check, X,
   TrendingDown, Coins, Home, Wallet, CalendarClock, Upload,
   ListChecks, Landmark, Sparkles, CheckCircle2, Circle, PiggyBank,
+  Flag, PlayCircle, MapPin, Lightbulb, RefreshCw,
 } from 'lucide-react'
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
@@ -112,6 +115,48 @@ export default function LoanDetailClient({ loan, txns, plan = [] }: { loan: any;
   const hasExtra = extraM > 0 || extraA > 0
   const payoffWith = (() => { const d = new Date(); d.setMonth(d.getMonth() + (Number.isFinite(withSim.months) ? withSim.months : baseSim.months)); return d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) })()
   const payoffBase = (() => { const d = new Date(); d.setMonth(d.getMonth() + baseSim.months); return d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) })()
+
+  // ── Journey: where it started, where it is, when it ends ───────────────────
+  const journey = useMemo(() => loanJourney(loan, { principal: effectiveDisbursed, emi: emiVal }), [loan, effectiveDisbursed, emiVal])
+  const monLong = (m: string) => new Date(`${m}-01T00:00:00`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
+  const jTicks = useMemo(() => {
+    const ms = journey.points.map(p => p.m)
+    if (ms.length < 2) return ms
+    // First point of each year (points are thinned, so January may be absent)
+    const y0 = Number(ms[0].slice(0, 4)), years = (Number(ms[ms.length - 1].slice(0, 4)) - y0) || 1
+    const every = Math.max(1, Math.ceil(years / 6))
+    return ms.filter((m, i) => i > 0 && m.slice(0, 4) !== ms[i - 1].slice(0, 4) && (Number(m.slice(0, 4)) - y0) % every === 0)
+  }, [journey])
+  const emisDone = journey.start ? Math.max(0, (Number(journey.today.m.slice(0, 4)) - Number(journey.start.m.slice(0, 4))) * 12 + Number(journey.today.m.slice(5)) - Number(journey.start.m.slice(5))) : emisPaidCount
+
+  // ── Ways to finish sooner (plain suggestions with real numbers) ────────────
+  const ideas = useMemo(() => {
+    const out: { title: string; body: string }[] = []
+    const rate = Number(loan.interest_rate) || 0
+    if (!(outstandingBal > 0 && emiVal > 0 && Number.isFinite(baseSim.months))) return out
+    const extra = Math.max(loan.currency === 'AED' ? 100 : 1000, Math.round(emiVal * 0.1 / 100) * 100)
+    const a = simulatePayoff(outstandingBal, rate, emiVal, extra, 0)
+    if (Number.isFinite(a.months) && baseSim.months - a.months > 0)
+      out.push({ title: `Pay ${money(extra)} more each month`, body: `Clears it ${baseSim.months - a.months} months sooner and saves about ${money(baseSim.interest - a.interest)} in interest.` })
+    const b = simulatePayoff(outstandingBal, rate, emiVal, 0, emiVal)
+    if (Number.isFinite(b.months) && baseSim.months - b.months > 0)
+      out.push({ title: 'Pay one extra EMI a year', body: `A ${money(emiVal)} lump sum each year (a bonus works well) finishes ${baseSim.months - b.months} months early and saves about ${money(baseSim.interest - b.interest)}.` })
+    if (rate > 0.6) {
+      const c = simulatePayoff(outstandingBal, rate - 0.5, emiVal, 0, 0)
+      if (Number.isFinite(c.months) && baseSim.interest - c.interest > 0)
+        out.push({ title: 'Ask for a lower rate', body: `A 0.5% cut (${rate}% → ${(rate - 0.5).toFixed(2)}%) at the same EMI saves about ${money(baseSim.interest - c.interest)}. Ask ${loan.bank_name || 'your bank'} for a rate reset, or compare a balance transfer.` })
+    }
+    if (isHome && loan.currency !== 'AED')
+      out.push({ title: 'Claim the tax benefit', body: `Under the old tax regime, interest on a self-occupied home loan is deductible up to ₹2L a year (Section 24b) and principal up to ₹1.5L under 80C. This year's interest is roughly ${money(outstandingBal * rate / 100)}.` })
+    return out
+  }, [loan, outstandingBal, emiVal, baseSim])
+  const emiDiffers = Number(loan.emi_saved) > 0 && Math.abs(Number(loan.emi_saved) - Number(loan.emi_amount)) >= 1
+  const [emiFixing, setEmiFixing] = useState(false)
+  async function useLastPaidEmi() {
+    setEmiFixing(true)
+    await supabase.from('home_loans').update({ emi_amount: Number(loan.emi_amount) }).eq('id', loan.id)
+    setEmiFixing(false); router.refresh()
+  }
 
   // ── Insights ────────────────────────────────────────────────────────────────
   const lifeInterest = amort.interestPaid + amort.totalInterest
@@ -257,11 +302,54 @@ export default function LoanDetailClient({ loan, txns, plan = [] }: { loan: any;
         context={`${loan.name} with ${loan.bank_name}: ${money(outstandingBal)} outstanding at ${loan.interest_rate}%, EMI ${money(emiVal)}.`} /></div>}
 
       <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4">
-        <HeroStat className="max-md:order-2" label="Outstanding" value={money(outstandingBal)}
-          tone={Number.isFinite(baseSim.months) ? 'good' : 'bad'}
-          delta={Number.isFinite(baseSim.months) ? `Paid off by ${payoffBase} · ${baseSim.months} EMIs to go` : "EMI doesn't cover the interest"}
-          right={<span className="text-[11.5px]" style={{ color: 'var(--text3)' }}>Balance each year at today&apos;s EMI</span>}>
-          {balBars.length > 1 && <Bars data={balBars} className="h-[110px] md:h-auto md:flex-1 md:min-h-[150px] mt-3" label={`Balance by year: ${balBars.map(b => b.tip).join(', ')}`} />}
+        <HeroStat className="max-md:order-2" label="Your loan journey" value={`${money(outstandingBal)} left`}
+          tone={journey.end ? 'good' : 'bad'}
+          delta={journey.end ? `Debt-free by ${monLong(journey.end.m)} · ${Math.floor(journey.end.months / 12)} yr ${journey.end.months % 12} mo to go` : "At this EMI the balance won't fall — check the EMI and rate"}
+          right={<div className="flex gap-3 text-[11.5px]" style={{ color: 'var(--text3)' }}>
+            {journey.estimatedPast && <span className="flex items-center gap-1.5"><i className="w-[9px] h-[9px] rounded-sm" style={{ background: '#6A55E8' }} />Paid down</span>}
+            <span className="flex items-center gap-1.5"><i className="w-4 border-t-2 border-dashed" style={{ borderColor: '#94A3B8' }} />Still to go</span>
+          </div>}>
+          {journey.points.length > 1 && (
+            <div className="h-[170px] md:h-auto md:flex-1 md:min-h-[190px] mt-3 -mx-1" aria-label={`Balance from ${journey.start ? `${money(journey.start.amount)} in ${monLong(journey.start.m)}` : 'today'} to ${money(outstandingBal)} now${journey.end ? `, reaching zero in ${monLong(journey.end.m)}` : ''}`}>
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={journey.points} margin={{ top: 14, right: 12, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="jPast" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#6A55E8" stopOpacity={0.3} /><stop offset="1" stopColor="#6A55E8" stopOpacity={0.03} /></linearGradient>
+                    <linearGradient id="jAhead" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#94A3B8" stopOpacity={0.18} /><stop offset="1" stopColor="#94A3B8" stopOpacity={0.02} /></linearGradient>
+                  </defs>
+                  <XAxis dataKey="m" ticks={jTicks} tickFormatter={(m: string) => m.slice(0, 4)} tick={{ fontSize: 10.5, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
+                  <YAxis hide domain={[0, 'dataMax']} />
+                  <Tooltip contentStyle={{ background: '#fff', border: '1px solid var(--line)', borderRadius: 10, fontSize: 12 }}
+                    labelFormatter={(m: any) => monLong(String(m))}
+                    formatter={(v: any, k: any) => [money(Number(v)), k === 'past' ? 'Balance' : 'Projected balance']} />
+                  <Area dataKey="past" stroke="#6A55E8" strokeWidth={2.5} fill="url(#jPast)" isAnimationActive={false} connectNulls={false} dot={false} />
+                  <Area dataKey="ahead" stroke="#94A3B8" strokeWidth={2} strokeDasharray="5 4" fill="url(#jAhead)" isAnimationActive={false} connectNulls={false} dot={false} />
+                  <ReferenceLine x={journey.today.m} stroke="#6A55E8" strokeDasharray="2 3" label={{ value: 'Today', position: 'top', fontSize: 11, fill: '#6A55E8', fontWeight: 600 }} />
+                  <ReferenceDot x={journey.today.m} y={Math.round(outstandingBal)} r={5} fill="#6A55E8" stroke="#fff" strokeWidth={2} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+          {/* Start → today → debt-free */}
+          <div className="grid grid-cols-3 gap-2 mt-3">
+            {[
+              { I: PlayCircle, c: '#64748B', l: 'Started', v: journey.start ? monLong(journey.start.m) : '—', s: journey.start ? `${money(journey.start.amount)} borrowed` : 'Add a start date' },
+              { I: MapPin, c: '#6A55E8', l: 'Today', v: `${journey.repaidPct}% repaid`, s: `${emisDone} EMIs paid` },
+              { I: Flag, c: '#1E8F5F', l: 'Debt-free', v: journey.end ? monLong(journey.end.m) : '—', s: journey.end ? `${journey.end.months} EMIs to go` : 'EMI below interest' },
+            ].map(x => (
+              <div key={x.l} className="rounded-xl px-2.5 md:px-3 py-2 min-w-0" style={{ background: '#FAFAFE', border: '1px solid var(--line)' }}>
+                <div className="flex items-center gap-1 text-[11px] font-semibold" style={{ color: x.c }}><x.I size={12} />{x.l}</div>
+                <div className="text-[13.5px] md:text-[14px] font-bold tabular-nums truncate" style={{ color: 'var(--text)' }}>{x.v}</div>
+                <div className="text-[10.5px] md:text-[11px] truncate" style={{ color: 'var(--text4)' }}>{x.s}</div>
+              </div>
+            ))}
+          </div>
+          {journey.timePct != null && (
+            <div className="mt-2.5">
+              <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--track)' }}><div className="h-full rounded-full" style={{ width: `${journey.timePct}%`, background: '#6A55E8' }} /></div>
+              <div className="text-[11px] mt-1" style={{ color: 'var(--text4)' }}>{journey.timePct}% of the way through the loan’s time{journey.estimatedPast ? ' · start to today is estimated from the loan terms and matched to today’s balance' : ''}</div>
+            </div>
+          )}
         </HeroStat>
 
         <section className="wl-card max-md:order-6 px-4 md:px-5 py-4 md:py-[18px] flex flex-col gap-3">
@@ -286,11 +374,48 @@ export default function LoanDetailClient({ loan, txns, plan = [] }: { loan: any;
       </div>
 
       <div className="max-md:order-3 grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
-        <KpiTile label="Current EMI" value={money(loan.emi_amount)} delta="a month" tint={2} icon={Coins} />
-        <KpiTile label="EMIs paid" value={`${emisPaidCount} / ${emisPaidCount + amort.balanceTenor}`} delta={`${amort.balanceTenor} left`} tint={0} icon={CalendarClock} />
+        <KpiTile label="Current EMI" value={money(loan.emi_amount)} tint={2} icon={Coins}
+          delta={loan.emi_paid_on ? `last paid ${dt(loan.emi_paid_on)}` : 'from the loan details'} />
+        <KpiTile label="EMIs paid" value={journey.end ? `${emisDone} / ${emisDone + journey.end.months}` : String(emisDone)} tint={0} icon={CalendarClock}
+          delta={journey.end ? `${journey.end.months} left at this EMI` : 'EMI below interest'} />
         <KpiTile label="Interest left" value={Number.isFinite(baseSim.interest) ? money(baseSim.interest) : '—'} delta="at today's EMI" tint={3} icon={TrendingDown} />
         <KpiTile label="Disbursed" value={money(effectiveDisbursed)} delta={Number(loan.sanctioned_amt) > 0 ? `of ${money(loan.sanctioned_amt)} sanctioned` : 'to date'} tint={1} icon={Landmark} />
       </div>
+
+      {emiDiffers && (
+        <div className="max-md:order-3 rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap" style={{ background: '#FFF7E6', border: '1px solid #F8DDB8' }}>
+          <RefreshCw size={16} style={{ color: '#B96A0B' }} className="flex-shrink-0" />
+          <div className="flex-1 min-w-[200px] text-[12.5px] leading-snug" style={{ color: '#92560B' }}>
+            Your last EMI was <b>{money(loan.emi_amount)}</b>{loan.emi_paid_on ? ` (${dt(loan.emi_paid_on)})` : ''}, but this loan is saved with <b>{money(loan.emi_saved)}</b>. Every screen now uses the amount you actually paid.
+          </div>
+          <button onClick={useLastPaidEmi} disabled={emiFixing} className="wl-btn" style={{ height: 32 }}>
+            {emiFixing ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}Save {money(loan.emi_amount)} to the loan</button>
+        </div>
+      )}
+
+      {ideas.length > 0 && (
+        <section className="wl-card max-md:order-6 px-4 md:px-5 py-4 md:py-[18px]">
+          <div className="flex items-center gap-2.5 mb-1">
+            <span className="w-8 h-8 rounded-[10px] flex items-center justify-center" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}><Lightbulb size={15} /></span>
+            <div>
+              <h2 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Ways to finish sooner</h2>
+              <div className="text-[11.5px]" style={{ color: 'var(--text3)' }}>Worked out on {money(outstandingBal)} at {loan.interest_rate}% with a {money(emiVal)} EMI</div>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
+            {ideas.map((x, i) => (
+              <div key={x.title} className={`flex gap-3 py-2.5 ${i ? 'border-t border-[var(--track)]' : ''} ${i === 1 ? 'md:border-t-0' : ''}`}>
+                <span className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-[11.5px] font-bold" style={{ background: '#E7F7EF', color: '#1E8F5F' }}>{i + 1}</span>
+                <div className="min-w-0">
+                  <div className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{x.title}</div>
+                  <div className="text-[12.5px] leading-snug mt-0.5" style={{ color: 'var(--text3)' }}>{x.body}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <button onClick={() => setTab('schedule')} className="text-[12.5px] font-semibold mt-1" style={{ color: 'var(--accent)' }}>Try your own amount in the prepayment simulator →</button>
+        </section>
+      )}
 
       {isHome && (
         <section className="wl-card max-md:order-6 px-4 md:px-5 py-4">

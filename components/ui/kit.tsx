@@ -1,6 +1,6 @@
 'use client'
 import Link from 'next/link'
-import { Plus, type LucideIcon } from 'lucide-react'
+import { Plus, ChevronRight, type LucideIcon } from 'lucide-react'
 import { useUiStore } from '@/store/uiStore'
 
 // Shared building blocks for design v2 (design/design_handoff_wealthlens).
@@ -244,14 +244,16 @@ export function ProgressRow({ name, sub, value, right, pct, color = 'var(--accen
     <>
       <div className="flex justify-between gap-2 text-[12.5px] mb-[5px]">
         <span className="font-semibold truncate" style={{ color: 'var(--text)' }}>{name}{sub && <span className="font-normal ml-1" style={{ color: 'var(--text4)' }}>{sub}</span>}</span>
-        <span className="tabular-nums whitespace-nowrap" style={{ color: 'var(--text)' }}>{value}{right && <span className="ml-1" style={{ color: 'var(--text3)' }}>{right}</span>}</span>
+        <span className="tabular-nums whitespace-nowrap flex items-center" style={{ color: 'var(--text)' }}>{value}{right && <span className="ml-1" style={{ color: 'var(--text3)' }}>{right}</span>}
+          {href && <ChevronRight size={15} className="ml-1 -mr-0.5 transition-transform group-hover:translate-x-0.5" style={{ color: 'var(--text4)' }} />}</span>
       </div>
       <div className="h-1.5 rounded-full" style={{ background: 'var(--track)' }}>
         <div className="h-full rounded-full wl-grow" style={{ width: `${Math.max(0, Math.min(100, pct))}%`, background: color }} />
       </div>
     </>
   )
-  return href ? <Link href={href} className="block hover:opacity-90">{body}</Link> : <div>{body}</div>
+  // A linked row shows › and highlights on hover so it reads as tappable
+  return href ? <Link href={href} className="group block -mx-2.5 px-2.5 py-2 rounded-xl hover:bg-[#F5F3FE] transition-colors">{body}</Link> : <div>{body}</div>
 }
 
 // ─── Controls ───────────────────────────────────────────────────────────────

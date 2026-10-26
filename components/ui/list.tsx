@@ -1,11 +1,14 @@
 'use client'
 import { useState } from 'react'
 import Link from 'next/link'
-import { Search, AlertTriangle, ChevronRight, type LucideIcon } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Search, AlertTriangle, ChevronRight, MoreHorizontal, type LucideIcon } from 'lucide-react'
 
 // Design v2 lists (transactions, holdings, loans). One row layout for both
 // sizes: desktop = 4 columns + action icons, phone = avatar · title ·
-// "tag · meta" · amount, with actions in a bottom sheet on tap.
+// "tag · meta" · amount. A row with its own page (href) opens it on tap at
+// both sizes; its other actions sit behind a ⋯ button on phones. A row
+// without a page opens its actions in a bottom sheet on tap.
 
 // Columns: main | tag | meta | amount | actions
 const COLS = 'md:grid md:grid-cols-[minmax(0,2.4fr)_minmax(0,1.3fr)_minmax(0,.9fr)_minmax(0,1fr)_84px] md:gap-3 md:items-center'
@@ -51,12 +54,16 @@ export function ListRow({ initial, color, title, sub, tag, warn, meta, metaColor
   actions?: RowAction[]; href?: string; onOpen?: () => void
 }) {
   const [sheet, setSheet] = useState(false)
+  const router = useRouter()
   const tint = `${color}1A`
   const open = () => {
+    if (href) { router.push(href); return }
     const desktop = typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches
     if (!desktop && actions.length) setSheet(true)
     else onOpen?.()
   }
+  // "Open details" is the row itself when it has a page — never listed twice
+  const menu = href ? actions.filter(a => !/^open/i.test(a.label)) : actions
   const avatar = (
     <span className="w-9 h-9 md:w-[34px] md:h-[34px] rounded-[10px] flex items-center justify-center flex-shrink-0 text-[14px] font-bold"
       style={{ background: tint, color }}>{initial ?? String(title ?? '?').trim()[0]?.toUpperCase()}</span>
@@ -85,14 +92,21 @@ export function ListRow({ initial, color, title, sub, tag, warn, meta, metaColor
         {warnIcon}
       </div>
       <div className="hidden md:block text-[12.5px] truncate" style={{ color: metaColor ?? 'var(--text3)', fontWeight: metaColor ? 600 : 400 }}>{meta}</div>
-      {/* Amount (both sizes) */}
-      <div className="text-right flex-shrink-0">
-        <div className="text-[13.5px] md:text-[13px] font-semibold tabular-nums whitespace-nowrap" style={{ color: amountColor ?? 'var(--text)' }}>{amount}</div>
-        {amountSub && <div className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: 'var(--text4)' }}>{amountSub}</div>}
+      {/* Amount (both sizes); on phones a page row shows › and its ⋯ menu */}
+      <div className="flex items-center gap-1 flex-shrink-0">
+        <div className="text-right">
+          <div className="text-[13.5px] md:text-[13px] font-semibold tabular-nums whitespace-nowrap" style={{ color: amountColor ?? 'var(--text)' }}>{amount}</div>
+          {amountSub && <div className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: 'var(--text4)' }}>{amountSub}</div>}
+        </div>
+        {href && menu.length > 0 && (
+          <button onClick={e => { e.stopPropagation(); setSheet(true) }} aria-label="More actions"
+            className="md:hidden w-8 h-8 -mr-1.5 rounded-lg flex items-center justify-center" style={{ color: 'var(--text3)' }}><MoreHorizontal size={17} /></button>
+        )}
+        {href && !menu.length && <ChevronRight size={16} className="md:hidden" style={{ color: 'var(--text4)' }} />}
       </div>
       {/* Desktop actions */}
       <div className="hidden md:flex items-center justify-end gap-0.5">
-        {actions.map(a => (
+        {menu.map(a => (
           <button key={a.label} onClick={e => { e.stopPropagation(); e.preventDefault(); a.onClick() }} disabled={a.disabled}
             title={a.label} aria-label={a.label}
             className="w-7 h-7 rounded-lg flex items-center justify-center opacity-60 group-hover:opacity-100 hover:bg-[var(--accent-bg)] disabled:opacity-30 transition"
@@ -100,7 +114,7 @@ export function ListRow({ initial, color, title, sub, tag, warn, meta, metaColor
             <a.icon size={14} />
           </button>
         ))}
-        {href && !actions.length && <ChevronRight size={15} style={{ color: 'var(--text4)' }} />}
+        {href && <ChevronRight size={15} style={{ color: 'var(--text4)' }} />}
       </div>
     </div>
   )
@@ -128,7 +142,7 @@ export function ListRow({ initial, color, title, sub, tag, warn, meta, metaColor
                 <ChevronRight size={17} style={{ color: 'var(--text3)' }} />Open details
               </Link>
             )}
-            {actions.map(a => (
+            {menu.map(a => (
               <button key={a.label} disabled={a.disabled} onClick={() => { setSheet(false); a.onClick() }}
                 className="w-full flex items-center gap-3 px-4 py-3.5 text-[14px] font-medium text-left disabled:opacity-40"
                 style={{ color: a.danger ? '#DC2626' : 'var(--text)' }}>

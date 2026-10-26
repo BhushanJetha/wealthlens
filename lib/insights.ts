@@ -216,7 +216,7 @@ export function buildHomeInsights(inp: InsightInput): HomeInsights {
       id: `emi-${l.id}`, severity: d <= 2 ? 'high' : 'medium',
       title: `${l.name} EMI due ${inDays(d)}`,
       detail: `${nativeMoney(Number(l.emi_amount) || 0, l.currency)} · ${l.bank_name ?? ''}`.replace(/ · $/, ''),
-      href: '/dashboard/loans', actionLabel: 'View', date: due,
+      href: l.id ? `/dashboard/loans/detail/${l.id}` : '/dashboard/loans', actionLabel: 'View', date: due,
     })
   }
   // Insurance renewals / premiums

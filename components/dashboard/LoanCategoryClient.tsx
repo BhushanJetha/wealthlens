@@ -10,7 +10,8 @@ import AddLoanModal from '@/components/forms/AddLoanModal'
 import FilterBar from './FilterBar'
 import Link from 'next/link'
 import { PageHeader, InsightBar, AiActions, LearnStrip, HeroStat, KpiTile, Bars, EmptyState } from '@/components/ui/kit'
-import { ListCard, ListRow, ListSearch } from '@/components/ui/list'
+import { ListSearch } from '@/components/ui/list'
+import LoanCard from './LoanCard'
 import { simulatePayoff } from '@/lib/amortization'
 import { CalendarClock, Percent, Flag, Landmark } from 'lucide-react'
 
@@ -151,7 +152,7 @@ export default function LoanCategoryClient({ loans, title, loanType }: Props) {
   }
 
   return (
-    <div className="space-y-5 animate-fade-up">
+    <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
       <PageHeader title={title}
         sub={`${filtered.length} loan${filtered.length !== 1 ? 's' : ''} · ${sym}${Math.round(totalEMI).toLocaleString('en-IN')} EMI a month`}
         onAdd={() => setShowAdd(true)} addLabel={`Add ${title}`}
@@ -184,38 +185,33 @@ export default function LoanCategoryClient({ loans, title, loanType }: Props) {
           </div>
         </div>
 
-        <ListCard title={`Your ${title.toLowerCase()}`} sub={filtered.length === base.length ? `${base.length} active` : `${filtered.length} of ${base.length}`}
-          head={['Loan', 'Repaid', 'EMI', 'Outstanding']}
-          toolbar={<ListSearch value={search} onChange={setSearch} placeholder="Search loan or bank…">
-            <select value={sort} onChange={e => setSort(e.target.value)} aria-label="Sort"
-              className="wl-input max-w-[44%]" style={{ width: 'auto', height: 36, background: '#fff' }}>
-              {LOAN_SORT_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </ListSearch>}
-          empty={filtered.length === 0
-            ? <div className="text-center py-12 text-[13px]" style={{ color: 'var(--text3)', borderTop: '1px solid var(--line)' }}>No loans match your search.</div>
-            : undefined}>
-          {filtered.map((loan: any, i: number) => {
-            const lSym = loan.currency === 'AED' ? 'AED ' : '₹'
-            const paidPct = paidPctOf(loan)
-            const loanBase = Number(loan.disbursed_amt) || Number(loan.sanctioned_amt) || 0
-            const monthsRem = Number(loan.tenure_months) > 0 ? Math.max(0, Number(loan.tenure_months) - (loan.months_paid ?? 0)) : null
-            const detail = `/dashboard/loans/detail/${loan.id}`
-            return (
-              <ListRow key={loan.id ?? i} color="#6A55E8" title={loan.name}
-                sub={[loan.bank_name, `${loan.interest_rate}% p.a.`, monthsRem != null ? `${loan.months_paid ?? 0} paid · ${monthsRem} EMIs left` : null].filter(Boolean).join(' · ')}
-                tag={`${paidPct}% repaid`} meta={`${lSym}${Math.round(Number(loan.emi_amount) || 0).toLocaleString('en-IN')}/mo`}
-                amount={`${lSym}${Math.round(Number(loan.outstanding_amt) || 0).toLocaleString('en-IN')}`}
-                amountSub={`of ${lSym}${Math.round(loanBase).toLocaleString('en-IN')}`}
-                href={detail} onOpen={() => router.push(detail)}
-                actions={[
-                  { label: 'Open details', icon: Landmark, onClick: () => router.push(detail) },
-                  { label: 'Edit', icon: Pencil, onClick: () => setEditLoan(loan) },
-                  { label: 'Delete', icon: Trash2, onClick: () => setDeleteId(loan.id), danger: true },
-                ]} />
-            )
-          })}
-        </ListCard>
+        <section className="flex flex-col gap-2.5 md:gap-3">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2.5">
+            <div className="px-0.5">
+              <h2 className="text-[15px] md:text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Your {title.toLowerCase()}</h2>
+              <div className="text-[12px]" style={{ color: 'var(--text3)' }}>{filtered.length === base.length ? `${base.length} active` : `${filtered.length} of ${base.length}`} · tap a loan for its payoff plan</div>
+            </div>
+            {base.length > 1 && (
+              <div className="md:w-[380px]">
+                <ListSearch value={search} onChange={setSearch} placeholder="Search loan or bank…">
+                  <select value={sort} onChange={e => setSort(e.target.value)} aria-label="Sort"
+                    className="wl-input max-w-[44%]" style={{ width: 'auto', height: 36, background: '#fff' }}>
+                    {LOAN_SORT_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </ListSearch>
+              </div>
+            )}
+          </div>
+          {filtered.length === 0 ? (
+            <div className="wl-card text-center py-12 text-[13px]" style={{ color: 'var(--text3)' }}>No loans match your search.</div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5 md:gap-3.5">
+              {filtered.map((loan: any, i: number) => (
+                <LoanCard key={loan.id ?? i} loan={loan} onEdit={() => setEditLoan(loan)} onDelete={() => setDeleteId(loan.id)} />
+              ))}
+            </div>
+          )}
+        </section>
       </>)}
 
       {/* Add modal */}
