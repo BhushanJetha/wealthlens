@@ -1,6 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
 import BudgetsClient from '@/components/dashboard/BudgetsClient'
-import { isNroSettled } from '@/lib/nro'
 
 export default async function BudgetsPage() {
   const supabase = createClient()
@@ -26,7 +25,7 @@ export default async function BudgetsPage() {
       .order('txn_date', { ascending: true })
       .limit(5000),
     supabase.from('transactions')
-      .select('amount,currency,txn_date')
+      .select('id,amount,currency,txn_date,category,txn_type')
       .eq('user_id', user!.id)
       .eq('txn_type', 'income')
       .gte('txn_date', incomeStart)
@@ -35,12 +34,9 @@ export default async function BudgetsPage() {
       .limit(5000),
   ])
 
-  // NRO settlements are the effective India income for NRIs with no local
-  // salary, so count them toward the budget's income basis.
-  const nroIncome = (txnsRes.data ?? [])
-    .filter(isNroSettled)
-    .map((t: any) => ({ amount: t.amount, currency: t.currency, txn_date: t.txn_date }))
-  const incomeTransactions = [...(incomeRes.data ?? []), ...nroIncome]
+  // Income rows plus transfers: the client keeps what counts as income in the
+  // current view (UAE → India remittances become India income — lib/money)
+  const incomeTransactions = [...(incomeRes.data ?? []), ...(txnsRes.data ?? []).filter((t: any) => t.txn_type === 'transfer')]
 
   return (
     <BudgetsClient

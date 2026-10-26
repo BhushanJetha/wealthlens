@@ -1,6 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
 import ReportClient from '@/components/dashboard/ReportClient'
-import { isNroSettled, toNroIncome } from '@/lib/nro'
 
 // PostgREST caps a response at 1000 rows — page through the whole window
 async function fetchAllRows(page: (from: number, to: number) => any): Promise<any[]> {
@@ -26,9 +25,9 @@ export default async function ReportsPage() {
     .eq('user_id', uid).gte('txn_date', fromDate)
     .order('txn_date', { ascending: false }).range(a, b))
 
-  // Money settled into NRO is the effective India income (same rule as the
-  // Income tab and Expense report); the underlying rows stay transfers.
-  const nroIncome = txns.filter(isNroSettled).map(toNroIncome)
+  // Card accounts: a card bill counts only when that month's card purchases
+  // weren't imported (lib/money markUnitemisedCardBills)
+  const { data: cards } = await supabase.from('accounts').select('id').eq('user_id', uid).eq('account_type', 'credit_card')
 
-  return <ReportClient transactions={[...txns, ...nroIncome]} />
+  return <ReportClient transactions={txns} cardIds={(cards ?? []).map(c => c.id)} />
 }

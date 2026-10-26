@@ -10,10 +10,11 @@ import TransactionVoiceModal from '@/components/forms/TransactionVoiceModal'
 import ManageCategoriesSheet from '@/components/forms/ManageCategoriesSheet'
 import { useCategoryStore } from '@/store/categoryStore'
 import { colorOf } from '@/lib/categories'
+import { prepareMoney, isIncome, pairRemittances } from '@/lib/money'
 import { toast } from '@/components/ui/toaster'
 
 import Pagination from '@/components/dashboard/Pagination'
-import { PenLine, BarChart2, Plus, Pencil, Trash2, Upload, Image, Mic, ChevronDown, Copy, Settings2 } from 'lucide-react'
+import { PenLine, BarChart2, Plus, Pencil, Trash2, Upload, Image, Mic, ChevronDown, Copy, Settings2, ArrowRightLeft } from 'lucide-react'
 import Link from 'next/link'
 import { PageHeader, InsightBar, AiActions, KpiTile, HeroStat, Bars, Donut, ProgressRow, LearnStrip, PALETTE } from '@/components/ui/kit'
 import { ListCard, ListRow, ListSearch, ChipFilter } from '@/components/ui/list'
@@ -75,14 +76,19 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
   const toDisplay = (amt: number, cur: string) => view === 'consolidated' ? amt * (cur === 'AED' ? FX : 1) : amt
   const inRange = (d: string) => { const m = d?.slice(0,7) ?? ''; return m >= fromMonth && m <= toMonth }
 
-  const filtered = useMemo(() => { setPage(1); return transactions.filter(t => {
+  // Income in this view (lib/money): earned income, plus — in the India view —
+  // money that landed in NRE from UAE. Moves and borrowing never count.
+  const incomeRows = useMemo(() => prepareMoney([...transactions, ...transfers], { fx: FX }).filter(t => isIncome(t, view)), [transactions, transfers, FX, view])
+  const remits = useMemo(() => pairRemittances([...transactions, ...transfers], FX), [transactions, transfers, FX])
+
+  const filtered = useMemo(() => { setPage(1); return incomeRows.filter(t => {
     if (view === 'uae'   && t.currency !== 'AED') return false
     if (view === 'india' && t.currency !== 'INR') return false
     if (cat !== 'All'   && t.category !== cat)    return false
     if (accFilter !== 'All' && t.account_id !== accFilter) return false
     if (search && !t.merchant?.toLowerCase().includes(search.toLowerCase())) return false
     return true
-  }) }, [transactions, view, cat, accFilter, search])
+  }) }, [incomeRows, view, cat, accFilter, search])
 
   const filteredForMonth = filtered.filter(t => inRange(t.txn_date))
   const total = filtered.reduce((a, t) => a + toDisplay(Number(t.amount), t.currency), 0)
@@ -171,7 +177,7 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
   const catOptions = useMemo(() => {
     const n: Record<string, number> = {}
     let all = 0
-    transactions.forEach(t => {
+    incomeRows.forEach(t => {
       if (view === 'uae' && t.currency !== 'AED') return
       if (view === 'india' && t.currency !== 'INR') return
       if (!inRange(t.txn_date) || (accFilter !== 'All' && t.account_id !== accFilter)) return
@@ -179,7 +185,7 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
     })
     if (cat !== 'All' && !n[cat]) n[cat] = 0
     return [{ key: 'All', label: 'All', count: all }, ...Object.entries(n).sort((a, b) => b[1] - a[1]).map(([c, k]) => ({ key: c, label: c, count: k }))]
-  }, [transactions, view, accFilter, fromMonth, toMonth, cat])
+  }, [incomeRows, view, accFilter, fromMonth, toMonth, cat])
 
   const chgText = chg != null ? `${chg >= 0 ? '▲' : '▼'} ${Math.abs(chg)}% vs ${prevLabel}` : `${filteredForMonth.length} entr${filteredForMonth.length === 1 ? 'y' : 'ies'}`
   const chgTone = chg == null ? 'neutral' as const : chg >= 0 ? 'good' as const : 'bad' as const
@@ -288,12 +294,12 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
           const lSym = t.currency === 'AED' ? 'AED ' : '₹'
           return (
             <ListRow key={t.id ?? i} color={c} title={t.merchant} tag={t.category} meta={fmtDay(t.txn_date)}
-              sub={[account, t._autoNro ? 'via NRE → NRO, managed in Transfers' : null].filter(Boolean).join(' · ') || undefined}
+              sub={[account, t._remit ? (t._aed ? `AED ${Math.round(t._aed).toLocaleString('en-US')} sent at ₹${Number(t._rate).toFixed(2)}${t._source === 'estimated' ? ' (estimated)' : ''} · see Money flow` : 'Landed in NRE · see Money flow') : null].filter(Boolean).join(' · ') || undefined}
               amount={`+${lSym}${Number(t.amount).toLocaleString('en-IN')}`} amountColor="#16A34A"
               amountSub={t.currency === 'AED' && view !== 'uae' ? `≈ ₹${Math.round(Number(t.amount) * FX).toLocaleString('en-IN')}` : undefined}
-              href={t._autoNro ? '/dashboard/transfers' : undefined}
-              onOpen={t._autoNro ? undefined : () => openEdit(t)}
-              actions={t._autoNro ? [] : [
+              href={t._remit ? '/dashboard/transfers' : undefined}
+              onOpen={t._remit ? undefined : () => openEdit(t)}
+              actions={t._remit ? [] : [
                 { label: 'Edit', icon: Pencil, onClick: () => openEdit(t) },
                 { label: 'Duplicate', icon: Copy, onClick: () => openDuplicate(t) },
                 { label: 'Delete', icon: Trash2, onClick: () => deleteTxn(t.id), danger: true, disabled: deletingId === t.id },
@@ -302,26 +308,22 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
         })}
       </ListCard>
 
-      {/* UAE → India remittances (NRI view) */}
+      {/* UAE → India: how it's counted in this view */}
       {(() => {
-        const remittances = transfers.filter(t => inRange(t.txn_date))
-        if (remittances.length === 0 || view === 'uae') return null
-        const totalINR = remittances.reduce((a, t) => a + (t.currency === 'AED' ? Number(t.amount) * FX : Number(t.amount)), 0)
-        const totalAED = remittances.filter(t => t.currency === 'AED').reduce((a, t) => a + Number(t.amount), 0)
+        const inR = remits.filter(r => inRange(r.landedOn))
+        if (!inR.length) return null
+        const inr = inR.reduce((a, r) => a + r.inr, 0), aed = inR.reduce((a, r) => a + (r.aed ?? 0), 0)
+        const text = view === 'india'
+          ? `₹${Math.round(inr).toLocaleString('en-IN')} landed in India from UAE in ${rangeLabel} — that's your India income above. Moving it from NRE to NRO isn't counted again.`
+          : view === 'uae'
+            ? `AED ${Math.round(aed).toLocaleString('en-US')} was sent to India in ${rangeLabel}. It isn't spending — it shows as India income in the India view.`
+            : `₹${Math.round(inr).toLocaleString('en-IN')} reached India from UAE in ${rangeLabel}. It isn't added here, because your UAE salary is already counted — switch to India to see it as India income.`
         return (
-          <ListCard className="max-md:order-10" title="UAE → India remittances" sub={`Money sent home · ${rangeLabel}`}
-            head={['Transfer', 'Type', 'Date', 'Amount']}
-            right={<div className="text-right">
-              <div className="text-[15px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>₹{Math.round(totalINR).toLocaleString('en-IN')}</div>
-              {totalAED > 0 && <div className="text-[11px] tabular-nums" style={{ color: 'var(--text3)' }}>AED {totalAED.toLocaleString('en-IN')} sent</div>}
-            </div>}>
-            {remittances.map((t, i) => (
-              <ListRow key={t.id ?? i} color="#2563EB" title={t.merchant} tag="Remittance" meta={fmtDay(t.txn_date)}
-                sub={t.description || undefined} href="/dashboard/transfers"
-                amount={t.currency === 'AED' ? `AED ${Number(t.amount).toLocaleString('en-IN')}` : `₹${Number(t.amount).toLocaleString('en-IN')}`}
-                amountSub={t.currency === 'AED' ? `≈ ₹${Math.round(Number(t.amount) * FX).toLocaleString('en-IN')}` : undefined} />
-            ))}
-          </ListCard>
+          <Link href="/dashboard/transfers" className="max-md:order-10 wl-card group px-4 md:px-5 py-3.5 flex items-center gap-3 hover:shadow-lg transition-shadow">
+            <span className="w-9 h-9 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ background: '#E0F4FB', color: '#0284C7' }}><ArrowRightLeft size={16} /></span>
+            <span className="flex-1 text-[12.5px] leading-snug" style={{ color: 'var(--text2)' }}>{text}</span>
+            <span className="text-[12.5px] font-semibold whitespace-nowrap hidden sm:inline" style={{ color: 'var(--accent)' }}>Money flow →</span>
+          </Link>
         )
       })()}
 

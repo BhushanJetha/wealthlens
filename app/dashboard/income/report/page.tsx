@@ -1,6 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
 import IncomeReportClient from '@/components/dashboard/IncomeReportClient'
-import { isNroSettled, toNroIncome } from '@/lib/nro'
 
 export default async function IncomeReportPage() {
   const supabase = createClient()
@@ -16,10 +15,9 @@ export default async function IncomeReportPage() {
       .order('txn_date', { ascending: true }).limit(2000),
   ])
 
-  // NRO settlements are the effective India income — surface them as
-  // "UAE Income (NRO)" so the report matches the Income tab & Transfers.
-  const nroIncome = (transfersRes.data ?? []).filter(isNroSettled).map(toNroIncome)
-  const transactions = [...(incomeRes.data ?? []), ...nroIncome]
+  // Transfers come along so UAE → India remittances can be paired into
+  // "Received from UAE" India income (lib/money) — same as the Income tab
+  const transactions = [...(incomeRes.data ?? []), ...(transfersRes.data ?? [])]
 
   return <IncomeReportClient transactions={transactions} />
 }

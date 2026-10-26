@@ -4,7 +4,7 @@ import { useViewStore } from '@/store/viewStore'
 import { Download, ChevronLeft, ChevronRight, CalendarDays, CalendarRange, Target, CreditCard, Landmark, Wallet, Link2Off } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, Cell, Legend } from 'recharts'
 import TxnDrillModal from '@/components/dashboard/TxnDrillModal'
-import { CC_BILL, classify, labelOf, catOf } from '@/lib/money'
+import { CC_BILL, classify, labelOf, catOf, prepareMoney, isIncome, isNreToNro, markUnitemisedCardBills, INDIA_INCOME } from '@/lib/money'
 import { PageHeader, KpiTile, Segmented } from '@/components/ui/kit'
 import { useCategoryStore } from '@/store/categoryStore'
 
@@ -32,7 +32,7 @@ const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct'
 // Which account a transaction ran through. Strict binary split so NRE + NRO =
 // everything (no overlap / double-count).
 type Scope = 'both' | 'nre' | 'nro'
-const NRE_CATS = new Set(['NRE Received', 'NRE to NRO', 'NRE → NRO', 'International Transfer'])
+const NRE_CATS = new Set(['NRE Received', 'NRE to NRO', 'NRE → NRO', 'International Transfer', INDIA_INCOME])
 function acctScope(t: any): 'nre' | 'nro' {
   const cat = t?.category || ''
   const sub = t?.sub_category || ''
@@ -72,9 +72,12 @@ function csvExport(rows: string[][]): void {
 
 type Tab = 'monthly' | 'yearly' | 'budget'
 
-export default function ExpensesReportClient({ transactions, incomeTransactions = [], budgets = [] }:
+export default function ExpensesReportClient({ transactions: rawTxns, incomeTransactions: rawIncome = [], budgets = [] }:
   { transactions: any[]; incomeTransactions?: any[]; budgets?: any[] }) {
   const { view, fromMonth, toMonth, fxRate: FX } = useViewStore()
+  // Card bills count only when that month's card purchases weren't imported
+  const transactions = useMemo(() => markUnitemisedCardBills(rawTxns,
+    new Set(rawTxns.filter((t: any) => t.accounts?.account_type === 'credit_card').map((t: any) => t.account_id))), [rawTxns])
 
   const inView = (cur: string) => view === 'consolidated' || (view === 'uae' ? cur === 'AED' : cur === 'INR')
   const conv = (amt: number, cur: string) => view === 'consolidated' && cur === 'AED' ? amt * FX : amt
@@ -90,7 +93,17 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
 
   const [tab, setTab] = useState<Tab>('monthly')
   const [scope, setScope] = useState<Scope>('both')
-  const inScope = (t: any) => scope === 'both' || acctScope(t) === scope
+  const inScope = (t: any) => scope === 'both' || t._nroIn || acctScope(t) === scope
+  // Income in this view (lib/money): earned income, plus money landing in NRE
+  // from UAE in the India view. For the NRO account alone, its inflow is what
+  // moved in from NRE.
+  const incomeTransactions = useMemo(() => {
+    const all = [...rawIncome, ...rawTxns]
+    const counted = prepareMoney(all, { fx: FX }).filter(t => isIncome(t, view))
+    return scope === 'nro'
+      ? [...counted.filter(t => !t._remit), ...all.filter(isNreToNro).map(t => ({ ...t, _nroIn: true }))]
+      : counted
+  }, [rawIncome, rawTxns, FX, view, scope])
   const [viewYear, setViewYear] = useState(() => parseInt(fromMonth.slice(0, 4)))
   const [drill, setDrill] = useState<{ title: string; subtitle?: string; items: any[] } | null>(null)
   useEffect(() => { setViewYear(parseInt(fromMonth.slice(0, 4))) }, [fromMonth])
@@ -138,7 +151,8 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
   const outflowGrand  = months.reduce((a, m) => a + outflowCol(m), 0)
   const incomeGrand   = months.reduce((a, m) => a + incomeCol(m), 0)
   const netGrand      = incomeGrand - outflowGrand
-  const savingsRate   = incomeGrand > 0 ? Math.round(netGrand / incomeGrand * 100) : 0
+  const investGrand   = rowTot('Investment')
+  const savingsRate   = incomeGrand > 0 ? Math.round((netGrand + investGrand) / incomeGrand * 100) : 0   // investing counts as saved
 
   const activeExpense  = expenseCats.filter(c => rowTot(c) > 0).sort((a, b) => rowTot(b) - rowTot(a))
   const activeExcluded = excludedCats.filter(c => rowTot(c) > 0).sort((a, b) => rowTot(b) - rowTot(a))
@@ -304,7 +318,8 @@ export default function ExpensesReportClient({ transactions, incomeTransactions 
           <KpiTile label={`${viewYear} expenses`} value={money(outflowGrand)} tint={0} icon={CreditCard} />
           <KpiTile label="Net (income − expenses)" value={`${netGrand < 0 ? '−' : ''}${money(Math.abs(netGrand))}`} tone={netGrand >= 0 ? 'good' : 'bad'} tint={3} icon={Landmark}
             delta={netGrand >= 0 ? 'kept this year' : 'spent more than came in'} />
-          <KpiTile label="Savings rate" value={`${savingsRate}%`} tone={savingsRate >= 20 ? 'good' : 'bad'} tint={2} icon={Target} delta="target 20%" />
+          <KpiTile label="Savings rate" value={`${savingsRate}%`} tone={savingsRate >= 20 ? 'good' : 'bad'} tint={2} icon={Target}
+            delta={investGrand > 0 ? `incl. ${money(investGrand)} invested · target 20%` : 'target 20%'} />
         </div>
       )}
 

@@ -1,6 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
 import ExpensesReportClient from '@/components/dashboard/ExpensesReportClient'
-import { isNroSettled, toNroIncome } from '@/lib/nro'
 
 export default async function ExpensesReportPage() {
   const supabase = createClient()
@@ -19,9 +18,9 @@ export default async function ExpensesReportPage() {
   ])
 
   const txns = txnsRes.data ?? []
-  // NRO settlements are the effective India income for NRIs without local salary
-  const nroIncome = txns.filter(isNroSettled).map(toNroIncome)
-  const income = [...(incomeRes.data ?? []), ...nroIncome]
+  // Income rows only; the client pairs UAE → India remittances from `txns`
+  // into "Received from UAE" India income (lib/money)
+  const income = incomeRes.data ?? []
 
   return (
     <ExpensesReportClient

@@ -12,7 +12,7 @@ const GROUPS: { label: string; items: Item[] }[] = [
     { label: 'Spending analysis', href: '/dashboard/analysis' },
     { label: 'Bills & subscriptions', href: '/dashboard/bills' },
     { label: 'Income', href: '/dashboard/income' },
-    { label: 'Transfers', href: '/dashboard/transfers' },
+    { label: 'Money flow', href: '/dashboard/transfers' },
     { label: 'Reports', href: '/dashboard/reports' },
     { label: 'FX optimizer', href: '/dashboard/fx' },
     { label: 'Import statements', href: '/dashboard/ingest' },

@@ -1,8 +1,7 @@
 // Rule-based insights for the Home dashboard (no AI). Pure functions over the
 // user's data so they're easy to test and reason about. Spend / income follow
-// the Expense Report's rules (lib/money.ts, lib/nro.ts) so numbers always match.
-import { isSpend, catOf, labelOf } from './money'
-import { isNroSettled } from './nro'
+// the shared rules in lib/money.ts so numbers always match.
+import { isSpend, catOf, labelOf, isIncome as isIncomeIn, spendGroup, prepareMoney } from './money'
 import { viewAmount, NW_RULES, type View } from './netWorth'
 
 // ─── Dates (string-based so server/browser time zones can't shift a day) ─────
@@ -130,8 +129,11 @@ export function buildHomeInsights(inp: InsightInput): HomeInsights {
   const { view, fx, today, focusMonth } = inp
   const inView = (cur: string) => view === 'consolidated' || (view === 'uae' ? cur === 'AED' : cur === 'INR')
   const amt = (t: any) => viewAmount(Number(t.amount) || 0, t.currency, view, fx)
-  const isIncome = (t: any) => t.txn_type === 'income' || isNroSettled(t)
-  const txns = (inp.txns ?? []).filter(t => t.txn_date && inView(t.currency))
+  // Remittances paired and card bills checked first (over all currencies, so
+  // the India view gets its "Received from UAE" income), then the view filter
+  const cardIds = new Set<string>((inp.accounts ?? []).filter((a: any) => a.account_type === 'credit_card').map((a: any) => a.id))
+  const isIncome = (t: any) => isIncomeIn(t, view)
+  const txns = prepareMoney(inp.txns ?? [], { fx, cardIds }).filter(t => t.txn_date && inView(t.currency))
   const thisMonth = ymOf(today)
   const isCurrent = focusMonth === thisMonth
   const dayCut = isCurrent ? Number(today.slice(8, 10)) : null
@@ -141,16 +143,21 @@ export function buildHomeInsights(inp: InsightInput): HomeInsights {
   const money = (n: number) => `${sym}${Math.round(Math.abs(n)).toLocaleString('en-IN')}`
 
   // Month totals, optionally only up to a day-of-month (for like-for-like pace)
+  // spend = spent (living + family); emi and invest kept apart. byCat covers
+  // all money out so budgets on EMI / Investment still match.
   function monthStats(m: string, uptoDay: number | null) {
-    let income = 0, spend = 0
+    let income = 0, spend = 0, emi = 0, invest = 0
     const byCat: Record<string, number> = {}
     for (const t of txns) {
       if (ymOf(t.txn_date) !== m) continue
       if (uptoDay != null && Number(t.txn_date.slice(8, 10)) > uptoDay) continue
-      if (isIncome(t)) income += amt(t)
-      else if (isSpend(t)) { const v = amt(t); spend += v; const c = catOf(t); byCat[c] = (byCat[c] ?? 0) + v }
+      if (isIncome(t)) { income += amt(t); continue }
+      if (!isSpend(t)) continue
+      const v = amt(t), g = spendGroup(t), c = catOf(t)
+      byCat[c] = (byCat[c] ?? 0) + v
+      if (g === 'loans') emi += v; else if (g === 'invest') invest += v; else spend += v
     }
-    return { income, spend, byCat }
+    return { income, spend, emi, invest, byCat }
   }
 
   const cur = monthStats(focusMonth, dayCut)
@@ -167,17 +174,18 @@ export function buildHomeInsights(inp: InsightInput): HomeInsights {
   const fullPriors = [1, 2, 3].map(i => monthStats(addMonths(focusMonth, -i), null)).filter(s => s.income > 0 || s.spend > 0)
   const favg = (f: (s: ReturnType<typeof monthStats>) => number) => fullPriors.length ? fullPriors.reduce((a, s) => a + f(s), 0) / fullPriors.length : null
   const rateOf = (inc: number, sp: number) => inc > 0 ? Math.round((inc - sp) / inc * 100) : null
-  const fInc = favg(s => s.income), fSp = favg(s => s.spend)
+  const fInc = favg(s => s.income), fSp = favg(s => s.spend + s.emi)
   const income: Kpi = { value: cur.income, baseline: fInc, comparable: !isCurrent }
   const spend: Kpi  = { value: cur.spend,  baseline: avg(s => s.spend), comparable: true }
   const saved = {
-    value: cur.income - cur.spend, rate: rateOf(cur.income, cur.spend),
+    value: cur.income - cur.spend - cur.emi, rate: rateOf(cur.income, cur.spend + cur.emi), emi: cur.emi, invest: cur.invest,
     baselineRate: fInc != null && fSp != null ? rateOf(fInc, fSp) : null, comparable: !isCurrent,
   }
 
   // Full-month averages over the last 3 complete months (emergency fund, savings)
   const full = [1, 2, 3].map(i => monthStats(addMonths(thisMonth, -i), null)).filter(s => s.income > 0 || s.spend > 0)
-  const avgSpendFull = full.length ? full.reduce((a, s) => a + s.spend, 0) / full.length : 0
+  // Monthly outgoings for the safety-net runway: spending plus EMIs
+  const avgSpendFull = full.length ? full.reduce((a, s) => a + s.spend + s.emi, 0) / full.length : 0
   const avgIncFull   = full.length ? full.reduce((a, s) => a + s.income, 0) / full.length : 0
   const runway = { months: avgSpendFull > 0 ? Math.round(inp.cash / avgSpendFull * 10) / 10 : null, avgSpend: avgSpendFull }
 
@@ -435,7 +443,7 @@ export function buildHomeInsights(inp: InsightInput): HomeInsights {
   // the 12 before it. Feeds the estimated part of the net-worth line.
   const savedByMonth = Array.from({ length: 13 }, (_, i) => {
     const m = addMonths(thisMonth, -i), s = monthStats(m, null)
-    return { month: m, saved: s.income - s.spend, hasData: s.income > 0 || s.spend > 0 }
+    return { month: m, saved: s.income - s.spend - s.emi, hasData: s.income > 0 || s.spend > 0 }
   })
 
   return { isCurrent, dayCut, income, spend, saved, runway, trend, categories, attention, insights, upcoming, forecast, savedByMonth }

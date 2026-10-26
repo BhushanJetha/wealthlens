@@ -3,6 +3,7 @@ import { useMemo, useState, useEffect } from 'react'
 import { useViewStore } from '@/store/viewStore'
 import { Download, ChevronLeft, ChevronRight, Wallet, CalendarDays, Trophy, Activity } from 'lucide-react'
 import { PageHeader, KpiTile, Bars } from '@/components/ui/kit'
+import { prepareMoney, isIncome, INDIA_INCOME } from '@/lib/money'
 
 // ─── Analytics Utilities ────────────────────────────────────────────────────
 
@@ -26,7 +27,7 @@ function stabilityScore(values: number[]): number {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const INCOME_CATS = ['UAE Income (NRO)','Salary','NRE Received','Dividend','Interest','FD/RD Maturity','Rental','Gift','Bonus','Tax Refund','Freelance','NRI Transfer','Other']
+const INCOME_CATS = [INDIA_INCOME,'Salary','NRE Received','Dividend','Interest','FD/RD Maturity','Rental','Gift','Bonus','Tax Refund','Freelance','NRI Transfer','Other']
 const CAT_COLORS: Record<string,string> = {
   'UAE Income (NRO)':'#15803D',
   Salary:      '#16A34A',
@@ -72,8 +73,11 @@ function csvExport(rows: string[][]): void {
   URL.revokeObjectURL(url)
 }
 
-export default function IncomeReportClient({ transactions }: { transactions: any[] }) {
+export default function IncomeReportClient({ transactions: raw }: { transactions: any[] }) {
   const { view, fromMonth, toMonth, fxRate: FX } = useViewStore()
+  // Income in this view (lib/money): earned income, plus money landing in NRE
+  // from UAE in the India view. `raw` keeps the transfers for the remittance card.
+  const transactions = useMemo(() => prepareMoney(raw, { fx: FX }).filter(t => isIncome(t, view)), [raw, FX, view])
 
   const toDisplay = (amt: number, cur: string) =>
     view === 'consolidated' ? (cur === 'AED' ? amt * FX : amt) : amt
@@ -133,7 +137,7 @@ export default function IncomeReportClient({ transactions }: { transactions: any
     return Array.from({ length: 12 }, (_, i) => {
       const m = `${viewYear}-${String(i + 1).padStart(2, '0')}`
       return transactions
-        .filter((t: any) => t.txn_date?.slice(0, 7) === m && t.txn_type === 'income')
+        .filter((t: any) => t.txn_date?.slice(0, 7) === m)
         .reduce((a: number, t: any) => {
           if (view === 'uae' && t.currency !== 'AED') return a
           if (view === 'india' && t.currency !== 'INR') return a
@@ -243,7 +247,7 @@ export default function IncomeReportClient({ transactions }: { transactions: any
           const m = txnDate?.slice(0, 7) ?? ''
           return m >= fromMonth && m <= toMonth
         }
-        const aedTransfers = transactions.filter((t: any) =>
+        const aedTransfers = raw.filter((t: any) =>
           t.txn_type === 'transfer' && t.currency === 'AED' && inRangeCheck(t.txn_date))
         const totalAED = aedTransfers.reduce((a: number, t: any) => a + Number(t.amount), 0)
         if (totalAED === 0) return null

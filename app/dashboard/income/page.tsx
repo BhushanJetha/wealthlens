@@ -1,6 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
 import IncomeClient from '@/components/dashboard/IncomeClient'
-import { isNroSettled, toNroIncome } from '@/lib/nro'
 
 export default async function IncomePage() {
   const supabase = createClient()
@@ -16,19 +15,14 @@ export default async function IncomePage() {
       .order('txn_date', { ascending: false }).limit(500),
   ])
 
-  const allTransfers = transfersRes.data ?? []
-  // Auto-link NRO settlements as "UAE Income (NRO)" income (display only — the
-  // underlying rows stay transfers, so Transfers tab / reports are unchanged).
-  const nroIncome = allTransfers.filter(isNroSettled).map(toNroIncome)
-  const incomeTxns = [...(txnsRes.data ?? []), ...nroIncome]
-    .sort((a: any, b: any) => (a.txn_date < b.txn_date ? 1 : -1))
-  const internationalTransfers = allTransfers.filter((t: any) => t.sub_category === 'International')
+  // Transfers are passed so the page can pair UAE → India remittances into
+  // "Received from UAE" India income (lib/money); they're never income themselves
 
   return (
     <IncomeClient
-      transactions={incomeTxns}
+      transactions={txnsRes.data ?? []}
       accounts={accsRes.data ?? []}
-      transfers={internationalTransfers}
+      transfers={transfersRes.data ?? []}
     />
   )
 }

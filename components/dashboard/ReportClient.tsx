@@ -2,14 +2,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts'
 import {
-  Download, Printer, ChevronLeft, ChevronRight, ArrowDownLeft, Wallet, Landmark, TrendingUp,
+  Download, Printer, ChevronLeft, ChevronRight, ArrowDownLeft, Wallet, Landmark, TrendingUp, Globe,
   AlertTriangle, CheckCircle2, Info, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import { useViewStore } from '@/store/viewStore'
 import { useCategoryStore } from '@/store/categoryStore'
 import { colorOf as catColorOf } from '@/lib/categories'
 import { CategoryIcon } from '@/components/ui/CategoryIcon'
-import { SPEND_GROUPS, spendGroup, catOf, labelOf, CC_BILL, type SpendGroup } from '@/lib/money'
+import { SPEND_GROUPS, spendGroup, catOf, labelOf, CC_BILL, isIncome, isRemitOut, prepareMoney, type SpendGroup, type View } from '@/lib/money'
 import { addMonths, daysInMonth, localToday } from '@/lib/insights'
 import { fmtMoney, fmtCompact } from '@/lib/format'
 import { PageHeader, InsightBar, AiActions, KpiTile, Segmented, EmptyState, type Tone } from '@/components/ui/kit'
@@ -23,29 +23,29 @@ const SENT_COLOR: Record<string, string> = { 'International Transfer': '#3B8EF0'
 
 // One month's (or a merged period's) money in and out
 type Agg = {
-  income: number; living: number; sent: number; loans: number; invest: number; cc: number
+  income: number; living: number; sent: number; loans: number; invest: number; cc: number; home: number   // home = sent to India (a move)
   cats: Record<string, number>; loanBy: Record<string, number>; investBy: Record<string, number>; incomeBy: Record<string, number>
 }
-const emptyAgg = (): Agg => ({ income: 0, living: 0, sent: 0, loans: 0, invest: 0, cc: 0, cats: {}, loanBy: {}, investBy: {}, incomeBy: {} })
+const emptyAgg = (): Agg => ({ income: 0, living: 0, sent: 0, loans: 0, invest: 0, cc: 0, home: 0, cats: {}, loanBy: {}, investBy: {}, incomeBy: {} })
 const addTo = (o: Record<string, number>, k: string, v: number) => { o[k] = (o[k] ?? 0) + v }
 function merge(list: Agg[]): Agg {
   const a = emptyAgg()
   for (const m of list) {
-    a.income += m.income; a.living += m.living; a.sent += m.sent; a.loans += m.loans; a.invest += m.invest; a.cc += m.cc
+    a.income += m.income; a.living += m.living; a.sent += m.sent; a.loans += m.loans; a.invest += m.invest; a.cc += m.cc; a.home += m.home
     for (const k of ['cats', 'loanBy', 'investBy', 'incomeBy'] as const) for (const [c, v] of Object.entries(m[k])) addTo(a[k], c, v)
   }
   return a
 }
 const spendingOf = (a: Agg) => a.living + a.sent
 const outOf = (a: Agg) => a.living + a.sent + a.loans + a.invest
-// Left over after everything that went out (same as Home and the Expense
-// report: savings rate = what's left after spending, loans and investing)
-const keptOf = (a: Agg) => a.income - outOf(a)
+// Saved = income − spending − EMIs (money invested counts as saved). Same
+// rule as Home: savings rate = saved ÷ income.
+const keptOf = (a: Agg) => a.income - a.living - a.sent - a.loans
 const pctChange = (a: number, b: number) => b > 0 ? Math.round((a - b) / b * 1000) / 10 : null
 
 type Pay = { month: string; t: any; v: number; g: SpendGroup }
 // Totals per month for the transactions in view (amounts in display currency)
-function aggregate(txns: any[], inView: (c: string) => boolean, conv: (n: number, c: string) => number) {
+function aggregate(txns: any[], inView: (c: string) => boolean, conv: (n: number, c: string) => number, view: View) {
   const map = new Map<string, Agg>()
   const pays: Pay[] = []
   for (const t of txns) {
@@ -54,7 +54,9 @@ function aggregate(txns: any[], inView: (c: string) => boolean, conv: (n: number
     const v = conv(Number(t.amount) || 0, t.currency)
     if (!(v > 0)) continue
     let a = map.get(m); if (!a) { a = emptyAgg(); map.set(m, a) }
-    if (t.txn_type === 'income') { a.income += v; addTo(a.incomeBy, t.category || 'Other', v); continue }
+    if (isIncome(t, view)) { a.income += v; addTo(a.incomeBy, t.category || 'Other', v); continue }
+    if (t.txn_type === 'income') continue                         // money from yourself / borrowing
+    if (isRemitOut(t)) { a.home += v; continue }                  // UAE → India: a move, not spending
     if (catOf(t) === CC_BILL) { a.cc += v; continue }
     const g = spendGroup(t)
     if (!g) continue
@@ -69,7 +71,7 @@ function aggregate(txns: any[], inView: (c: string) => boolean, conv: (n: number
 // Reports (design v2): a month or a year at a glance — money in, where it
 // went (living costs, money sent, loan repayments, investments), which months
 // and categories took the most, plus plain-language highlights and notes.
-export default function ReportClient({ transactions }: { transactions: any[] }) {
+export default function ReportClient({ transactions: raw, cardIds = [] }: { transactions: any[]; cardIds?: string[] }) {
   const { view, toMonth, fxRate: FX, setDateRange } = useViewStore()
   const { rows: categories, load: loadCategories } = useCategoryStore()
   const [today, setToday] = useState('')
@@ -77,6 +79,9 @@ export default function ReportClient({ transactions }: { transactions: any[] }) 
   const [showAllCats, setShowAllCats] = useState(false)
   useEffect(() => { setToday(localToday()); loadCategories() }, [loadCategories])
 
+  // Remittances paired (India income) and card bills checked — lib/money
+  const cardSet = useMemo(() => new Set(cardIds), [cardIds])
+  const transactions = useMemo(() => prepareMoney(raw, { fx: FX, cardIds: cardSet }), [raw, FX, cardSet])
   const cur = view === 'uae' ? 'AED' : 'INR'
   const money = (n: number) => fmtMoney(n, cur)
   const short = (n: number) => fmtCompact(n, cur)
@@ -96,7 +101,7 @@ export default function ReportClient({ transactions }: { transactions: any[] }) 
 
   // ── Per-month totals, computed once ──────────────────────────────────────
   const { byMonth, firstYear, payments } = useMemo(() => {
-    const { map, pays } = aggregate(transactions, inView, conv)
+    const { map, pays } = aggregate(transactions, inView, conv, view)
     const first = Math.min(thisYear, ...Array.from(map.keys()).map(m => Number(m.slice(0, 4))))
     return { byMonth: map, firstYear: first, payments: pays }
   }, [transactions, view, FX, thisYear])
@@ -104,7 +109,7 @@ export default function ReportClient({ transactions }: { transactions: any[] }) 
   // The current month is still running: compare it with the same days of the
   // other month, not the whole of it
   const dayCut = today ? Number(today.slice(8, 10)) : 31
-  const upToDay = (m: string) => aggregate(transactions.filter(t => t.txn_date?.slice(0, 7) === m && Number(t.txn_date.slice(8, 10)) <= dayCut), inView, conv).map.get(m) ?? emptyAgg()
+  const upToDay = (m: string) => aggregate(transactions.filter(t => t.txn_date?.slice(0, 7) === m && Number(t.txn_date.slice(8, 10)) <= dayCut), inView, conv, view).map.get(m) ?? emptyAgg()
 
   // ── The period on screen and what it's compared with ─────────────────────
   const yearMonths = (y: number) => Array.from({ length: 12 }, (_, i) => `${y}-${String(i + 1).padStart(2, '0')}`)
@@ -121,6 +126,8 @@ export default function ReportClient({ transactions }: { transactions: any[] }) 
     [byMonth, cmpMonths.join(), months.join(), thisMonth, dayCut, transactions, view, FX])
   const spending = spendingOf(P), out = outOf(P), kept = keptOf(P)
   const rate = P.income > 0 ? Math.round(kept / P.income * 100) : null
+  const sentHome = view === 'uae' ? P.home : 0                  // shown only in the UAE view
+  const leftOver = P.income - out - sentHome
 
   // ── Chart: 12 months ending at the month (monthly) or the calendar year ──
   const chartMonths = mode === 'month' ? Array.from({ length: 12 }, (_, i) => addMonths(month, i - 11)) : yearMonths(year)
@@ -147,8 +154,11 @@ export default function ReportClient({ transactions }: { transactions: any[] }) 
   type Note = { tone: 'good' | 'warn' | 'info'; text: string }
   const notes: Note[] = []
   if (P.income > 0) notes.push(kept >= 0
-    ? { tone: (rate ?? 0) >= 20 ? 'good' : 'warn', text: `${short(kept)} of the ${short(P.income)} that came in was left over — a ${rate}% savings rate${(rate ?? 0) >= 20 ? ', above the 20% target' : ', below the 20% target'}.${P.invest > 0 ? ` With the ${short(P.invest)} you invested, you set aside ${Math.round((kept + P.invest) / P.income * 100)}%.` : ''}` }
-    : { tone: 'warn', text: `${short(-kept)} more went out than came in during ${periodLabel}.` })
+    ? { tone: (rate ?? 0) >= 20 ? 'good' : 'warn', text: `You saved ${short(kept)} of the ${short(P.income)} that came in — a ${rate}% savings rate${(rate ?? 0) >= 20 ? ', above the 20% target' : ', below the 20% target'}${P.invest > 0 ? ` (${short(P.invest)} of it invested)` : ''}.` }
+    : { tone: 'warn', text: `Spending and EMIs were ${short(-kept)} more than came in during ${periodLabel}.` })
+  if (view === 'uae' && P.home > 0) notes.push({ tone: 'info', text: `${short(P.home)} was sent to India. It isn't spending — it's your money moving to NRE, and it shows as India income in the India view.` })
+  if (view === 'consolidated' && P.home > 0) notes.push({ tone: 'info', text: `Money sent from UAE to India (${short(P.home)}) isn't counted again here — your UAE salary is already the income.` })
+  if (P.cats['Card spending (not itemised)']) notes.push({ tone: 'warn', text: `${short(P.cats['Card spending (not itemised)'])} of card bills counted as spending because that month's card purchases weren't imported. Import the card statement to see where it went.` })
   if (catRows[0]) notes.push({ tone: 'info', text: `${labelOf(catRows[0].c)} was the biggest category at ${short(catRows[0].v)} (${Math.round(catRows[0].share)}% of spending)${catRows.length >= 3 ? `; with ${labelOf(catRows[1].c)} and ${labelOf(catRows[2].c)}, the top three made up ${Math.round(catRows[0].share + catRows[1].share + catRows[2].share)}%` : ''}.` })
   const mover = catRows.filter(r => r.was > 0 && Math.abs(r.v - r.was) >= Math.max(spending * 0.02, 1)).sort((a, b) => Math.abs(b.v - b.was) - Math.abs(a.v - a.was))[0]
   if (mover) notes.push({ tone: mover.v > mover.was ? 'warn' : 'good', text: `${labelOf(mover.c)} ${mover.v > mover.was ? 'rose' : 'fell'} ${Math.abs(mover.chg ?? 0)}% vs ${cmpLabel} (${mover.v > mover.was ? '+' : '−'}${short(Math.abs(mover.v - mover.was))}).` })
@@ -172,7 +182,7 @@ export default function ReportClient({ transactions }: { transactions: any[] }) 
 
   const summary = out === 0 && P.income === 0
     ? `Nothing recorded for ${periodLabel} yet.`
-    : `${periodLabel}: ${short(P.income)} came in; ${short(spending)} went on spending, ${short(P.loans)} on loans and ${short(P.invest)} into investments${P.income > 0 ? ` — ${short(kept)} (${rate}%) was left over` : ''}.`
+    : `${periodLabel}: ${short(P.income)} came in; ${short(spending)} was spent, ${short(P.loans)} went on EMIs and ${short(P.invest)} into investments${sentHome > 0 ? `, and ${short(sentHome)} was sent to India` : ''}${P.income > 0 ? ` — you saved ${short(kept)} (${rate}%)` : ''}.`
   const aiContext = `${summary} Top categories: ${catRows.slice(0, 6).map(r => `${labelOf(r.c)} ${short(r.v)}`).join(', ') || 'none'}. Compared with ${cmpLabel}: spending ${short(spendingOf(C))}, loans ${short(C.loans)}, invested ${short(C.invest)}.`
 
   const step = (d: number) => {
@@ -186,7 +196,7 @@ export default function ReportClient({ transactions }: { transactions: any[] }) 
   function exportCsv() {
     const rows = transactions.filter(t => months.includes(t.txn_date?.slice(0, 7)) && inView(t.currency))
       .map(t => {
-        const g = t.txn_type === 'income' ? 'Income' : catOf(t) === CC_BILL ? 'Card bill (not counted)' : spendGroup(t) ? GROUP[spendGroup(t)!].label : 'Not counted'
+        const g = isIncome(t, view) ? 'Income' : isRemitOut(t) ? 'Sent to India (move)' : catOf(t) === CC_BILL ? 'Card bill (move)' : spendGroup(t) ? GROUP[spendGroup(t)!].label : 'Move between your accounts'
         return [t.txn_date, `"${String(t.merchant ?? '').replace(/"/g, '""')}"`, `"${labelOf(catOf(t))}"`, g, t.amount, t.currency]
       })
     const csv = ['Date,Merchant,Category,Counted as,Amount,Currency', ...rows.map(r => r.join(','))].join('\n')
@@ -239,9 +249,10 @@ export default function ReportClient({ transactions }: { transactions: any[] }) 
     )
   }
 
-  const splitTotal = Math.max(P.income, out)
+  const splitTotal = Math.max(P.income, out + sentHome)
   const split = [...SPEND_GROUPS.map(g => ({ key: g.key, label: g.label, color: g.color, v: P[g.key] })),
-    { key: 'kept', label: 'Left over', color: '#CBD5E1', v: Math.max(P.income - out, 0) }].filter(s => s.v > 0)
+    ...(sentHome > 0 ? [{ key: 'home', label: 'Sent to India', color: '#0EA5E9', v: sentHome }] : []),
+    { key: 'kept', label: 'Left over', color: '#CBD5E1', v: Math.max(leftOver, 0) }].filter(s => s.v > 0)
 
   return (
     <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
@@ -311,7 +322,8 @@ export default function ReportClient({ transactions }: { transactions: any[] }) 
             </div>
           )}
           <div className="flex flex-col">
-            {[...SPEND_GROUPS.map(g => ({ key: g.key, label: g.label, color: g.color, v: P[g.key], icon: g.key === 'living' ? Wallet : g.key === 'sent' ? ArrowDownLeft : g.key === 'loans' ? Landmark : TrendingUp }))].map((s, i) => (
+            {[...SPEND_GROUPS.map(g => ({ key: g.key as string, label: g.label, color: g.color, v: P[g.key], icon: g.key === 'living' ? Wallet : g.key === 'sent' ? ArrowDownLeft : g.key === 'loans' ? Landmark : TrendingUp })),
+              ...(sentHome > 0 ? [{ key: 'home', label: 'Sent to India (a move)', color: '#0EA5E9', v: sentHome, icon: Globe }] : [])].map((s, i) => (
               <div key={s.key} className="flex items-center gap-2.5 py-2" style={{ borderTop: i ? '1px solid var(--track)' : 'none' }}>
                 <span className="w-7 h-7 rounded-[9px] flex items-center justify-center flex-shrink-0" style={{ background: s.color + '1A', color: s.color }}><s.icon size={14} /></span>
                 <span className="flex-1 text-[13px]" style={{ color: 'var(--text2)' }}>{s.label}</span>
@@ -322,8 +334,8 @@ export default function ReportClient({ transactions }: { transactions: any[] }) 
           </div>
           <div className="rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-2 mt-auto" style={{ background: kept >= 0 ? '#E7F7EF' : '#FDECE8' }}>
             <div>
-              <div className="text-[12.5px] font-semibold" style={{ color: kept >= 0 ? '#1E8F5F' : '#D9482F' }}>{kept >= 0 ? 'Left over' : 'More went out than came in'}</div>
-              {rate != null && <div className="text-[11.5px]" style={{ color: kept >= 0 ? '#1E8F5F' : '#D9482F' }}>Savings rate {rate}% · target 20%{P.invest > 0 && kept >= 0 ? ` · ${Math.round((kept + P.invest) / P.income * 100)}% with investing` : ''}</div>}
+              <div className="text-[12.5px] font-semibold" style={{ color: kept >= 0 ? '#1E8F5F' : '#D9482F' }}>{kept >= 0 ? `Saved${P.invest > 0 ? ` (incl. ${short(P.invest)} invested)` : ''}` : 'Spent more than came in'}</div>
+              {rate != null && <div className="text-[11.5px]" style={{ color: kept >= 0 ? '#1E8F5F' : '#D9482F' }}>Savings rate {rate}% · target 20%{kept >= 0 ? ` · ${short(Math.max(leftOver, 0))} left in the bank` : ''}</div>}
             </div>
             <span className="text-[18px] font-bold tabular-nums" style={{ color: kept >= 0 ? '#1E8F5F' : '#D9482F' }}>{short(Math.abs(kept))}</span>
           </div>
@@ -395,7 +407,7 @@ export default function ReportClient({ transactions }: { transactions: any[] }) 
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-[12.5px] tabular-nums">
               <thead><tr style={{ background: '#FAFAFE', borderTop: '1px solid var(--line)', borderBottom: '1px solid var(--line)' }}>
-                {['Month', 'Came in', 'Living', 'Sent', 'Loans', 'Invested', 'Left over', 'Savings rate'].map((h, i) => (
+                {['Month', 'Came in', 'Living', 'Family', 'EMIs', 'Invested', 'Saved', 'Savings rate'].map((h, i) => (
                   <th key={h} className={`px-4 py-2 text-[10.5px] font-semibold uppercase tracking-[0.05em] ${i ? 'text-right' : 'text-left'}`} style={{ color: 'var(--text4)' }}>{h}</th>
                 ))}
               </tr></thead>
@@ -441,7 +453,7 @@ export default function ReportClient({ transactions }: { transactions: any[] }) 
                     {SPEND_GROUPS.map(g => a[g.key] > 0 && <div key={g.key} style={{ width: `${a[g.key] / Math.max(o, a.income, 1) * 100}%`, background: g.color }} />)}
                   </div>
                   <div className="flex justify-between text-[11.5px] mt-1 tabular-nums" style={{ color: 'var(--text3)' }}>
-                    <span>In {short(a.income)}</span><span style={{ color: k >= 0 ? '#1E8F5F' : '#D9482F' }}>{k >= 0 ? 'Left' : 'Over by'} {short(Math.abs(k))}</span>
+                    <span>In {short(a.income)}</span><span style={{ color: k >= 0 ? '#1E8F5F' : '#D9482F' }}>{k >= 0 ? 'Saved' : 'Over by'} {short(Math.abs(k))}</span>
                   </div>
                 </button>
               )
@@ -546,11 +558,11 @@ export default function ReportClient({ transactions }: { transactions: any[] }) 
       <section className="rounded-[16px] px-4 md:px-5 py-3.5" style={{ background: '#FAFAFE', border: '1px solid var(--line)' }}>
         <div className="text-[11px] font-semibold uppercase tracking-[0.05em] mb-1.5" style={{ color: 'var(--text3)' }}>How this report counts</div>
         <ul className="text-[12.5px] leading-relaxed list-disc pl-4 grid md:grid-cols-2 gap-x-8" style={{ color: 'var(--text3)' }}>
-          <li><b style={{ color: 'var(--text2)' }}>Spending</b> is living costs plus money sent to family or India.</li>
-          <li><b style={{ color: 'var(--text2)' }}>Loan repayments</b> (EMIs) and <b style={{ color: 'var(--text2)' }}>investments</b> are shown on their own, not as spending.</li>
-          <li><b style={{ color: 'var(--text2)' }}>Card bills</b> aren’t counted again: the card purchases are already in their categories.</li>
-          <li>Moves between your own accounts (NRE → NRO, ATM cash, loans received) aren’t spending.</li>
-          <li><b style={{ color: 'var(--text2)' }}>Came in</b> includes money settled into NRO, your India income.</li>
+          <li><b style={{ color: 'var(--text2)' }}>Spent</b> is living costs plus family support. <b style={{ color: 'var(--text2)' }}>EMIs</b> and <b style={{ color: 'var(--text2)' }}>investments</b> are shown on their own.</li>
+          <li><b style={{ color: 'var(--text2)' }}>Saved</b> = came in − spent − EMIs, so money you invest counts as saved.</li>
+          <li><b style={{ color: 'var(--text2)' }}>UAE → India</b> is your own money moving: in the India view it’s income when it lands in NRE; in All it isn’t counted again.</li>
+          <li>Moves between your accounts (NRE → NRO, ATM cash, loans received) are never income or spending.</li>
+          <li><b style={{ color: 'var(--text2)' }}>Card bills</b> aren’t counted — the purchases are — unless a month’s card purchases weren’t imported.</li>
           <li>{view === 'consolidated' ? `AED amounts are converted at ₹${FX.toFixed(2)} per AED.` : `Only ${view === 'uae' ? 'AED' : 'INR'} transactions are included in this view.`}</li>
         </ul>
       </section>

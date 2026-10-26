@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { PageHeader, InsightBar, AiActions, LearnStrip } from '@/components/ui/kit'
 import { useCategoryStore } from '@/store/categoryStore'
 import { colorOf } from '@/lib/categories'
+import { prepareMoney, isIncome } from '@/lib/money'
 
 const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -67,8 +68,11 @@ const Lbl = ({ children }: { children: React.ReactNode }) => (
   </label>
 )
 
-export default function BudgetsClient({ budgets: initBudgets, transactions, incomeTransactions }: any) {
+export default function BudgetsClient({ budgets: initBudgets, transactions, incomeTransactions: rawIncome }: any) {
   const { view, fxRate: FX } = useViewStore()
+  // Income in this view (lib/money): earned income, plus — in the India view —
+  // money that landed in NRE from UAE
+  const incomeTransactions = useMemo(() => prepareMoney(rawIncome ?? [], { fx: FX }).filter(t => isIncome(t, view)), [rawIncome, FX, view])
   const [budgets,        setBudgets]        = useState(initBudgets)
   const [showBudgetForm, setShowBudgetForm] = useState(false)
   const [newBudget,      setNewBudget]      = useState({ category: 'Food', monthly_cap: '' })

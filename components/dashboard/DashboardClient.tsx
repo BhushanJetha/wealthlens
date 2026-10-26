@@ -148,11 +148,11 @@ export default function DashboardClient(p: Props) {
     { label: 'Income', value: money(ins.income.value),
       delta: incPct != null ? `${incPct >= 0 ? '▲' : '▼'} ${Math.abs(incPct)}% vs usual` : ins.income.baseline ? `Usually ${short(ins.income.baseline)}` : 'This month',
       tone: incPct == null ? 'neutral' : incPct >= 0 ? 'good' : 'bad', icon: ArrowDownLeft, href: '/dashboard/income' },
-    { label: 'Expenses', value: money(ins.spend.value),
+    { label: 'Spent', value: money(ins.spend.value),
       delta: spendPct != null ? `${spendPct > 0 ? '▲' : '▼'} ${Math.abs(spendPct)}% vs usual pace` : 'This month',
       tone: spendPct == null ? 'neutral' : spendPct > 0 ? 'bad' : 'good', icon: ArrowUpRight, href: '/dashboard/expenses' },
     { label: 'Savings', value: money(ins.saved.value),
-      delta: ins.saved.rate != null ? `${ins.saved.rate}% of income · target 20%` : 'Waiting for this month’s income',
+      delta: ins.saved.rate != null ? `${ins.saved.rate}% of income${(ins.saved as any).invest > 0 ? ` · incl. ${short((ins.saved as any).invest)} invested` : ' · target 20%'}` : 'Waiting for this month’s income',
       tone: ins.saved.rate == null ? 'neutral' : ins.saved.rate >= 20 ? 'good' : 'bad', icon: PiggyBank, href: '/dashboard/reports' },
   ]
 
