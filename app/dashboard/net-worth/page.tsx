@@ -1,4 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
+import { activeAccountsWithLedger } from '@/lib/ledger'
+import { getAedInr } from '@/lib/fx'
 import NetWorthClient from '@/components/dashboard/NetWorthClient'
 import { isMissingTable } from '@/lib/supabase/missingTable'
 
@@ -13,8 +15,9 @@ export default async function NetWorthPage() {
   const fromDate = `${from.toISOString().slice(0, 7)}-01`
   const histFrom = new Date(Date.now() - 400 * 86400000).toISOString().slice(0, 10)
 
+  const fx = await getAedInr()
   const named = {
-    'Bank accounts': supabase.from('accounts').select('*').eq('user_id', uid).eq('is_active', true),
+    'Bank accounts': activeAccountsWithLedger(supabase, uid, fx.rate),
     'Stocks': supabase.from('stocks').select('*').eq('user_id', uid),
     'Mutual funds': supabase.from('mutual_funds').select('*').eq('user_id', uid),
     'ETFs': supabase.from('etf_investments').select('*').eq('user_id', uid),

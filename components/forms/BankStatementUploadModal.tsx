@@ -222,6 +222,9 @@ export default function BankStatementUploadModal({ onClose }: Props) {
     setStage('saving')
     const { data: { user } } = await supabase.auth.getUser()
     const selected = result.transactions.filter(t => t.selected)
+    // The statement's closing balance is the balance on its last day (lib/ledger
+    // adds transactions after this date)
+    const lastDate = result.transactions.map(t => t.date).filter(Boolean).sort().pop() ?? new Date().toISOString().slice(0, 10)
     const fdsToSave = confirmedFDs.filter(fd => fd.confirmed)
 
     if (selected.length === 0 && fdsToSave.length === 0) { setStage('done'); return }
@@ -255,8 +258,9 @@ export default function BankStatementUploadModal({ onClose }: Props) {
       accountId = existingId
       const updates: Record<string, any> = { name: accountName }
       if (result.account_last4) updates.last_four = result.account_last4
-      if (result.closing_balance != null) updates.current_balance = result.closing_balance
-      await supabase.from('accounts').update(updates).eq('id', accountId)
+      if (result.closing_balance != null) { updates.current_balance = result.closing_balance; updates.balance_as_of = lastDate }
+      const { error: upErr } = await supabase.from('accounts').update(updates).eq('id', accountId)
+      if (upErr && updates.balance_as_of) { delete updates.balance_as_of; await supabase.from('accounts').update(updates).eq('id', accountId) }
     } else if (selected.length > 0) {
       const { data: newAcct } = await supabase
         .from('accounts')
@@ -269,6 +273,7 @@ export default function BankStatementUploadModal({ onClose }: Props) {
           country,
           last_four:       result.account_last4 ?? null,
           current_balance: result.closing_balance ?? null,
+          ...(result.closing_balance != null ? { balance_as_of: lastDate } : {}),
           color:           '#00C9A7',
         })
         .select('id').single()

@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { withLedgerBalances } from '@/lib/ledger'
 import { activeLoansWithEmi } from '@/lib/loans'
 import DashboardClient from '@/components/dashboard/DashboardClient'
 import { computeNetWorth, groupAssets, NW_RULES, type Holdings } from '@/lib/netWorth'
@@ -58,8 +59,10 @@ export default async function DashboardPage() {
     getAedInr(),
   ])
 
+  // Live balances: starting balance + transactions since (lib/ledger)
+  const liveAccounts = await withLedgerBalances(supabase, uid, accsRes.data ?? [], fxRes.rate)
   const holdings: Holdings = {
-    accounts: accsRes.data ?? [], stocks: stocksRes.data ?? [], mutualFunds: mfRes.data ?? [],
+    accounts: liveAccounts, stocks: stocksRes.data ?? [], mutualFunds: mfRes.data ?? [],
     etf: etfRes.data ?? [], nps: npsRes.data ?? [], fixedDeposits: fdRes.data ?? [],
     recurringDeposits: rdRes.data ?? [], ppfEpf: ppfRes.data ?? [], gold: goldRes.data ?? [],
     bonds: bondRes.data ?? [], lic: licRes.data ?? [], loans: loansRes.data ?? [],

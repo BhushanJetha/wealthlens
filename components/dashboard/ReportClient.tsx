@@ -13,6 +13,8 @@ import { SPEND_GROUPS, spendGroup, catOf, labelOf, CC_BILL, isIncome, isRemitOut
 import { addMonths, daysInMonth, localToday } from '@/lib/insights'
 import { fmtMoney, fmtCompact } from '@/lib/format'
 import { PageHeader, InsightBar, AiActions, KpiTile, Segmented, EmptyState, type Tone } from '@/components/ui/kit'
+import { isSpending } from '@/lib/money'
+import PaidBy from './PaidBy'
 
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -71,7 +73,8 @@ function aggregate(txns: any[], inView: (c: string) => boolean, conv: (n: number
 // Reports (design v2): a month or a year at a glance — money in, where it
 // went (living costs, money sent, loan repayments, investments), which months
 // and categories took the most, plus plain-language highlights and notes.
-export default function ReportClient({ transactions: raw, cardIds = [] }: { transactions: any[]; cardIds?: string[] }) {
+export default function ReportClient({ transactions: raw, accounts = [] }: { transactions: any[]; accounts?: any[] }) {
+  const cardIds = useMemo(() => accounts.filter((a: any) => a.account_type === 'credit_card').map((a: any) => a.id), [accounts])
   const { view, toMonth, fxRate: FX, setDateRange } = useViewStore()
   const { rows: categories, load: loadCategories } = useCategoryStore()
   const [today, setToday] = useState('')
@@ -395,6 +398,39 @@ export default function ReportClient({ transactions: raw, cardIds = [] }: { tran
             )
           })}
         </section>
+      </div>
+
+      {/* Money in → money out, and how the spending was paid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 md:gap-4 items-start">
+        <section className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
+          <h2 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Money in and out</h2>
+          <div className="text-[12px] mb-2" style={{ color: 'var(--text3)' }}>{periodLabel}, every rupee accounted for once</div>
+          {([
+            ['Came in', P.income, '#16A34A', '+'],
+            ['Spent', -spending, '#6A55E8', '−'],
+            ['Loan EMIs', -P.loans, '#F29A2E', '−'],
+            ['Invested', -P.invest, '#2FB67C', '−'],
+            ...(sentHome > 0 ? [['Sent to India (your money, moved)', -sentHome, '#0EA5E9', '−']] : []),
+          ] as [string, number, string, string][]).map(([l, v, c]) => (
+            <div key={l} className="flex items-center gap-2.5 py-2" style={{ borderTop: '1px solid var(--track)' }}>
+              <i className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: c }} />
+              <span className="flex-1 text-[13px]" style={{ color: 'var(--text2)' }}>{l}</span>
+              <span className="text-[13.5px] font-semibold tabular-nums" style={{ color: v < 0 ? 'var(--text)' : '#16A34A' }}>{v < 0 ? '−' : '+'}{short(Math.abs(v))}</span>
+            </div>
+          ))}
+          <div className="flex items-center gap-2.5 py-2.5" style={{ borderTop: '1.5px solid var(--line)' }}>
+            <span className="flex-1 text-[13.5px] font-semibold" style={{ color: 'var(--text)' }}>Left in your accounts</span>
+            <span className="text-[15px] font-bold tabular-nums" style={{ color: leftOver >= 0 ? '#1E8F5F' : '#D9482F' }}>{leftOver < 0 ? '−' : ''}{short(Math.abs(leftOver))}</span>
+          </div>
+          <div className="rounded-xl px-3.5 py-2.5 mt-1 text-[12px] leading-snug flex flex-col gap-1" style={{ background: '#FAFAFE', border: '1px solid var(--line)', color: 'var(--text3)' }}>
+            <span>{P.cc > 0
+              ? <><b style={{ color: 'var(--text2)' }}>Card bills paid {short(P.cc)}</b> — this settles card spending already counted in “Spent”, so it isn’t subtracted again.</>
+              : <>No card bills paid in this period. When you pay one, it settles card spending already in “Spent” and isn’t counted twice.</>}</span>
+            <span>Saved {short(Math.max(kept, 0))} ({rate ?? 0}% of income) = left in your accounts + invested.</span>
+          </div>
+        </section>
+        <PaidBy rows={transactions.filter(t => months.includes(String(t.txn_date).slice(0, 7)) && inView(t.currency) && isSpending(t))}
+          accounts={accounts} amountOf={t => conv(Number(t.amount) || 0, t.currency)} fmt={short} />
       </div>
 
       {mode === 'year' ? (<>

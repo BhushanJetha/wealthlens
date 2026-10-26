@@ -36,7 +36,7 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()
-  const { txn_date, merchant, description, category, sub_category, amount, currency, account_id, txn_type } = body
+  const { txn_date, merchant, description, category, sub_category, amount, currency, account_id, txn_type, counter_account_id, payment_mode } = body
 
   if (!txn_date || !merchant || !category || !amount || !currency) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -44,7 +44,7 @@ export async function POST(req: Request) {
 
   const country = currency === 'AED' ? 'UAE' : 'India'
 
-  const { data, error } = await supabase.from('transactions').insert({
+  const row: Record<string, any> = {
     user_id: user.id,
     account_id: account_id || null,
     txn_date,
@@ -58,7 +58,15 @@ export async function POST(req: Request) {
     txn_type: txn_type ?? 'expense',
     source: 'manual',
     is_verified: true,
-  }).select().single()
+    counter_account_id: counter_account_id || null,
+    payment_mode: payment_mode || null,
+  }
+  let { data, error } = await supabase.from('transactions').insert(row).select().single()
+  // Before migration 026 these two columns don't exist — save without them
+  if (error && /counter_account_id|payment_mode/.test(error.message)) {
+    delete row.counter_account_id; delete row.payment_mode
+    ;({ data, error } = await supabase.from('transactions').insert(row).select().single())
+  }
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ transaction: data })
@@ -74,20 +82,22 @@ export async function PATCH(req: Request) {
   const { id } = body
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
   // Only the transaction's own fields can change (never user_id, source…)
-  const EDITABLE = ['txn_date', 'merchant', 'description', 'category', 'sub_category', 'amount', 'currency', 'account_id', 'txn_type']
+  const EDITABLE = ['txn_date', 'merchant', 'description', 'category', 'sub_category', 'amount', 'currency', 'account_id', 'txn_type', 'counter_account_id', 'payment_mode']
   const updates: Record<string, any> = Object.fromEntries(EDITABLE.filter(k => k in body).map(k => [k, body[k]]))
   if ('amount' in updates) updates.amount = Math.abs(Number(updates.amount))
   if ('account_id' in updates) updates.account_id = updates.account_id || null
   if ('sub_category' in updates) updates.sub_category = updates.sub_category || null
+  if ('counter_account_id' in updates) updates.counter_account_id = updates.counter_account_id || null
+  if ('payment_mode' in updates) updates.payment_mode = updates.payment_mode || null
   if (updates.currency) updates.country = updates.currency === 'AED' ? 'UAE' : 'India'
 
-  const { data, error } = await supabase
-    .from('transactions')
-    .update(updates)
-    .eq('id', id)
-    .eq('user_id', user.id)
-    .select()
-    .single()
+  const run = () => supabase.from('transactions').update(updates).eq('id', id).eq('user_id', user.id).select().single()
+  let { data, error } = await run()
+  // Before migration 026 these two columns don't exist — save without them
+  if (error && /counter_account_id|payment_mode/.test(error.message)) {
+    delete updates.counter_account_id; delete updates.payment_mode
+    ;({ data, error } = await run())
+  }
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ transaction: data })

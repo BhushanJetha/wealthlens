@@ -27,7 +27,8 @@ export default async function ReportsPage() {
 
   // Card accounts: a card bill counts only when that month's card purchases
   // weren't imported (lib/money markUnitemisedCardBills)
-  const { data: cards } = await supabase.from('accounts').select('id').eq('user_id', uid).eq('account_type', 'credit_card')
+  // (and accounts give the card / bank / cash split)
+  const { data: accounts } = await supabase.from('accounts').select('id,name,account_type,currency').eq('user_id', uid)
 
-  return <ReportClient transactions={txns} cardIds={(cards ?? []).map(c => c.id)} />
+  return <ReportClient transactions={txns} accounts={accounts ?? []} />
 }

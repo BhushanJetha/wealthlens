@@ -12,6 +12,7 @@ import TransactionVoiceModal from '@/components/forms/TransactionVoiceModal'
 import CreditCardUploadModal from '@/components/forms/CreditCardUploadModal'
 import MessageParseModal from '@/components/forms/MessageParseModal'
 import ManageCategoriesSheet from '@/components/forms/ManageCategoriesSheet'
+import PaidBy from './PaidBy'
 import { useCategoryStore } from '@/store/categoryStore'
 import { colorOf as catColorOf } from '@/lib/categories'
 import { isSpending, spendGroup, catOf, labelOf } from '@/lib/money'
@@ -378,6 +379,12 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
         ))}
       </div>
 
+      {/* Card vs bank (UPI, transfers…) vs cash, from each expense's "Paid from" */}
+      <div className="max-md:order-6">
+        <PaidBy rows={realExpensesForMonth} accounts={accounts} amountOf={t => toDisplay(Number(t.amount), t.currency)} fmt={short}
+          title={`How you paid · ${rangeLabel}`} />
+      </div>
+
       {/* Transaction detail popup */}
       {activePanel && (
         <div className="fixed inset-0 wl-sheet z-50 flex items-end sm:items-center justify-center p-4 wl-popup-overlay"
@@ -511,7 +518,8 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
               sub={[account, isTransfer && t.description && t.description !== t.merchant ? `→ ${t.description}` : null].filter(Boolean).join(' · ') || undefined}
               tag={label} warn={bs && bs.pct >= 75 ? `${t.category}: ${Math.round(bs.pct)}% of this month's budget used` : null}
               meta={fmtDay(t.txn_date)} amount={`−${lSym}${Number(t.amount).toLocaleString('en-IN')}`}
-              amountColor={t.category === 'Credit Card Payment' ? 'var(--text3)' : '#DC2626'} amountSub={inrEq}
+              amountColor={isSpending(t) || spendGroup(t) ? '#DC2626' : 'var(--text3)'}
+              amountSub={inrEq ?? (!spendGroup(t) ? 'move · not spending' : undefined)}
               onOpen={() => openEdit(t)}
               actions={[
                 { label: 'Edit', icon: Pencil, onClick: () => openEdit(t) },

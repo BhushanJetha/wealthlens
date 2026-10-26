@@ -1,12 +1,16 @@
 import { createClient } from '@/lib/supabase/server'
+import { activeAccountsWithLedger } from '@/lib/ledger'
+import { getAedInr } from '@/lib/fx'
 import CardsClient from '@/components/dashboard/CardsClient'
 
 export default async function CardsPage() {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const uid = user!.id
-  const { data: accounts } = await supabase.from('accounts').select('*').eq('user_id', uid).eq('account_type', 'credit_card').eq('is_active', true)
-  const cards = accounts ?? []
+  // Live outstanding: statement balance + card spends − payments since (lib/ledger)
+  const { rate } = await getAedInr()
+  const { data: all } = await activeAccountsWithLedger(supabase, uid, rate)
+  const cards = (all ?? []).filter(a => a.account_type === 'credit_card')
 
   // Six months of charges on these cards, for the spending bars
   const from = new Date(); from.setUTCMonth(from.getUTCMonth() - 5)

@@ -163,6 +163,44 @@ export default function AccountDetailsSheet({ account, details, face, facts, isC
             <button onClick={onDelete} className="wl-btn" style={{ height: 38, color: '#DC2626' }}><Trash2 size={14} />Remove</button>
           </div>
 
+          {/* Live balance: starting point + what happened since (lib/ledger) */}
+          {account._ledger && (() => {
+            const L = account._ledger, sym = account.currency === 'AED' ? 'AED ' : '₹'
+            const n = (v: number) => `${sym}${Math.round(Math.abs(v)).toLocaleString(account.currency === 'AED' ? 'en-US' : 'en-IN')}`
+            const day = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+            const rows: [string, string, string?][] = isCard
+              ? [[`Owed on ${L.asOf ? day(L.asOf) : 'start'}`, n(L.anchor)], ['+ Spent on the card since', n(L.outflow)], ['− Paid off / refunds since', n(L.inflow), '#16A34A']]
+              : [[`Balance on ${L.asOf ? day(L.asOf) : 'start'}`, n(L.anchor)], ['+ Money in since', n(L.inflow), '#16A34A'], ['− Money out since', n(L.outflow)]]
+            return (
+              <section className="rounded-2xl px-4 py-3.5" style={{ border: '1px solid var(--line)' }}>
+                <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>{isCard ? 'What you owe, worked out' : 'Balance, worked out'}</h3>
+                <div className="text-[11.5px] mb-1.5" style={{ color: 'var(--text3)' }}>Starts from your last statement or “Edit balance”, then adds every entry tagged to this {isCard ? 'card' : 'account'}</div>
+                {rows.map(([l, v, c]) => (
+                  <div key={l} className="flex justify-between gap-2 py-1.5 text-[12.5px]" style={{ borderTop: '1px solid var(--track)' }}>
+                    <span style={{ color: 'var(--text2)' }}>{l}</span><span className="tabular-nums font-medium" style={{ color: c ?? 'var(--text)' }}>{v}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between gap-2 py-2 text-[13.5px] font-bold" style={{ borderTop: '1.5px solid var(--line)' }}>
+                  <span style={{ color: 'var(--text)' }}>{isCard ? 'Owed now' : 'Balance now'}</span><span className="tabular-nums" style={{ color: 'var(--text)' }}>{L.balance < 0 ? '−' : ''}{n(L.balance)}</span>
+                </div>
+                {L.recent.length > 0 && (<>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.05em] mt-2 mb-1" style={{ color: 'var(--text3)' }}>Recent activity</div>
+                  {L.recent.map((r: any, i: number) => {
+                    const good = isCard ? r.delta < 0 : r.delta > 0
+                    return (
+                      <div key={i} className="flex items-center gap-2 py-1.5 text-[12.5px]" style={{ borderTop: i ? '1px solid var(--track)' : 'none' }}>
+                        <span className="w-14 flex-shrink-0 tabular-nums" style={{ color: 'var(--text4)' }}>{new Date(r.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+                        <span className="flex-1 min-w-0 truncate" style={{ color: 'var(--text2)' }}>{r.label}</span>
+                        <span className="tabular-nums font-semibold" style={{ color: good ? '#16A34A' : 'var(--text)' }}>{r.delta > 0 ? '+' : '−'}{n(r.delta)}</span>
+                        <span className="w-24 text-right tabular-nums" style={{ color: 'var(--text4)' }}>{n(r.balance)}</span>
+                      </div>
+                    )
+                  })}
+                </>)}
+              </section>
+            )
+          })()}
+
           {/* Bank details */}
           <section className="rounded-2xl px-4 py-3.5" style={{ border: '1px solid var(--line)' }}>
             <div className="flex items-center justify-between mb-1">

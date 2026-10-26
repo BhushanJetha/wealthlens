@@ -189,6 +189,8 @@ export default function CreditCardUploadModal({ onClose }: Props) {
     setStage('saving')
     const { data: { user } } = await supabase.auth.getUser()
     const selected = result.transactions.filter(t => t.selected)
+    // The statement's outstanding is as of its last day (lib/ledger adds later spends)
+    const lastDate = result.transactions.map(t => t.date).filter(Boolean).sort().pop() ?? new Date().toISOString().slice(0, 10)
 
     // Final dedup: re-check against DB in case user checked a flagged duplicate
     const dates   = selected.map(t => t.date).sort()
@@ -243,10 +245,11 @@ export default function CreditCardUploadModal({ onClose }: Props) {
       // Update all fields with latest statement data (name may now include card product)
       const updates: Record<string, any> = { name: accountName }
       if (result.credit_limit    != null) updates.credit_limit    = result.credit_limit
-      if (result.outstanding_bal != null) updates.outstanding_bal = result.outstanding_bal
+      if (result.outstanding_bal != null) { updates.outstanding_bal = result.outstanding_bal; updates.balance_as_of = lastDate }
       if (result.minimum_due     != null) updates.minimum_due     = result.minimum_due
       if (result.due_date        != null) updates.due_date        = result.due_date
-      await supabase.from('accounts').update(updates).eq('id', accountId)
+      const { error: upErr } = await supabase.from('accounts').update(updates).eq('id', accountId)
+      if (upErr && updates.balance_as_of) { delete updates.balance_as_of; await supabase.from('accounts').update(updates).eq('id', accountId) }
     } else {
       const { data: newAcct } = await supabase
         .from('accounts')
@@ -260,6 +263,7 @@ export default function CreditCardUploadModal({ onClose }: Props) {
           last_four:       result.card_last4      ?? null,
           credit_limit:    result.credit_limit    ?? null,
           outstanding_bal: result.outstanding_bal ?? null,
+          ...(result.outstanding_bal != null ? { balance_as_of: lastDate } : {}),
           minimum_due:     result.minimum_due     ?? null,
           due_date:        result.due_date         ?? null,
           color:           '#3B7DD8',

@@ -22,7 +22,8 @@ export default function AddAccountModal({ onClose, type = 'credit_card', initial
       country:         initialData.country ?? 'India',
       last_four:       initialData.last_four ?? '',
       credit_limit:    String(initialData.credit_limit ?? ''),
-      outstanding_bal: String(initialData.outstanding_bal ?? ''),
+      // Banks keep their balance in current_balance; cards' is what's owed
+      outstanding_bal: String((type === 'credit_card' ? initialData.outstanding_bal : (initialData.current_balance ?? initialData.outstanding_bal)) ?? ''),
       minimum_due:     String(initialData.minimum_due ?? ''),
       due_date:        initialData.due_date ?? '',
       account_type:    type,
@@ -63,7 +64,9 @@ export default function AddAccountModal({ onClose, type = 'credit_card', initial
     if (!form.name || !form.bank_name) { setError('Name and bank are required'); return }
     setSaving(true); setError('')
 
-    const payload = {
+    const isCard = (form.account_type || type) === 'credit_card'
+    const bal = form.outstanding_bal ? Number(form.outstanding_bal) : 0
+    const payload: Record<string, any> = {
       name:            form.name,
       bank_name:       form.bank_name,
       account_type:    form.account_type || type,
@@ -71,19 +74,24 @@ export default function AddAccountModal({ onClose, type = 'credit_card', initial
       country:         form.country,
       last_four:       form.last_four || null,
       credit_limit:    form.credit_limit    ? Number(form.credit_limit)    : null,
-      outstanding_bal: form.outstanding_bal ? Number(form.outstanding_bal) : 0,
+      outstanding_bal: isCard ? bal : 0,
+      current_balance: isCard ? null : bal,
+      // The balance entered is as of today: later transactions move it (lib/ledger)
+      balance_as_of:   new Date().toISOString().slice(0, 10),
       minimum_due:     form.minimum_due     ? Number(form.minimum_due)     : null,
       due_date:        form.due_date        || null,
     }
 
     let err
-    if (isEdit) {
-      ({ error: err } = await supabase.from('accounts').update(payload).eq('id', cardId!))
-    } else {
+    const write = async (p: Record<string, any>) => {
+      if (isEdit) return (await supabase.from('accounts').update(p).eq('id', cardId!)).error
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { setSaving(false); setError('Not signed in'); return }
-      ;({ error: err } = await supabase.from('accounts').insert({ ...payload, user_id: user.id }))
+      if (!user) return { message: 'Not signed in' }
+      return (await supabase.from('accounts').insert({ ...p, user_id: user.id })).error
     }
+    err = await write(payload)
+    // Before migration 026 there's no balance_as_of column — save without it
+    if (err && /balance_as_of/.test(err.message ?? '')) { delete payload.balance_as_of; err = await write(payload) }
 
     setSaving(false)
     if (err) { setError(err.message); return }

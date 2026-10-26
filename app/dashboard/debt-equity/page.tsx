@@ -1,4 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
+import { activeAccountsWithLedger } from '@/lib/ledger'
+import { getAedInr } from '@/lib/fx'
 import DebtEquityClient from '@/components/dashboard/DebtEquityClient'
 import { activeLoansWithEmi } from '@/lib/loans'
 
@@ -12,7 +14,7 @@ export default async function DebtEquityPage() {
 
   // Same holdings (and active filters) as the Net worth page, so both agree
   const [accounts, mf, st, etf, fd, rd, nps, lic, gold, bonds, ppf, loans] = await Promise.all([
-    active('accounts'), sel('mutual_funds'), sel('stocks'), sel('etf_investments'),
+    activeAccountsWithLedger(supabase, uid, (await getAedInr()).rate), sel('mutual_funds'), sel('stocks'), sel('etf_investments'),
     active('fixed_deposits'), active('recurring_deposits'), sel('nps_accounts'),
     active('lic_policies'), sel('gold_investments'), sel('bond_investments'),
     sel('ppf_epf_accounts'), activeLoansWithEmi(supabase, uid),

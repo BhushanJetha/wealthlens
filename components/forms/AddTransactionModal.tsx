@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { X, Loader2, ArrowRight, RefreshCw, Plus, Settings2, Globe, ArrowLeftRight, Users, Banknote } from 'lucide-react'
+import { X, Loader2, ArrowRight, RefreshCw, Plus, Settings2, Globe, ArrowLeftRight, Users, Banknote, CreditCard } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useViewStore } from '@/store/viewStore'
 import { useCategoryStore } from '@/store/categoryStore'
@@ -18,7 +18,10 @@ const TRANSFER_SUBTYPES = [
   { value: 'Internal',       label: 'NRE → NRO',       desc: 'Between your own accounts',    icon: ArrowLeftRight, color: '#6A55E8' },
   { value: 'Family',         label: 'Family transfer', desc: 'Allowance to family',          icon: Users,          color: '#2FB67C' },
   { value: 'ATM Withdrawal', label: 'ATM cash',        desc: 'Bank to your cash wallet',     icon: Banknote,       color: '#0891B2' },
+  { value: 'Card bill',      label: 'Card bill',       desc: 'Pay a credit card from a bank', icon: CreditCard,    color: '#9333EA' },
 ]
+// How a bank payment was made (optional; else read from the description)
+const PAY_MODES = [['upi', 'UPI'], ['netbanking', 'Net banking'], ['debit_card', 'Debit card'], ['transfer', 'Transfer'], ['autodebit', 'Auto-debit']] as const
 // Loan categories are recorded as loan payments (they show under Loan payments)
 const LOAN_CATS = new Set(['Loan on Card', 'EMI/Loan'])
 
@@ -54,6 +57,9 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit }
       currency:     t0?.currency ?? defaults?.currency ?? (view === 'uae' ? 'AED' : 'INR'),
       txn_type:     type,
       account_id:   t0?.account_id ?? defaults?.account_id ?? '',
+      // The other account in a move (card bill → card, ATM → bank it came from…)
+      counter_account_id: t0?.counter_account_id ?? '',
+      payment_mode: t0?.payment_mode ?? '',
     }
   })
   const [accounts,    setAccounts]    = useState<any[]>([])
@@ -116,17 +122,19 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit }
     set({ category: name, txn_type })
   }
   function setTransferSubtype(sub: string) {
-    const isAtm = sub === 'ATM Withdrawal'
-    const autoMerchant = sub === 'International' ? 'Transfer to India' : sub === 'Internal' ? 'NRE to NRO' : isAtm ? 'ATM Withdrawal' : 'Family Transfer'
+    const isAtm = sub === 'ATM Withdrawal', isBill = sub === 'Card bill'
+    const autoMerchant = sub === 'International' ? 'Transfer to India' : sub === 'Internal' ? 'NRE to NRO' : isAtm ? 'ATM Withdrawal' : isBill ? 'Credit card bill' : 'Family Transfer'
     setForm(p => ({
-      ...p, sub_category: sub,
-      // ATM cash is a money movement into the Cash wallet, not spend
-      category:   isAtm ? 'ATM Withdrawal' : 'Transfer',
+      ...p, sub_category: isBill ? '' : sub, counter_account_id: '',
+      // ATM cash is a money movement into the Cash wallet; a card bill settles
+      // card spends already counted — neither is spending
+      category:   isAtm ? 'ATM Withdrawal' : isBill ? 'Credit Card Payment' : 'Transfer',
       account_id: isAtm ? '__cash__' : (p.account_id === '__cash__' ? '' : p.account_id),
       currency:   sub === 'International' ? 'AED' : p.currency,
-      merchant:   p.merchant || autoMerchant,
+      merchant:   p.merchant && !TRANSFER_SUBTYPES.some(x => x.label === p.merchant) ? p.merchant : autoMerchant,
     }))
   }
+  const transferKind = form.category === 'Credit Card Payment' ? 'Card bill' : form.sub_category
 
   // Resolve the Cash sentinel to the wallet account, creating it (per currency) the first time
   async function resolveAccountId(): Promise<string | null> {
@@ -147,11 +155,13 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit }
     if (!(Number(form.amount) > 0)) { setError('Enter an amount above zero.'); return }
     if (!form.merchant.trim()) { setError(isTransfer ? 'Give the transfer a label.' : isIncome ? 'Who paid you? Add a source.' : 'Where did you spend it? Add a merchant.'); return }
     if (!form.txn_date) { setError('Pick a date.'); return }
-    if (isTransfer && !form.sub_category) { setError('Choose the kind of transfer.'); return }
+    if (isTransfer && !transferKind) { setError('Choose the kind of transfer.'); return }
     setSaving(true); setError('')
     let account_id: string | null
     try { account_id = await resolveAccountId() } catch (e: any) { setSaving(false); setError(e.message ?? 'Could not save'); return }
-    const body = { ...form, merchant: form.merchant.trim(), description: form.description.trim() || null, amount: Math.abs(Number(form.amount)), account_id }
+    const body = { ...form, merchant: form.merchant.trim(), description: form.description.trim() || null, amount: Math.abs(Number(form.amount)), account_id,
+      counter_account_id: isTransfer ? form.counter_account_id || null : null,
+      payment_mode: !isTransfer && form.payment_mode ? form.payment_mode : null }
     const res = await fetch('/api/transactions', {
       method: mode === 'edit' ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -220,7 +230,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit }
               <Label>Kind of transfer</Label>
               <div className="grid grid-cols-2 gap-2">
                 {TRANSFER_SUBTYPES.map(s => {
-                  const on = form.sub_category === s.value
+                  const on = transferKind === s.value
                   return (
                     <button key={s.value} onClick={() => setTransferSubtype(s.value)} aria-pressed={on}
                       className="rounded-xl px-3 py-2.5 text-left flex items-start gap-2.5 transition-colors"
@@ -254,18 +264,60 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit }
               <Label>Date</Label>
               <input type="date" value={form.txn_date} onChange={e => set({ txn_date: e.target.value })} className="wl-input" style={FIELD} />
             </div>
-            {form.sub_category !== 'ATM Withdrawal' && (
+            {form.sub_category !== 'ATM Withdrawal' ? (
               <div>
                 <Label>{isTransfer ? 'From account' : isIncome ? 'Received in' : 'Paid from'}</Label>
                 <select value={form.account_id === '__cash__' ? cashId : form.account_id} onChange={e => set({ account_id: e.target.value })} className="wl-input" style={FIELD}>
                   <option value="">Not linked</option>
                   {!isTransfer && <option value={cashId}>Cash wallet</option>}
-                  {accounts.filter(a => a.account_type !== 'wallet').filter(a => !isTransfer || a.currency === form.currency)
-                    .map(a => <option key={a.id} value={a.id}>{a.name}{a.bank_name && a.bank_name !== a.name ? ` · ${a.bank_name}` : ''}</option>)}
+                  {accounts.filter(a => a.account_type !== 'wallet').filter(a => !isTransfer || (a.currency === form.currency && a.account_type !== 'credit_card'))
+                    .map(a => <option key={a.id} value={a.id}>{a.account_type === 'credit_card' ? 'Card · ' : ''}{a.name}{a.bank_name && a.bank_name !== a.name ? ` · ${a.bank_name}` : ''}</option>)}
+                </select>
+              </div>
+            ) : (
+              <div>
+                <Label>Withdrawn from</Label>
+                <select value={form.counter_account_id} onChange={e => set({ counter_account_id: e.target.value })} className="wl-input" style={FIELD}>
+                  <option value="">Choose bank</option>
+                  {accounts.filter(a => a.account_type !== 'wallet' && a.account_type !== 'credit_card' && a.currency === form.currency)
+                    .map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
               </div>
             )}
           </div>
+
+          {/* The other side of a move, so both balances update from one entry */}
+          {isTransfer && ['International', 'Internal', 'Card bill'].includes(transferKind) && (
+            <div>
+              <Label>{transferKind === 'Card bill' ? 'Card paid' : transferKind === 'International' ? 'Lands in (India account)' : 'To account'}</Label>
+              <select value={form.counter_account_id} onChange={e => set({ counter_account_id: e.target.value })} className="wl-input" style={FIELD}>
+                <option value="">{transferKind === 'Card bill' ? 'Choose card' : 'Choose account'}</option>
+                {accounts.filter(a => a.id !== form.account_id).filter(a => transferKind === 'Card bill'
+                    ? a.account_type === 'credit_card' && a.currency === form.currency
+                    : a.account_type !== 'credit_card' && a.account_type !== 'wallet' && (transferKind === 'International' ? a.currency === 'INR' : a.currency === form.currency))
+                  .map(a => <option key={a.id} value={a.id}>{a.name}{a.bank_name && a.bank_name !== a.name ? ` · ${a.bank_name}` : ''}</option>)}
+              </select>
+              <div className="text-[11.5px] mt-1" style={{ color: 'var(--text4)' }}>
+                {transferKind === 'Card bill' ? 'Lowers the bank balance and what you owe on the card. Not spending — the purchases were already counted.' : 'Both balances update from this one entry. Not income or spending.'}
+              </div>
+            </div>
+          )}
+
+          {/* How a bank payment was made (for the card / bank / UPI split) */}
+          {!isTransfer && !isIncome && (() => {
+            const acc = accounts.find(a => a.id === form.account_id)
+            if (!acc || acc.account_type === 'credit_card' || acc.account_type === 'wallet') return null
+            return (
+              <div>
+                <Label>How you paid (optional)</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {PAY_MODES.map(([k, l]) => (
+                    <button key={k} onClick={() => set({ payment_mode: form.payment_mode === k ? '' : k })} aria-pressed={form.payment_mode === k} className="wl-chip" style={{ height: 32 }}>{l}</button>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
 
           {!isTransfer && (
             <div>
@@ -292,7 +344,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit }
           )}
 
           <div>
-            <Label>{isTransfer ? (form.sub_category === 'ATM Withdrawal' ? 'Withdrawn from (optional)' : 'To (recipient or account)') : 'Note (optional)'}</Label>
+            <Label>{isTransfer ? (transferKind === 'Family' ? 'To (who)' : 'Note (optional)') : 'Note (optional)'}</Label>
             <input type="text" value={form.description} onChange={e => set({ description: e.target.value })}
               placeholder={isTransfer ? (form.sub_category === 'Family' ? 'e.g. Wife, parents' : 'e.g. HDFC NRO ••4521') : 'Anything to remember'}
               className="wl-input" style={FIELD} />
