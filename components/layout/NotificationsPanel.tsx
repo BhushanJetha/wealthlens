@@ -1,8 +1,11 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { Bell, AlertTriangle, Clock, Shield, CheckCircle2, X } from 'lucide-react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { activeLoansWithEmi } from '@/lib/loans'
+import { fetchAllRows } from '@/lib/supabase/fetchAll'
+import { budgetLines, spendByCategory, carryIn, budgetLabel, addMonths, FIXED } from '@/lib/budgets'
 
 interface Notif {
   id: string
@@ -10,6 +13,7 @@ interface Notif {
   severity: 'high' | 'medium' | 'low'
   title: string
   body: string
+  href?: string
 }
 
 const ICONS = { budget: AlertTriangle, emi: Clock, insurance: Shield }
@@ -17,6 +21,82 @@ const SEV_STYLE = {
   high:   { bg: 'var(--rose-bg)',  color: 'var(--rose)' },
   medium: { bg: 'var(--gold-bg)',  color: 'var(--gold)' },
   low:    { bg: 'var(--sage-bg)',  color: 'var(--sage)' },
+}
+
+// One load shared by every bell on the page (top bar, phone header, Home),
+// reused for two minutes
+let shared: { at: number; p: Promise<Notif[]> } | null = null
+function loadNotifs(supabase: any): Promise<Notif[]> {
+  if (shared && Date.now() - shared.at < 120000) return shared.p
+  const p = (async (): Promise<Notif[]> => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return []
+
+    const now       = new Date()
+    const today     = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const thisMonth = today.slice(0, 7)
+    const since     = addMonths(thisMonth, -6)
+
+    const [txns, budgetRes, loanRes, insRes] = await Promise.all([
+      fetchAllRows((a, b) => supabase.from('transactions').select('*').eq('user_id', user.id).gte('txn_date', `${since}-01`).order('txn_date').order('id').range(a, b), 8),
+      supabase.from('budgets').select('*').eq('user_id', user.id).gte('month_year', since),
+      activeLoansWithEmi(supabase, user.id),
+      supabase.from('insurance_policies').select('policy_name,expiry_date').eq('user_id', user.id).eq('is_active', true),
+    ])
+
+    const notifs: Notif[] = []
+
+    // Budget alerts — UAE (AED) and India (₹) budgets each against their own spending
+    const day = now.getDate(), dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+    for (const cur of ['AED', 'INR'] as const) {
+      const budgets = budgetRes.data ?? []
+      const lines = budgetLines(budgets, spendByCategory(txns, thisMonth, cur), thisMonth, cur, { carry: carryIn(budgets, txns, thisMonth, cur) })
+      const fmt = (n: number) => `${cur === 'AED' ? 'AED ' : '₹'}${Math.round(n).toLocaleString(cur === 'AED' ? 'en-US' : 'en-IN')}`
+      const where = cur === 'AED' ? 'UAE' : 'India'
+      for (const l of lines) {
+        const pct = Math.round(l.pct), name = `${budgetLabel(l.category)} (${where})`, fixed = FIXED.has(l.category)
+        if (l.status === 'over') notifs.push({ id: `budget-${cur}-${l.category}`, type: 'budget', severity: 'high', href: '/dashboard/budgets',
+          title: `${name} budget exceeded`, body: `${pct}% used — ${fmt(l.spent)} of ${fmt(l.cap)}` })
+        else if (pct >= 80 && !fixed) notifs.push({ id: `budget-${cur}-${l.category}`, type: 'budget', severity: 'medium', href: '/dashboard/budgets',
+          title: `${name} at ${pct}%`, body: `${fmt(l.left)} left for ${dim - day} day${dim - day === 1 ? '' : 's'}` })
+        else if (!fixed && l.cap > 0 && pct > day / dim * 100 + 15 && l.spent - l.cap * day / dim > 0) notifs.push({ id: `budget-${cur}-${l.category}`, type: 'budget', severity: 'low', href: '/dashboard/budgets',
+          title: `${name} is ahead of pace`, body: `${pct}% used by day ${day} of ${dim} — about ${fmt(l.spent - l.cap * day / dim)} more than expected` })
+      }
+    }
+
+    // EMI reminders (due within 14 days)
+    ;(loanRes.data ?? []).forEach((l: any) => {
+      if (!l.next_emi_date) return
+      const emiDate   = new Date(l.next_emi_date)
+      const daysUntil = Math.round((emiDate.getTime() - now.getTime()) / 86400000)
+      if (daysUntil >= 0 && daysUntil <= 14) {
+        const sym  = l.currency === 'AED' ? 'AED ' : '₹'
+        const when = daysUntil === 0 ? 'today' : daysUntil === 1 ? 'tomorrow' : `in ${daysUntil} days`
+        notifs.push({ id: `emi-${l.name}`, type: 'emi',
+          severity: daysUntil <= 3 ? 'high' : 'medium',
+          title: `EMI due ${when}`,
+          body: `${l.name} — ${sym}${Number(l.emi_amount).toLocaleString('en-IN')}` })
+      }
+    })
+
+    // Insurance expiring within 30 days
+    ;(insRes.data ?? []).forEach((p: any) => {
+      if (!p.expiry_date) return
+      const expDate   = new Date(p.expiry_date)
+      const daysUntil = Math.round((expDate.getTime() - now.getTime()) / 86400000)
+      if (daysUntil >= 0 && daysUntil <= 30) {
+        notifs.push({ id: `ins-${p.policy_name}`, type: 'insurance',
+          severity: daysUntil <= 7 ? 'high' : 'low',
+          title: `Insurance expires in ${daysUntil} day${daysUntil !== 1 ? 's' : ''}`,
+          body: p.policy_name })
+      }
+    })
+
+    notifs.sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.severity] - { high: 0, medium: 1, low: 2 }[b.severity]))
+    return notifs
+  })().catch(() => [] as Notif[])
+  shared = { at: Date.now(), p }
+  return p
 }
 
 // `round`: the phone design's 36px circle button
@@ -36,80 +116,12 @@ export default function NotificationsPanel({ round }: { round?: boolean }) {
     return () => document.removeEventListener('mousedown', handle)
   }, [open])
 
+  // Loaded once when the page opens, so the bell's count is real
   useEffect(() => {
-    if (!open || fetched) return
+    if (fetched) return
     setLoading(true)
-    ;(async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { setLoading(false); return }
-
-      const now       = new Date()
-      const thisMonth = now.toISOString().slice(0, 7)
-
-      const [txnRes, budgetRes, loanRes, insRes] = await Promise.all([
-        supabase.from('transactions').select('category,amount,currency').eq('user_id', user.id).gte('txn_date', `${thisMonth}-01`),
-        supabase.from('budgets').select('*').eq('user_id', user.id),
-        activeLoansWithEmi(supabase, user.id),
-        supabase.from('insurance_policies').select('policy_name,expiry_date').eq('user_id', user.id).eq('is_active', true),
-      ])
-
-      const notifs: Notif[] = []
-      const FX = 22.80
-
-      // Budget alerts
-      const catSpend: Record<string, number> = {}
-      ;(txnRes.data ?? []).forEach(t => {
-        const amt = t.currency === 'AED' ? Number(t.amount) * FX : Number(t.amount)
-        catSpend[t.category] = (catSpend[t.category] ?? 0) + amt
-      })
-      ;(budgetRes.data ?? []).forEach(b => {
-        const spent = catSpend[b.category] ?? 0
-        const pct   = Number(b.monthly_cap) > 0 ? Math.round(spent / Number(b.monthly_cap) * 100) : 0
-        if (pct >= 100) {
-          notifs.push({ id: `budget-${b.id}`, type: 'budget', severity: 'high',
-            title: `${b.category} budget exceeded`,
-            body: `${pct}% used — ₹${Math.round(spent).toLocaleString('en-IN')} of ₹${Number(b.monthly_cap).toLocaleString('en-IN')}` })
-        } else if (pct >= 80) {
-          notifs.push({ id: `budget-${b.id}`, type: 'budget', severity: 'medium',
-            title: `${b.category} at ${pct}%`,
-            body: `₹${Math.round(Number(b.monthly_cap) - spent).toLocaleString('en-IN')} remaining this month` })
-        }
-      })
-
-      // EMI reminders (due within 14 days)
-      ;(loanRes.data ?? []).forEach(l => {
-        if (!l.next_emi_date) return
-        const emiDate   = new Date(l.next_emi_date)
-        const daysUntil = Math.round((emiDate.getTime() - now.getTime()) / 86400000)
-        if (daysUntil >= 0 && daysUntil <= 14) {
-          const sym  = l.currency === 'AED' ? 'AED ' : '₹'
-          const when = daysUntil === 0 ? 'today' : daysUntil === 1 ? 'tomorrow' : `in ${daysUntil} days`
-          notifs.push({ id: `emi-${l.name}`, type: 'emi',
-            severity: daysUntil <= 3 ? 'high' : 'medium',
-            title: `EMI due ${when}`,
-            body: `${l.name} — ${sym}${Number(l.emi_amount).toLocaleString('en-IN')}` })
-        }
-      })
-
-      // Insurance expiring within 30 days
-      ;(insRes.data ?? []).forEach(p => {
-        if (!p.expiry_date) return
-        const expDate   = new Date(p.expiry_date)
-        const daysUntil = Math.round((expDate.getTime() - now.getTime()) / 86400000)
-        if (daysUntil >= 0 && daysUntil <= 30) {
-          notifs.push({ id: `ins-${p.policy_name}`, type: 'insurance',
-            severity: daysUntil <= 7 ? 'high' : 'low',
-            title: `Insurance expires in ${daysUntil} day${daysUntil !== 1 ? 's' : ''}`,
-            body: p.policy_name })
-        }
-      })
-
-      notifs.sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.severity] - { high: 0, medium: 1, low: 2 }[b.severity]))
-      setItems(notifs)
-      setFetched(true)
-      setLoading(false)
-    })()
-  }, [open, fetched])
+    loadNotifs(supabase).then(n => { setItems(n); setFetched(true); setLoading(false) })
+  }, [fetched]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const highCount = items.filter(n => n.severity === 'high').length
 
@@ -172,8 +184,9 @@ export default function NotificationsPanel({ round }: { round?: boolean }) {
                 {items.map(n => {
                   const Icon = ICONS[n.type]
                   const s    = SEV_STYLE[n.severity]
+                  const Row = n.href ? Link : 'div'
                   return (
-                    <div key={n.id} className="flex gap-3 p-3 rounded-xl" style={{ background: s.bg }}>
+                    <Row key={n.id} href={n.href as string} onClick={() => n.href && setOpen(false)} className="flex gap-3 p-3 rounded-xl" style={{ background: s.bg }}>
                       <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
                         style={{ background: s.color + '22', color: s.color }}>
                         <Icon size={13} />
@@ -182,7 +195,7 @@ export default function NotificationsPanel({ round }: { round?: boolean }) {
                         <div className="text-[12px] font-semibold" style={{ color: 'var(--text)' }}>{n.title}</div>
                         <div className="text-[11px] mt-0.5" style={{ color: 'var(--text3)' }}>{n.body}</div>
                       </div>
-                    </div>
+                    </Row>
                   )
                 })}
               </div>

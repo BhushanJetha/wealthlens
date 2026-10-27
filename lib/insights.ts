@@ -3,7 +3,7 @@
 // the shared rules in lib/money.ts so numbers always match.
 import { isSpend, catOf, labelOf, isIncome as isIncomeIn, spendGroup, prepareMoney } from './money'
 import { viewAmount, NW_RULES, type View } from './netWorth'
-import { NOT_PLANABLE, budgetLabel } from './budgets'
+import { budgetLabel, budgetLines, spendByCategory, carryIn, FIXED, type Cur } from './budgets'
 
 // ─── Dates (string-based so server/browser time zones can't shift a day) ─────
 export const ymOf = (d: string) => d?.slice(0, 7) ?? ''
@@ -251,19 +251,18 @@ export function buildHomeInsights(inp: InsightInput): HomeInsights {
       href: '/dashboard/investments/fixed-deposits', actionLabel: 'Plan', date: f.maturity_date,
     })
   }
-  // Budgets for the focus month
-  const monthBudgets = (inp.budgets ?? []).filter(b => b.month_year === focusMonth && inView(b.currency ?? 'INR') && Number(b.monthly_cap) > 0)
-  const fullCur = isCurrent ? monthStats(focusMonth, null) : cur
+  // Budgets for the focus month — each currency on its own (UAE budgets in
+  // AED against AED spending, India budgets in ₹ against ₹), as on Budgets
   const daysLeft = isCurrent ? daysInMonth(focusMonth) - (dayCut ?? 0) : 0
-  // One line per category: an AED and a ₹ cap for the same category add up (lib/budgets)
-  const capBy: Record<string, number> = {}
-  for (const b of monthBudgets) if (!NOT_PLANABLE.has(b.category)) capBy[b.category] = (capBy[b.category] ?? 0) + viewAmount(Number(b.monthly_cap), b.currency ?? 'INR', view, fx)
-  for (const [category, cap] of Object.entries(capBy)) {
-    const spent = fullCur.byCat[category] ?? Object.entries(fullCur.byCat).find(([c]) => labelOf(c) === category)?.[1] ?? 0
-    const pct = cap > 0 ? Math.round(spent / cap * 100) : 0
-    const name = budgetLabel(category)
-    if (pct >= 100) attention.push({ id: `bud-${category}`, severity: 'medium', title: `${name} is over budget`, detail: `${money(spent)} of ${money(cap)} (${pct}%)`, href: '/dashboard/budgets', actionLabel: 'Review' })
-    else if (isCurrent && pct >= 85 && daysLeft >= 5) attention.push({ id: `bud-${category}`, severity: 'low', title: `${name} at ${pct}% of budget`, detail: `${daysLeft} days left this month · ${money(cap - spent)} remaining`, href: '/dashboard/budgets', actionLabel: 'Review' })
+  const budgetCurs: Cur[] = view === 'uae' ? ['AED'] : view === 'india' ? ['INR'] : ['AED', 'INR']
+  for (const c of budgetCurs) {
+    const ls = budgetLines(inp.budgets ?? [], spendByCategory(inp.txns ?? [], focusMonth, c), focusMonth, c, { carry: carryIn(inp.budgets ?? [], inp.txns ?? [], focusMonth, c) })
+    const where = view === 'consolidated' ? ` (${c === 'AED' ? 'UAE' : 'India'})` : ''
+    for (const l of ls) {
+      const pct = Math.round(l.pct), name = budgetLabel(l.category) + where
+      if (l.status === 'over') attention.push({ id: `bud-${c}-${l.category}`, severity: 'medium', title: `${name} is over budget`, detail: `${nativeMoney(l.spent, c)} of ${nativeMoney(l.cap, c)} (${pct}%)`, href: '/dashboard/budgets', actionLabel: 'Review' })
+      else if (isCurrent && pct >= 85 && daysLeft >= 5 && !FIXED.has(l.category)) attention.push({ id: `bud-${c}-${l.category}`, severity: 'low', title: `${name} at ${pct}% of budget`, detail: `${daysLeft} days left this month · ${nativeMoney(l.left, c)} remaining`, href: '/dashboard/budgets', actionLabel: 'Review' })
+    }
   }
   // Card utilisation
   const limit = cards.reduce((a, c) => a + viewAmount(Number(c.credit_limit) || 0, c.currency, view, fx), 0)

@@ -72,7 +72,9 @@ export default function AnalysisClient({ transactions, budgets }: { transactions
   }, [spend, focus, dayCut, lm, ly, cmp, view, FX])
 
   const T = sum(data.now), LMs = sum(data.lmSame), LMf = sum(data.lmFull), LYs = sum(data.lySame), CMPs = sum(data.cmpSame)
-  const budgetRows = budgets.filter(b => b.month_year === focus && inView(b.currency ?? 'INR') && !NOT_PLANABLE.has(b.category))
+  // Budgets are planned per currency (UAE in AED, India in ₹), so the All
+  // view doesn't add them together — pick UAE or India to compare
+  const budgetRows = view === 'consolidated' ? [] : budgets.filter(b => b.month_year === focus && inView(b.currency ?? 'INR') && !NOT_PLANABLE.has(b.category))
   const budgetBy: Record<string, number> = {}
   budgetRows.forEach(b => { budgetBy[b.category] = (budgetBy[b.category] ?? 0) + conv(Number(b.monthly_cap), b.currency ?? 'INR') })
   const B = sum(budgetBy)
@@ -165,7 +167,9 @@ export default function AnalysisClient({ transactions, budgets }: { transactions
   }
   if (isCurrent && B > 0 && left > 0 && daysLeft > 0) insights.push({ ic: '✓', c: '#5640D6', bg: '#F0EDFF', t: `You can spend about ${short(left / daysLeft)} a day for the rest of ${monLabel(focus)} and stay within budget.` })
   if (big.length && T > 0) insights.push({ ic: '◔', c: '#3B8EF0', bg: '#E7F1FE', t: `Your ${big.length} biggest purchase${big.length === 1 ? ' is' : 's are'} ${Math.round(bigSum / T * 100)}% of this month's spending.` })
-  if (!B) insights.push({ ic: '+', c: '#5640D6', bg: '#F0EDFF', t: 'No budgets set for this month — add a few on Budgets to see pace and safe-to-spend.' })
+  if (!B) insights.push({ ic: '+', c: '#5640D6', bg: '#F0EDFF', t: view === 'consolidated'
+    ? 'UAE and India budgets are separate — switch the view to UAE or India to compare spending with each budget.'
+    : 'No budgets set for this month — add a few on Budgets to see pace and safe-to-spend.' })
 
   const aiContext = `Spending for ${monLabel(focus, true)}${isCurrent ? ` up to day ${dayCut} of ${dim}` : ''} (${view}): ${money(T)} in total`
     + (B ? `; budgeted categories ${money(Tb)} of ${money(B)} (${Math.round(used!)}%), ${money(outside)} outside budgets. ` : ', no budget set. ')
@@ -233,7 +237,9 @@ export default function AnalysisClient({ transactions, budgets }: { transactions
           </div>
           {Object.keys(budgetBy).length === 0 ? (
             <div className="text-[13px] py-4" style={{ color: 'var(--text3)' }}>
-              No budgets for {monLabel(focus, true)}. <Link href="/dashboard/budgets" className="font-semibold" style={{ color: 'var(--accent)' }}>Set budgets →</Link>
+              {view === 'consolidated'
+                ? <>UAE (AED) and India (₹) budgets are separate — switch the view to UAE or India to compare.</>
+                : <>No budgets for {monLabel(focus, true)}. <Link href="/dashboard/budgets" className="font-semibold" style={{ color: 'var(--accent)' }}>Set budgets →</Link></>}
             </div>
           ) : cats.filter(c => budgetBy[c]).map(c => {
             const sp = data.now[c] ?? 0, bu = budgetBy[c], p = sp / bu * 100, over = sp > bu
