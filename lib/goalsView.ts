@@ -3,9 +3,11 @@
 // month, your essentials, travel spend and bank & cash (for funding and ideas).
 import { prepareMoney, catOf, isSpend } from './money'
 import { monthMoney, addMonths } from './budgets'
-import { goalValue, goalPace, goalPlan, kindOf, tracksCash, fundingPlan, type Ctx, type Cur, type Kind, type GoalValue, type Plan } from './goals'
+import { goalValue, goalPace, goalPlan, kindOf, tracksCash, fundingPlan, isRecurring, type Ctx, type Cur, type Kind, type GoalValue, type Plan } from './goals'
+import { recurringState, type RecurringState } from './recurringGoals'
 
-export interface GoalItem { goal: any; kind: Kind; v: GoalValue; pace: number; plan: Plan }
+// rec: set for a recurring goal (Diwali, premiums…) — this round's state
+export interface GoalItem { goal: any; kind: Kind; v: GoalValue; pace: number; plan: Plan; rec?: RecurringState }
 export interface PerCur { essentials: number; income: number; saved: number }
 
 function loanMonthsLeft(l: any): number | null {
@@ -23,7 +25,15 @@ export function buildGoals(d: {
   const ctx: Ctx = { links: d.links, investments: d.investments, contributions: d.contributions, accounts: d.accounts, invTxns: d.invTxns, fx: d.fx }
   const items: GoalItem[] = d.goals.map(g => {
     const v = goalValue(g, ctx), pace = goalPace(g, ctx, today)
-    return { goal: g, kind: kindOf(g), v, pace, plan: goalPlan(g, v.value, pace, today) }
+    const plan = goalPlan(g, v.value, pace, today)
+    if (!isRecurring(g)) return { goal: g, kind: kindOf(g), v, pace, plan }
+    // A recurring goal is a pot for its next date: it needs this round's
+    // set-aside, it's never "achieved", and its status is this round's
+    const rec = recurringState(g, v.value, d.contributions, today)
+    const status = rec.status === 'paused' ? 'paused' : rec.status === 'new' ? 'new' : rec.status === 'short' && !rec.doneThisMonth ? 'behind' : 'on_track'
+    return { goal: g, kind: kindOf(g), v, pace, rec, plan: { ...plan, horizon: 'short', futureTarget: Number(g.target_amount) || 0, pct: rec.pct,
+      need: rec.monthly, needRange: { cautious: rec.monthly, optimistic: rec.monthly }, projected: v.value + rec.monthly * rec.slots,
+      projectedRange: { cautious: v.value + rec.monthly * rec.slots, optimistic: v.value + rec.monthly * rec.slots }, gap: 0, reachAt: null, status } }
   })
 
   // Per currency: last 3 complete months (that had any money)
@@ -49,7 +59,8 @@ export function buildGoals(d: {
     }
   }
   const travel: Record<Cur, number> = { AED: 0, INR: 0 }
-  for (const t of d.transactions) if (isSpend(t) && /travel|trip|flight|vacation|holiday|air ?ticket/i.test(catOf(t)) && (t.currency === 'AED' || t.currency === 'INR')) travel[t.currency as Cur] += Number(t.amount) || 0
+  const yearAgo = `${addMonths(today.slice(0, 7), -12)}-01`
+  for (const t of d.transactions) if (t.txn_date >= yearAgo && isSpend(t) && /travel|trip|flight|vacation|holiday|air ?ticket/i.test(catOf(t)) && (t.currency === 'AED' || t.currency === 'INR')) travel[t.currency as Cur] += Number(t.amount) || 0
   const cash: Record<Cur, number> = { AED: 0, INR: 0 }
   for (const a of d.accounts) if (a.account_type !== 'credit_card' && a.is_active !== false && (a.currency === 'AED' || a.currency === 'INR')) cash[a.currency as Cur] += Math.max(0, Number(a.current_balance) || 0)
   const loans = d.loans.map(l => ({ name: l.name, currency: l.currency, emi: Number(l.emi_amount) || 0, monthsLeft: loanMonthsLeft(l), type: l.loan_type }))

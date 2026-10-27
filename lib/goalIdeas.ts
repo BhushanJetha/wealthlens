@@ -6,6 +6,8 @@ export interface Idea {
   id: string; kind: Kind; name: string; why: string
   target: number; currency: Cur; months: number
   track_cash?: boolean; holder_name?: string | null
+  // Recurring ideas (lib/recurringGoals): repeats, its exact date and what it's for
+  repeat_months?: number; date?: string; occasion?: string | null; source_id?: string; spend_category?: string; priority?: number
 }
 export interface IdeaInput {
   goals: any[]; today: string; fx: number

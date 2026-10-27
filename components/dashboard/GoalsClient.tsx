@@ -9,13 +9,16 @@ import { useUiStore } from '@/store/uiStore'
 import { createClient } from '@/lib/supabase/client'
 import { fmtCompact, fmtMoney } from '@/lib/format'
 import { localToday, fmtDay } from '@/lib/insights'
-import { HORIZON, PRIORITY, kindInfo, tracksCash, fundingPlan, overAllocated, horizonOf, type Horizon, type Cur } from '@/lib/goals'
-import { goalIdeas, TEMPLATES } from '@/lib/goalIdeas'
+import { HORIZON, PRIORITY, REPEAT, kindInfo, kindOf, tracksCash, fundingPlan, overAllocated, horizonOf, isRecurring, type Horizon, type Cur } from '@/lib/goals'
+import { goalIdeas, TEMPLATES, type Idea } from '@/lib/goalIdeas'
+import { recurringIdeas, occasionTemplates, setAside, spendCategories, REC_STATUS } from '@/lib/recurringGoals'
+import { occasionOf } from '@/lib/occasions'
 import { buildGoals, type GoalItem } from '@/lib/goalsView'
 import type { GoalsData } from '@/lib/goalsData'
 import { PageHeader, InsightBar, Ring, Donut, Segmented } from '@/components/ui/kit'
 import AddGoalModal, { type GoalDefaults } from '@/components/forms/AddGoalModal'
-import { AddMoneySheet } from './GoalSheets'
+import { AddMoneySheet, RollSheet } from './GoalSheets'
+import { YearStrip, iconOf, repeatLabel, whenLabel } from './RecurringGoals'
 
 const STATUS = {
   achieved: { label: 'Achieved', bg: 'var(--pos-bg)', c: 'var(--pos-text)' },
@@ -33,6 +36,7 @@ const monthYear = (m: number) => { const d = new Date(); d.setMonth(d.getMonth()
 const dateIn = (m: number) => { const d = new Date(); d.setMonth(d.getMonth() + m); return d.toISOString().slice(0, 10) }
 const seenKey = (id: string) => `wl-goal-ms-${id}`
 const dismissKey = (id: string) => `wl-goal-idea-${id}`
+const readyKey = (it: GoalItem) => `wl-goal-ready-${it.goal.id}-${it.rec?.due}`
 const ls = { get: (k: string) => { try { return localStorage.getItem(k) } catch { return null } }, set: (k: string, v: string) => { try { localStorage.setItem(k, v) } catch {} } }
 
 type Nudge = { id: string; icon: string; tone: 'good' | 'warn' | 'info'; title: string; detail: string; action?: { label: string; run: () => void }; href?: string }
@@ -48,9 +52,10 @@ export default function GoalsClient({ data }: { data: GoalsData }) {
   const [today, setToday] = useState(data.today)
   useEffect(() => { setToday(localToday()) }, [])
   const [tab, setTab] = useState<'my' | 'ideas' | 'done'>('my')
-  const [hz, setHz] = useState<'all' | Horizon>('all')
+  const [hz, setHz] = useState<'all' | 'rec' | Horizon>('all')
   const [adding, setAdding] = useState<GoalDefaults | null | undefined>(undefined)   // undefined = closed
   const [money, setMoney] = useState<{ goal: any; amount?: number } | null>(null)
+  const [roll, setRoll] = useState<{ goal: any; value: number } | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState('')
@@ -69,6 +74,10 @@ export default function GoalsClient({ data }: { data: GoalsData }) {
   const mine = built.items.filter(it => inView(it.goal.currency) && it.goal.status !== 'cancelled' && (!selectedHolder || (it.goal.holder_name ?? '') === selectedHolder || !it.goal.holder_name))
   const live = mine.filter(it => it.plan.status !== 'achieved')
   const done = mine.filter(it => it.plan.status === 'achieved')
+  // Recurring goals (Diwali, premiums, gold…) have their own section; the
+  // short / mid / long-term groups are for one-time goals
+  const recurring = live.filter(it => it.rec)
+  const oneOff = live.filter(it => !it.rec)
   const curs = (['INR', 'AED'] as Cur[]).filter(c => inView(c) && mine.some(it => it.goal.currency === c))
   const short = (n: number, c: string) => fmtCompact(n, c)
 
@@ -78,19 +87,39 @@ export default function GoalsClient({ data }: { data: GoalsData }) {
   const topGoal = (c: Cur) => funding[c]?.rows[0]?.goal ?? live.find(it => it.goal.currency === c)?.goal
 
   // Ideas to start more goals (from your own numbers)
-  const ideas = useMemo(() => goalIdeas({
-    goals: data.goals, today, fx: data.fx, members: data.members, monthly: built.monthly, travel: built.travel, cash: built.cash, loans: built.loans,
-  }).filter(i => inView(i.currency) && !ls.get(dismissKey(i.id))), [data, built, today, view]) // eslint-disable-line react-hooks/exhaustive-deps
+  const ideas: Idea[] = useMemo(() => [
+    ...recurringIdeas({ goals: data.goals, today, transactions: data.transactions, members: data.members,
+      lic: data.investments.lic_policies ?? [], insurance: data.insurance, gold: data.investments.gold_investments ?? [] }),
+    ...goalIdeas({ goals: data.goals, today, fx: data.fx, members: data.members, monthly: built.monthly, travel: built.travel, cash: built.cash, loans: built.loans }),
+  ].filter(i => inView(i.currency) && !ls.get(dismissKey(i.id))), [data, built, today, view]) // eslint-disable-line react-hooks/exhaustive-deps
+  const categories = useMemo(() => spendCategories(data.transactions), [data.transactions])
 
   // ── Nudges ──
   const nudges: Nudge[] = []
-  for (const it of mine) {
+  for (const it of recurring.filter(it => it.rec!.status === 'passed')) nudges.push({ id: `rec-passed-${it.goal.id}`, icon: iconOf(it), tone: 'warn',
+    title: `${it.goal.name} was ${fmtDay(it.rec!.due)} — how much did you spend?`, detail: `Record it and it starts saving for ${fmtDay(it.rec!.next)} ${it.rec!.next.slice(0, 4)}. Anything left over stays in.`,
+    action: { label: 'Start next', run: () => setRoll({ goal: it.goal, value: it.v.value }) } })
+  for (const it of recurring.filter(it => it.rec!.status === 'short')) nudges.push({ id: `rec-short-${it.goal.id}`, icon: iconOf(it), tone: 'warn',
+    title: `${it.goal.name} ${whenLabel(it.rec!.days)} — ${short(it.rec!.left, it.goal.currency)} still to set aside`, detail: `${short(it.rec!.saved, it.goal.currency)} of ${short(Number(it.goal.target_amount), it.goal.currency)} is ready for ${fmtDay(it.rec!.due)}.`,
+    action: { label: `Set aside ${short(it.rec!.left, it.goal.currency)}`, run: () => setMoney({ goal: it.goal, amount: it.rec!.left }) } })
+  for (const c of curs) {
+    const todo = recurring.filter(it => it.goal.currency === c && (it.rec!.status === 'todo' || it.rec!.status === 'new') && it.rec!.monthly > 0)
+    if (!todo.length) continue
+    const total = todo.reduce((a, it) => a + it.rec!.monthly, 0)
+    nudges.push({ id: `rec-month-${c}`, icon: '🗓️', tone: 'info', title: `Set aside ${short(total, c)} this month for ${todo.length === 1 ? todo[0].goal.name : `${todo.length} yearly goals`}`,
+      detail: `${todo.map(it => `${it.goal.name} ${short(it.rec!.monthly, c)}`).join(' · ')}. Tap once you've moved it to savings.`,
+      action: { label: todo.length === 1 ? 'Set aside' : 'Set aside all', run: () => quickAside(todo) } })
+  }
+  for (const it of recurring.filter(it => it.rec!.status === 'ready' && it.rec!.days <= 21 && !ls.get(readyKey(it)))) nudges.push({ id: `rec-ready-${it.goal.id}`, icon: '🎉', tone: 'good',
+    title: `${it.goal.name} is covered`, detail: `${short(it.rec!.saved, it.goal.currency)} is ready for ${fmtDay(it.rec!.due)} — enjoy it without touching your regular money.`,
+    action: { label: 'Nice!', run: () => { ls.set(readyKey(it), '1'); rerender(x => x + 1) } } })
+  for (const it of mine.filter(it => !it.rec)) {
     const m = [100, 75, 50, 25].find(x => it.plan.pct >= x)
     if (m && Number(ls.get(seenKey(it.goal.id)) ?? 0) < m) nudges.push({ id: `ms-${it.goal.id}`, icon: m === 100 ? '🏆' : '🎉', tone: 'good',
       title: m === 100 ? `${it.goal.name} is fully funded!` : `${it.goal.name} passed ${m}%`, detail: `${short(it.v.value, it.goal.currency)} of ${short(it.plan.futureTarget, it.goal.currency)} — keep it going.`,
       action: { label: 'Nice!', run: () => { ls.set(seenKey(it.goal.id), String(m)); rerender(x => x + 1) } } })
   }
-  for (const it of live.filter(it => it.plan.status === 'behind').sort((a, b) => a.plan.months - b.plan.months).slice(0, 2)) {
+  for (const it of oneOff.filter(it => it.plan.status === 'behind').sort((a, b) => a.plan.months - b.plan.months).slice(0, 2)) {
     const c = it.goal.currency, more = Math.max(0, it.plan.need - it.pace)
     nudges.push({ id: `behind-${it.goal.id}`, icon: '⏳', tone: 'warn', title: `${it.goal.name} is ${short(-it.plan.gap, c)} short at your pace`,
       detail: `Put in about ${short(more, c)} more a month${it.plan.reachAt != null && it.pace > 0 ? `, or it lands around ${monthYear(it.plan.reachAt)}` : ''}.`, href: `/dashboard/goals/${it.goal.id}` })
@@ -109,7 +138,7 @@ export default function GoalsClient({ data }: { data: GoalsData }) {
     nudges.push({ id: `extra-${c}`, icon: '💸', tone: 'info', title: `About ${short(extra, c)} more income than usual this month`,
       detail: `A bonus or extra pay? Putting 30% towards ${g.name} keeps the rest guilt-free.`, action: { label: `Add ${short(extra * 0.3, c)} to ${g.name}`, run: () => setMoney({ goal: g, amount: extra * 0.3 }) } })
   }
-  for (const it of live) {
+  for (const it of oneOff) {
     const eqPct = it.v.value > 0 ? it.v.equity / it.v.value * 100 : 0
     if (it.v.value > 0 && eqPct > it.plan.maxEquity + 15) nudges.push({ id: `risk-${it.goal.id}`, icon: '⚠️', tone: 'warn', title: `${it.goal.name} is ${Math.round(eqPct)}% in equity, due in ${it.plan.months} months`,
       detail: `For ${HORIZON[it.plan.horizon].label.toLowerCase()} goals keep equity under ~${it.plan.maxEquity}% — a market dip now could miss the date. Move some to FDs or debt funds.`, href: `/dashboard/goals/${it.goal.id}` })
@@ -120,13 +149,14 @@ export default function GoalsClient({ data }: { data: GoalsData }) {
     nudges.push({ id: `over-${o.id}`, icon: '🔀', tone: 'warn', title: `${rec?.fund_name ?? rec?.name ?? 'An investment'} is split ${Math.round(o.pct)}% across goals`,
       detail: 'Together the shares can be at most 100%, or the same money counts twice.', href: g ? `/dashboard/goals/${g.goal_id}` : undefined })
   }
-  const unstarted = live.filter(it => it.plan.status === 'new')
+  const unstarted = oneOff.filter(it => it.plan.status === 'new')
   if (unstarted.length) nudges.push({ id: 'unstarted', icon: '🚀', tone: 'info', title: `${unstarted.length} goal${unstarted.length === 1 ? ' hasn’t' : 's haven’t'} started`,
     detail: `Link a fund or account, or add money — ${unstarted.slice(0, 2).map(it => it.goal.name).join(', ')}${unstarted.length > 2 ? '…' : ''}.`, href: `/dashboard/goals/${unstarted[0].goal.id}` })
 
   // ── Gamification ──
   const pts = data.goals.length * 20 + mine.reduce((a, it) => a + [25, 50, 75].filter(x => it.plan.pct >= x).length * 25 + (it.plan.status === 'achieved' ? 100 : 0), 0)
     + Math.min(data.contributions.filter(c => Number(c.amount) > 0).length, 20) * 10 + (data.goals.length >= 3 ? 30 : 0) + (data.links.length ? 15 : 0)
+    + data.goals.reduce((a, g) => a + Math.min(Number(g.cycles_done) || 0, 5) * 30, 0)
   const level = [...LEVELS].reverse().find(l => pts >= l.min) ?? LEVELS[0]
   const nextLevel = LEVELS[LEVELS.indexOf(level) + 1]
 
@@ -143,11 +173,19 @@ export default function GoalsClient({ data }: { data: GoalsData }) {
     return supabase.from('goal_investments').insert({ goal_id: goalId, user_id: user!.id, investment_type: type, investment_id: id, allocation_pct: 100 })
   })
   const update = (id: string, patch: Record<string, any>) => act(id, () => supabase.from('goals').update(patch).eq('id', id))
+  // This month's set-aside for one or more recurring goals, in one tap
+  const quickAside = (its: GoalItem[]) => act(`aside-${its.map(it => it.goal.id).join()}`, async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    return setAside(supabase, user!.id, its.map(it => ({ goal: it.goal, amount: it.rec!.monthly })), localToday())
+  })
   const remove = (id: string) => act(id, async () => { await supabase.from('goal_investments').delete().eq('goal_id', id); return supabase.from('goals').delete().eq('id', id) })
-  const fromIdea = (i: ReturnType<typeof goalIdeas>[number]): GoalDefaults => ({ name: i.name, kind: i.kind, target: i.target, currency: i.currency, months: i.months, track_cash: i.track_cash, holder_name: i.holder_name ?? null })
+  const fromIdea = (i: Idea): GoalDefaults => ({ name: i.name, kind: i.kind, target: i.target, currency: i.currency, months: i.months, track_cash: i.track_cash, holder_name: i.holder_name ?? null,
+    repeat_months: i.repeat_months, date: i.date, occasion: i.occasion, source_id: i.source_id, spend_category: i.spend_category, priority: i.priority })
 
-  const shownLive = live.filter(it => hz === 'all' || it.plan.horizon === hz)
+  const shownLive = oneOff.filter(it => hz === 'all' || it.plan.horizon === hz)
   const byHz = (h: Horizon) => shownLive.filter(it => it.plan.horizon === h)
+  const tplCur: Cur = view === 'uae' ? 'AED' : 'INR'
+  const nextDiwali = occasionOf('diwali')?.next(today) ?? null
   const aiContext = `My goals (${view}): ${mine.map(it => `${it.goal.name} (${HORIZON[it.plan.horizon].label}, ${kindInfo(it.kind).label}) ${short(it.v.value, it.goal.currency)} of ${short(it.plan.futureTarget, it.goal.currency)} by ${it.goal.target_date}, needs ${short(it.plan.need, it.goal.currency)}/month, pace ${short(it.pace, it.goal.currency)}/month, ${STATUS[it.plan.status].label}`).join('; ') || 'none yet'}. `
     + curs.map(c => `Saves about ${short(built.monthly[c].saved, c)} a month in ${c}.`).join(' ')
   const insight = !mine.length
@@ -218,10 +256,65 @@ export default function GoalsClient({ data }: { data: GoalsData }) {
     )
   }
 
+  // A recurring goal: this round's pot, its date, and the one thing to do now
+  const recCard = (it: GoalItem) => {
+    const g = it.goal, r = it.rec!, c = g.currency, info = kindInfo(it.kind), st = REC_STATUS[r.status]
+    const line = r.status === 'ready' ? `All there for ${fmtDay(r.due)} 🎉` : r.status === 'passed' ? 'Record what you spent to start the next one'
+      : r.status === 'paused' ? 'Paused — not in your monthly set-asides'
+      : r.status === 'done' ? `✓ ${short(r.thisMonth, c)} this month${r.left > 0 ? ` · then ${short(r.monthly, c)}/mo` : ''}`
+      : r.status === 'short' ? `${short(r.left, c)} still to go`
+      : `${short(r.monthly, c)}/mo · ${r.slots} month${r.slots === 1 ? '' : 's'} to go`
+    const key = `aside-${g.id}`
+    const btn = r.status === 'passed' || (r.status === 'ready' && r.days <= 14)
+      ? <button onClick={() => setRoll({ goal: g, value: it.v.value })} className="rounded-lg px-2 h-[26px] text-[11.5px] font-semibold" style={{ background: 'var(--accent-bg)', color: 'var(--accent2)' }}>Spent it? Start next</button>
+      : r.status === 'paused' ? <button onClick={() => update(g.id, { status: 'active' })} disabled={busy === g.id} className="rounded-lg px-2 h-[26px] text-[11.5px] font-semibold" style={{ background: 'var(--accent-bg)', color: 'var(--accent2)' }}>Resume</button>
+      : r.left > 0 && (!r.doneThisMonth || r.status === 'short') ? <button onClick={() => quickAside([it])} disabled={busy === key} className="rounded-lg px-2 h-[26px] text-[11.5px] font-semibold flex items-center gap-1 disabled:opacity-60" style={{ background: 'var(--accent-bg)', color: 'var(--accent2)' }}><Plus size={12} />Set aside {short(r.monthly, c)}</button>
+      : null
+    return (
+      <div key={g.id} className="wl-card px-3.5 md:px-4 py-3 md:py-3.5 flex flex-col gap-2">
+        {confirmDelete === g.id && (
+          <div className="rounded-xl p-3 flex items-center justify-between gap-3" style={{ border: '1.5px solid var(--rose)', background: 'var(--rose-bg)' }}>
+            <span className="text-[12px] font-medium" style={{ color: 'var(--rose)' }}>Delete “{g.name}”? Money put aside is removed too.</span>
+            <div className="flex gap-2 flex-shrink-0">
+              <button onClick={() => setConfirmDelete(null)} className="wl-btn" style={{ height: 28, fontSize: 12 }}>Cancel</button>
+              <button onClick={() => { setConfirmDelete(null); remove(g.id) }} className="wl-btn" style={{ height: 28, fontSize: 12, background: 'var(--rose)', color: '#fff' }}>Delete</button>
+            </div>
+          </div>
+        )}
+        <div className="flex gap-3 items-center">
+          <Link href={`/dashboard/goals/${g.id}`} className="flex gap-3 items-center flex-1 min-w-0">
+            <span className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-[19px]" style={{ background: info.color + '1F' }}>{iconOf(it)}</span>
+            <span className="min-w-0">
+              <span className="block text-[14px] font-semibold truncate" style={{ color: 'var(--text)' }}>{g.name}</span>
+              <span className="block text-[11.5px] truncate" style={{ color: 'var(--text4)' }}>{repeatLabel(g)} · {fmtDay(r.due)} · {whenLabel(r.days)}{g.holder_name ? ` · ${g.holder_name === 'Self' ? 'you' : g.holder_name.split(' ')[0]}` : ''}</span>
+            </span>
+          </Link>
+          <span className="rounded-full px-2.5 py-[3px] text-[11px] font-semibold flex-shrink-0" style={{ background: st.bg, color: st.c }}>{st.label}</span>
+        </div>
+        <Link href={`/dashboard/goals/${g.id}`} className="block">
+          <div className="flex justify-between items-baseline gap-2">
+            <span className="text-[16px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{short(r.saved, c)}</span>
+            <span className="text-[12px]" style={{ color: 'var(--text3)' }}>of {short(Number(g.target_amount), c)}</span>
+          </div>
+          <div className="h-[7px] rounded-full mt-1.5" style={{ background: 'var(--track)' }} role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(r.pct)} aria-label={`${g.name} put aside`}>
+            <div className="h-full rounded-full wl-grow" style={{ width: `${r.pct}%`, background: r.status === 'ready' ? 'var(--pos)' : info.color }} />
+          </div>
+        </Link>
+        <div className="flex justify-between items-center gap-2 text-[12px]">
+          <span className="min-w-0 truncate" style={{ color: r.status === 'short' || r.status === 'passed' ? 'var(--amber-text)' : 'var(--text3)' }}>{line}</span>
+          <span className="flex items-center gap-0.5 flex-shrink-0">
+            {btn}
+            <button onClick={() => setConfirmDelete(g.id)} title="Delete goal" aria-label="Delete goal" className="p-1.5 rounded-md hover:bg-[var(--rose-bg)]" style={{ color: 'var(--text4)' }}><Trash2 size={12} /></button>
+          </span>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
       <PageHeader title="Goals"
-        sub={`${live.length} active · ${(['short', 'mid', 'long'] as Horizon[]).map(h => `${live.filter(it => it.plan.horizon === h).length} ${HORIZON[h].label.toLowerCase()}`).join(' · ')}`}
+        sub={`${live.length} active · ${(['short', 'mid', 'long'] as Horizon[]).map(h => `${oneOff.filter(it => it.plan.horizon === h).length} ${HORIZON[h].label.toLowerCase()}`).join(' · ')}${recurring.length ? ` · ${recurring.length} recurring` : ''}`}
         onAdd={() => setAdding(null)} addLabel="New goal"
         actions={<>
           <Link href="/dashboard/goals/learn" className="wl-btn" style={{ height: 36 }}><BookOpen size={14} />Learn</Link>
@@ -286,9 +379,10 @@ export default function GoalsClient({ data }: { data: GoalsData }) {
           <div className="flex gap-1.5 overflow-x-auto no-scrollbar max-md:-mx-4 max-md:px-4">
             {(['all', 'short', 'mid', 'long'] as const).map(t => (
               <button key={t} onClick={() => setHz(t)} aria-pressed={hz === t} className="wl-chip flex-shrink-0">
-                {t === 'all' ? 'All' : HORIZON[t].label} · {t === 'all' ? live.length : live.filter(it => it.plan.horizon === t).length}
+                {t === 'all' ? 'All' : HORIZON[t].label} · {t === 'all' ? live.length : oneOff.filter(it => it.plan.horizon === t).length}
               </button>
             ))}
+            {recurring.length > 0 && <button onClick={() => setHz('rec')} aria-pressed={hz === 'rec'} className="wl-chip flex-shrink-0">Recurring · {recurring.length}</button>}
           </div>
         )}
       </div>
@@ -306,7 +400,30 @@ export default function GoalsClient({ data }: { data: GoalsData }) {
                   {ideas.length > 0 && <button onClick={() => setTab('ideas')} className="wl-btn" style={{ height: 40, padding: '0 18px' }}><Lightbulb size={14} />{ideas.length} ideas for you</button>}
                 </div>
               </div>
-            ) : (hz === 'all' ? (['short', 'mid', 'long'] as Horizon[]) : [hz]).map(h => byHz(h).length > 0 && (
+            ) : (<>
+            {(hz === 'all' || hz === 'rec') && recurring.length > 0 && (
+              <section className="flex flex-col gap-2.5">
+                <div className="flex items-baseline justify-between gap-3 px-0.5 flex-wrap">
+                  <h2 className="text-[14px] md:text-[15px] font-semibold flex items-center gap-2" style={{ color: 'var(--text)' }}>
+                    <span className="rounded-full px-2.5 py-[3px] text-[11px] font-semibold" style={{ background: 'var(--accent-bg)', color: 'var(--accent2)' }}>Recurring</span>Festivals, premiums & yearly costs
+                  </h2>
+                  <span className="text-[11.5px]" style={{ color: 'var(--text4)' }}>A little each month · starts again after each date</span>
+                </div>
+                <YearStrip items={recurring} today={today} fx={data.fx} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 md:gap-3.5">{[...recurring].sort((a, b) => a.rec!.due.localeCompare(b.rec!.due)).map(recCard)}</div>
+              </section>
+            )}
+            {hz === 'all' && recurring.length === 0 && nextDiwali && (
+              <button onClick={() => setTab('ideas')} className="rounded-2xl px-4 md:px-5 py-3.5 flex items-center gap-3 text-left" style={{ background: '#FFF4E5', border: '1px solid #F8DDB8' }}>
+                <span className="text-[24px]">🪔</span>
+                <span className="flex-1 min-w-0">
+                  <span className="block text-[13.5px] font-semibold" style={{ color: '#7C4A03' }}>Diwali is {whenLabel(Math.round((Date.parse(nextDiwali) - Date.parse(today)) / 864e5))} — plan the big months as goals</span>
+                  <span className="block text-[12px] mt-0.5" style={{ color: '#9A5B0B' }}>Festivals, birthdays, LIC premiums, gold on Dhanteras: save a little each month and they never hit one salary.</span>
+                </span>
+                <ChevronRight size={16} style={{ color: '#9A5B0B' }} />
+              </button>
+            )}
+            {hz !== 'rec' && (hz === 'all' ? (['short', 'mid', 'long'] as Horizon[]) : [hz]).map(h => byHz(h).length > 0 && (
               <section key={h} className="flex flex-col gap-2.5">
                 <div className="flex items-baseline justify-between gap-3 px-0.5 flex-wrap">
                   <h2 className="text-[14px] md:text-[15px] font-semibold flex items-center gap-2" style={{ color: 'var(--text)' }}>
@@ -317,6 +434,7 @@ export default function GoalsClient({ data }: { data: GoalsData }) {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 md:gap-3.5">{byHz(h).map(card)}</div>
               </section>
             ))}
+            </>)}
           </div>
 
           {/* Right column */}
@@ -339,7 +457,7 @@ export default function GoalsClient({ data }: { data: GoalsData }) {
                     {cap <= 0 ? 'No monthly saving yet to fund goals from' : f.need <= cap ? `✓ It all fits — ${short(f.spare, c)} to spare` : `${short(f.need - cap, c)} a month short`}
                   </div>
                   <ul className="mt-2">
-                    {f.rows.map(r => (
+                    {f.rows.filter(r => !(isRecurring(r.goal) && r.need <= 0)).map(r => (
                       <li key={r.goal.id} className="py-2 text-[12.5px]" style={{ borderTop: '1px solid var(--track)' }}>
                         <div className="flex justify-between gap-2">
                           <Link href={`/dashboard/goals/${r.goal.id}`} className="font-semibold truncate" style={{ color: 'var(--text)' }}>{r.goal.name}</Link>
@@ -347,21 +465,21 @@ export default function GoalsClient({ data }: { data: GoalsData }) {
                         </div>
                         {!r.fits && (
                           <div className="flex flex-wrap gap-1.5 mt-1.5">
-                            {r.newMonths != null && r.newMonths > 0 && <button onClick={() => update(r.goal.id, { target_date: dateIn(r.newMonths!) })} disabled={busy === r.goal.id} className="wl-chip" style={{ height: 26, fontSize: 11 }}>Move to {monthYear(r.newMonths)}</button>}
-                            {r.reachableToday > 0 && <button onClick={() => update(r.goal.id, { target_amount: Math.floor(r.reachableToday / (c === 'AED' ? 100 : 1000)) * (c === 'AED' ? 100 : 1000) })} disabled={busy === r.goal.id} className="wl-chip" style={{ height: 26, fontSize: 11 }}>Lower to {short(r.reachableToday, c)}</button>}
+                            {!isRecurring(r.goal) && r.newMonths != null && r.newMonths > 0 && <button onClick={() => update(r.goal.id, { target_date: dateIn(r.newMonths!) })} disabled={busy === r.goal.id} className="wl-chip" style={{ height: 26, fontSize: 11 }}>Move to {monthYear(r.newMonths)}</button>}
+                            {r.reachableToday > 0 && !(isRecurring(r.goal) && kindOf(r.goal) === 'payment') && <button onClick={() => update(r.goal.id, { target_amount: Math.floor(r.reachableToday / (c === 'AED' ? 100 : 1000)) * (c === 'AED' ? 100 : 1000) })} disabled={busy === r.goal.id} className="wl-chip" style={{ height: 26, fontSize: 11 }}>Lower to {short(r.reachableToday, c)}</button>}
                             <button onClick={() => update(r.goal.id, { status: 'paused' })} disabled={busy === r.goal.id} className="wl-chip" style={{ height: 26, fontSize: 11 }}>Pause</button>
                           </div>
                         )}
                       </li>
                     ))}
                   </ul>
-                  <p className="text-[11px] mt-1.5 leading-snug" style={{ color: 'var(--text4)' }}>Saving = income − spending − EMIs, last 3 months (investing counts). Funded in order: emergency fund, then Must have → Nice to have, then nearest date.</p>
+                  <p className="text-[11px] mt-1.5 leading-snug" style={{ color: 'var(--text4)' }}>Saving = income − spending − EMIs, last 3 months (investing counts). Funded in order: festivals & yearly costs, emergency fund, then Must have → Nice to have, then nearest date.</p>
                 </section>
               )
             })}
 
-            {live.length > 0 && (() => {
-              const hzRows = (['short', 'mid', 'long'] as Horizon[]).map(h => ({ h, n: live.filter(it => it.plan.horizon === h).length })).filter(x => x.n > 0)
+            {oneOff.length > 0 && (() => {
+              const hzRows = (['short', 'mid', 'long'] as Horizon[]).map(h => ({ h, n: oneOff.filter(it => it.plan.horizon === h).length })).filter(x => x.n > 0)
               return (
                 <section className="wl-card px-4 md:px-5 py-4">
                   <h2 className="text-[14px] font-semibold mb-3" style={{ color: 'var(--text)' }}>Your goals by time</h2>
@@ -405,22 +523,23 @@ export default function GoalsClient({ data }: { data: GoalsData }) {
         <div className="rounded-2xl px-4 md:px-5 py-3.5 flex items-start gap-3" style={{ background: 'var(--accent-bg)', border: '1px solid var(--accent-border)' }}>
           <Sparkles size={18} style={{ color: 'var(--accent)' }} className="flex-shrink-0 mt-0.5" />
           <div className="text-[13px] leading-snug" style={{ color: 'var(--accent2)' }}>
-            <b>Give every rupee and dirham a job.</b> Each goal gets its own monthly amount and fills itself from the investments and accounts you link. These ideas come from your own spending, family and loans — tap one, change anything, save.
+            <b>Give every rupee and dirham a job.</b> Each goal gets its own monthly amount and fills itself from the investments and accounts you link. These ideas come from your own spending, policies, family and loans — tap one, change anything, save.
           </div>
         </div>
         {ideas.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 md:gap-3.5">
             {ideas.map(i => {
-              const info = kindInfo(i.kind)
+              const info = kindInfo(i.kind), icon = occasionOf(i.occasion)?.icon ?? info.icon
               return (
                 <div key={i.id} className="wl-card px-4 md:px-5 py-4 flex flex-col gap-2">
                   <div className="flex justify-between items-center gap-2">
-                    <span className="w-10 h-10 rounded-xl flex items-center justify-center text-[19px]" style={{ background: info.color + '1F' }}>{info.icon}</span>
-                    <span className="rounded-full px-2.5 py-[3px] text-[10.5px] font-semibold" style={{ background: HORIZON[horizonOf(i.months)].bg, color: HORIZON[horizonOf(i.months)].color }}>{HORIZON[horizonOf(i.months)].label}</span>
+                    <span className="w-10 h-10 rounded-xl flex items-center justify-center text-[19px]" style={{ background: info.color + '1F' }}>{icon}</span>
+                    {i.repeat_months ? <span className="rounded-full px-2.5 py-[3px] text-[10.5px] font-semibold" style={{ background: 'var(--accent-bg)', color: 'var(--accent2)' }}>{REPEAT[i.repeat_months] ?? `Every ${i.repeat_months} months`}</span>
+                      : <span className="rounded-full px-2.5 py-[3px] text-[10.5px] font-semibold" style={{ background: HORIZON[horizonOf(i.months)].bg, color: HORIZON[horizonOf(i.months)].color }}>{HORIZON[horizonOf(i.months)].label}</span>}
                   </div>
                   <div className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>{i.name}</div>
                   <div className="text-[12.5px] leading-snug flex-1" style={{ color: 'var(--text3)' }}>{i.why}</div>
-                  <div className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{fmtMoney(i.target, i.currency)} <span className="font-normal" style={{ color: 'var(--text3)' }}>by {monthYear(i.months)}</span></div>
+                  <div className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{fmtMoney(i.target, i.currency)} <span className="font-normal" style={{ color: 'var(--text3)' }}>{i.date ? `next ${fmtDay(i.date)} ${i.date.slice(0, 4)}` : `by ${monthYear(i.months)}`}</span></div>
                   <div className="flex gap-2 mt-1">
                     <button onClick={() => setAdding(fromIdea(i))} className="wl-btn wl-btn-primary flex-1" style={{ height: 36 }}>Create this goal</button>
                     <button onClick={() => { ls.set(dismissKey(i.id), '1'); rerender(x => x + 1) }} className="wl-btn" style={{ height: 36 }}>Not now</button>
@@ -430,10 +549,25 @@ export default function GoalsClient({ data }: { data: GoalsData }) {
             })}
           </div>
         )}
-        <h2 className="text-[15px] font-semibold mt-1 px-0.5" style={{ color: 'var(--text)' }}>Or start from a template</h2>
+        <div className="mt-1 px-0.5">
+          <h2 className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Festivals & yearly costs</h2>
+          <p className="text-[12.5px] mt-0.5" style={{ color: 'var(--text3)' }}>Recurring goals: save a little each month, spend it on the day, and it starts again for next time.</p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
+          {occasionTemplates(data.goals, data.members, today, tplCur).map(o => (
+            <button key={o.key} onClick={() => setAdding({ name: o.name, kind: o.kind, target: o.amount, currency: tplCur, repeat_months: 12, occasion: o.key.startsWith('birthday') ? 'birthday' : o.key,
+              date: o.date ?? undefined, spend_category: o.category, priority: o.priority, holder_name: o.holder })}
+              className="wl-card px-3.5 py-3 text-left flex flex-col gap-1.5 transition-colors hover:border-[var(--accent-border)]">
+              <span className="text-[22px]">{o.icon}</span>
+              <span className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{o.name}</span>
+              <span className="text-[11.5px]" style={{ color: 'var(--text3)' }}>{o.date ? `${fmtDay(o.date)} ${o.date.slice(0, 4)}` : o.hint} · e.g. {short(o.amount, tplCur)}</span>
+            </button>
+          ))}
+        </div>
+        <h2 className="text-[15px] font-semibold mt-1 px-0.5" style={{ color: 'var(--text)' }}>Or start a one-time goal</h2>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
           {TEMPLATES.map(t => {
-            const info = kindInfo(t.kind), c: Cur = view === 'uae' ? 'AED' : 'INR', [amt, months] = t[c]
+            const info = kindInfo(t.kind), c = tplCur, [amt, months] = t[c]
             return (
               <button key={t.kind} onClick={() => setAdding({ name: t.name, kind: t.kind, target: amt, currency: c, months, track_cash: t.kind === 'emergency' })}
                 className="wl-card px-3.5 py-3 text-left flex flex-col gap-1.5 transition-colors hover:border-[var(--accent-border)]">
@@ -469,8 +603,9 @@ export default function GoalsClient({ data }: { data: GoalsData }) {
         )
       )}
 
-      {adding !== undefined && <AddGoalModal onClose={() => setAdding(undefined)} defaults={adding ?? undefined} allInvestments={data.investments} accounts={data.accounts} members={data.members} />}
+      {adding !== undefined && <AddGoalModal onClose={() => setAdding(undefined)} defaults={adding ?? undefined} allInvestments={data.investments} accounts={data.accounts} members={data.members} categories={categories} />}
       {money && <AddMoneySheet goal={money.goal} amount={money.amount} onClose={() => setMoney(null)} onSaved={() => { setMoney(null); router.refresh() }} />}
+      {roll && <RollSheet goal={roll.goal} value={roll.value} onClose={() => setRoll(null)} onSaved={() => { setRoll(null); router.refresh() }} />}
     </div>
   )
 }

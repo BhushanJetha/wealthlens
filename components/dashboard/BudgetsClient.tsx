@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Plus, Sparkles, Pencil, Lock, Unlock, Trash2, Wallet, Target, TrendingUp, PiggyBank, BarChart2, CalendarRange, Repeat, Users, CheckCircle2 } from 'lucide-react'
 import { useViewStore } from '@/store/viewStore'
 import { useCategoryStore } from '@/store/categoryStore'
@@ -18,6 +19,9 @@ import { PageHeader, InsightBar, AiActions, KpiTile, KpiGrid, Panel, Ring, Learn
 import { ChipFilter } from '@/components/ui/list'
 import { CategoryIcon } from '@/components/ui/CategoryIcon'
 import { BudgetSheet, SuggestSheet, SavingsSheet, PersonSheet, FundSheet, PlanNextSheet, writeBudget } from './BudgetSheets'
+import { setAside as setAsideGoals } from '@/lib/recurringGoals'
+import { RollSheet } from './GoalSheets'
+import AddGoalModal from '@/components/forms/AddGoalModal'
 
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const STATUS = {
@@ -37,15 +41,17 @@ const setFlag = (k: string) => { try { localStorage.setItem(k, '1') } catch {} }
 
 type SheetState =
   | { kind: 'budget'; line: BudgetLine | null } | { kind: 'suggest' } | { kind: 'savings' } | { kind: 'plan' }
-  | { kind: 'person'; row: any | null } | { kind: 'fund'; fund: Fund | null }
+  | { kind: 'person'; row: any | null } | { kind: 'fund'; fund: Fund | null } | { kind: 'roll'; fund: Fund } | { kind: 'newGoal' }
 
 // Budgets (design v2), one currency at a time: UAE budgets in AED and India
 // budgets in ₹ are planned separately — prices and needs differ, so nothing
 // is converted. The All view switches between the two. Spending follows
-// lib/money; caps adjust themselves or stay fixed (lib/budgets).
-export default function BudgetsClient({ today: serverToday, budgets: initial, transactions, funds: initialFunds, fundsReady }: {
-  today: string; budgets: any[]; transactions: any[]; funds: Fund[]; fundsReady: boolean
+// lib/money; caps adjust themselves or stay fixed (lib/budgets). Yearly
+// costs are the recurring goals from Goals (fundsSource 'goals').
+export default function BudgetsClient({ today: serverToday, budgets: initial, transactions, funds: initialFunds, fundsReady, fundsSource = 'funds' }: {
+  today: string; budgets: any[]; transactions: any[]; funds: Fund[]; fundsReady: boolean; fundsSource?: 'goals' | 'funds'
 }) {
+  const router = useRouter()
   const { view, toMonth, fxRate: FX } = useViewStore()
   const { rows: categories, load: loadCategories } = useCategoryStore()
   const { members } = useFamily()
@@ -188,6 +194,15 @@ export default function BudgetsClient({ today: serverToday, budgets: initial, tr
   }
   async function putAside(f: Fund, amount: number) {
     setBusyFund(f.id); setError('')
+    if (f.goal) {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      const { error } = await setAsideGoals(supabase, user!.id, [{ goal: f.goal, amount }], today)
+      setBusyFund(null)
+      if (error) { setError(error.message); return }
+      setFunds(prev => prev.map(x => x.id === f.id ? { ...x, saved: Number(x.saved || 0) + Math.round(amount), last_saved_month: thisMonth } : x))
+      return
+    }
     let q = createClient().from('budget_funds').update({ saved: Number(f.saved || 0) + amount, last_saved_month: thisMonth }).eq('id', f.id)
     q = f.last_saved_month ? q.eq('last_saved_month', f.last_saved_month) : q.is('last_saved_month', null)
     const { data, error } = await q.select()
@@ -196,6 +211,7 @@ export default function BudgetsClient({ today: serverToday, budgets: initial, tr
     if (data?.[0]) setFunds(prev => prev.map(x => x.id === f.id ? data[0] as Fund : x))
   }
   async function nextYear(f: Fund) {
+    if (f.goal) { setSheet({ kind: 'roll', fund: f }); return }
     setBusyFund(f.id); setError('')
     const [y, ...rest] = f.due_date.split('-')
     const { data, error } = await createClient().from('budget_funds').update({ saved: 0, last_saved_month: null, due_date: `${Number(y) + 1}-${rest.join('-')}` }).eq('id', f.id).select()
@@ -433,20 +449,29 @@ export default function BudgetsClient({ today: serverToday, budgets: initial, tr
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 md:gap-4 items-start">
         {/* Yearly costs */}
-        <Panel title="Yearly costs" right={fundsReady ? smallLink(() => setSheet({ kind: 'fund', fund: null }), <><Plus size={13} />Add</>) : undefined}>
-          {!fundsReady ? <p className="text-[12.5px] mt-2" style={{ color: 'var(--text3)' }}>Run migration 029 in Supabase to plan yearly costs — school fees, insurance, flights home — a month at a time.</p>
+        <Panel title="Yearly costs & festivals" right={fundsReady ? <span className="flex items-center gap-3">
+          {fundsSource === 'goals' && <Link href="/dashboard/goals" className="text-[12px] font-semibold" style={{ color: 'var(--text3)' }}>In Goals</Link>}
+          {smallLink(() => setSheet(fundsSource === 'goals' ? { kind: 'newGoal' } : { kind: 'fund', fund: null }), <><Plus size={13} />Add</>)}</span> : undefined}>
+          {!fundsReady ? <p className="text-[12.5px] mt-2" style={{ color: 'var(--text3)' }}>Run migrations 029–031 in Supabase to plan yearly costs — school fees, insurance, Diwali, flights home — a month at a time.</p>
             : fundRows.length === 0 ? (
-              <p className="text-[12.5px] mt-2 leading-snug" style={{ color: 'var(--text3)' }}>School fees, insurance, flights home, festivals — add them here and put a share aside every month, so the big month isn't a shock. In the month it's due, what you've put aside is added to that category's budget.</p>
+              <p className="text-[12.5px] mt-2 leading-snug" style={{ color: 'var(--text3)' }}>Diwali, birthdays, LIC premiums, school fees, flights home — add them{fundsSource === 'goals' ? ' as recurring goals' : ''} and put a share aside every month, so the big month isn't a shock. In the month it's due, what you've put aside is added to that category's budget.</p>
             ) : (<ul className="mt-1.5">
               {fundRows.map(({ f, p }) => (
                 <li key={f.id} className="py-2.5" style={{ borderTop: '1px solid var(--track)' }}>
                   <div className="flex items-start justify-between gap-3">
-                    <button onClick={() => setSheet({ kind: 'fund', fund: f })} className="min-w-0 text-left">
-                      <span className="block text-[13px] font-semibold truncate" style={{ color: 'var(--text)' }}>{f.name}</span>
-                      <span className="block text-[11.5px]" style={{ color: 'var(--text3)' }}>{money(Number(f.target))} due {fmtDay(f.due_date)}{f.category ? ` · ${budgetLabel(f.category)}` : ''}</span>
-                    </button>
+                    {f.goal ? (
+                      <Link href={`/dashboard/goals/${f.id}`} className="min-w-0 text-left">
+                        <span className="block text-[13px] font-semibold truncate" style={{ color: 'var(--text)' }}>{f.goal.icon && f.goal.icon !== '🎯' ? `${f.goal.icon} ` : ''}{f.name}</span>
+                        <span className="block text-[11.5px]" style={{ color: 'var(--text3)' }}>{money(Number(f.target))} due {fmtDay(f.due_date)}{f.category ? ` · ${budgetLabel(f.category)}` : ''}</span>
+                      </Link>
+                    ) : (
+                      <button onClick={() => setSheet({ kind: 'fund', fund: f })} className="min-w-0 text-left">
+                        <span className="block text-[13px] font-semibold truncate" style={{ color: 'var(--text)' }}>{f.name}</span>
+                        <span className="block text-[11.5px]" style={{ color: 'var(--text3)' }}>{money(Number(f.target))} due {fmtDay(f.due_date)}{f.category ? ` · ${budgetLabel(f.category)}` : ''}</span>
+                      </button>
+                    )}
                     {p.isDue ? (
-                      <button onClick={() => nextYear(f)} disabled={busyFund === f.id} className="wl-btn flex-shrink-0 disabled:opacity-60" style={{ height: 30, fontSize: 12 }}><CheckCircle2 size={13} />Paid · plan next year</button>
+                      <button onClick={() => nextYear(f)} disabled={busyFund === f.id} className="wl-btn flex-shrink-0 disabled:opacity-60" style={{ height: 30, fontSize: 12 }}><CheckCircle2 size={13} />{f.goal ? 'Spent · start next' : 'Paid · plan next year'}</button>
                     ) : p.left <= 0 ? (
                       <span className="text-[12px] font-semibold flex items-center gap-1 flex-shrink-0" style={{ color: 'var(--income)' }}><CheckCircle2 size={13} />All set aside</span>
                     ) : p.doneThisMonth ? (
@@ -608,6 +633,8 @@ export default function BudgetsClient({ today: serverToday, budgets: initial, tr
         onClose={() => setSheet(null)} onSaved={(f, removedId) => {
           setFunds(prev => removedId ? prev.filter(x => x.id !== removedId) : prev.some(x => x.id === f!.id) ? prev.map(x => x.id === f!.id ? f! : x) : [...prev, f!]); setSheet(null)
         }} />}
+      {sheet?.kind === 'roll' && <RollSheet goal={sheet.fund.goal} value={Number(sheet.fund.saved) || 0} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); router.refresh() }} />}
+      {sheet?.kind === 'newGoal' && <AddGoalModal stay categories={planCats} defaults={{ kind: 'payment', currency: cur, repeat_months: 12 }} onClose={() => setSheet(null)} />}
       {sheet?.kind === 'plan' && <PlanNextSheet cur={cur} txns={transactions} budgets={budgets} month={month} lines={lines}
         onClose={() => setSheet(null)} onSaved={rows => { setBudgets(prev => merge(prev, rows)); setSheet(null) }} />}
     </div>

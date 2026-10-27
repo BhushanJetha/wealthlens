@@ -1,22 +1,23 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { Bell, AlertTriangle, Clock, Shield, CheckCircle2, X } from 'lucide-react'
+import { Bell, AlertTriangle, Clock, Shield, CheckCircle2, X, Gift } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { activeLoansWithEmi } from '@/lib/loans'
 import { fetchAllRows } from '@/lib/supabase/fetchAll'
 import { budgetLines, spendByCategory, carryIn, budgetLabel, addMonths, FIXED } from '@/lib/budgets'
+import { recurringState } from '@/lib/recurringGoals'
 
 interface Notif {
   id: string
-  type: 'budget' | 'emi' | 'insurance'
+  type: 'budget' | 'emi' | 'insurance' | 'goal'
   severity: 'high' | 'medium' | 'low'
   title: string
   body: string
   href?: string
 }
 
-const ICONS = { budget: AlertTriangle, emi: Clock, insurance: Shield }
+const ICONS = { budget: AlertTriangle, emi: Clock, insurance: Shield, goal: Gift }
 const SEV_STYLE = {
   high:   { bg: 'var(--rose-bg)',  color: 'var(--rose)' },
   medium: { bg: 'var(--gold-bg)',  color: 'var(--gold)' },
@@ -37,11 +38,14 @@ function loadNotifs(supabase: any): Promise<Notif[]> {
     const thisMonth = today.slice(0, 7)
     const since     = addMonths(thisMonth, -6)
 
-    const [txns, budgetRes, loanRes, insRes] = await Promise.all([
+    const [txns, budgetRes, loanRes, insRes, recRes, contribRes] = await Promise.all([
       fetchAllRows((a, b) => supabase.from('transactions').select('*').eq('user_id', user.id).gte('txn_date', `${since}-01`).order('txn_date').order('id').range(a, b), 8),
       supabase.from('budgets').select('*').eq('user_id', user.id).gte('month_year', since),
       activeLoansWithEmi(supabase, user.id),
       supabase.from('insurance_policies').select('policy_name,expiry_date').eq('user_id', user.id).eq('is_active', true),
+      // Recurring goals (migration 031) — empty before it
+      supabase.from('goals').select('*').eq('user_id', user.id).not('repeat_months', 'is', null).eq('status', 'active'),
+      supabase.from('goal_contributions').select('goal_id,amount,contrib_date').eq('user_id', user.id),
     ])
 
     const notifs: Notif[] = []
@@ -91,6 +95,25 @@ function loadNotifs(supabase: any): Promise<Notif[]> {
           body: p.policy_name })
       }
     })
+
+    // Recurring goals: a date coming up with money still to set aside, a date
+    // that's passed (start the next round), and this month's set-asides
+    const contribs = (contribRes.data ?? []) as any[]
+    const todo: Record<string, number> = {}
+    for (const g of (recRes.data ?? []) as any[]) {
+      const cur = g.currency === 'AED' ? 'AED' : 'INR'
+      const fmt = (n: number) => `${cur === 'AED' ? 'AED ' : '₹'}${Math.round(n).toLocaleString(cur === 'AED' ? 'en-US' : 'en-IN')}`
+      const value = Math.max(0, contribs.filter(c => c.goal_id === g.id).reduce((s, c) => s + (Number(c.amount) || 0), 0))
+      const r = recurringState(g, value, contribs, today)
+      const when = r.days === 0 ? 'today' : r.days === 1 ? 'tomorrow' : `in ${r.days} days`
+      if (r.status === 'short') notifs.push({ id: `goal-${g.id}`, type: 'goal', severity: r.days <= 7 ? 'high' : 'medium', href: `/dashboard/goals/${g.id}`,
+        title: `${g.name} ${when}`, body: `${fmt(r.left)} still to set aside — ${fmt(r.saved)} of ${fmt(Number(g.target_amount))} is ready` })
+      else if (r.status === 'passed' && r.days >= -30) notifs.push({ id: `goal-${g.id}`, type: 'goal', severity: 'low', href: `/dashboard/goals/${g.id}`,
+        title: `${g.name} has passed`, body: 'Record what you spent and start saving for the next one' })
+      else if ((r.status === 'todo' || r.status === 'new') && r.monthly > 0) todo[cur] = (todo[cur] ?? 0) + r.monthly
+    }
+    if (day >= 5) for (const [cur, amt] of Object.entries(todo)) notifs.push({ id: `goal-month-${cur}`, type: 'goal', severity: 'low', href: '/dashboard/goals',
+      title: `Set aside ${cur === 'AED' ? 'AED ' : '₹'}${Math.round(amt).toLocaleString(cur === 'AED' ? 'en-US' : 'en-IN')} this month`, body: `For your ${cur === 'AED' ? 'UAE' : 'India'} festivals and yearly costs` })
 
     notifs.sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.severity] - { high: 0, medium: 1, low: 2 }[b.severity]))
     return notifs

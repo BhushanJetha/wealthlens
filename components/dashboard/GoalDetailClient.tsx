@@ -14,6 +14,7 @@ import { InsightBar, AiActions, KpiTile, KpiGrid, Panel } from '@/components/ui/
 import AddGoalModal from '@/components/forms/AddGoalModal'
 import LinkInvestmentModal from '@/components/forms/LinkInvestmentModal'
 import { AddMoneySheet, AchieveSheet } from './GoalSheets'
+import { RecurringDetail } from './RecurringGoals'
 
 type TabKey = 'overview' | 'trajectory' | 'calculator' | 'funding'
 const TABS: { key: TabKey; label: string; icon: typeof Target }[] = [
@@ -68,6 +69,8 @@ export default function GoalDetailClient({ goalId, data }: { goalId: string; dat
     })
     return out
   }, [p, v.value, it.pace, g.target_amount])
+  // Diwali, premiums, gold…: a pot for the next date, with its own page
+  if (it.rec) return <RecurringDetail it={it} data={data} today={today} />
 
   // What if: a monthly amount → when it's reached; a different date → what it needs
   const simMonths = simPmt > 0 ? monthsToReach(Number(g.target_amount), v.value, simPmt, rate, p.inflation) : null

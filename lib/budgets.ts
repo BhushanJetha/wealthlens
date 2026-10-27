@@ -67,29 +67,41 @@ export function carryIn(budgets: any[], txns: any[], month: string, cur: Cur): R
   return Object.fromEntries(Object.entries(carry).filter(([, v]) => v > 0))
 }
 
-// ── Yearly costs (sinking funds, migration 029 budget_funds) ─────────────────
+// ── Yearly costs (sinking funds) ─────────────────────────────────────────────
+// Recurring goals (migration 031) — or budget_funds rows (029) before it.
+// `used`: what was taken out of it to spend, by month (recurring goals)
 export interface Fund {
   id: string; name: string; category: string | null; currency: Cur
   target: number; due_date: string; saved: number; last_saved_month: string | null; is_active?: boolean
+  goal?: any; used?: { month: string; amount: number }[]
 }
-// What to put aside each month so it's all there by the due month
+// What to put aside each month so it's all there by the due month (one
+// set-aside a month, this month through the month before; once this month's
+// is done, what's left spreads over the months after it)
 export function fundPlan(f: Fund, today: string) {
   const now = ymOf(today), due = ymOf(f.due_date)
   const left = Math.max(0, Number(f.target) - Number(f.saved || 0))
-  const months = Math.max(1, monthsBetween(now, due))
+  const doneThisMonth = f.last_saved_month === now
+  const months = Math.max(1, monthsBetween(now, due) - (doneThisMonth ? 1 : 0))
   const step = f.currency === 'AED' ? 10 : 100
   return {
     monthly: left > 0 ? Math.ceil(left / months / step) * step : 0,
-    monthsLeft: monthsBetween(now, due), left,
+    monthsLeft: monthsBetween(now, due), slots: months, left,
     pct: Number(f.target) > 0 ? Math.min(100, Number(f.saved || 0) / Number(f.target) * 100) : 0,
-    doneThisMonth: f.last_saved_month === now, isDue: today >= f.due_date, dueThisMonth: now === due,
+    doneThisMonth, isDue: today >= f.due_date, dueThisMonth: now === due,
   }
 }
-// In a fund's due month, what's been put aside covers that category's spend
+// In a fund's due month, what's been put aside covers that category's spend;
+// once it's been spent (and the goal moved on to its next date), what was
+// taken out still covers the month it was spent in
 export function fundCover(funds: Fund[], month: string, cur: Cur): Record<string, number> {
   const out: Record<string, number> = {}
-  for (const f of funds) if (f.is_active !== false && f.category && f.currency === cur && ymOf(f.due_date) === month)
-    out[f.category] = (out[f.category] ?? 0) + Math.min(Number(f.saved || 0), Number(f.target))
+  for (const f of funds) {
+    if (f.is_active === false || !f.category || f.currency !== cur) continue
+    const c = (ymOf(f.due_date) === month ? Math.min(Number(f.saved || 0), Number(f.target)) : 0)
+      + (f.used ?? []).filter(u => u.month === month).reduce((s, u) => s + u.amount, 0)
+    if (c > 0) out[f.category] = (out[f.category] ?? 0) + c
+  }
   return out
 }
 

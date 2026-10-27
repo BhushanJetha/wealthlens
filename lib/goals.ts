@@ -20,7 +20,7 @@ export const monthsUntil = (date: string, today: string) => {
 export const horizonOf = (months: number): Horizon => (months <= 24 ? 'short' : months <= 60 ? 'mid' : 'long')
 
 // ── Goal types ───────────────────────────────────────────────────────────────
-export type Kind = 'emergency' | 'retirement' | 'education' | 'home' | 'car' | 'travel' | 'wedding' | 'family' | 'health' | 'business' | 'purchase' | 'other'
+export type Kind = 'emergency' | 'retirement' | 'education' | 'home' | 'car' | 'travel' | 'wedding' | 'family' | 'health' | 'business' | 'purchase' | 'celebration' | 'payment' | 'gold' | 'other'
 export const KINDS: { key: Kind; label: string; icon: string; color: string; inflation: Record<Cur, number>; why: string }[] = [
   { key: 'emergency',  label: 'Emergency fund', icon: '🛟', color: '#E4573D', inflation: { INR: 0, AED: 0 },  why: 'Job loss, a medical bill or an urgent flight home — without selling investments.' },
   { key: 'retirement', label: 'Retirement / return to India', icon: '🌴', color: '#6A55E8', inflation: { INR: 6, AED: 3 }, why: 'The earlier you start, the more compounding does the work.' },
@@ -33,6 +33,9 @@ export const KINDS: { key: Kind; label: string; icon: string; color: string; inf
   { key: 'health',     label: 'Health', icon: '🩺', color: '#DC2626', inflation: { INR: 10, AED: 6 }, why: 'Medical costs rise fast; insurance doesn\'t cover everything.' },
   { key: 'business',   label: 'Business', icon: '💼', color: '#475569', inflation: { INR: 6, AED: 3 }, why: 'Seed money for your own venture.' },
   { key: 'purchase',   label: 'Big purchase', icon: '🛍️', color: '#DB2777', inflation: { INR: 4, AED: 2 }, why: 'Phone, furniture, a renovation — bought without debt.' },
+  { key: 'celebration', label: 'Festival / celebration', icon: '🎉', color: '#F29A2E', inflation: { INR: 0, AED: 0 }, why: 'Diwali, birthdays, anniversaries — saved for ahead, so the month itself stays calm.' },
+  { key: 'payment',    label: 'Yearly payment', icon: '🧾', color: '#0891B2', inflation: { INR: 0, AED: 0 }, why: 'LIC and insurance premiums, school fees, renewals — ready when they fall due.' },
+  { key: 'gold',       label: 'Gold purchase', icon: '🪙', color: '#D97706', inflation: { INR: 0, AED: 0 }, why: 'Buy gold on Dhanteras or Akshaya Tritiya from money set aside.' },
   { key: 'other',      label: 'Other', icon: '🎯', color: '#6A55E8', inflation: { INR: 5, AED: 3 }, why: 'Anything that matters to you.' },
 ]
 export const kindInfo = (k: Kind) => KINDS.find(x => x.key === k) ?? KINDS[KINDS.length - 1]
@@ -50,6 +53,9 @@ export function kindOf(g: any): Kind {
   if (/parent|family|mother|father/.test(n)) return 'family'
   if (/medical|health|hospital/.test(n)) return 'health'
   if (/business|startup|venture/.test(n)) return 'business'
+  if (/diwali|onam|eid|christmas|birthday|anniversar|festival|rakhi|raksha|pongal|navratri/.test(n)) return 'celebration'
+  if (/premium|lic|insurance|renewal|registration/.test(n)) return 'payment'
+  if (/gold|dhanteras|akshaya/.test(n)) return 'gold'
   return 'other'
 }
 export const PRIORITY: Record<number, string> = { 1: 'Must have', 2: 'Important', 3: 'Nice to have' }
@@ -57,8 +63,13 @@ export const PRIORITY: Record<number, string> = { 1: 'Must have', 2: 'Important'
 // ── Assumptions ──────────────────────────────────────────────────────────────
 // Yearly return assumed by horizon (a mix that suits it), per currency
 const RETURN: Record<Cur, Record<Horizon, number>> = { INR: { short: 6.5, mid: 9, long: 11 }, AED: { short: 4, mid: 6, long: 8 } }
-export const returnOf = (g: any, h: Horizon) => (g.return_pct != null && g.return_pct !== '' ? Number(g.return_pct) : RETURN[(g.currency as Cur) ?? 'INR'][h])
-export const inflationOf = (g: any) => (g.inflation_pct != null && g.inflation_pct !== '' ? Number(g.inflation_pct) : kindInfo(kindOf(g)).inflation[(g.currency as Cur) ?? 'INR'])
+// Repeating goals (every year, 6 or 3 months): a pot you set money aside in,
+// so by default no price rise and no return — the monthly amount is simply
+// what's left ÷ months to go
+export const isRecurring = (g: any) => Number(g.repeat_months) > 0
+export const REPEAT: Record<number, string> = { 12: 'Every year', 6: 'Every 6 months', 3: 'Every 3 months' }
+export const returnOf = (g: any, h: Horizon) => (g.return_pct != null && g.return_pct !== '' ? Number(g.return_pct) : isRecurring(g) ? 0 : RETURN[(g.currency as Cur) ?? 'INR'][h])
+export const inflationOf = (g: any) => (g.inflation_pct != null && g.inflation_pct !== '' ? Number(g.inflation_pct) : isRecurring(g) ? 0 : kindInfo(kindOf(g)).inflation[(g.currency as Cur) ?? 'INR'])
 
 // ── Money maths (monthly) ────────────────────────────────────────────────────
 const fv = (pv: number, r: number, n: number) => pv * Math.pow(1 + r, n)
@@ -209,8 +220,9 @@ export function goalPlan(g: any, value: number, pace: number, today: string): Pl
 }
 
 // ── Funding plan: what you save vs what the goals need ───────────────────────
-// Goals in priority order (emergency fund first, then Must have → Nice to
-// have, then the nearest date) each take what they need from the monthly
+// Goals in priority order (recurring set-asides first — that money is spent
+// within the year — then the emergency fund, then Must have → Nice to have,
+// then the nearest date) each take what they need from the monthly
 // saving until it runs out. A goal that doesn't fit gets two ways out: the
 // date it would reach with what's left for it, or the target it could reach
 // by its date.
@@ -218,7 +230,8 @@ export interface Funding { goal: any; need: number; given: number; fits: boolean
 export function fundingPlan(items: { goal: any; value: number; plan: Plan }[], capacity: number): { rows: Funding[]; need: number; spare: number } {
   const active = items.filter(x => x.plan.status !== 'achieved' && x.plan.status !== 'paused')
   const order = [...active].sort((a, b) =>
-    Number(kindOf(b.goal) === 'emergency') - Number(kindOf(a.goal) === 'emergency')
+    Number(isRecurring(b.goal)) - Number(isRecurring(a.goal))
+    || Number(kindOf(b.goal) === 'emergency') - Number(kindOf(a.goal) === 'emergency')
     || (Number(a.goal.priority ?? 2) - Number(b.goal.priority ?? 2))
     || a.plan.months - b.plan.months)
   let left = Math.max(0, capacity)
