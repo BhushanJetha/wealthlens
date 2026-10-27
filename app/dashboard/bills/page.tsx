@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { fetchAllRows } from '@/lib/supabase/fetchAll'
 import { activeLoansWithEmi } from '@/lib/loans'
-import { runRecurring } from '@/lib/recurring'
+import { runAutomation } from '@/lib/automation'
 import BillsClient from '@/components/dashboard/BillsClient'
 
 export default async function BillsPage() {
@@ -13,6 +13,7 @@ export default async function BillsPage() {
   const fromDate = `${start.toISOString().slice(0, 7)}-01`
 
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' })
+  const auto = await runAutomation(supabase, uid, today)
 
   // All kinds: bills come from expenses; repeating-entry suggestions also
   // look at transfers (money home) and income
@@ -25,10 +26,9 @@ export default async function BillsPage() {
     supabase.from('insurance_policies').select('*').eq('user_id', uid).eq('is_active', true),
   ])
 
-  const rec = await runRecurring(supabase, uid, today, txns)
   const accounts = accsRes.data ?? []
 
-  return <BillsClient transactions={rec.inserted.length ? [...rec.inserted, ...txns] : txns}
+  return <BillsClient transactions={txns}
     cards={accounts.filter(a => a.account_type === 'credit_card')} accounts={accounts}
-    loans={loansRes.data ?? []} insurance={insRes.data ?? []} recurring={rec.list} recurringReady={rec.ready} />
+    loans={loansRes.data ?? []} insurance={insRes.data ?? []} recurring={auto.recurring} recurringReady={auto.recurringReady} />
 }

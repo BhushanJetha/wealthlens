@@ -9,6 +9,8 @@ import AddLoanModal from '@/components/forms/AddLoanModal'
 import { useHolderStore } from '@/store/holderStore'
 import { PageHeader, InsightBar, AiActions, KpiTile, HeroStat, Donut, ProgressRow, LearnStrip } from '@/components/ui/kit'
 import LoanCard, { LOAN_TYPES, loanTypeOf } from './LoanCard'
+import LoanNeedsPanel from './LoanNeedsPanel'
+import type { EmiDue } from '@/lib/loanAuto'
 import Link from 'next/link'
 
 function toINR(amt: number, cur: string, fx: number) { return cur === 'AED' ? amt * fx : amt }
@@ -32,7 +34,9 @@ function payoff(bal: number, rate: number, pay: number) {
   return { months, interest }
 }
 
-export default function LoansClient({ loans }: { loans: any[]; familyMembers?: any[] }) {
+export default function LoansClient({ loans, pendingEmis = [], loanTxns = [], today }: {
+  loans: any[]; familyMembers?: any[]; pendingEmis?: EmiDue[]; loanTxns?: any[]; today: string
+}) {
   const { view, fxRate: FX } = useViewStore()
   const { selectedHolder } = useHolderStore()
   const router   = useRouter()
@@ -184,6 +188,8 @@ export default function LoansClient({ loans }: { loans: any[]; familyMembers?: a
         <KpiTile label="Average rate" value={`${avgRate.toFixed(2)}%`} delta="Weighted by balance" tint={3} icon={Percent} />
         <KpiTile label="Debt-free by" value={filtered.length && path.clears ? path.freeBy : '—'} delta={filtered.length ? 'at current EMIs' : 'No loans'} tint={0} icon={Flag} />
       </div>
+
+      {filtered.length > 0 && <LoanNeedsPanel className="max-md:order-5" loans={filtered} pendingEmis={pendingEmis} loanTxns={loanTxns} today={today} />}
 
       {/* Active loans: one card each — tap a card to open its payoff plan */}
       <section className="max-md:order-7 flex flex-col gap-2.5 md:gap-3">

@@ -75,21 +75,51 @@ export function applyPaidEmis(loans: any[], paid: Record<string, PaidEmi>) {
   })
 }
 
-// Server/client loader: fetch recent EMI records and statement payments, then
-// apply them. Missing tables (migration 019 not run) just mean no records.
+// Live outstanding (migration 028): outstanding_amt is the balance on
+// outstanding_as_of; each EMI recorded after that takes off its principal
+// (its own split, else EMI − a month's interest on the running balance) and
+// each prepayment comes off in full. Null before the migration.
+export interface LiveOutstanding { value: number; saved: number; asOf: string; emis: number; principal: number; interest: number }
+export function liveOutstanding(loan: any, loanTxns: any[]): LiveOutstanding | null {
+  const asOf = loan.outstanding_as_of ? String(loan.outstanding_as_of).slice(0, 10) : null
+  const saved = Number(loan.outstanding_amt) || 0
+  if (!asOf || saved <= 0) return null
+  const r = (Number(loan.interest_rate) || 0) / 1200
+  let bal = saved, principal = 0, interest = 0, emis = 0
+  const after = loanTxns.filter(t => t.loan_id === loan.id && t.txn_date > asOf && (t.kind === 'emi' || t.kind === 'prepayment'))
+    .sort((a, b) => a.txn_date.localeCompare(b.txn_date))
+  for (const t of after) {
+    const amt = Number(t.amount) || 0
+    if (t.kind === 'prepayment') { const p = Math.min(amt, bal); bal -= p; principal += p; continue }
+    const i = t.interest != null ? Number(t.interest) : bal * r
+    const p = Math.min(t.principal != null ? Number(t.principal) : Math.max(amt - i, 0), bal)
+    bal -= p; principal += p; interest += i; emis++
+  }
+  return { value: Math.max(0, Math.round(bal)), saved, asOf, emis, principal: Math.round(principal), interest: Math.round(interest) }
+}
+
+// Server/client loader: fetch EMI and prepayment records and statement
+// payments, then apply them — the EMI actually paid, and the live
+// outstanding. Missing tables (migration 019 not run) just mean no records.
 export async function withPaidEmi(supabase: any, userId: string, loans: any[]): Promise<any[]> {
   if (!loans?.length) return loans ?? []
   const since = new Date(Date.now() - 200 * 864e5).toISOString().slice(0, 10)
+  const asOfs = loans.map(l => l.outstanding_as_of).filter(Boolean).map((d: string) => String(d).slice(0, 10)).sort()
+  const ltSince = asOfs[0] && asOfs[0] < since ? asOfs[0] : since
   const ids = loans.map(l => l.id)
   const [lt, byCat, byType] = await Promise.all([
-    supabase.from('loan_transactions').select('loan_id,kind,txn_date,amount').in('loan_id', ids).eq('kind', 'emi').gte('txn_date', since),
+    supabase.from('loan_transactions').select('loan_id,kind,txn_date,amount,principal,interest').in('loan_id', ids).in('kind', ['emi', 'prepayment']).gte('txn_date', ltSince),
     supabase.from('transactions').select('merchant,description,amount,currency,txn_date').eq('user_id', userId)
       .in('category', ['EMI/Loan', 'Loan on Card']).gte('txn_date', since).limit(500),
     supabase.from('transactions').select('merchant,description,amount,currency,txn_date').eq('user_id', userId)
       .eq('txn_type', 'loan').gte('txn_date', since).limit(500),
   ])
   const bank = [...(byCat.data ?? []), ...(byType.data ?? [])]
-  return applyPaidEmis(loans, lastPaidEmis(loans, lt.data ?? [], bank))
+  const rows = lt.data ?? []
+  return applyPaidEmis(loans, lastPaidEmis(loans, rows.filter((t: any) => t.txn_date >= since), bank)).map(l => {
+    const live = liveOutstanding(l, rows)
+    return live ? { ...l, outstanding_amt: live.value, outstanding_live: live } : l
+  })
 }
 
 // ── Journey: start → today → debt-free ──────────────────────────────────────

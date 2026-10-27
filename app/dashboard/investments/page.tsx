@@ -1,10 +1,15 @@
 import { createClient } from '@/lib/supabase/server'
 import { fetchAll } from '@/lib/supabase/fetchAll'
+import { runAutomation } from '@/lib/automation'
 import InvestmentsClient from '@/components/dashboard/InvestmentsClient'
 
 export default async function InvestmentsPage() {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' })
+  // SIPs whose day has come are recorded first (from your statement, or
+  // "record it for me"); the rest are asked on this page
+  const auto = await runAutomation(supabase, user!.id, today)
 
   const sixMonthsAgo = new Date()
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
@@ -67,6 +72,8 @@ export default async function InvestmentsPage() {
       goalInvestments={giRes.data ?? []}
       goals={goalsRes.data ?? []}
       familyMembers={familyRes.data ?? []}
+      pendingSips={auto.pending.sips}
+      today={today}
     />
   )
 }

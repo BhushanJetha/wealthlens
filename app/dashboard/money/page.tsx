@@ -3,7 +3,7 @@ import { fetchAllRows } from '@/lib/supabase/fetchAll'
 import { activeAccountsWithLedger } from '@/lib/ledger'
 import { activeLoansWithEmi } from '@/lib/loans'
 import { getAedInr } from '@/lib/fx'
-import { runRecurring } from '@/lib/recurring'
+import { runAutomation } from '@/lib/automation'
 import MoneyOverviewClient from '@/components/dashboard/MoneyOverviewClient'
 
 // Money overview: live balances, what's due, safe to spend, what needs you.
@@ -15,6 +15,8 @@ export default async function MoneyPage() {
   const start = new Date(); start.setUTCMonth(start.getUTCMonth() - 13)
   const fromDate = `${start.toISOString().slice(0, 7)}-01`
   const { rate } = await getAedInr()
+  // Repeating entries, EMIs and SIPs whose day has come; the rest wait here
+  const auto = await runAutomation(supabase, uid, today)
 
   const [txns, accsRes, loansRes, insRes, mfRes, fdRes, budgetsRes] = await Promise.all([
     fetchAllRows((a, b) => supabase.from('transactions').select('*')
@@ -28,15 +30,12 @@ export default async function MoneyPage() {
     supabase.from('budgets').select('*').eq('user_id', uid).gte('month_year', fromDate.slice(0, 7)),
   ])
 
-  // Repeating entries whose day has come: auto ones are added, the rest wait here
-  const rec = await runRecurring(supabase, uid, today, txns)
-
   return (
     <MoneyOverviewClient
       today={today}
-      transactions={rec.inserted.length ? [...rec.inserted, ...txns] : txns}
-      pending={rec.pending}
-      recurring={rec.list}
+      transactions={txns}
+      pending={auto.pending}
+      recurring={auto.recurring}
       accounts={accsRes.data ?? []}
       loans={loansRes.data ?? []}
       insurance={insRes.data ?? []}

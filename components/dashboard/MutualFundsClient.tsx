@@ -27,6 +27,8 @@ import MfAnalytics from '@/components/dashboard/MfAnalytics'
 import SipProjector from '@/components/dashboard/SipProjector'
 import Pagination from '@/components/dashboard/Pagination'
 import { useRouter } from 'next/navigation'
+import { recordSip, claimSipMonth, navOf } from '@/lib/sipAuto'
+import { localToday } from '@/lib/insights'
 
 // ─── constants ────────────────────────────────────────────────────────────────
 const TYPE_COLORS: Record<string, string> = {
@@ -297,8 +299,11 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
   useEffect(() => {
     const today = new Date(); const day = today.getDate()
     const mk = `${today.getFullYear()}-${today.getMonth() + 1}`
+    const ym = localToday().slice(0, 7)
     for (const f of funds) {
       if (!f.has_sip || !f.sip_date) continue
+      // Tracked in the database (migration 028): done once recorded or skipped this month
+      if ('sip_last_month' in f && f.sip_last_month && f.sip_last_month >= ym) continue
       const sd = Number(f.sip_date)
       if (day >= sd && day <= sd + 1 && !localStorage.getItem(`sip-${f.id}-${mk}`)) {
         setSipReminder(f); break
@@ -397,6 +402,19 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
   }
   async function markSipPaid(fund: any, status: 'paid' | 'skipped') {
     setMarkingPaid(true)
+    // With migration 028 the month is tracked in the database (lib/sipAuto),
+    // so the automatic recording on Investments never adds it again
+    if ('sip_last_month' in fund) {
+      const ds = localToday(), d = { fund: { ...fund }, month: ds.slice(0, 7), date: ds, amount: Number(fund.sip_amount), nav: liveNavs[fund.id] ?? navOf(fund) }
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        if (status === 'paid') await recordSip(supabase, user.id, d, { moneyRow: true })
+        else await claimSipMonth(supabase, d.fund, d.month)
+        setFunds(prev => prev.map(f => f.id === fund.id ? d.fund : f))
+      }
+      setSipReminder(null); setMarkingPaid(false); router.refresh()
+      return
+    }
     const today = new Date(); const ds = today.toISOString().slice(0, 10)
     const mk = `${today.getFullYear()}-${today.getMonth() + 1}`
     if (status === 'paid') {

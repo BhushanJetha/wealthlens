@@ -8,7 +8,7 @@ import { computeNetWorth, groupAssets, NW_RULES, type Holdings } from '@/lib/net
 import { getAedInr } from '@/lib/fx'
 import { isMissingTable } from '@/lib/supabase/missingTable'
 import { goalInterestsOf } from '@/lib/goalInterests'
-import { runRecurring } from '@/lib/recurring'
+import { runAutomation } from '@/lib/automation'
 
 export default async function DashboardPage() {
   const supabase = createClient()
@@ -21,6 +21,10 @@ export default async function DashboardPage() {
   const start = new Date(); start.setUTCMonth(start.getUTCMonth() - 13)
   const fromDate = `${start.toISOString().slice(0, 7)}-01`
   const histFrom = new Date(Date.now() - 400 * 86400000).toISOString().slice(0, 10)
+
+  // Repeating entries, EMIs and SIPs whose day has come are recorded first
+  // (the rest wait for a confirm on Money, Loans or Investments)
+  const auto = await runAutomation(supabase, uid, today)
 
   const [txns, loansRes, accsRes, stocksRes, mfRes, fdRes, insRes, goalsRes, giRes, budgetsRes,
     rdRes, npsRes, licRes, goldRes, bondRes, etfRes, ppfRes, profileRes, fxRes] = await Promise.all([
@@ -47,10 +51,6 @@ export default async function DashboardPage() {
     supabase.from('profiles').select('full_name,onboarded').eq('id', uid).single(),
     getAedInr(),
   ])
-
-  // Repeating entries whose day has come are added (or wait for a confirm on Money)
-  const rec = await runRecurring(supabase, uid, today, txns)
-  const allTxns = rec.inserted.length ? [...rec.inserted, ...txns] : txns
 
   // Live balances: starting balance + transactions since (lib/ledger)
   const liveAccounts = await withLedgerBalances(supabase, uid, accsRes.data ?? [], fxRes.rate)
@@ -94,8 +94,8 @@ export default async function DashboardPage() {
       firstName={(profileRes.data?.full_name ?? '').split(' ')[0] || null}
       today={today}
       holdings={holdings}
-      transactions={allTxns}
-      recurringPending={rec.pending.length}
+      transactions={txns}
+      pendingConfirms={auto.count}
       insurance={insRes.data ?? []}
       budgets={budgetsRes.data ?? []}
       goals={goalsRes.data ?? []}

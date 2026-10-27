@@ -13,6 +13,7 @@ import {
   Flag, Link as LinkIcon, Unlink, Users, GraduationCap,
 } from 'lucide-react'
 import AddInvestmentModal from '@/components/forms/AddInvestmentModal'
+import InvestNeedsPanel from './InvestNeedsPanel'
 import { PageHeader, KpiTile, Bars, Donut, Segmented } from '@/components/ui/kit'
 import { useUiStore } from '@/store/uiStore'
 import { Layers, CandlestickChart, BarChart3, Landmark, Repeat, Coins, ScrollText, PiggyBank, ShieldCheck, ArrowUpRight, Gauge, Briefcase, type LucideIcon } from 'lucide-react'
@@ -100,7 +101,7 @@ function last5Years() {
 export default function InvestmentsClient({
   stocks, mutualFunds, fixedDeposits, recurringDeposits, npsAccounts, licPolicies,
   goldInvestments = [], bondInvestments = [], etfInvestments = [], ppfEpf = [], invTxns = [], transactions = [],
-  goalInvestments = [], goals = [], familyMembers = [],
+  goalInvestments = [], goals = [], familyMembers = [], pendingSips = [], today,
 }: any) {
   const { view, fxRate: FX } = useViewStore()
   const { selectedHolder, setSelectedHolder } = useHolderStore()
@@ -424,11 +425,6 @@ export default function InvestmentsClient({
   const scopeLabel = view === 'uae' ? 'UAE' : view === 'india' ? 'India' : 'All'
 
   // Next SIP date per fund (day-of-month, rolls to next month once passed)
-  const sips = fMF.filter((m: any) => m.has_sip && Number(m.sip_amount) > 0).map((m: any) => {
-    const now = new Date(), day = Math.min(Math.max(Number(m.sip_date) || 1, 1), 28)
-    const next = new Date(now.getFullYear(), now.getMonth() + (now.getDate() > day ? 1 : 0), day)
-    return { name: m.fund_name ?? 'SIP', amount: Number(m.sip_amount), next }
-  }).sort((a: any, b: any) => a.next.getTime() - b.next.getTime()).slice(0, 3)
 
   const topRec = analytics?.recs?.[0]
   const aiContext = `My portfolio (${scopeLabel}${selectedHolder ? `, ${selectedHolder} only` : ''}): value ${fmtV(totalCurr, sym)}, invested ${fmtV(totalInv, sym)}, returns ${totalRet.toFixed(1)}%. `
@@ -583,20 +579,8 @@ export default function InvestmentsClient({
                 </button>
               </section>
 
-              {sips.length > 0 && (
-                <section className="wl-card max-md:order-7 px-4 md:px-5 py-3.5 md:py-[18px]">
-                  <h2 className="text-[14px] font-semibold mb-1" style={{ color: 'var(--text)' }}>Upcoming SIPs</h2>
-                  {sips.map((x: any, i: number) => (
-                    <div key={i} className="flex justify-between items-center gap-3 px-3 py-2.5 mt-2 rounded-xl text-[13px]" style={{ background: '#F7F6FD' }}>
-                      <span className="min-w-0">
-                        <span className="block font-semibold truncate" style={{ color: 'var(--text)' }}>{x.name}</span>
-                        <span className="block text-[11.5px]" style={{ color: 'var(--text4)' }}>{x.next.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
-                      </span>
-                      <span className="font-semibold tabular-nums flex-shrink-0" style={{ color: 'var(--text)' }}>₹{Math.round(x.amount).toLocaleString('en-IN')}</span>
-                    </div>
-                  ))}
-                </section>
-              )}
+              <InvestNeedsPanel className="max-md:order-7" funds={fMF} stocks={fSt} deposits={fFD} rds={fRD} invTxns={invTxns}
+                pendingSips={pendingSips} today={today} total={totalCurr} conv={conv} />
             </div>
           </div>
 
