@@ -13,6 +13,7 @@ export interface Suggestion { key: string; title: string; detail: string; sectio
 export interface TaxInput {
   ppfEpf: any[]; mutualFunds: any[]; invTxns: any[]
   nps: any[]; npsContrib: any[]; lic: any[]; insurance: any[]; loans: any[]
+  tagged?: any[]       // expenses you tagged with a section (transactions.tax_tag)
 }
 
 // Indian financial year containing `today` (1 April – 31 March)
@@ -84,6 +85,19 @@ export function planTax(inp: TaxInput, today: string) {
     if (principal > 0) lines.push({ key: `hl-p-${l.id}`, name: `${l.name} · principal`, section: '80C', amount: Math.round(principal), basis: 'Estimated from 12 EMIs', href: '/dashboard/loans/home' })
     if (interest > 0) lines.push({ key: `hl-i-${l.id}`, name: `${l.name} · interest`, section: '24(b)', amount: Math.round(interest), basis: 'Estimated from 12 EMIs', href: '/dashboard/loans/home' })
   }
+
+  // Expenses you tagged (tuition fees, a parent's check-up…), per merchant
+  const TAGS: Section[] = ['80C', '80D', '80D parents']
+  const byTag: Record<string, { section: Section; name: string; amount: number; n: number }> = {}
+  for (const t of (inp.tagged ?? []).filter(t => isInr(t.currency) && inFy(t.txn_date) && TAGS.includes(t.tax_tag))) {
+    const name = String(t.merchant ?? 'Expense').trim(), k = `${t.tax_tag}|${name.toLowerCase()}`
+    const e = byTag[k] ??= { section: t.tax_tag, name, amount: 0, n: 0 }
+    e.amount += Number(t.amount) || 0; e.n++
+  }
+  for (const [k, e] of Object.entries(byTag)) if (e.amount > 0) lines.push({
+    key: `tag-${k}`, name: e.name, section: e.section, amount: Math.round(e.amount),
+    basis: `${e.n} tagged expense${e.n === 1 ? '' : 's'} this FY`, href: '/dashboard/expenses',
+  })
 
   const total = (s: Section) => sum(lines.filter(l => l.section === s).map(l => l.amount))
   const raw = { c80: total('80C'), ccd1b: total('80CCD(1B)'), d80: total('80D'), d80p: total('80D parents'), b24: total('24(b)') }

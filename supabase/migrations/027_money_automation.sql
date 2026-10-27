@@ -71,3 +71,23 @@ ALTER TABLE transactions ADD COLUMN IF NOT EXISTS recurring_id uuid REFERENCES r
 -- "which card to use today" — a purchase just after the statement gets the
 -- most interest-free days. Empty = estimated from the due date.
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS statement_day smallint CHECK (statement_day BETWEEN 1 AND 31);
+
+-- Spending insights
+--   holder_name:  the family member a spend was for (empty = the household)
+--   tax_tag:      India tax section it counts towards ('80C', '80D',
+--                 '80D parents') — added to Plan › Tax planner
+--   receipt_path: a photo or PDF of the receipt in the private bucket below
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS holder_name  text;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS tax_tag      text;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS receipt_path text;
+
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES ('receipts', 'receipts', FALSE, 10485760, ARRAY['image/jpeg','image/png','image/webp','image/heic','application/pdf'])
+ON CONFLICT (id) DO NOTHING;
+
+-- Receipts: each user reads and writes only their own folder (<user id>/…)
+DROP POLICY IF EXISTS "receipts_user_access" ON storage.objects;
+CREATE POLICY "receipts_user_access" ON storage.objects
+  FOR ALL
+  USING (bucket_id = 'receipts' AND auth.uid()::text = (storage.foldername(name))[1])
+  WITH CHECK (bucket_id = 'receipts' AND auth.uid()::text = (storage.foldername(name))[1]);

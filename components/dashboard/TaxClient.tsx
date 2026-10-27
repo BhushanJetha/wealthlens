@@ -30,7 +30,7 @@ export default function TaxClient({ input }: { input: TaxInput }) {
   const linesOf = (s: string) => p.lines.filter(l => l.section === s).map(l => l.name).join(', ')
 
   const sections = [
-    { k: '80C', name: '80C', sub: 'ELSS, PPF, EPF, life cover, home-loan principal', used: p.claim.c80, raw: p.raw.c80, limit: LIMITS.c80 },
+    { k: '80C', name: '80C', sub: 'ELSS, PPF, EPF, life cover, home-loan principal, tagged fees', used: p.claim.c80, raw: p.raw.c80, limit: LIMITS.c80 },
     { k: '80CCD(1B)', name: '80CCD(1B)', sub: 'NPS Tier I, extra', used: p.claim.ccd1b, raw: p.raw.ccd1b, limit: LIMITS.ccd1b },
     { k: '80D', name: '80D', sub: 'Health cover, self & family', used: p.claim.d80, raw: p.raw.d80, limit: LIMITS.d80 },
     { k: '80D parents', name: '80D', sub: 'Parents', used: p.claim.d80p, raw: p.raw.d80p, limit: LIMITS.d80 },

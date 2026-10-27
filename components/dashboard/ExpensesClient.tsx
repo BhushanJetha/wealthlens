@@ -18,7 +18,8 @@ import { colorOf as catColorOf } from '@/lib/categories'
 import { isSpending, spendGroup, catOf, labelOf } from '@/lib/money'
 import { toast } from '@/components/ui/toaster'
 
-import { Upload, Image, Mic, PenLine, BarChart2, X, CreditCard, Pencil, Trash2, ChevronDown, Plus, Copy, Wallet, Banknote, MessageSquareText, Landmark, TrendingUp, CalendarDays, Settings2 } from 'lucide-react'
+import { Upload, Image, Mic, PenLine, BarChart2, X, CreditCard, Pencil, Trash2, ChevronDown, Plus, Copy, Wallet, Banknote, MessageSquareText, Landmark, TrendingUp, CalendarDays, Settings2, Paperclip } from 'lucide-react'
+import { openReceipt } from '@/lib/receipts'
 import Link from 'next/link'
 import { PageHeader, InsightBar, AiActions, KpiTile, HeroStat, Bars, Donut, ProgressRow, LearnStrip, PALETTE } from '@/components/ui/kit'
 import { ListCard, ListRow, ListSearch, ChipFilter } from '@/components/ui/list'
@@ -515,7 +516,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
           const account = accounts.find((a: any) => a.id === t.account_id)?.name ?? null
           return (
             <ListRow key={t.id} color={catColor} title={t.merchant}
-              sub={[account, isTransfer && t.description && t.description !== t.merchant ? `→ ${t.description}` : null].filter(Boolean).join(' · ') || undefined}
+              sub={[account, isTransfer && t.description && t.description !== t.merchant ? `→ ${t.description}` : null, t.holder_name ? `for ${t.holder_name === 'Self' ? 'you' : t.holder_name}` : null, t.tax_tag ? `tax ${t.tax_tag}` : null, t.receipt_path ? '📎 receipt' : null].filter(Boolean).join(' · ') || undefined}
               tag={label} warn={bs && bs.pct >= 75 ? `${t.category}: ${Math.round(bs.pct)}% of this month's budget used` : null}
               meta={fmtDay(t.txn_date)} amount={`−${lSym}${Number(t.amount).toLocaleString('en-IN')}`}
               amountColor={isSpending(t) || spendGroup(t) ? '#DC2626' : 'var(--text3)'}
@@ -524,6 +525,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
               actions={[
                 { label: 'Edit', icon: Pencil, onClick: () => openEdit(t) },
                 { label: 'Duplicate', icon: Copy, onClick: () => openDuplicate(t) },
+                ...(t.receipt_path ? [{ label: 'View receipt', icon: Paperclip, onClick: () => { openReceipt(supabase, t.receipt_path) } }] : []),
                 { label: 'Delete', icon: Trash2, onClick: () => deleteTxn(t), danger: true, disabled: deletingId === t.id },
               ]} />
           )

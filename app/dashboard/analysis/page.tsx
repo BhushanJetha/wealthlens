@@ -12,8 +12,7 @@ export default async function AnalysisPage() {
   const fromDate = `${start.toISOString().slice(0, 7)}-01`
 
   const [txns, budgetsRes, cardsRes] = await Promise.all([
-    fetchAllRows((a, b) => supabase.from('transactions')
-      .select('id,account_id,txn_date,merchant,category,sub_category,amount,currency,txn_type')
+    fetchAllRows((a, b) => supabase.from('transactions').select('*')
       .eq('user_id', uid).gte('txn_date', fromDate).in('txn_type', ['expense', 'transfer', 'loan'])
       .order('txn_date', { ascending: false }).order('id').range(a, b)),
     supabase.from('budgets').select('category,monthly_cap,currency,month_year').eq('user_id', uid).gte('month_year', fromDate.slice(0, 7)),

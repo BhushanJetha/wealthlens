@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { X, Loader2, ArrowRight, RefreshCw, Plus, Settings2, Globe, ArrowLeftRight, Users, Banknote, CreditCard } from 'lucide-react'
+import { X, Loader2, ArrowRight, RefreshCw, Plus, Settings2, Globe, ArrowLeftRight, Users, Banknote, CreditCard, Paperclip } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useViewStore } from '@/store/viewStore'
 import { useCategoryStore } from '@/store/categoryStore'
@@ -10,6 +10,8 @@ import { Segmented } from '@/components/ui/kit'
 import { CategoryIcon } from '@/components/ui/CategoryIcon'
 import { toast } from '@/components/ui/toaster'
 import ManageCategoriesSheet from './ManageCategoriesSheet'
+import { useFamily } from '@/hooks/useFamily'
+import { RECEIPT_TYPES, uploadReceipt, openReceipt, removeReceipt } from '@/lib/receipts'
 
 type TxnType = 'expense' | 'income' | 'transfer' | 'loan'
 
@@ -62,6 +64,8 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
       // The other account in a move (card bill → card, ATM → bank it came from…)
       counter_account_id: t0?.counter_account_id ?? '',
       payment_mode: t0?.payment_mode ?? '',
+      holder_name:  t0?.holder_name ?? '',      // family member it was for ('' = household)
+      tax_tag:      t0?.tax_tag ?? '',          // India tax section (Plan › Tax planner)
     }
   })
   const [accounts,    setAccounts]    = useState<any[]>([])
@@ -74,6 +78,10 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
   // Repeat every month (recurring_txns, migration 027) — new entries only
   const [repeatOn,    setRepeatOn]    = useState(!!repeat)
   const [repeatAuto,  setRepeatAuto]  = useState<'ask' | 'auto'>('ask')
+  const [receiptFile, setReceiptFile] = useState<File | null>(null)
+  const [receiptPath, setReceiptPath] = useState<string | null>(t0?.receipt_path ?? null)
+  const [receiptMsg,  setReceiptMsg]  = useState('')
+  const { members } = useFamily()
 
   const supabase = createClient()
   const router   = useRouter()
@@ -100,6 +108,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
   const set = (patch: Partial<typeof form>) => setForm(p => ({ ...p, ...patch }))
   const isTransfer = form.txn_type === 'transfer'
   const isIncome   = form.txn_type === 'income'
+  const showTax    = form.txn_type === 'expense' && form.currency === 'INR'
   const catKind    = isIncome ? 'income' : 'expense'
 
   // The user's categories for this type, plus the current one if it isn't in the list (e.g. from an import)
@@ -166,7 +175,8 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
     try { account_id = await resolveAccountId() } catch (e: any) { setSaving(false); setError(e.message ?? 'Could not save'); return }
     const body = { ...form, merchant: form.merchant.trim(), description: form.description.trim() || null, amount: Math.abs(Number(form.amount)), account_id,
       counter_account_id: isTransfer ? form.counter_account_id || null : null,
-      payment_mode: !isTransfer && form.payment_mode ? form.payment_mode : null }
+      payment_mode: !isTransfer && form.payment_mode ? form.payment_mode : null,
+      holder_name: form.holder_name || null, tax_tag: showTax ? form.tax_tag || null : null }
     const res = await fetch('/api/transactions', {
       method: mode === 'edit' ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -189,7 +199,12 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
       if (recErr) repeatNote = ' · repeat not set up (run migration 027)'
       else if (rec && data.transaction?.id) { await supabase.from('transactions').update({ recurring_id: rec.id }).eq('id', data.transaction.id); repeatNote = ' · repeats monthly' }
     }
-    toast(mode === 'edit' ? 'Changes saved' : `${noun} saved · ${form.merchant.trim()}${repeatNote}`)
+    if (receiptFile) {
+      const id = mode === 'edit' ? t0.id : data.transaction?.id
+      const err = id ? await uploadReceipt(supabase, id, receiptFile) : 'Could not attach the receipt'
+      repeatNote += err ? ` · receipt not saved (${err})` : ' · receipt attached'
+    }
+    toast((mode === 'edit' ? 'Changes saved' : `${noun} saved · ${form.merchant.trim()}`) + repeatNote)
     router.refresh()
     onAdded?.()
     onClose()
@@ -366,6 +381,49 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
             <input type="text" value={form.description} onChange={e => set({ description: e.target.value })}
               placeholder={isTransfer ? (form.sub_category === 'Family' ? 'e.g. Wife, parents' : 'e.g. HDFC NRO ••4521') : 'Anything to remember'}
               className="wl-input" style={FIELD} />
+          </div>
+
+          {(members.length > 1 || showTax) && !isTransfer && (
+            <div className="grid grid-cols-2 gap-3">
+              {members.length > 1 && (
+                <div className={showTax ? '' : 'col-span-2'}>
+                  <Label>For</Label>
+                  <select value={form.holder_name} onChange={e => set({ holder_name: e.target.value })} className="wl-input" style={FIELD} aria-label="Who it was for">
+                    <option value="">Whole family</option>
+                    {members.map(m => <option key={m.id} value={m.relationship === 'self' ? 'Self' : m.name}>{m.relationship === 'self' ? 'You' : m.name}</option>)}
+                  </select>
+                </div>
+              )}
+              {showTax && (
+                <div className={members.length > 1 ? '' : 'col-span-2'}>
+                  <Label>Tax (India)</Label>
+                  <select value={form.tax_tag} onChange={e => set({ tax_tag: e.target.value })} className="wl-input" style={FIELD} aria-label="Tax deduction section">
+                    <option value="">Not for tax</option>
+                    <option value="80C">80C · tuition fees, PPF, LIC…</option>
+                    <option value="80D">80D · health cover, check-ups</option>
+                    <option value="80D parents">80D · parents' health</option>
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div>
+            <Label>Receipt (optional)</Label>
+            <div className="flex items-center gap-2 flex-wrap">
+              <label className="wl-btn cursor-pointer max-w-full" style={{ height: 36 }}>
+                <Paperclip size={14} className="flex-shrink-0" />
+                <span className="truncate">{receiptFile ? receiptFile.name : receiptPath ? 'Replace' : 'Attach a photo or PDF'}</span>
+                <input type="file" accept={RECEIPT_TYPES} className="hidden" onChange={e => setReceiptFile(e.target.files?.[0] ?? null)} />
+              </label>
+              {receiptFile && <button type="button" onClick={() => setReceiptFile(null)} className="text-[12px] font-semibold" style={{ color: 'var(--text3)' }}>Clear</button>}
+              {!receiptFile && receiptPath && mode === 'edit' && (<>
+                <button type="button" onClick={async () => setReceiptMsg((await openReceipt(supabase, receiptPath)) ?? '')} className="text-[12.5px] font-semibold" style={{ color: 'var(--accent)' }}>View receipt</button>
+                <button type="button" onClick={async () => { const err = await removeReceipt(supabase, t0.id, receiptPath); if (err) setReceiptMsg(err); else { setReceiptPath(null); router.refresh() } }}
+                  className="text-[12.5px] font-semibold" style={{ color: 'var(--text3)' }}>Remove</button>
+              </>)}
+            </div>
+            {receiptMsg && <div className="text-[12px] mt-1.5" style={{ color: '#B4231A' }}>{receiptMsg}</div>}
           </div>
 
           {mode !== 'edit' && (

@@ -1,17 +1,19 @@
 'use client'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { Wallet, Gauge, CalendarRange, History } from 'lucide-react'
 import { useViewStore } from '@/store/viewStore'
+import { useFamily } from '@/hooks/useFamily'
+import SpendCalendar from './SpendCalendar'
 import { useUiStore } from '@/store/uiStore'
-import { isSpend, catOf, labelOf, spendGroup, SPEND_GROUPS } from '@/lib/money'
+import { isSpend, isSpending, catOf, labelOf, spendGroup, SPEND_GROUPS } from '@/lib/money'
 import { useCategoryStore } from '@/store/categoryStore'
 import { colorOf as catColorOf } from '@/lib/categories'
 import { CategoryIcon } from '@/components/ui/CategoryIcon'
 import { addMonths, daysInMonth, localToday } from '@/lib/insights'
 import { fmtMoney, fmtCompact } from '@/lib/format'
-import { PageHeader, KpiTile, Bars, Ring, Segmented, EmptyState, type Tone } from '@/components/ui/kit'
+import { PageHeader, KpiTile, Bars, Ring, Segmented, EmptyState, ProgressRow, type Tone } from '@/components/ui/kit'
 
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const monLabel = (ym: string, year = false) => `${MON[Number(ym.slice(5)) - 1]}${year ? ` ${ym.slice(0, 4)}` : ''}`
@@ -46,6 +48,10 @@ export default function AnalysisClient({ transactions, budgets }: { transactions
   const cmpLabel = cmp === 'lm' ? 'last month' : monLabel(ly, true)
 
   const spend = useMemo(() => transactions.filter(t => isSpend(t) && inView(t.currency)), [transactions, view])
+  // Living costs + family (no EMIs or investing) — the day-by-day and per-person views
+  const daily = useMemo(() => spend.filter(isSpending), [spend])
+  const valueOf = useCallback((t: any) => conv(Number(t.amount) || 0, t.currency), [view, FX])
+  const { members } = useFamily()
 
   // Category totals for a month, up to day `cut` (same-point comparisons)
   const byCat = (m: string, cut = 31) => {
@@ -371,6 +377,11 @@ export default function AnalysisClient({ transactions, budgets }: { transactions
         </section>
       </div>
 
+      <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-4 items-start">
+        <SpendCalendar className="max-md:order-7" rows={daily} month={focus} today={today || `${thisMonth}-31`} value={valueOf} short={short} />
+        {members.length > 1 && <ByMember rows={daily.filter(t => t.txn_date?.slice(0, 7) === focus)} value={valueOf} short={short} />}
+      </div>
+
       {/* Insights */}
       <section className="max-md:order-8 rounded-[20px] bg-ai px-4 md:px-[26px] py-4 md:py-[22px]" style={{ border: '1px solid #E1DAFF' }}>
         <div className="flex justify-between items-center gap-5">
@@ -397,5 +408,30 @@ export default function AnalysisClient({ transactions, budgets }: { transactions
         </button>
       </section>
     </div>
+  )
+}
+
+// Spend per family member (transactions.holder_name — the "For" field)
+function ByMember({ rows, value, short }: { rows: any[]; value: (t: any) => number; short: (n: number) => string }) {
+  const by: Record<string, number> = {}
+  for (const t of rows) { const k = t.holder_name || ''; by[k] = (by[k] ?? 0) + value(t) }
+  const total = Object.values(by).reduce((a, v) => a + v, 0)
+  const list = Object.entries(by).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1])
+  const tagged = list.some(([k]) => k)
+  const name = (k: string) => (!k ? 'Whole family' : k === 'Self' ? 'You' : k)
+  return (
+    <section className="wl-card max-md:order-7 px-4 md:px-[22px] py-4 md:py-5 flex flex-col gap-3">
+      <div className="flex justify-between items-baseline gap-2">
+        <h2 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>By family member</h2>
+        <span className="text-[11.5px]" style={{ color: 'var(--text3)' }}>{short(total)}</span>
+      </div>
+      {list.map(([k, v], i) => (
+        <ProgressRow key={k || 'all'} name={name(k)} value={short(v)} right={total > 0 ? `${Math.round(v / total * 100)}%` : undefined}
+          pct={total > 0 ? v / total * 100 : 0} color={k ? ['#6A55E8', '#2FB67C', '#F29A2E', '#3B8EF0', '#EC5B8C'][i % 5] : '#94A3B8'} />
+      ))}
+      <p className="text-[11.5px] leading-snug" style={{ color: 'var(--text4)' }}>
+        {tagged ? 'Untagged spends count as the whole family.' : 'Pick who an expense was for (“For” when you add or edit it) to see each person’s share here.'}
+      </p>
+    </section>
   )
 }
