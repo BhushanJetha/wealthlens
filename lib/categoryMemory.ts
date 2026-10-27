@@ -5,6 +5,7 @@
 // matching merchants in a freshly-parsed statement.
 
 import { fetchAll } from '@/lib/supabase/fetchAll'
+import { loadRules, ruleMatches, type TxnRule } from '@/lib/rules'
 
 // Normalise a merchant for matching: drop any embedded date tokens (so a stray
 // "27/02/2026 POS Calicut" matches a clean "POS Calicut"), then keep alphanumerics.
@@ -19,8 +20,9 @@ const dirOf = (txnType: string) => (txnType === 'income' ? 'in' : 'out')
 
 export interface CategoryMemory {
   has: boolean
-  // Mutates the txn's category/txn_type in place when the merchant is recognised.
-  // Returns true if a learned category was applied.
+  // Mutates the txn's category/txn_type in place when the merchant is recognised
+  // — by one of your "Always do this" rules first, else by what you chose before.
+  // Returns true if a category was applied.
   apply: (t: { merchant: string; category: string; txn_type: string }) => boolean
 }
 
@@ -36,6 +38,8 @@ export async function buildCategoryMemory(supabase: any, userId: string): Promis
       .order('id').range(a, b), 4)
     data = res.data ?? []
   } catch { data = [] }
+  let rules: TxnRule[] = []
+  try { rules = (await loadRules(supabase, userId)).filter(r => r.set_category) } catch { rules = [] }
 
   // key = `${normalizedMerchant}|${direction}` → { category → count }
   const counts: Record<string, Record<string, number>> = {}
@@ -55,8 +59,10 @@ export async function buildCategoryMemory(supabase: any, userId: string): Promis
   }
 
   return {
-    has: Object.keys(learned).length > 0,
+    has: Object.keys(learned).length > 0 || rules.length > 0,
     apply(t) {
+      const rule = rules.find(r => ruleMatches(r, t.merchant))
+      if (rule) { t.category = rule.set_category!; return true }
       const hit = learned[`${norm(t.merchant)}|${dirOf(t.txn_type)}`]
       if (hit?.category) {
         t.category = hit.category

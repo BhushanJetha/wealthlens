@@ -15,6 +15,7 @@ import { catOf, labelOf, isIncome as isIncomeIn } from '@/lib/money'
 import { brandOf } from '@/lib/banks'
 import { buildHomeInsights, localToday, fmtDay, daysBetween, type Attention } from '@/lib/insights'
 import { buildDues, expectedIncome, balanceWarnings, safeToSpend, type Due } from '@/lib/moneyOverview'
+import { findReviewItems, reviewCount } from '@/lib/review'
 import { PageHeader, InsightBar, KpiTile, KpiGrid, Panel, MoreLink } from '@/components/ui/kit'
 import { BankLogo } from '@/components/ui/BankCards'
 
@@ -26,8 +27,9 @@ interface Props {
 
 const SEV_DOT: Record<Attention['severity'], string> = { high: '#DC2626', medium: '#D97706', low: '#6A55E8' }
 const KIND_ICON: Record<Due['kind'], typeof Landmark> = { emi: Landmark, card: CreditCard, premium: CalendarClock, sip: BarChart2, bill: CalendarClock }
-// Home's attention items that belong here; dues have their own list
-const KEEP = (a: Attention) => /^(bud-|util$|uncat$|quiet-)/.test(a.id)
+// Home's attention items that belong here; dues have their own list and the
+// Review inbox covers uncategorised spends
+const KEEP = (a: Attention) => /^(bud-|util$|quiet-)/.test(a.id)
 
 // Money overview (design v2 kit): safe to spend · what needs you · next 7 days
 // · live balances · this month · recent. Every figure follows the same rules
@@ -65,7 +67,10 @@ export default function MoneyOverviewClient(p: Props) {
   const weekIn = incoming.filter(i => daysBetween(today, i.date) <= 7)
   const dueWeek = week.reduce((s, d) => s + viewAmount(d.amount, d.currency, view, FX), 0)
   const owed = cards.reduce((s, c) => s + viewAmount(Number(c.outstanding_bal) || 0, c.currency, view, FX), 0)
-  const needs = [...warnings, ...ins.attention.filter(KEEP)]
+  const toReview = useMemo(() => reviewCount(findReviewItems(p.transactions, { today, fx: FX })), [p.transactions, today, FX])
+  const needs = [...warnings, ...ins.attention.filter(KEEP),
+    ...(toReview ? [{ id: 'review', severity: 'low' as const, title: `${toReview} transaction${toReview === 1 ? '' : 's'} to review`,
+      detail: 'Missing “Paid from”, vague categories or possible duplicates — fix them in a tap', href: '/dashboard/money/review' }] : [])]
   const unsure = week.filter(d => !d.payFrom && (d.kind === 'emi' || d.kind === 'card'))
 
   const recent = useMemo(() => p.transactions.filter(t => inView(t.currency)).slice(0, 6), [p.transactions, view])

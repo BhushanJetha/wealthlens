@@ -30,6 +30,7 @@ export const SECTIONS: NavSection[] = [
       { label: 'Expense report', href: '/dashboard/expenses/report' },
       { label: 'Income report',  href: '/dashboard/income/report' },
     ] },
+    { label: 'Review', href: '/dashboard/money/review', hidden: true },
     { label: 'Import', href: '/dashboard/ingest', hidden: true },
   ] },
   { key: 'wealth', label: 'Wealth', desc: 'Net worth, investments and debt', icon: Wallet, href: '/dashboard/net-worth', tabs: [

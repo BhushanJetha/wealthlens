@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { loadRules, applyRules } from '@/lib/rules'
 
 // GET /api/transactions — list user transactions with optional filters
 export async function GET(req: Request) {
@@ -61,6 +62,8 @@ export async function POST(req: Request) {
     counter_account_id: counter_account_id || null,
     payment_mode: payment_mode || null,
   }
+  // "Always do this" rules fill a vague category or a missing account (migration 027)
+  applyRules(await loadRules(supabase, user.id), row)
   let { data, error } = await supabase.from('transactions').insert(row).select().single()
   // Before migration 026 these two columns don't exist — save without them
   if (error && /counter_account_id|payment_mode/.test(error.message)) {

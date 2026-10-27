@@ -269,7 +269,7 @@ export function buildHomeInsights(inp: InsightInput): HomeInsights {
   // Uncategorised spend (last 60 days)
   const since60 = addMonthsToDate(today, -2)
   const uncategorised = txns.filter(t => t.txn_date >= since60 && t.txn_type === 'expense' && (!t.category || String(t.category).trim() === '' || t.category === 'Other')).length
-  if (uncategorised >= 3) attention.push({ id: 'uncat', severity: 'low', title: `${uncategorised} transactions are uncategorised`, detail: 'Categorise them so reports and budgets are accurate', href: '/dashboard/expenses', actionLabel: 'Fix' })
+  if (uncategorised >= 3) attention.push({ id: 'uncat', severity: 'low', title: `${uncategorised} transactions are uncategorised`, detail: 'Categorise them so reports and budgets are accurate', href: '/dashboard/money/review', actionLabel: 'Fix' })
   // Accounts that have gone quiet → statement probably not imported
   const byAcct: Record<string, { n: number; last: string }> = {}
   for (const t of inp.txns ?? []) {
