@@ -8,8 +8,10 @@ import { kindOf, counterOf } from './ledger'
 import { catOf, CC_BILL, isIncome as isIncomeIn, isSpend } from './money'
 import { matchScore } from './loans'
 import { findRecurring, nextOccurrence, addDaysTo, daysBetween, ymOf, addMonths, daysInMonth, fmtDay } from './insights'
+import { nextDate, type RecurringTxn } from './recurring'
+import { ruleTextFor } from './rules'
 
-export type DueKind = 'emi' | 'card' | 'premium' | 'sip' | 'bill'
+export type DueKind = 'emi' | 'card' | 'premium' | 'sip' | 'bill' | 'repeat'
 export interface Due {
   id: string; date: string; label: string; sub: string
   amount: number; currency: string; kind: DueKind
@@ -56,6 +58,7 @@ export function cardPayFrom(card: any, txns: any[], accounts: any[]): { id: stri
 export function buildDues(inp: {
   today: string; days: number; view: View
   txns: any[]; accounts: any[]; loans: any[]; insurance: any[]; mutualFunds: any[]
+  recurring?: RecurringTxn[]
 }): Due[] {
   const { today, days, view } = inp
   const inView = (c: string) => view === 'consolidated' || (view === 'uae' ? c === 'AED' : c !== 'AED')
@@ -94,10 +97,20 @@ export function buildDues(inp: {
         kind: 'sip', payFrom: t?.account_id ?? null, payFromSource: t ? 'history' : null, href: '/dashboard/investments/mutual-funds' })
     }
   }
+  // Repeating entries you've set up (money out only — not income or moves)
+  const repeats = (inp.recurring ?? []).filter(r => r.is_active && isSpend(r) && inView(r.currency))
+  for (const r of repeats) {
+    const d = nextDate(r, today)
+    if (!within(d)) continue
+    out.push({ id: `rep-${r.id}`, date: d, label: r.merchant, sub: `Repeats monthly${r.auto_add ? ' · adds itself' : ''}`, amount: Number(r.amount), currency: r.currency,
+      kind: 'repeat', payFrom: r.account_id, payFromSource: r.account_id ? 'set' : null, href: '/dashboard/bills' })
+  }
+  const repeatKeys = new Set(repeats.map(r => ruleTextFor(r.merchant)))
   // Bills & subscriptions not yet charged this month, on their usual day
   const month = ymOf(today), dayNow = Number(today.slice(8, 10))
   const spends = inp.txns.filter(t => isSpend(t) && inView(t.currency))
   for (const r of findRecurring(spends, month, t => Number(t.amount) || 0)) {
+    if (repeatKeys.has(ruleTextFor(r.name))) continue
     const ym = r.paidThisMonth ? addMonths(month, 1) : r.day >= dayNow ? month : null
     if (!ym) continue
     const d = `${ym}-${String(Math.min(r.day, daysInMonth(ym))).padStart(2, '0')}`

@@ -31,12 +31,14 @@ const Label = ({ children, right }: { children: React.ReactNode; right?: React.R
     {right}
   </div>
 )
+const ordinal = (n: number) => `${n}${n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th'}`
 const FIELD = { height: 42, fontSize: 14, borderRadius: 9, background: '#F7F8FA', borderColor: '#E2E8F0' }
 
 // Add, edit or duplicate a transaction (design v2: centred 460px dialog on
 // desktop, bottom sheet on phones). Categories come from the user's own list.
-export default function AddTransactionModal({ onClose, onAdded, defaults, edit }: {
+export default function AddTransactionModal({ onClose, onAdded, defaults, edit, repeat }: {
   onClose: () => void
+  repeat?: boolean                              // start with "Repeat every month" ticked
   onAdded?: () => void
   defaults?: Partial<{ txn_type: string; account_id: string; category: string; currency: string; sub_category: string; merchant: string; amount: string; txn_date: string; description: string }>
   edit?: { txn: any; duplicate?: boolean }     // edit (or copy) an existing transaction
@@ -69,6 +71,9 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit }
   const [rateLoading, setRateLoading] = useState(false)
   const [rateDate,    setRateDate]    = useState<string | null>(null)
   const [manage,      setManage]      = useState(false)
+  // Repeat every month (recurring_txns, migration 027) — new entries only
+  const [repeatOn,    setRepeatOn]    = useState(!!repeat)
+  const [repeatAuto,  setRepeatAuto]  = useState<'ask' | 'auto'>('ask')
 
   const supabase = createClient()
   const router   = useRouter()
@@ -171,7 +176,20 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit }
     setSaving(false)
     if (!res.ok) { setError(data.error ?? 'Could not save. Try again.'); return }
     const noun = isTransfer ? 'Transfer' : isIncome ? 'Income' : form.txn_type === 'loan' ? 'Loan payment' : 'Expense'
-    toast(mode === 'edit' ? 'Changes saved' : `${noun} saved · ${form.merchant.trim()}`)
+    let repeatNote = ''
+    if (mode !== 'edit' && repeatOn) {
+      // This month is the one just saved; the next one is added on its day
+      const { data: { user } } = await supabase.auth.getUser()
+      const month = form.txn_date.slice(0, 7)
+      const { data: rec, error: recErr } = user ? await supabase.from('recurring_txns').insert({
+        user_id: user.id, merchant: body.merchant, description: body.description, category: form.category, sub_category: form.sub_category || null,
+        txn_type: form.txn_type, amount: body.amount, currency: form.currency, account_id, counter_account_id: body.counter_account_id,
+        day_of_month: Number(form.txn_date.slice(8, 10)), every_months: 1, start_month: month, last_done_month: month, auto_add: repeatAuto === 'auto',
+      }).select('id').single() : { data: null, error: { message: 'Signed out' } }
+      if (recErr) repeatNote = ' · repeat not set up (run migration 027)'
+      else if (rec && data.transaction?.id) { await supabase.from('transactions').update({ recurring_id: rec.id }).eq('id', data.transaction.id); repeatNote = ' · repeats monthly' }
+    }
+    toast(mode === 'edit' ? 'Changes saved' : `${noun} saved · ${form.merchant.trim()}${repeatNote}`)
     router.refresh()
     onAdded?.()
     onClose()
@@ -349,6 +367,20 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit }
               placeholder={isTransfer ? (form.sub_category === 'Family' ? 'e.g. Wife, parents' : 'e.g. HDFC NRO ••4521') : 'Anything to remember'}
               className="wl-input" style={FIELD} />
           </div>
+
+          {mode !== 'edit' && (
+            <div className="rounded-xl px-3 py-2.5 flex flex-col gap-2" style={{ background: '#F7F8FA', border: '1px solid #E2E8F0' }}>
+              <label className="flex items-center gap-2 text-[13px] font-medium cursor-pointer" style={{ color: 'var(--text2)' }}>
+                <input type="checkbox" checked={repeatOn} onChange={e => setRepeatOn(e.target.checked)} className="accent-[var(--accent)] w-4 h-4" />
+                <RefreshCw size={13} style={{ color: 'var(--accent)' }} />
+                Repeat every month{form.txn_date ? ` on the ${ordinal(Number(form.txn_date.slice(8, 10)))}` : ''}
+              </label>
+              {repeatOn && (
+                <Segmented label="When it repeats" value={repeatAuto} onChange={setRepeatAuto} full
+                  options={[{ value: 'ask', label: 'Ask me first' }, { value: 'auto', label: 'Add it for me' }]} />
+              )}
+            </div>
+          )}
 
           {error && <div className="rounded-lg px-3 py-2.5 text-[12.5px] leading-snug" style={{ background: '#FDECE8', color: '#B4231A' }} role="alert">{error}</div>}
         </div>

@@ -32,6 +32,7 @@ interface Props {
   snapshots: Snapshot[]
   historyReady: boolean
   goalInterests: string[]
+  recurringPending?: number
 }
 
 const MONTHS_LONG = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -226,7 +227,8 @@ export default function DashboardClient(p: Props) {
       <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4">
         <NetWorthCard nw={nw} hist={hist} est={nwEst} historyReady={p.historyReady} holderLabel={holder ? holderLabel : null}
           savingsRate={ins.trend.savingsRate} money={money} short={short} className="max-md:order-2" />
-        <AttentionCard items={ins.attention} onImport={() => setUploadOpen(true)} className="max-md:order-7" />
+        <AttentionCard items={p.recurringPending ? [{ id: 'recurring', severity: 'medium', title: `${p.recurringPending} repeating entr${p.recurringPending === 1 ? 'y' : 'ies'} to confirm`,
+          detail: 'Rent, SIPs or transfers whose day has come — add or skip in a tap', href: '/dashboard/money', actionLabel: 'Review' }, ...ins.attention] : ins.attention} onImport={() => setUploadOpen(true)} className="max-md:order-7" />
       </div>
 
       {/* Row 2: Health, Goals, 30-day cash flow */}

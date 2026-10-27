@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
-  Landmark, CalendarClock, ShoppingBag, CreditCard, ChevronRight, Banknote, X, Check, ArrowDownLeft, BarChart2, Plus,
+  Landmark, CalendarClock, ShoppingBag, CreditCard, ChevronRight, Banknote, X, Check, ArrowDownLeft, BarChart2, Plus, Repeat,
 } from 'lucide-react'
 import { useViewStore } from '@/store/viewStore'
 import { useUiStore } from '@/store/uiStore'
@@ -16,6 +16,7 @@ import { brandOf } from '@/lib/banks'
 import { buildHomeInsights, localToday, fmtDay, daysBetween, type Attention } from '@/lib/insights'
 import { buildDues, expectedIncome, balanceWarnings, safeToSpend, type Due } from '@/lib/moneyOverview'
 import { findReviewItems, reviewCount } from '@/lib/review'
+import { addOccurrence, claimMonth, type Occurrence, type RecurringTxn } from '@/lib/recurring'
 import { PageHeader, InsightBar, KpiTile, KpiGrid, Panel, MoreLink } from '@/components/ui/kit'
 import { BankLogo } from '@/components/ui/BankCards'
 
@@ -23,10 +24,12 @@ interface Props {
   today: string
   transactions: any[]; accounts: any[]; loans: any[]; insurance: any[]
   mutualFunds: any[]; fixedDeposits: any[]; budgets: any[]
+  pending: Occurrence[]          // repeating entries waiting for a confirm
+  recurring: RecurringTxn[]
 }
 
 const SEV_DOT: Record<Attention['severity'], string> = { high: '#DC2626', medium: '#D97706', low: '#6A55E8' }
-const KIND_ICON: Record<Due['kind'], typeof Landmark> = { emi: Landmark, card: CreditCard, premium: CalendarClock, sip: BarChart2, bill: CalendarClock }
+const KIND_ICON: Record<Due['kind'], typeof Landmark> = { emi: Landmark, card: CreditCard, premium: CalendarClock, sip: BarChart2, bill: CalendarClock, repeat: Repeat }
 // Home's attention items that belong here; dues have their own list and the
 // Review inbox covers uncategorised spends
 const KEEP = (a: Attention) => /^(bud-|util$|quiet-)/.test(a.id)
@@ -44,6 +47,23 @@ export default function MoneyOverviewClient(p: Props) {
   const [today, setToday] = useState(p.today)
   useEffect(() => { setToday(localToday()) }, [])
   const [picking, setPicking] = useState<Due | null>(null)
+  const [settled, setSettled] = useState<Set<string>>(new Set())
+  const [recBusy, setRecBusy] = useState<string | null>(null)
+  const [recError, setRecError] = useState('')
+  const pending = p.pending.filter(o => !settled.has(`${o.r.id}|${o.month}`))
+  async function settle(o: Occurrence, add: boolean) {
+    const k = `${o.r.id}|${o.month}`
+    setRecBusy(k); setRecError('')
+    const supabase = createClient()
+    let err: string | null = null
+    if (add) {
+      const { data: { user } } = await supabase.auth.getUser()
+      err = user ? (await addOccurrence(supabase, user.id, o)).error : 'Signed out'
+    } else if (!(await claimMonth(supabase, o.r, o.month))) err = 'Already done'
+    setRecBusy(null)
+    if (err && err !== 'Already done' && err !== 'Already added') { setRecError(err); return }
+    setSettled(s => new Set(s).add(k)); router.refresh()
+  }
 
   const inView = (c: string) => view === 'consolidated' || (view === 'uae' ? c === 'AED' : c !== 'AED')
   const accounts = useMemo(() => p.accounts.filter(a => inView(a.currency)), [p.accounts, view])
@@ -57,7 +77,7 @@ export default function MoneyOverviewClient(p: Props) {
     cash: 0, invested: { value: 0, cost: 0 },
   }), [view, FX, today, p])
 
-  const dues = useMemo(() => buildDues({ today, days: 35, view, txns: p.transactions, accounts: p.accounts, loans: p.loans, insurance: p.insurance, mutualFunds: p.mutualFunds }),
+  const dues = useMemo(() => buildDues({ today, days: 35, view, txns: p.transactions, accounts: p.accounts, loans: p.loans, insurance: p.insurance, mutualFunds: p.mutualFunds, recurring: p.recurring }),
     [today, view, p])
   const incoming = useMemo(() => expectedIncome(p.transactions, accounts, today, 35), [p.transactions, accounts, today])
   const warnings = useMemo(() => balanceWarnings(accounts, dues, incoming, today, 14), [accounts, dues, incoming, today])
@@ -139,8 +159,8 @@ export default function MoneyOverviewClient(p: Props) {
           </p>
         </section>
 
-        <Panel title="Needs you" right={needs.length > 0 && <span className="text-[11px] font-semibold px-2 py-[3px] rounded-full" style={{ background: '#FEF2F2', color: '#DC2626' }}>{needs.length}</span>}>
-          {needs.length === 0 && unsure.length === 0 ? (
+        <Panel title="Needs you" right={needs.length + pending.length > 0 && <span className="text-[11px] font-semibold px-2 py-[3px] rounded-full" style={{ background: '#FEF2F2', color: '#DC2626' }}>{needs.length + pending.length}</span>}>
+          {needs.length === 0 && unsure.length === 0 && pending.length === 0 ? (
             <div className="flex flex-col items-center justify-center text-center py-8 gap-1.5">
               <div className="w-10 h-10 rounded-full flex items-center justify-center text-[18px]" style={{ background: 'var(--income-bg)', color: 'var(--income)' }}>✓</div>
               <div className="text-[14px] font-semibold mt-1" style={{ color: 'var(--text)' }}>All clear</div>
@@ -148,6 +168,21 @@ export default function MoneyOverviewClient(p: Props) {
             </div>
           ) : (
             <ul className="mt-2">
+              {pending.map(o => {
+                const k = `${o.r.id}|${o.month}`
+                return (
+                  <li key={k} className="flex gap-2.5 items-center py-[9px]" style={{ borderTop: '1px solid #F1F5F9' }}>
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: SEV_DOT.medium }} aria-label="Soon" />
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-[13px] font-semibold truncate" style={{ color: 'var(--text)' }}>Add {o.r.merchant}? {fmtMoney(Number(o.r.amount), o.r.currency)}</span>
+                      <span className="block text-[12px] mt-px truncate" style={{ color: 'var(--text3)' }}>Repeats monthly · due {fmtDay(o.date)}{accName(o.r.account_id) ? ` · from ${accName(o.r.account_id)}` : ''}</span>
+                    </span>
+                    <button onClick={() => settle(o, true)} disabled={recBusy === k} className="wl-btn wl-btn-primary flex-shrink-0 disabled:opacity-60" style={{ height: 30, fontSize: 12 }}>Add</button>
+                    <button onClick={() => settle(o, false)} disabled={recBusy === k} className="wl-btn flex-shrink-0 disabled:opacity-60" style={{ height: 30, fontSize: 12 }}>Skip</button>
+                  </li>
+                )
+              })}
+              {recError && <li className="text-[12px] py-1.5" style={{ color: '#B91C1C' }}>{recError}</li>}
               {needs.slice(0, 6).map(it => {
                 const body = (<>
                   <span className="w-2 h-2 rounded-full mt-[5px] flex-shrink-0" style={{ background: SEV_DOT[it.severity] }}

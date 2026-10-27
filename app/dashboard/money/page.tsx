@@ -3,6 +3,7 @@ import { fetchAllRows } from '@/lib/supabase/fetchAll'
 import { activeAccountsWithLedger } from '@/lib/ledger'
 import { activeLoansWithEmi } from '@/lib/loans'
 import { getAedInr } from '@/lib/fx'
+import { runRecurring } from '@/lib/recurring'
 import MoneyOverviewClient from '@/components/dashboard/MoneyOverviewClient'
 
 // Money overview: live balances, what's due, safe to spend, what needs you.
@@ -27,10 +28,15 @@ export default async function MoneyPage() {
     supabase.from('budgets').select('*').eq('user_id', uid).gte('month_year', fromDate.slice(0, 7)),
   ])
 
+  // Repeating entries whose day has come: auto ones are added, the rest wait here
+  const rec = await runRecurring(supabase, uid, today, txns)
+
   return (
     <MoneyOverviewClient
       today={today}
-      transactions={txns}
+      transactions={rec.inserted.length ? [...rec.inserted, ...txns] : txns}
+      pending={rec.pending}
+      recurring={rec.list}
       accounts={accsRes.data ?? []}
       loans={loansRes.data ?? []}
       insurance={insRes.data ?? []}

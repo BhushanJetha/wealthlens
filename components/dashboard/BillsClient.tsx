@@ -7,6 +7,9 @@ import { findRecurring, buildHomeInsights, addMonths, daysInMonth, daysBetween, 
 import { viewAmount } from '@/lib/netWorth'
 import { labelOf } from '@/lib/money'
 import { fmtMoney, fmtCompact } from '@/lib/format'
+import { nextDate, type RecurringTxn } from '@/lib/recurring'
+import { ruleTextFor } from '@/lib/rules'
+import RepeatingPanel from './RepeatingPanel'
 import { PageHeader, InsightBar, AiActions, LearnStrip, KpiTile, Panel, Donut, ProgressRow, Segmented, EmptyState, PALETTE, PALETTE_BG } from '@/components/ui/kit'
 
 const ordinal = (n: number) => `${n}${n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th'}`
@@ -14,7 +17,9 @@ const ordinal = (n: number) => `${n}${n % 10 === 1 && n !== 11 ? 'st' : n % 10 =
 // Bills & subscriptions (design v2). Regular charges are detected from
 // statements with the same rule as Home's insight (lib/insights findRecurring);
 // card bills, EMIs and premiums come from the records you've added.
-export default function BillsClient({ transactions, cards, loans, insurance }: { transactions: any[]; cards: any[]; loans: any[]; insurance: any[] }) {
+export default function BillsClient({ transactions, cards, accounts, loans, insurance, recurring, recurringReady }: {
+  transactions: any[]; cards: any[]; accounts: any[]; loans: any[]; insurance: any[]; recurring: RecurringTxn[]; recurringReady: boolean
+}) {
   const router = useRouter()
   const { view, fxRate: FX } = useViewStore()
   const [today, setToday] = useState('')
@@ -50,9 +55,13 @@ export default function BillsClient({ transactions, cards, loans, insurance }: {
 
   const monthly = bills.reduce((a, r) => a + r.med, 0)
   const rises = bills.filter(r => r.rose != null).sort((a, b) => (b.rose ?? 0) - (a.rose ?? 0))
+  const repeatKeys = new Set(recurring.map(r => ruleTextFor(r.merchant)))
   const comingUp = [
     ...scheduled.map(u => ({ id: u.id, date: u.date, label: u.label, sub: u.sub, amount: viewAmount(u.amount, u.currency, view, FX), est: false })),
-    ...rows.filter(r => !r.late && r.days >= 0 && r.days <= 30).map(r => ({ id: `r-${r.key}`, date: r.due, label: r.name, sub: `${labelOf(r.category)} · expected`, amount: r.med, est: true })),
+    ...rows.filter(r => !r.late && r.days >= 0 && r.days <= 30 && !repeatKeys.has(ruleTextFor(r.name))).map(r => ({ id: `r-${r.key}`, date: r.due, label: r.name, sub: `${labelOf(r.category)} · expected`, amount: r.med, est: true })),
+    ...recurring.filter(r => r.is_active && r.txn_type !== 'income' && inView(r.currency)).map(r => ({ r, date: today ? nextDate(r, today) : '' }))
+      .filter(x => x.date && daysBetween(today, x.date) >= 0 && daysBetween(today, x.date) <= 30)
+      .map(({ r, date }) => ({ id: `rep-${r.id}`, date, label: r.merchant, sub: `${labelOf(r.category)} · repeats monthly`, amount: viewAmount(Number(r.amount), r.currency, view, FX), est: false })),
   ].sort((a, b) => a.date.localeCompare(b.date))
   const week = comingUp.filter(u => daysBetween(today, u.date) <= 7)
 
@@ -69,7 +78,7 @@ export default function BillsClient({ transactions, cards, loans, insurance }: {
     : `No regular charges spotted yet. We look for the same merchant at a steady amount in 3 of the last 4 months.`
       + (week.length ? ` ${week.length} card, loan or premium payment${week.length === 1 ? ' is' : 's are'} due in the next 7 days.` : '')
 
-  if (today && bills.length === 0 && scheduled.length === 0) return (
+  if (today && bills.length === 0 && scheduled.length === 0 && recurring.length === 0) return (
     <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
       <PageHeader title="Bills & subscriptions" sub="Found in your statements, so you never miss a due date" />
       <EmptyState message="Bills show up here once a merchant charges you a steady amount in 3 of the last 4 months. Import a few months of bank or card statements, or add your cards, loans and policies."
@@ -95,6 +104,7 @@ export default function BillsClient({ transactions, cards, loans, insurance }: {
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-3.5 md:gap-4 items-start">
         <div className="flex flex-col gap-3.5 md:gap-4 min-w-0">
+          <RepeatingPanel list={recurring} ready={recurringReady} transactions={transactions} accounts={accounts} today={today} />
           <Panel title="Coming up · next 30 days">
             {comingUp.length === 0
               ? <p className="text-[12.5px] mt-2" style={{ color: 'var(--text3)' }}>Nothing due in the next 30 days.</p>

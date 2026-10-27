@@ -8,6 +8,7 @@ import { computeNetWorth, groupAssets, NW_RULES, type Holdings } from '@/lib/net
 import { getAedInr } from '@/lib/fx'
 import { isMissingTable } from '@/lib/supabase/missingTable'
 import { goalInterestsOf } from '@/lib/goalInterests'
+import { runRecurring } from '@/lib/recurring'
 
 export default async function DashboardPage() {
   const supabase = createClient()
@@ -46,6 +47,10 @@ export default async function DashboardPage() {
     supabase.from('profiles').select('full_name,onboarded').eq('id', uid).single(),
     getAedInr(),
   ])
+
+  // Repeating entries whose day has come are added (or wait for a confirm on Money)
+  const rec = await runRecurring(supabase, uid, today, txns)
+  const allTxns = rec.inserted.length ? [...rec.inserted, ...txns] : txns
 
   // Live balances: starting balance + transactions since (lib/ledger)
   const liveAccounts = await withLedgerBalances(supabase, uid, accsRes.data ?? [], fxRes.rate)
@@ -89,7 +94,8 @@ export default async function DashboardPage() {
       firstName={(profileRes.data?.full_name ?? '').split(' ')[0] || null}
       today={today}
       holdings={holdings}
-      transactions={txns}
+      transactions={allTxns}
+      recurringPending={rec.pending.length}
       insurance={insRes.data ?? []}
       budgets={budgetsRes.data ?? []}
       goals={goalsRes.data ?? []}
