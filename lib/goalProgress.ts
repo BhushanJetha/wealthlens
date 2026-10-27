@@ -16,17 +16,18 @@ export function getInvCurrentValue(type: string, rec: any): number {
   return rec.invested_amount ?? 0
 }
 
-// Current value linked to one goal, converted with `conv` (view/FX aware)
+// Current value linked to one goal, converted with `conv` (view/FX aware).
+// Only the share of each investment given to the goal counts (allocation_pct).
 export function goalCurrentValue(
   goalId: string,
-  goalInvestments: { goal_id: string; investment_type: string; investment_id: string }[],
+  goalInvestments: { goal_id: string; investment_type: string; investment_id: string; allocation_pct?: number | null }[],
   allInvestments: Record<string, any[]>,
   conv: (v: number, cur: string) => number,
 ): number {
   let total = 0
   goalInvestments.filter(gi => gi.goal_id === goalId).forEach(gi => {
     const rec = (allInvestments[gi.investment_type] ?? []).find((r: any) => r.id === gi.investment_id)
-    if (rec) total += conv(getInvCurrentValue(gi.investment_type, rec), rec.currency ?? 'INR')
+    if (rec) total += conv(getInvCurrentValue(gi.investment_type, rec), rec.currency ?? 'INR') * Number(gi.allocation_pct ?? 100) / 100
   })
   return total
 }

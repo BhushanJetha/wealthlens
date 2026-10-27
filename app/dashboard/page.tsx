@@ -39,7 +39,7 @@ export default async function DashboardPage() {
     supabase.from('fixed_deposits').select('*').eq('user_id', uid).eq('is_active', true),
     supabase.from('insurance_policies').select('*').eq('user_id', uid).eq('is_active', true),
     supabase.from('goals').select('*').eq('user_id', uid),
-    supabase.from('goal_investments').select('goal_id,investment_type,investment_id').eq('user_id', uid),
+    supabase.from('goal_investments').select('goal_id,investment_type,investment_id,allocation_pct').eq('user_id', uid),
     supabase.from('budgets').select('*').eq('user_id', uid).gte('month_year', fromDate.slice(0, 7)),
     supabase.from('recurring_deposits').select('*').eq('user_id', uid).eq('is_active', true),
     supabase.from('nps_accounts').select('*').eq('user_id', uid),
