@@ -42,7 +42,7 @@ export default function DashboardClient(p: Props) {
   const router = useRouter()
   const { view, toMonth, fxRate: FX } = useViewStore()
   const { selectedHolder: holder } = useHolderStore()
-  const { setUploadOpen, openAdvisor } = useUiStore()
+  const { setUploadOpen, openAdvisor, openAdd } = useUiStore()
   const [modal, setModal] = useState<null | 'add' | 'voice'>(null)
   const cur = view === 'uae' ? 'AED' : 'INR'
   const money = (n: number) => fmtMoney(n, cur)
@@ -167,7 +167,6 @@ export default function DashboardClient(p: Props) {
           <p className="text-[13px] mt-0.5" style={{ color: 'var(--text3)' }}>{viewLabel} · {holderLabel} · {rangeLabel}</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => setModal('add')} className="wl-btn" style={{ height: 34 }}><Plus size={14} />Add transaction</button>
           <button onClick={() => setUploadOpen(true)} className="wl-btn" style={{ height: 34 }}><Upload size={14} />Upload statement</button>
           <button onClick={() => setModal('voice')} className="wl-btn wl-btn-primary" style={{ height: 34 }}><Mic size={14} />Speak it</button>
         </div>
@@ -191,7 +190,7 @@ export default function DashboardClient(p: Props) {
       <div className="md:hidden max-md:order-3"><MobileControls actions={false} /></div>
       <div className="md:hidden max-md:order-6 grid grid-cols-4 gap-2">
         {([
-          ['Add', Plus, () => setModal('add')],
+          ['Add', Plus, () => openAdd()],
           ['Upload', Upload, () => setUploadOpen(true)],
           ['Speak', Mic, () => setModal('voice')],
           ['Ask AI', Sparkles, () => openAdvisor()],

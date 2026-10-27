@@ -7,6 +7,7 @@ import MobileTabBar from '@/components/layout/MobileTabBar'
 import SectionTabs from '@/components/layout/SectionTabs'
 import MobileHeader from '@/components/layout/MobileHeader'
 import CommandPalette from '@/components/layout/CommandPalette'
+import QuickAdd from '@/components/layout/QuickAdd'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = createClient()
@@ -46,6 +47,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       </div>
       <MobileTabBar />
       <CommandPalette />
+      <QuickAdd />
     </div>
   )
 }

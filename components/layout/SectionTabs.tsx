@@ -11,6 +11,7 @@ export default function SectionTabs() {
   const pathname = usePathname()
   const { section, tab, sub } = resolveNav(pathname)
   if (!section || section.tabs.length < 2) return null
+  const tabs = section.tabs.filter(t => !t.hidden)
 
   const chips = (label: string, links: { label: string; href: string }[], current?: string) => (
     <nav aria-label={label} className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-4 px-4">
@@ -24,14 +25,14 @@ export default function SectionTabs() {
   return (
     <>
       <div className="md:hidden no-print flex flex-col gap-2 mb-4">
-        {chips(`${section.label} pages`, section.tabs, tab?.href)}
+        {chips(`${section.label} pages`, tabs, tab?.href)}
         {tab?.subs && chips(`${tab.label} sections`, tab.subs, sub?.href)}
       </div>
 
       <div className="hidden md:block no-print -mx-7 -mt-6 mb-6">
         <nav aria-label={`${section.label} pages`} className="wl-tabs flex items-end px-7"
           style={{ borderBottom: '1px solid var(--line)', background: '#fff' }}>
-          {section.tabs.map(t => (
+          {tabs.map(t => (
             <Link key={t.href} href={t.href} className="wl-tab"
               aria-current={tab?.href === t.href ? 'page' : undefined}>
               {t.label}

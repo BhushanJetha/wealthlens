@@ -9,9 +9,10 @@ import HolderChips from './HolderChips'
 import MonthPicker from './MonthPicker'
 import ViewSwitch from './ViewSwitch'
 import BankStatementUploadModal from '@/components/forms/BankStatementUploadModal'
+import { AddButton } from './QuickAdd'
 
 // Desktop app bar: breadcrumb · period · family chips · country view · bell ·
-// Ask AI. Phones have no app bar — see MobileHeader.
+// Add · Ask AI. Phones have no app bar — see MobileHeader.
 export default function Topbar({ user }: { user: any }) {
   const { setFxRate } = useViewStore()
   const { uploadOpen, setUploadOpen, advisorOpen, openAdvisor, closeAdvisor } = useUiStore()
@@ -48,6 +49,7 @@ export default function Topbar({ user }: { user: any }) {
         </div>
         <ViewSwitch />
         <NotificationsPanel />
+        <AddButton />
         <button onClick={() => advisorOpen ? closeAdvisor() : openAdvisor()} aria-pressed={advisorOpen}
           className="h-[34px] px-3.5 rounded-lg text-[12.5px] font-semibold flex items-center gap-1 flex-shrink-0 transition-colors"
           style={advisorOpen

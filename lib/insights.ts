@@ -23,7 +23,7 @@ function addMonthsToDate(date: string, n: number) {
   return `${ym}-${String(Math.min(day, daysInMonth(ym))).padStart(2, '0')}`
 }
 // Roll a recurring due date forward (by `every` months) until it's today or later
-function nextOccurrence(date: string | null | undefined, today: string, every = 1) {
+export function nextOccurrence(date: string | null | undefined, today: string, every = 1) {
   if (!date) return null
   let d = date.slice(0, 10), guard = 0
   while (d < today && guard++ < 240) d = addMonthsToDate(d, every)
@@ -60,7 +60,7 @@ export interface Forecast { points: ForecastPoint[]; low: ForecastPoint; end: nu
 export interface HomeInsights {
   isCurrent: boolean; dayCut: number | null
   income: Kpi; spend: Kpi
-  saved: { value: number; rate: number | null; baselineRate: number | null; comparable: boolean }
+  saved: { value: number; rate: number | null; baselineRate: number | null; comparable: boolean; emi: number; invest: number }
   runway: { months: number | null; avgSpend: number }
   // Averages over the last 3 complete months (savings rate in %)
   trend: { avgIncome: number; avgSpend: number; savingsRate: number | null; months: number }
@@ -449,7 +449,7 @@ export function buildHomeInsights(inp: InsightInput): HomeInsights {
   return { isCurrent, dayCut, income, spend, saved, runway, trend, categories, attention, insights, upcoming, forecast, savedByMonth }
 }
 
-function addDaysTo(date: string, n: number) {
+export function addDaysTo(date: string, n: number) {
   const d = new Date(utc(date) + n * 86400000)
   return d.toISOString().slice(0, 10)
 }

@@ -319,12 +319,9 @@ body {
 .wl-tabs::-webkit-scrollbar { display: none; }
 .wl-tabs > * { flex-shrink: 0; }
 
-/* AI chat floating button — sits clear of the bottom tab bar + home indicator
-   on phones, and returns to the corner on desktop. */
-.chat-fab { bottom: 1.5rem; right: 1.5rem; }
-@media (max-width: 767px) {
-  .chat-fab { bottom: calc(env(safe-area-inset-bottom, 0px) + 68px); right: 1rem; }
-}
+/* Phones: the floating Add button sits clear of the bottom tab bar + home
+   indicator. */
+.add-fab { bottom: calc(env(safe-area-inset-bottom, 0px) + 72px); right: 1rem; }
 
 /* Phones: modals become bottom sheets (mobile design). Overlay = .wl-sheet,
    panel = .wl-sheet-panel, and any centring wrapper between them =

@@ -15,7 +15,7 @@ const GROUPS: { label: string; items: Item[] }[] = [
     { label: 'Money flow', href: '/dashboard/transfers' },
     { label: 'Reports', href: '/dashboard/reports' },
     { label: 'FX optimizer', href: '/dashboard/fx' },
-    { label: 'Import statements', href: '/dashboard/ingest' },
+    { label: 'Import history', href: '/dashboard/ingest' },
   ] },
   { label: 'Plan', items: [
     { label: 'Budgets', href: '/dashboard/budgets' },

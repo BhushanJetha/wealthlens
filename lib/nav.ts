@@ -8,24 +8,29 @@ import {
 } from 'lucide-react'
 
 export interface NavLink { label: string; href: string; also?: string[] }   // also = extra paths that activate it
-export interface NavTab extends NavLink { subs?: NavLink[] }
+export interface NavTab extends NavLink { subs?: NavLink[]; hidden?: true }   // hidden = no tab, still resolves (breadcrumb, palette)
 export interface NavSection { key: string; label: string; desc: string; icon: LucideIcon; href: string; tabs: NavTab[] }
 
 export const SECTIONS: NavSection[] = [
   { key: 'home', label: 'Home', desc: 'Overview and what needs attention', icon: House, href: '/dashboard', tabs: [] },
-  { key: 'money', label: 'Money', desc: 'Spending, income and transfers', icon: Receipt, href: '/dashboard/expenses', tabs: [
-    { label: 'Expenses',     href: '/dashboard/expenses' },
-    { label: 'Spending analysis', href: '/dashboard/analysis' },
-    { label: 'Bills & subscriptions', href: '/dashboard/bills' },
-    { label: 'Income',       href: '/dashboard/income' },
-    { label: 'Money flow',   href: '/dashboard/transfers' },
-    { label: 'Reports',      href: '/dashboard/reports', subs: [
+  { key: 'money', label: 'Money', desc: 'Spending, income and transfers', icon: Receipt, href: '/dashboard/money', tabs: [
+    { label: 'Overview', href: '/dashboard/money' },
+    { label: 'Expenses', href: '/dashboard/expenses', subs: [
+      { label: 'Transactions',      href: '/dashboard/expenses' },
+      { label: 'Spending analysis', href: '/dashboard/analysis' },
+    ] },
+    { label: 'Income',     href: '/dashboard/income' },
+    { label: 'Money flow', href: '/dashboard/transfers', subs: [
+      { label: 'Transfers',    href: '/dashboard/transfers' },
+      { label: 'FX optimizer', href: '/dashboard/fx' },
+    ] },
+    { label: 'Bills',      href: '/dashboard/bills' },
+    { label: 'Reports',    href: '/dashboard/reports', subs: [
       { label: 'Money report',   href: '/dashboard/reports' },
       { label: 'Expense report', href: '/dashboard/expenses/report' },
       { label: 'Income report',  href: '/dashboard/income/report' },
     ] },
-    { label: 'FX optimizer', href: '/dashboard/fx' },
-    { label: 'Import',       href: '/dashboard/ingest' },
+    { label: 'Import', href: '/dashboard/ingest', hidden: true },
   ] },
   { key: 'wealth', label: 'Wealth', desc: 'Net worth, investments and debt', icon: Wallet, href: '/dashboard/net-worth', tabs: [
     { label: 'Net worth',      href: '/dashboard/net-worth' },
@@ -116,7 +121,8 @@ export function allDestinations(): { label: string; crumb: string; href: string;
     for (const tab of section.tabs) {
       if (!tab.subs) { out.push({ label: tab.label, crumb: section.label, href: tab.href, section }); continue }
       for (const s of tab.subs) {
-        const label = s.label === 'Overview' ? `${tab.label} overview` : s.label
+        // A tab's own first view ("Overview", "Transactions") is listed under the tab's name
+        const label = s.label === 'Overview' ? `${tab.label} overview` : s.href === tab.href ? tab.label : s.label
         out.push({ label, crumb: `${section.label} › ${tab.label}`, href: s.href, section })
       }
     }

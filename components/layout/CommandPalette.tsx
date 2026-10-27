@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, Upload, Globe, CornerDownLeft, Sparkles, type LucideIcon } from 'lucide-react'
+import { Search, Upload, Globe, CornerDownLeft, Sparkles, Plus, type LucideIcon } from 'lucide-react'
 import { useUiStore } from '@/store/uiStore'
 import { useViewStore } from '@/store/viewStore'
 import { allDestinations } from '@/lib/nav'
@@ -12,7 +12,7 @@ interface Item { id: string; label: string; hint: string; icon: LucideIcon; grou
 // through menus.
 export default function CommandPalette() {
   const router = useRouter()
-  const { paletteOpen, setPaletteOpen, setUploadOpen, openAdvisor } = useUiStore()
+  const { paletteOpen, setPaletteOpen, setUploadOpen, openAdvisor, openAdd } = useUiStore()
   const { setView } = useViewStore()
   const [q, setQ] = useState('')
   const [active, setActive] = useState(0)
@@ -38,6 +38,7 @@ export default function CommandPalette() {
 
   const items = useMemo<Item[]>(() => {
     const actions: Item[] = [
+      { id: 'a-add',    label: 'Add a transaction',     hint: 'Type it in, paste an SMS or import a statement', icon: Plus, group: 'Actions', run: () => openAdd() },
       { id: 'a-import', label: 'Import bank statement', hint: 'PDF or Excel — adds transactions', icon: Upload, group: 'Actions', run: () => setUploadOpen(true) },
       { id: 'a-ai',     label: 'Ask AI advisor',        hint: 'Questions about your money',      icon: Sparkles, group: 'Actions', run: () => openAdvisor() },
       { id: 'a-uae',    label: 'Switch view to UAE',    hint: 'AED only',                 icon: Globe, group: 'Actions', run: () => setView('uae') },
@@ -49,7 +50,7 @@ export default function CommandPalette() {
     }))
     const all = [...actions, ...pages]
     const needle = q.trim().toLowerCase()
-    if (!needle) return [...actions.slice(0, 1), ...pages]
+    if (!needle) return [...actions.slice(0, 2), ...pages]
     const score = (it: Item) => {
       const l = it.label.toLowerCase(), h = it.hint.toLowerCase()
       if (l.startsWith(needle)) return 3

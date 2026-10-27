@@ -29,7 +29,7 @@ function nameWords(loan: any): string[] {
   return `${loan.name ?? ''}`.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 3 && !GENERIC.has(w))
 }
 // How strongly a bank transaction looks like this loan's EMI (0 = not it)
-function matchScore(loan: any, t: any): number {
+export function matchScore(loan: any, t: any): number {
   if ((t.currency || 'INR') !== (loan.currency || 'INR')) return 0
   const text = ` ${`${t.merchant ?? ''} ${t.description ?? ''}`.toLowerCase()} `
   const bank = bankWords(loan).some(w => text.includes(w)) || nameWords(loan).some(w => text.includes(w))
