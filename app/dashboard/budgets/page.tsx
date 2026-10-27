@@ -1,47 +1,27 @@
 import { createClient } from '@/lib/supabase/server'
-import { fetchAll } from '@/lib/supabase/fetchAll'
+import { fetchAllRows } from '@/lib/supabase/fetchAll'
+import { markUnitemisedCardBills } from '@/lib/money'
 import BudgetsClient from '@/components/dashboard/BudgetsClient'
 
+// Budgets: 13 months of transactions (this month, last year's history, and
+// the 3 months the suggested caps look at) and each month's own budgets.
 export default async function BudgetsPage() {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  const thisMonth = new Date().toISOString().slice(0, 7)
-  const thisYear  = new Date().getFullYear()
-  const yearStart = `${thisYear}-01-01`
-  const yearEnd   = `${thisYear}-12-31`
-  // Fetch income back 6 months even if it crosses into last year, so the
-  // budget page can average the salary across recent months.
-  const d6 = new Date(); d6.setMonth(d6.getMonth() - 6)
-  const histStart   = d6.toISOString().slice(0, 10)
-  const incomeStart = histStart < yearStart ? histStart : yearStart
+  const uid = user!.id
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' })
+  const start = new Date(); start.setUTCMonth(start.getUTCMonth() - 13)
+  const fromDate = `${start.toISOString().slice(0, 7)}-01`
 
-  const [budgetsRes, txnsRes, incomeRes] = await Promise.all([
-    supabase.from('budgets').select('*').eq('user_id', user!.id).eq('month_year', thisMonth),
-    fetchAll((a, b) => supabase.from('transactions')
-      .select('category,amount,currency,txn_date,merchant,txn_type,sub_category')
-      .eq('user_id', user!.id)
-      .in('txn_type', ['expense', 'transfer', 'loan'])
-      .gte('txn_date', yearStart)
-      .lte('txn_date', yearEnd)
-      .order('txn_date', { ascending: true }).order('id').range(a, b)),
-    fetchAll((a, b) => supabase.from('transactions')
-      .select('id,amount,currency,txn_date,category,txn_type')
-      .eq('user_id', user!.id)
-      .eq('txn_type', 'income')
-      .gte('txn_date', incomeStart)
-      .lte('txn_date', yearEnd)
-      .order('txn_date', { ascending: true }).order('id').range(a, b)),
+  const [txns, budgetsRes, cardsRes] = await Promise.all([
+    fetchAllRows((a, b) => supabase.from('transactions').select('*')
+      .eq('user_id', uid).gte('txn_date', fromDate)
+      .order('txn_date', { ascending: false }).order('id').range(a, b)),
+    supabase.from('budgets').select('*').eq('user_id', uid).gte('month_year', fromDate.slice(0, 7)),
+    supabase.from('accounts').select('id').eq('user_id', uid).eq('account_type', 'credit_card'),
   ])
 
-  // Income rows plus transfers: the client keeps what counts as income in the
-  // current view (UAE → India remittances become India income — lib/money)
-  const incomeTransactions = [...(incomeRes.data ?? []), ...(txnsRes.data ?? []).filter((t: any) => t.txn_type === 'transfer')]
-
-  return (
-    <BudgetsClient
-      budgets={budgetsRes.data ?? []}
-      transactions={txnsRes.data ?? []}
-      incomeTransactions={incomeTransactions}
-    />
-  )
+  // A card bill counts only when that month's card purchases weren't imported
+  const cardIds = new Set((cardsRes.data ?? []).map((c: any) => c.id))
+  return <BudgetsClient today={today} budgets={budgetsRes.data ?? []} transactions={markUnitemisedCardBills(txns, cardIds)} />
 }
