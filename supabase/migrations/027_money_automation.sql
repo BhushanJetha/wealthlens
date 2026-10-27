@@ -66,3 +66,8 @@ CREATE POLICY recurring_txns_owner ON recurring_txns
 
 -- The repeating entry a transaction was added from
 ALTER TABLE transactions ADD COLUMN IF NOT EXISTS recurring_id uuid REFERENCES recurring_txns(id) ON DELETE SET NULL;
+
+-- Credit cards: the day of the month the statement closes (1–31). Used for
+-- "which card to use today" — a purchase just after the statement gets the
+-- most interest-free days. Empty = estimated from the due date.
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS statement_day smallint CHECK (statement_day BETWEEN 1 AND 31);

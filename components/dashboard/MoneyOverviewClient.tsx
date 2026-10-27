@@ -16,6 +16,7 @@ import { brandOf } from '@/lib/banks'
 import { buildHomeInsights, localToday, fmtDay, daysBetween, type Attention } from '@/lib/insights'
 import { buildDues, expectedIncome, balanceWarnings, safeToSpend, type Due } from '@/lib/moneyOverview'
 import { findReviewItems, reviewCount } from '@/lib/review'
+import { rankCards } from '@/lib/cardCycle'
 import { addOccurrence, claimMonth, type Occurrence, type RecurringTxn } from '@/lib/recurring'
 import { PageHeader, InsightBar, KpiTile, KpiGrid, Panel, MoreLink } from '@/components/ui/kit'
 import { BankLogo } from '@/components/ui/BankCards'
@@ -272,6 +273,14 @@ export default function MoneyOverviewClient(p: Props) {
 
         {/* Live balances */}
         <Panel title="Balances" right={<MoreLink href="/dashboard/accounts">Accounts</MoreLink>}>
+          {(['AED', 'INR'] as const).map(c => rankCards(cards, c, today)[0]).filter(Boolean).map(b => (
+            <Link key={b.card.id} href="/dashboard/cards" className="mt-2.5 flex items-center gap-2 rounded-lg px-3 py-2 text-[12px]"
+              style={{ background: 'var(--accent-bg)', color: 'var(--accent2)' }}>
+              <CreditCard size={13} className="flex-shrink-0" />
+              <span className="flex-1 min-w-0 truncate">Best card today: <b>{b.card.name}</b></span>
+              <span className="font-semibold whitespace-nowrap">{b.cycle.freeDays} days to pay</span>
+            </Link>
+          ))}
           <ul className="mt-2">
             {banks.map(a => {
               const bal = Number(a.current_balance) || 0

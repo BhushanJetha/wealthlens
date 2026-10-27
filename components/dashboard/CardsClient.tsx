@@ -7,10 +7,11 @@ import { useViewStore } from '@/store/viewStore'
 import MetricCard from '@/components/dashboard/MetricCard'
 import { CreditCard, Plus, AlertTriangle, Clock, Pencil, Trash2, BookOpen, Loader2 } from 'lucide-react'
 import AddAccountModal from '@/components/forms/AddAccountModal'
+import WhichCardPanel from './WhichCardPanel'
 import { PageHeader, InsightBar, AiActions, LearnStrip, HeroStat, KpiTile, Bars, ProgressRow, EmptyState } from '@/components/ui/kit'
 import { CreditCardFace } from '@/components/ui/BankCards'
 import AccountDetailsSheet from '@/components/forms/AccountDetailsSheet'
-import { addMonths, fmtDay } from '@/lib/insights'
+import { addMonths, fmtDay, localToday } from '@/lib/insights'
 import { fmtCompact } from '@/lib/format'
 import { Gauge, CalendarClock, Wallet } from 'lucide-react'
 
@@ -123,6 +124,8 @@ export default function CardsClient({ cards, txns = [], details = [] }: { cards:
           <KpiTile label="Minimum due" value={money(totalMinDue)} delta="Pay in full to avoid interest" tint={3} icon={AlertTriangle} />
           <KpiTile label="Credit limit" value={short(totalLimit)} delta={`${short(Math.max(totalLimit - totalBal, 0))} available`} tint={1} icon={Wallet} />
         </div>
+
+        <WhichCardPanel cards={filtered} today={localToday()} className="max-md:order-4" />
 
         {/* Your cards, drawn like the real thing — tap one for its details */}
         <section className="max-md:order-7 flex flex-col gap-2.5 md:gap-3">
