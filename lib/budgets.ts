@@ -3,7 +3,7 @@
 // the budgets table: one cap per category, per currency, per month, plus two
 // reserved kinds — a "save first" target and per-person budgets.
 // Spending is counted with the same rules as everywhere else (lib/money).
-import { isSpend, isSpending, isRemitOut, catOf, labelOf, isIncome, spendGroup, type View } from './money'
+import { isSpend, isSpending, isRemitOut, catOf, labelOf, isIncome, spendGroup, type View, canonCategory } from './money'
 
 // Own date helpers (lib/insights imports this file)
 const ymOf = (d: string) => String(d ?? '').slice(0, 7)
@@ -34,7 +34,9 @@ const LABEL: Record<string, string> = { 'EMI/Loan': 'EMI / loan payments', Trans
 export const budgetLabel = (c: string) => LABEL[c] ?? labelOf(c)
 
 // Money out that a category budget can cover (spent, EMIs, investing, money sent home)
-const budgetable = (t: any) => isSpend(t) || isRemitOut(t)
+// Spending tagged to an event or trip has its own budget (lib/events), so
+// monthly budgets measure everyday living; it still counts in spent and saved
+const budgetable = (t: any) => (isSpend(t) || isRemitOut(t)) && !t.event_id
 const curOf = (b: any): Cur => (b.currency === 'AED' ? 'AED' : 'INR')
 
 // Spend per category in a month, in that currency (optionally between two days)
@@ -119,7 +121,7 @@ export function budgetLines(budgets: any[], spend: Record<string, number>, month
   return budgets
     .filter(b => b.month_year === month && curOf(b) === cur && !NOT_PLANABLE.has(b.category) && !isReserved(b.category) && Number(b.monthly_cap) >= 0)
     .map(b => {
-      const category = b.category, base = Number(b.monthly_cap) || 0
+      const category = canonCategory(b.category), base = Number(b.monthly_cap) || 0
       const carry = extras.carry?.[category] ?? 0, cover = extras.cover?.[category] ?? 0
       const cap = base + carry + cover, spent = spend[category] ?? 0
       const pct = cap > 0 ? spent / cap * 100 : spent > 0 ? 100 : 0
@@ -165,7 +167,7 @@ export function monthMoney(prepared: any[], month: string, cur: Cur) {
 export function personSpend(txns: any[], month: string, cur: Cur): Record<string, number> {
   const out: Record<string, number> = {}
   for (const t of txns) {
-    if (!t.holder_name || t.currency !== cur || ymOf(t.txn_date) !== month || !isSpending(t)) continue
+    if (!t.holder_name || t.event_id || t.currency !== cur || ymOf(t.txn_date) !== month || !isSpending(t)) continue
     out[t.holder_name] = (out[t.holder_name] ?? 0) + (Number(t.amount) || 0)
   }
   return out

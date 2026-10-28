@@ -72,14 +72,18 @@ export function pairOwnTransfers(txns: any[]): { out: any; in: any }[] {
 }
 
 export const ROW_LABEL: Record<string, string> = {
-  Transfer: 'Money Transfer', 'International Transfer': 'Sent to India', [CC_BILL]: 'Credit Card Bill',
+  Transfer: 'Transfers to sort', 'International Transfer': 'Sent to India', [CC_BILL]: 'Credit Card Bill', 'Family Transfer': 'Family support',
 }
+// Categories merged into one (migration 034 rewrites saved data; this keeps
+// anything still carrying an old name — a rule, an old import — in the right row)
+export const CATEGORY_ALIAS: Record<string, string> = { Transport: 'Travel & transport', Travel: 'Travel & transport', 'Trip/Vacation': 'Travel & transport' }
+export const canonCategory = (c: string) => CATEGORY_ALIAS[c] ?? c
 export const labelOf = (cat: string) => ROW_LABEL[cat] ?? cat
 
 // Report row a transaction belongs to
 export const catOf = (t: any) => {
   if (t?._cardSpend) return CARD_UNITEMISED
-  const c = (t.category && String(t.category).trim()) || 'Other'
+  const c = canonCategory((t.category && String(t.category).trim()) || 'Other')
   return c === 'Transfer' && TRANSFER_SUB_ROW[t.sub_category] ? TRANSFER_SUB_ROW[t.sub_category] : c
 }
 

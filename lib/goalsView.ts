@@ -66,7 +66,9 @@ export function buildGoals(d: {
   }
   const travel: Record<Cur, number> = { AED: 0, INR: 0 }
   const yearAgo = `${addMonths(today.slice(0, 7), -12)}-01`
-  for (const t of d.transactions) if (t.txn_date >= yearAgo && isSpend(t) && /travel|trip|flight|vacation|holiday|air ?ticket/i.test(catOf(t)) && (t.currency === 'AED' || t.currency === 'INR')) travel[t.currency as Cur] += Number(t.amount) || 0
+  // Trips: flights, hotels and holiday bookings (Travel & transport also holds daily fuel and taxis)
+  const TRIP = /flight|airline|air ?india|indigo|spicejet|vistara|akasa|emirates|flydubai|air ?arabia|etihad|hotel|resort|airbnb|booking\.com|agoda|makemytrip|goibibo|cleartrip|yatra|easemytrip|\boyo\b|holiday|vacation|tour package|air ?ticket/i
+  for (const t of d.transactions) if (t.txn_date >= yearAgo && isSpend(t) && (/^(travel|trip\/vacation)$/i.test(String(t.category ?? '')) || (catOf(t) === 'Travel & transport' && TRIP.test(`${t.merchant ?? ''} ${t.description ?? ''}`))) && (t.currency === 'AED' || t.currency === 'INR')) travel[t.currency as Cur] += Number(t.amount) || 0
   const cash: Record<Cur, number> = { AED: 0, INR: 0 }
   for (const a of d.accounts) if (a.account_type !== 'credit_card' && a.is_active !== false && (a.currency === 'AED' || a.currency === 'INR')) cash[a.currency as Cur] += Math.max(0, Number(a.current_balance) || 0)
   const loans = d.loans.map(l => ({ name: l.name, currency: l.currency, emi: Number(l.emi_amount) || 0, monthsLeft: loanMonthsLeft(l), type: l.loan_type }))

@@ -80,8 +80,8 @@ const CAT_RULES: [RegExp, string][] = [
   [/lulu\s+international\s+exchange|al\s+ansari\s+exchange|western\s+union|money\s*gram|international\s+exchange\s+llc|forex\s+(?:center|transfer|bureau)|remittance|money\s+transfer\s+(?:llc|co)/i, 'Transfer'],
   // Food
   [/swiggy|zomato|uber\s*eat|talabat|deliveroo|keet\b|noon\s*food|carriage\b|hunger\s*station|blinkit|zepto|dunzo|bigbasket|restaurant|restaur[ae]?nt?|caf[eé]|mcdonald|kfc|pizza|domino|starbucks|dunkin|subway|burger|sushi|biryani|bakery|canteen|dining|eatery|kitchen|diner|grill|shawarma|falafel|bistro|food(?!stuff)/i, 'Food'],
-  [/uber(?!\s*eat)|\bola\b|rapido|metro\b|auto\b|cab\b|taxi\b|rickshaw|redbus|careem|transport/i, 'Transport'],
-  [/irctc|makemytrip|cleartrip|goibibo|easemytrip|yatra|\bhotel\b|airbnb|\boyo\b|booking\.com|agoda|marriott|flight|airline|air\s*india|indigo|spicejet|vistara|airport|resort/i, 'Travel'],
+  [/uber(?!\s*eat)|\bola\b|rapido|metro\b|auto\b|cab\b|taxi\b|rickshaw|redbus|careem|transport/i, 'Travel & transport'],
+  [/irctc|makemytrip|cleartrip|goibibo|easemytrip|yatra|\bhotel\b|airbnb|\boyo\b|booking\.com|agoda|marriott|flight|airline|air\s*india|indigo|spicejet|vistara|airport|resort/i, 'Travel & transport'],
   [/netflix|hotstar|disney|prime\s*video|amazon\s*prime|zee5|sonyliv|youtube\s*prem|apple\s*tv|spotify|gaana|apple\s*music|bookmyshow|\bpvr\b|\binox\b/i, 'Subscription'],
   [/electricity|bescom|msedcl|tata\s*power|water\s*board|\bgas\b|airtel|\bjio\b|vodafone|\bvi\b|bsnl|postpaid|prepaid|broadband|wifi|etisalat|\bdu\b|telecom/i, 'Utilities'],
   // Personal care / grooming — before Health so salon & spa land here

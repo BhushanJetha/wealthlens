@@ -221,6 +221,8 @@ export default function BudgetsClient({ today: serverToday, budgets: initial, tr
   }
 
   const nextName = MON[Number(addMonths(month, 1).slice(5, 7)) - 1]
+  // Spending tagged to a trip or event this month (kept out of these budgets — lib/events)
+  const eventSpend = transactions.filter(t => t.event_id && t.currency === cur && String(t.txn_date).slice(0, 7) === month && spendGroup(t)).reduce((s, t) => s + (Number(t.amount) || 0), 0)
   const insight = lines.length === 0
     ? `No ${cur === 'AED' ? 'UAE (AED)' : 'India (₹)'} budgets yet. Tap “Suggest budgets” to start from your last 3 months, or add your own.`
     : [
@@ -229,6 +231,7 @@ export default function BudgetsClient({ today: serverToday, budgets: initial, tr
           : `${short(-left)} over your ${short(cap)} budget${isCurrent ? ` with ${daysLeft} days to go` : ''}.`,
         counts.over ? `${lines.filter(l => l.status === 'over').slice(0, 3).map(l => budgetLabel(l.category)).join(', ')} ${counts.over === 1 ? 'is' : 'are'} over.` : 'No category is over.',
         target > 0 ? `Saved so far ${short(Math.max(mm.saved, 0))} of your ${short(target)} target.` : '',
+        eventSpend > 0 ? `Plus ${short(eventSpend)} on trips & events, counted against their own budgets.` : '',
       ].filter(Boolean).join(' ')
   const ctx = `${curName(cur)} budgets for ${monLabel(month)}: ${short(spent)} spent of ${short(cap)}, day ${day} of ${dim}. `
     + lines.map(l => `${budgetLabel(l.category)} ${Math.round(l.spent)} of ${Math.round(l.cap)}`).join(', ') + `. Average income ${short(incomeAvg)}.`

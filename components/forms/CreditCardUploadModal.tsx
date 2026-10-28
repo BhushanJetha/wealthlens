@@ -41,8 +41,8 @@ interface ParseResult {
 }
 
 const CATS = [
-  'Food','Shopping','Utilities','Transport','Health',
-  'Entertainment','Travel','Education','Subscription',
+  'Food','Shopping','Utilities','Travel & transport','Health',
+  'Entertainment','Education','Subscription',
   'Investment','Loan on Card','EMI/Loan','Transfer','Refund','Other',
 ]
 

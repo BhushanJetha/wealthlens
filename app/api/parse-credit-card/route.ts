@@ -126,9 +126,9 @@ const CAT_RULES: [RegExp, string][] = [
   // Food & dining — delivery apps, restaurants, cafes
   [/swiggy|zomato|uber\s*eat|talabat|deliveroo|keet\b|noon\s*food|carriage\b|hunger\s*station|eatigo|dineout|blinkit|zepto|dunzo|magicpin|instamrt|bigbasket|grofers|jiomart|restaurant|restaur[ae]?nt?|restoran|caf[eé]|mcdonald|kfc|pizza|domino|starbucks|haldiram|dunkin|subway|burger|sushi|biryani|bakery|canteen|dining|eatery|catering|kitchen|diner|grill|shawarma|falafel|juice\s*bar|food(?!stuff)|çay|bistro|brasserie|trattoria|osteria|tavern|chophouse|steakhouse|noodle|ramen|pho\b|wok\b|bbq|barbecue/i, 'Food'],
   // Transport
-  [/uber(?!\s*eat)|\bola\b|rapido|metro\b|auto\b|cab\b|taxi\b|rickshaw|yatri|redbus|abhibus|yulu|bounce|careem|transport/i, 'Transport'],
+  [/uber(?!\s*eat)|\bola\b|rapido|metro\b|auto\b|cab\b|taxi\b|rickshaw|yatri|redbus|abhibus|yulu|bounce|careem|transport/i, 'Travel & transport'],
   // Travel
-  [/irctc|makemytrip|cleartrip|goibibo|easemytrip|yatra|\bhotel\b|airbnb|\boyo\b|booking\.com|agoda|marriott|taj\s*hotel|flight|airline|air\s*india|indigo|spicejet|vistara|airport|resort|motel|\binn\b|\blodge\b/i, 'Travel'],
+  [/irctc|makemytrip|cleartrip|goibibo|easemytrip|yatra|\bhotel\b|airbnb|\boyo\b|booking\.com|agoda|marriott|taj\s*hotel|flight|airline|air\s*india|indigo|spicejet|vistara|airport|resort|motel|\binn\b|\blodge\b/i, 'Travel & transport'],
   // Subscriptions
   [/netflix|hotstar|disney|prime\s*video|amazon\s*prime|zee5|sonyliv|youtube\s*prem|apple\s*tv|jiocinema|\baha\b|voot|spotify|gaana|wynk|apple\s*music|bookmyshow|\bpvr\b|\binox\b|cinepolis/i, 'Subscription'],
   // Utilities

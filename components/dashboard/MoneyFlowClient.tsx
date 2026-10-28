@@ -250,7 +250,7 @@ export default function MoneyFlowClient({ transactions, accounts }: { transactio
             <li><b style={{ color: 'var(--text2)' }}>UAE → India</b> is your own money moving. Its AED debit and ₹ credit are paired and counted once.</li>
             <li><b style={{ color: 'var(--text2)' }}>India income</b> is what lands in NRE. It shows as income in the India view only.</li>
             <li>In the <b style={{ color: 'var(--text2)' }}>All</b> view your UAE salary is the income, so the remittance isn’t added again.</li>
-            <li><b style={{ color: 'var(--text2)' }}>NRE → NRO</b>, NRO → NRE, transfers to your other accounts, card bills and ATM cash are moves: never income or spending.</li>
+            <li><b style={{ color: 'var(--text2)' }}>NRE → NRO</b>, transfers to your other accounts, card bills and ATM cash are moves: never income or spending.</li>
             <li>Imported transfers with no kind are matched to your own account when the same amount lands in another of yours within 3 days; the rest wait in <b style={{ color: 'var(--text2)' }}>Review</b> for one tap.</li>
             <li><b style={{ color: 'var(--text2)' }}>Family support</b> (allowance to parents or spouse) is spending — the money leaves your accounts.</li>
             <li>Accounts named “NRE” are treated as NRE; your other India accounts as NRO / daily spending.</li>

@@ -1,7 +1,9 @@
 'use client'
+import { eventForDate, eventKind } from '@/lib/events'
+import { fmtDay } from '@/lib/insights'
 import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { X, Loader2, ArrowRight, RefreshCw, Plus, Settings2, Globe, ArrowLeftRight, Users, Banknote, CreditCard, Paperclip, Undo2, Landmark } from 'lucide-react'
+import { X, Loader2, ArrowRight, RefreshCw, Plus, Settings2, Globe, ArrowLeftRight, Users, Banknote, CreditCard, Paperclip, Landmark } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useViewStore } from '@/store/viewStore'
 import { useCategoryStore } from '@/store/categoryStore'
@@ -15,12 +17,12 @@ import { RECEIPT_TYPES, uploadReceipt, openReceipt, removeReceipt } from '@/lib/
 
 type TxnType = 'expense' | 'income' | 'transfer' | 'loan'
 
+const TRANSFER_NOT_CATEGORIES = new Set(['Family Transfer', 'Credit Card Payment', 'Transfer'])
 // Kinds of transfer, grouped: between your own accounts (a move — never
 // spending or income) first, then money to others (counted as sent)
 const TRANSFER_SUBTYPES = [
   { value: 'International',  group: 'own',    label: 'UAE → India',      desc: 'Send money home (AED → ₹)',      icon: Globe,          color: '#3B8EF0' },
   { value: 'Internal',       group: 'own',    label: 'NRE → NRO',        desc: 'For spending in India',          icon: ArrowLeftRight, color: '#6A55E8' },
-  { value: 'NRO to NRE',     group: 'own',    label: 'NRO → NRE',        desc: 'Back to NRE (form 15CA/CB)',     icon: Undo2,          color: '#7C3AED' },
   { value: 'Own',            group: 'own',    label: 'My other account', desc: 'Same country, e.g. ENBD → ADCB', icon: Landmark,       color: '#0E7490' },
   { value: 'Card bill',      group: 'own',    label: 'Card bill',        desc: 'Pay a credit card from a bank',  icon: CreditCard,     color: '#9333EA' },
   { value: 'ATM Withdrawal', group: 'own',    label: 'ATM cash',         desc: 'Bank to your cash wallet',       icon: Banknote,       color: '#0891B2' },
@@ -31,7 +33,7 @@ const TRANSFER_GROUPS = [
   { key: 'others', label: 'To others', note: 'counted as money sent' },
 ]
 // Kinds that move money into another of your accounts (pick which one)
-const TO_ACCOUNT_KINDS = ['International', 'Internal', 'NRO to NRE', 'Own', 'Card bill']
+const TO_ACCOUNT_KINDS = ['International', 'Internal', 'Own', 'Card bill']
 // How a bank payment was made (optional; else read from the description)
 const PAY_MODES = [['upi', 'UPI'], ['netbanking', 'Net banking'], ['debit_card', 'Debit card'], ['transfer', 'Transfer'], ['autodebit', 'Auto-debit']] as const
 // Loan categories are recorded as loan payments (they show under Loan payments)
@@ -52,7 +54,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
   onClose: () => void
   repeat?: boolean                              // start with "Repeat every month" ticked
   onAdded?: () => void
-  defaults?: Partial<{ txn_type: string; account_id: string; category: string; currency: string; sub_category: string; merchant: string; amount: string; txn_date: string; description: string }>
+  defaults?: Partial<{ txn_type: string; account_id: string; category: string; currency: string; sub_category: string; merchant: string; amount: string; txn_date: string; description: string; event_id: string }>
   edit?: { txn: any; duplicate?: boolean }     // edit (or copy) an existing transaction
 }) {
   const { view } = useViewStore()
@@ -75,6 +77,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
       counter_account_id: t0?.counter_account_id ?? '',
       payment_mode: t0?.payment_mode ?? '',
       holder_name:  t0?.holder_name ?? '',      // family member it was for ('' = household)
+      event_id:     t0?.event_id ?? defaults?.event_id ?? '',   // the trip or event it belongs to ('' = none)
       tax_tag:      t0?.tax_tag ?? '',          // India tax section (Plan › Tax planner)
     }
   })
@@ -99,6 +102,19 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
   const router   = useRouter()
 
   useEffect(() => { loadCategories() }, [loadCategories])
+  // Open trips & events (migration 034): an expense inside one's dates is
+  // tagged to it unless you choose otherwise
+  const [events, setEvents] = useState<any[]>([])
+  const [eventTouched, setEventTouched] = useState(!!(t0 || defaults?.event_id))
+  useEffect(() => {
+    supabase.from('spend_events').select('id,name,kind,start_date,end_date,closed_at').is('closed_at', null).order('start_date', { ascending: false }).limit(30)
+      .then(({ data }: { data: any[] | null }) => setEvents(data ?? []), () => {})
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (eventTouched || form.txn_type !== 'expense') return
+    const ev = eventForDate(events, form.txn_date)
+    setForm(p => (p.event_id === (ev?.id ?? '') ? p : { ...p, event_id: ev?.id ?? '' }))
+  }, [events, form.txn_date, form.txn_type, eventTouched])
   useEffect(() => {
     supabase.from('accounts').select('id,name,bank_name,currency,account_type').eq('is_active', true)
       .then(({ data }) => setAccounts(data ?? []))
@@ -125,7 +141,8 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
 
   // The user's categories for this type, plus the current one if it isn't in the list (e.g. from an import)
   const cats = useMemo(() => {
-    const list = categories.filter(c => c.kind === catKind)
+    // Family support and card bills are kinds of transfer, and "Transfer" isn't a category — pick Type: Transfer
+    const list = categories.filter(c => c.kind === catKind && !(catKind === 'expense' && TRANSFER_NOT_CATEGORIES.has(c.name)))
     return form.category && !list.some(c => c.name === form.category) && !isTransfer
       ? [{ id: 'current', kind: catKind, name: form.category, color: colorOf(categories, form.category), icon: 'tag', sort_order: -1 }, ...list]
       : list
@@ -157,7 +174,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
       // card spends already counted — neither is spending
       category:   isAtm ? 'ATM Withdrawal' : isBill ? 'Credit Card Payment' : 'Transfer',
       account_id: isAtm ? '__cash__' : (p.account_id === '__cash__' ? '' : p.account_id),
-      currency:   sub === 'International' ? 'AED' : sub === 'Internal' || sub === 'NRO to NRE' ? 'INR' : p.currency,
+      currency:   sub === 'International' ? 'AED' : sub === 'Internal' ? 'INR' : p.currency,
       merchant:   p.merchant && !TRANSFER_SUBTYPES.some(x => x.label === p.merchant) ? p.merchant : autoMerchant,
     }))
   }
@@ -189,7 +206,8 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
     const body = { ...form, merchant: form.merchant.trim(), description: form.description.trim() || null, amount: Math.abs(Number(form.amount)), account_id,
       counter_account_id: isTransfer ? form.counter_account_id || null : null,
       payment_mode: !isTransfer && form.payment_mode ? form.payment_mode : null,
-      holder_name: form.holder_name || null, tax_tag: showTax ? form.tax_tag || null : null }
+      holder_name: form.holder_name || null, tax_tag: showTax ? form.tax_tag || null : null,
+      event_id: form.txn_type === 'expense' ? form.event_id || null : null }
     const res = await fetch('/api/transactions', {
       method: mode === 'edit' ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -400,6 +418,18 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
               placeholder={isTransfer ? (form.sub_category === 'Family' ? 'e.g. Wife, parents' : 'e.g. HDFC NRO ••4521') : 'Anything to remember'}
               className="wl-input" style={FIELD} />
           </div>
+
+          {form.txn_type === 'expense' && (events.length > 0 || form.event_id) && (
+            <div>
+              <Label>Trip / event</Label>
+              <select value={form.event_id} onChange={e => { setEventTouched(true); set({ event_id: e.target.value }) }} className="wl-input" style={FIELD} aria-label="Trip or event">
+                <option value="">None — everyday spending</option>
+                {events.map(ev => <option key={ev.id} value={ev.id}>{eventKind(ev.kind).icon} {ev.name} · {fmtDay(ev.start_date)}{ev.end_date !== ev.start_date ? ` – ${fmtDay(ev.end_date)}` : ''}</option>)}
+                {form.event_id && !events.some(ev => ev.id === form.event_id) && <option value={form.event_id}>(a finished event)</option>}
+              </select>
+              {form.event_id && <div className="text-[11.5px] mt-1" style={{ color: 'var(--text4)' }}>Counts towards that trip’s own budget, not your monthly budget. Still part of what you spent this month.</div>}
+            </div>
+          )}
 
           {(forOpts.length > 1 || showTax) && !isTransfer && (
             <div className="grid grid-cols-2 gap-3">

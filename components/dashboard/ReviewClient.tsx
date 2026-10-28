@@ -268,7 +268,7 @@ function ReviewCard({ item, busy, accounts, accUse, accName, cats, onFix, onRevi
   } else if (item.kind === 'transfer') {
     title = <>{t0.merchant || 'Transfer'}{n > 1 && <span className="font-normal" style={{ color: 'var(--text3)' }}> · {n} transfers</span>}</>
     sub = `${fmtMoney(sum, cur)} · ${fmtDay(t0.txn_date)}${n > 1 && oldest !== t0.txn_date ? ` – ${fmtDay(oldest)}` : ''} · from ${accName(t0.account_id) ?? 'an account'} · kind unknown — counted as money sent until you choose`
-    const kinds = ['Own', ...(cur === 'AED' ? ['International'] : ['Internal', 'NRO to NRE']), 'Family']
+    const kinds = ['Own', ...(cur === 'AED' ? ['International'] : ['Internal']), 'Family']
     body = (
       <div className="flex flex-wrap gap-1.5">
         {kinds.map((k, i) => chip(TRANSFER_KIND_LABEL[k], () => onFix({ category: 'Transfer', sub_category: k }, false, ''), i === 0, k))}

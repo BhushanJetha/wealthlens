@@ -11,8 +11,8 @@ export interface Category {
 type Def = [string, string, string]
 const EXPENSE: Def[] = [
   ['Food', '#F29A2E', 'utensils'], ['Shopping', '#3B8EF0', 'shopping-bag'], ['Utilities', '#7C3AED', 'zap'],
-  ['Transport', '#2FB67C', 'car'], ['Health', '#DC2626', 'heart-pulse'], ['Personal Care', '#DB2777', 'sparkles'],
-  ['Entertainment', '#EC5B8C', 'clapperboard'], ['Travel', '#0891B2', 'plane'], ['Trip/Vacation', '#0D9488', 'tree-palm'],
+  ['Travel & transport', '#0891B2', 'car'], ['Health', '#DC2626', 'heart-pulse'], ['Personal Care', '#DB2777', 'sparkles'],
+  ['Entertainment', '#EC5B8C', 'clapperboard'],
   ['Event/Function', '#C026D3', 'party-popper'], ['Education', '#2563EB', 'graduation-cap'], ['Subscription', '#6A55E8', 'repeat'],
   ['Investment', '#16A34A', 'trending-up'], ['Tax Payment', '#BE123C', 'landmark'], ['EMI/Loan', '#EA580C', 'banknote'],
   ['Loan on Card', '#D97706', 'credit-card'], ['Credit Card Payment', '#9333EA', 'credit-card'], ['Family Transfer', '#0EA5E9', 'users'],

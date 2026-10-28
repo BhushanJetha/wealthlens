@@ -35,8 +35,8 @@ export const OCCASIONS: Occasion[] = [
   { key: 'anniversary', name: 'Anniversary', icon: '💐', kind: 'celebration', category: 'Entertainment', priority: 3, amount: { INR: 20000, AED: 1000 }, hint: 'pick the date', next: () => null },
   { key: 'school_fees', name: 'School fees', icon: '🎒', kind: 'payment', category: 'Education', priority: 1, amount: { INR: 100000, AED: 15000 }, hint: 'when the term fee is due', next: () => null },
   { key: 'lic', name: 'LIC / insurance premium', icon: '🛡️', kind: 'payment', category: 'Insurance', priority: 1, amount: { INR: 30000, AED: 1500 }, hint: 'the premium due date', next: () => null },
-  { key: 'car_renewal', name: 'Car insurance & registration', icon: '🚗', kind: 'payment', category: 'Transport', priority: 1, amount: { INR: 25000, AED: 3000 }, hint: 'the renewal date', next: () => null },
-  { key: 'trip_home', name: 'Trip home every year', icon: '✈️', kind: 'travel', category: 'Travel', priority: 2, amount: { INR: 150000, AED: 8000 }, hint: 'when you usually fly', next: () => null },
+  { key: 'car_renewal', name: 'Car insurance & registration', icon: '🚗', kind: 'payment', category: 'Travel & transport', priority: 1, amount: { INR: 25000, AED: 3000 }, hint: 'the renewal date', next: () => null },
+  { key: 'trip_home', name: 'Trip home every year', icon: '✈️', kind: 'travel', category: 'Travel & transport', priority: 2, amount: { INR: 150000, AED: 8000 }, hint: 'when you usually fly', next: () => null },
 ]
 export const occasionOf = (key?: string | null) => OCCASIONS.find(o => o.key === key)
 

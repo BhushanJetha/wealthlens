@@ -15,7 +15,7 @@ const SCHEMA = {
     amount: { type: 'number' },
     currency: { type: 'string', enum: ['INR', 'AED'] },
     txn_type: { type: 'string', enum: ['expense', 'income'] },
-    category: { type: 'string', enum: ['Food', 'Shopping', 'Utilities', 'Transport', 'Health', 'Entertainment', 'Travel', 'Education', 'Investment', 'Other'] },
+    category: { type: 'string', enum: ['Food', 'Shopping', 'Utilities', 'Travel & transport', 'Health', 'Entertainment', 'Education', 'Investment', 'Other'] },
   },
   required: ['txn_date', 'merchant', 'description', 'amount', 'currency', 'txn_type', 'category'],
   additionalProperties: false,

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { askClaude, aiErrorResponse } from '@/lib/ai/claude'
 
-const CATEGORIES = ['Food', 'Shopping', 'Utilities', 'Transport', 'Health', 'Entertainment', 'Travel', 'Education', 'Investment', 'EMI/Loan',
+const CATEGORIES = ['Food', 'Shopping', 'Utilities', 'Travel & transport', 'Health', 'Entertainment', 'Education', 'Investment', 'EMI/Loan',
   'Salary', 'Dividend', 'Rental', 'Gift', 'Bonus', 'Tax Refund', 'Interest', 'Freelance', 'Other']
 
 // Structured output: the reply is always a transaction matching this schema

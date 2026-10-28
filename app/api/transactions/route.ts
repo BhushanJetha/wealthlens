@@ -2,9 +2,9 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { loadRules, applyRules } from '@/lib/rules'
 
-// Columns added by later migrations (026, 027): a save still works before
+// Columns added by later migrations (026, 027, 034): a save still works before
 // they're run — the missing one is dropped and the save retried
-const OPTIONAL = ['counter_account_id', 'payment_mode', 'holder_name', 'tax_tag', 'receipt_path']
+const OPTIONAL = ['counter_account_id', 'payment_mode', 'holder_name', 'tax_tag', 'receipt_path', 'event_id']
 const missingCol = (error: any, row: Record<string, any>) => OPTIONAL.find(c => c in row && String(error?.message ?? '').includes(c))
 
 // GET /api/transactions — list user transactions with optional filters
@@ -42,7 +42,7 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()
-  const { txn_date, merchant, description, category, sub_category, amount, currency, account_id, txn_type, counter_account_id, payment_mode, holder_name, tax_tag } = body
+  const { txn_date, merchant, description, category, sub_category, amount, currency, account_id, txn_type, counter_account_id, payment_mode, holder_name, tax_tag, event_id } = body
 
   if (!txn_date || !merchant || !category || !amount || !currency) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -68,6 +68,7 @@ export async function POST(req: Request) {
     payment_mode: payment_mode || null,
     holder_name: holder_name || null,
     tax_tag: tax_tag || null,
+    event_id: event_id || null,              // the trip or event it belongs to (migration 034)
   }
   // "Always do this" rules fill a vague category or a missing account (migration 027)
   applyRules(await loadRules(supabase, user.id), row)
@@ -89,14 +90,14 @@ export async function PATCH(req: Request) {
   const { id } = body
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
   // Only the transaction's own fields can change (never user_id, source…)
-  const EDITABLE = ['txn_date', 'merchant', 'description', 'category', 'sub_category', 'amount', 'currency', 'account_id', 'txn_type', 'counter_account_id', 'payment_mode', 'holder_name', 'tax_tag', 'receipt_path']
+  const EDITABLE = ['txn_date', 'merchant', 'description', 'category', 'sub_category', 'amount', 'currency', 'account_id', 'txn_type', 'counter_account_id', 'payment_mode', 'holder_name', 'tax_tag', 'receipt_path', 'event_id']
   const updates: Record<string, any> = Object.fromEntries(EDITABLE.filter(k => k in body).map(k => [k, body[k]]))
   if ('amount' in updates) updates.amount = Math.abs(Number(updates.amount))
   if ('account_id' in updates) updates.account_id = updates.account_id || null
   if ('sub_category' in updates) updates.sub_category = updates.sub_category || null
   if ('counter_account_id' in updates) updates.counter_account_id = updates.counter_account_id || null
   if ('payment_mode' in updates) updates.payment_mode = updates.payment_mode || null
-  for (const k of ['holder_name', 'tax_tag', 'receipt_path']) if (k in updates) updates[k] = updates[k] || null
+  for (const k of ['holder_name', 'tax_tag', 'receipt_path', 'event_id']) if (k in updates) updates[k] = updates[k] || null
   if (updates.currency) updates.country = updates.currency === 'AED' ? 'UAE' : 'India'
 
   const run = () => supabase.from('transactions').update(updates).eq('id', id).eq('user_id', user.id).select().single()
