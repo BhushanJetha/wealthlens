@@ -1,30 +1,36 @@
 // Net worth — one calculation shared by the Net Worth tab, the Home dashboard
 // and the daily snapshot, so every screen shows the same number.
+import { otherAssetValue, otherKind, gratuityValue, type Gratuity } from './otherAssets'
 
 export type View = 'uae' | 'india' | 'consolidated'
 
 // Bump when a valuation rule changes. Daily snapshots store it, and history
 // skips snapshots made under older rules so the line never jumps because the
-// maths changed. (2: RDs count instalments since the start date.)
+// maths changed. (2: RDs count instalments since the start date.) New kinds of
+// holding (property, other assets, gratuity — 032) aren't a rule change: they
+// show up like any holding you add.
 export const NW_RULES = 2
 
 export interface Holdings {
   accounts: any[]; stocks: any[]; mutualFunds: any[]; etf: any[]; nps: any[]
   fixedDeposits: any[]; recurringDeposits: any[]; ppfEpf: any[]; gold: any[]
   bonds: any[]; lic: any[]; loans: any[]
+  // Migration 032: property, vehicles, jewellery, other investments; UAE gratuity
+  otherAssets?: any[]; gratuity?: Gratuity | null; today?: string
 }
 
 // Home groups asset classes into ≤7 buckets for its composition bar. Each group
 // owns a fixed colour (validated categorical order — never re-ordered by value).
-export type AssetGroup = 'mf' | 'equity' | 'cash' | 'gold' | 'retirement' | 'deposits' | 'other'
+export type AssetGroup = 'mf' | 'equity' | 'cash' | 'gold' | 'retirement' | 'deposits' | 'other' | 'property'
 export const ASSET_GROUPS: { key: AssetGroup; label: string; color: string }[] = [
   { key: 'mf',         label: 'Mutual funds',     color: '#2a78d6' },
   { key: 'equity',     label: 'Stocks & ETF',     color: '#eb6834' },
   { key: 'cash',       label: 'Bank & cash',      color: '#1baf7a' },
   { key: 'gold',       label: 'Gold',             color: '#eda100' },
-  { key: 'retirement', label: 'PPF, EPF & NPS',   color: '#e87ba4' },
+  { key: 'retirement', label: 'Retirement',       color: '#e87ba4' },
   { key: 'deposits',   label: 'FDs & RDs',        color: '#008300' },
-  { key: 'other',      label: 'Bonds & LIC',      color: '#6250d6' },
+  { key: 'other',      label: 'Bonds, LIC & other', color: '#6250d6' },
+  { key: 'property',   label: 'Property',         color: '#a0522d' },
 ]
 
 export interface AssetRow { key: string; label: string; value: number; invested: number; color: string; group: AssetGroup }
@@ -34,7 +40,10 @@ export interface NetWorth {
   assetRows: AssetRow[]; liabRows: LiabRow[]
   totalAssets: number; totalInvested: number; totalLiab: number; netWorth: number
   cash: number            // bank & cash only — the emergency-fund base
+  investments: { value: number; cost: number }   // what's invested: not cash, property, jewellery, vehicles or gratuity
 }
+// Rows that are owned but not investments (no "invested" or "gain" on them)
+export const NOT_INVESTED = new Set(['bank', 'property', 'jewellery', 'otherAssets', 'gratuity'])
 
 // View / FX aware value of one amount in a given currency
 export function viewAmount(amt: number, cur: string, view: View, fx: number) {
@@ -117,6 +126,17 @@ export function computeNetWorth(h: Holdings, view: View, fx: number): NetWorth {
   const bondVal  = sumBy(h.bonds, V.bond),              bondInv  = sumBy(h.bonds, C.bond)
   const licVal   = sumBy(h.lic, V.lic)
 
+  // Property & other assets: estimates count at their value (no "gain" is
+  // claimed on them); priced investments at units × price against what was paid
+  const today = h.today ?? new Date().toISOString().slice(0, 10)
+  const other = (h.otherAssets ?? []).filter(a => a.is_active !== false).map(a => ({ a, ...otherAssetValue(a, today), group: otherKind(a.kind).group }))
+  const sumOther = (want: (x: typeof other[number]) => boolean, f: (x: typeof other[number]) => number) => other.filter(want).reduce((s, x) => s + disp(f(x), x.currency), 0)
+  const propVal = sumOther(x => x.group === 'property', x => x.value)
+  const jewVal = sumOther(x => x.group === 'gold', x => x.value)
+  const globVal = sumOther(x => x.group === 'equity', x => x.value), globInv = sumOther(x => x.group === 'equity', x => x.cost)
+  const restVal = sumOther(x => x.group === 'other', x => x.value), restInv = sumOther(x => x.group === 'other', x => x.estimated ? x.value : x.cost)
+  const gratVal = h.gratuity?.include === false ? 0 : disp(gratuityValue(h.gratuity, today), 'AED')
+
   const assetRows: AssetRow[] = ([
     { key: 'bank',  label: 'Bank & Cash',        value: bankVal,  invested: bankVal,  color: '#16A34A', group: 'cash' },
     { key: 'stock', label: 'Stocks',             value: stockVal, invested: stockInv, color: '#E11D48', group: 'equity' },
@@ -129,6 +149,11 @@ export function computeNetWorth(h: Holdings, view: View, fx: number): NetWorth {
     { key: 'gold',  label: 'Gold',               value: goldVal,  invested: goldInv,  color: '#D97706', group: 'gold' },
     { key: 'bond',  label: 'Bonds / SGB',        value: bondVal,  invested: bondInv,  color: '#9333EA', group: 'other' },
     { key: 'lic',   label: 'LIC',                value: licVal,   invested: licVal,   color: '#DB2777', group: 'other' },
+    { key: 'property',  label: 'Property & land',        value: propVal, invested: propVal, color: '#A0522D', group: 'property' },
+    { key: 'global',    label: 'Global & UAE investments', value: globVal, invested: globInv, color: '#F97316', group: 'equity' },
+    { key: 'jewellery', label: 'Gold jewellery',         value: jewVal,  invested: jewVal,  color: '#CA8A04', group: 'gold' },
+    { key: 'otherAssets', label: 'Vehicles & other',     value: restVal, invested: restInv, color: '#64748B', group: 'other' },
+    { key: 'gratuity',  label: 'UAE gratuity',           value: gratVal, invested: gratVal, color: '#BE185D', group: 'retirement' },
   ] as AssetRow[]).filter(r => r.value > 0).sort((a, b) => b.value - a.value)
 
   const liabRows: LiabRow[] = [
@@ -139,7 +164,9 @@ export function computeNetWorth(h: Holdings, view: View, fx: number): NetWorth {
   const totalAssets   = assetRows.reduce((s, r) => s + r.value, 0)
   const totalInvested = assetRows.reduce((s, r) => s + r.invested, 0)
   const totalLiab     = liabRows.reduce((s, r) => s + r.value, 0)
-  return { assetRows, liabRows, totalAssets, totalInvested, totalLiab, netWorth: totalAssets - totalLiab, cash: bankVal }
+  const inv = assetRows.filter(r => !NOT_INVESTED.has(r.key))
+  return { assetRows, liabRows, totalAssets, totalInvested, totalLiab, netWorth: totalAssets - totalLiab, cash: bankVal,
+    investments: { value: inv.reduce((s, r) => s + r.value, 0), cost: inv.reduce((s, r) => s + r.invested, 0) } }
 }
 
 // Asset rows rolled up into the fixed Home groups (fixed order, empty dropped)

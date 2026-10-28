@@ -9,6 +9,7 @@ import { getAedInr } from '@/lib/fx'
 import { isMissingTable } from '@/lib/supabase/missingTable'
 import { goalInterestsOf } from '@/lib/goalInterests'
 import { runAutomation } from '@/lib/automation'
+import { loadWealthExtras } from '@/lib/wealthExtras'
 
 export default async function DashboardPage() {
   const supabase = createClient()
@@ -51,6 +52,7 @@ export default async function DashboardPage() {
     supabase.from('profiles').select('full_name,onboarded').eq('id', uid).single(),
     getAedInr(),
   ])
+  const extras = await loadWealthExtras(supabase, uid)
 
   // Live balances: starting balance + transactions since (lib/ledger)
   const liveAccounts = await withLedgerBalances(supabase, uid, accsRes.data ?? [], fxRes.rate)
@@ -59,10 +61,11 @@ export default async function DashboardPage() {
     etf: etfRes.data ?? [], nps: npsRes.data ?? [], fixedDeposits: fdRes.data ?? [],
     recurringDeposits: rdRes.data ?? [], ppfEpf: ppfRes.data ?? [], gold: goldRes.data ?? [],
     bonds: bondRes.data ?? [], lic: licRes.data ?? [], loans: loansRes.data ?? [],
+    otherAssets: extras.otherAssets, gratuity: extras.gratuity, today,
   }
 
   // Brand-new accounts start with the 4-step setup; anyone with data skips it
-  const hasData = txns.length > 0 || Object.values(holdings).some(rows => rows.length > 0)
+  const hasData = txns.length > 0 || Object.values(holdings).some(rows => Array.isArray(rows) && rows.length > 0)
     || (goalsRes.data?.length ?? 0) > 0 || (insRes.data?.length ?? 0) > 0
   if (profileRes.data?.onboarded === false && !hasData) redirect('/onboarding')
 

@@ -3,6 +3,7 @@ import { activeAccountsWithLedger } from '@/lib/ledger'
 import { getAedInr } from '@/lib/fx'
 import DebtEquityClient from '@/components/dashboard/DebtEquityClient'
 import { activeLoansWithEmi } from '@/lib/loans'
+import { loadWealthExtras } from '@/lib/wealthExtras'
 
 export default async function DebtEquityPage() {
   const supabase = createClient()
@@ -19,12 +20,15 @@ export default async function DebtEquityPage() {
     active('lic_policies'), sel('gold_investments'), sel('bond_investments'),
     sel('ppf_epf_accounts'), activeLoansWithEmi(supabase, uid),
   ])
+  const extras = await loadWealthExtras(supabase, uid)
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' })
 
   return (
     <DebtEquityClient holdings={{
       accounts: accounts.data ?? [], mutualFunds: mf.data ?? [], stocks: st.data ?? [], etf: etf.data ?? [],
       fixedDeposits: fd.data ?? [], recurringDeposits: rd.data ?? [], nps: nps.data ?? [],
       lic: lic.data ?? [], gold: gold.data ?? [], bonds: bonds.data ?? [], ppfEpf: ppf.data ?? [], loans: loans.data ?? [],
+      otherAssets: extras.otherAssets, gratuity: extras.gratuity, today,
     }} />
   )
 }

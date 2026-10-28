@@ -7,6 +7,7 @@ import { computeNetWorth, type Holdings } from '@/lib/netWorth'
 import { buildHomeInsights } from '@/lib/insights'
 import { getAedInr } from '@/lib/fx'
 import { fmtCompact } from '@/lib/format'
+import { loadWealthExtras } from '@/lib/wealthExtras'
 
 // AI advisor (docked panel + every "Explain this page" / AI action button).
 // Context is built from the signed-in user's own records with the same
@@ -80,6 +81,7 @@ async function buildContext(supabase: ReturnType<typeof createClient>, uid: stri
     accounts: accs.data ?? [], stocks: stocks.data ?? [], mutualFunds: mfs.data ?? [], etf: etf.data ?? [],
     nps: nps.data ?? [], fixedDeposits: fds.data ?? [], recurringDeposits: rds.data ?? [], ppfEpf: ppf.data ?? [],
     gold: gold.data ?? [], bonds: bonds.data ?? [], lic: lic.data ?? [], loans: loans.data ?? [],
+    ...await loadWealthExtras(supabase, uid).then(x => ({ otherAssets: x.otherAssets, gratuity: x.gratuity })), today,
   }
   const rate = fx.rate
   const nw = computeNetWorth(holdings, 'consolidated', rate)
@@ -87,7 +89,7 @@ async function buildContext(supabase: ReturnType<typeof createClient>, uid: stri
     view: 'consolidated', fx: rate, today, focusMonth: today.slice(0, 7),
     txns: txnsRes.data ?? [], accounts: holdings.accounts, loans: holdings.loans, insurance: policies.data ?? [],
     fixedDeposits: holdings.fixedDeposits, budgets: budgets.data ?? [], mutualFunds: holdings.mutualFunds, stocks: holdings.stocks,
-    cash: nw.cash, invested: { value: nw.totalAssets - nw.cash, cost: nw.totalInvested - nw.cash },
+    cash: nw.cash, invested: nw.investments,
   })
 
   const inr = (n: number) => fmtCompact(n, 'INR')

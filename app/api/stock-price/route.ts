@@ -67,7 +67,9 @@ export async function GET(req: NextRequest) {
   if (hit && Date.now() - hit.ts < TTL) return NextResponse.json(hit.data)
 
   // 1) Try the symbol as-is (indices / pre-suffixed), then NSE, then BSE
-  const direct = symbol.startsWith('^') || symbol.includes('.')
+  // exact=1: a ticker as it is on Yahoo (AAPL, VWRA.L, BTC-USD) — no Indian suffix
+  const exact = req.nextUrl.searchParams.get('exact') === '1'
+  const direct = exact || symbol.startsWith('^') || symbol.includes('.')
     ? [symbol]
     : [`${symbol}.NS`, `${symbol}.BO`]
 

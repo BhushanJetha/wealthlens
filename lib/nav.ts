@@ -50,6 +50,7 @@ export const SECTIONS: NavSection[] = [
       { label: 'NPS',                href: '/dashboard/investments/nps' },
       { label: 'LIC',                href: '/dashboard/investments/lic' },
     ] },
+    { label: 'Property & assets', href: '/dashboard/assets' },
     { label: 'Loans', href: '/dashboard/loans', subs: [
       { label: 'Overview',     href: '/dashboard/loans' },
       { label: 'Home',         href: '/dashboard/loans/home' },

@@ -93,7 +93,7 @@ export default function DashboardClient(p: Props) {
     fixedDeposits: h.fixedDeposits, budgets: p.budgets,
     mutualFunds: h.mutualFunds, stocks: h.stocks,
     cash: nw.cash,
-    invested: { value: nw.totalAssets - nw.cash, cost: nw.totalInvested - nw.cash },
+    invested: nw.investments,
   }), [view, FX, today, focusMonth, p, h, nw])
   // Months before tracking began, estimated from monthly savings (family view only)
   const nwEst = useMemo(() => holder ? [] : estimateNetWorthBack(hist.series[0] ?? { date: today, value: nw.netWorth }, today, ins.savedByMonth),

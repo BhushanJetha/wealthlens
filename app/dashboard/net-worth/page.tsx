@@ -4,6 +4,7 @@ import { activeAccountsWithLedger } from '@/lib/ledger'
 import { getAedInr } from '@/lib/fx'
 import NetWorthClient from '@/components/dashboard/NetWorthClient'
 import { isMissingTable } from '@/lib/supabase/missingTable'
+import { loadWealthExtras } from '@/lib/wealthExtras'
 
 export default async function NetWorthPage() {
   const supabase = createClient()
@@ -41,6 +42,7 @@ export default async function NetWorthPage() {
   // A failed read would silently count as zero — say so on the page instead.
   // (Optional tables that haven't been created yet aren't failures.)
   const failed = keys.filter((k, i) => res[i].error && !isMissingTable(res[i].error))
+  const extras = await loadWealthExtras(supabase, uid)
 
   return (
     <NetWorthClient
@@ -60,6 +62,8 @@ export default async function NetWorthPage() {
       loans={data['Loans']}
       transactions={data['Transactions']}
       snapshots={data['History']}
+      otherAssets={extras.otherAssets}
+      gratuity={extras.gratuity}
     />
   )
 }

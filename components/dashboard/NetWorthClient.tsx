@@ -14,6 +14,7 @@ interface Props {
   accounts: any[]; stocks: any[]; mutualFunds: any[]; etf: any[]; nps: any[]
   fixedDeposits: any[]; recurringDeposits: any[]; ppfEpf: any[]; gold: any[]
   bonds: any[]; lic: any[]; loans: any[]; transactions: any[]; snapshots: Snapshot[]
+  otherAssets: any[]; gratuity: any
 }
 
 // Where each net-worth row is managed
@@ -22,6 +23,7 @@ const HREF: Record<string, string> = {
   etf: '/dashboard/investments/etf', nps: '/dashboard/investments/nps', fd: '/dashboard/investments/fixed-deposits',
   rd: '/dashboard/investments/recurring-deposits', ppf: '/dashboard/investments/ppf-epf', gold: '/dashboard/investments/gold',
   bond: '/dashboard/investments/bonds', lic: '/dashboard/investments/lic', loans: '/dashboard/loans', cards: '/dashboard/cards',
+  property: '/dashboard/assets', global: '/dashboard/assets', jewellery: '/dashboard/assets', otherAssets: '/dashboard/assets', gratuity: '/dashboard/assets',
 }
 
 // Net worth (design v2): headline + trend in one card on both sizes (same
@@ -58,8 +60,8 @@ export default function NetWorthClient(p: Props) {
   const change = ref ? netWorth - ref.value : null
 
   const debtRatio = totalAssets > 0 ? Math.round(totalLiab / totalAssets * 100) : 0
-  // Investments = everything except bank & cash; matches the Investments page total
-  const investedNow = totalAssets - cash, putIn = totalInvested - cash
+  // Investments = not bank & cash, property, jewellery, vehicles or gratuity; matches the Investments page total
+  const investedNow = nw.investments.value, putIn = nw.investments.cost
   const gain = investedNow - putIn
   const gainPct = putIn > 0 ? Math.round(gain / putIn * 1000) / 10 : 0
   const empty = totalAssets === 0 && totalLiab === 0
