@@ -1,4 +1,5 @@
 'use client'
+import { holderOptions } from '@/hooks/useFamily'
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
@@ -81,7 +82,7 @@ export function AddLoanModal({ onClose, defaultLoanType = 'home_loan', initialDa
   const [parseState, setParseState] = useState<ParseState>('idle')
   const [parseMsg,   setParseMsg]   = useState('')
   const [mounted,    setMounted]    = useState(false)
-  const [members,    setMembers]    = useState<{ name: string }[]>([])
+  const [members,    setMembers]    = useState<{ name: string; relationship: string }[]>([])
   const [pendingTxns, setPendingTxns] = useState<any>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const supabase = createClient()
@@ -89,7 +90,7 @@ export function AddLoanModal({ onClose, defaultLoanType = 'home_loan', initialDa
 
   useEffect(() => {
     setMounted(true)
-    supabase.from('family_members').select('name').eq('is_active', true).order('created_at')
+    supabase.from('family_members').select('name, relationship').eq('is_active', true).order('created_at')
       .then(({ data }) => setMembers(data ?? []))
   }, [])
 
@@ -311,8 +312,7 @@ export function AddLoanModal({ onClose, defaultLoanType = 'home_loan', initialDa
               className="wl-input"
               onFocus={e => (e.target.style.borderColor = 'var(--sage)')}
               onBlur={e => (e.target.style.borderColor = 'var(--border)')}>
-              <option value="Self">Self</option>
-              {members.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
+              {holderOptions(members, 'Self').map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
 

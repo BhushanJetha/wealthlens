@@ -10,7 +10,7 @@ import { Segmented } from '@/components/ui/kit'
 import { CategoryIcon } from '@/components/ui/CategoryIcon'
 import { toast } from '@/components/ui/toaster'
 import ManageCategoriesSheet from './ManageCategoriesSheet'
-import { useFamily } from '@/hooks/useFamily'
+import { useFamily, holderOptions } from '@/hooks/useFamily'
 import { RECEIPT_TYPES, uploadReceipt, openReceipt, removeReceipt } from '@/lib/receipts'
 
 type TxnType = 'expense' | 'income' | 'transfer' | 'loan'
@@ -82,6 +82,8 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
   const [receiptPath, setReceiptPath] = useState<string | null>(t0?.receipt_path ?? null)
   const [receiptMsg,  setReceiptMsg]  = useState('')
   const { members } = useFamily()
+  // You, then each family member (you're always there, even if not in the family list)
+  const forOpts = holderOptions(members)
 
   const supabase = createClient()
   const router   = useRouter()
@@ -383,19 +385,19 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
               className="wl-input" style={FIELD} />
           </div>
 
-          {(members.length > 1 || showTax) && !isTransfer && (
+          {(forOpts.length > 1 || showTax) && !isTransfer && (
             <div className="grid grid-cols-2 gap-3">
-              {members.length > 1 && (
+              {forOpts.length > 1 && (
                 <div className={showTax ? '' : 'col-span-2'}>
                   <Label>For</Label>
                   <select value={form.holder_name} onChange={e => set({ holder_name: e.target.value })} className="wl-input" style={FIELD} aria-label="Who it was for">
                     <option value="">Whole family</option>
-                    {members.map(m => <option key={m.id} value={m.relationship === 'self' ? 'Self' : m.name}>{m.relationship === 'self' ? 'You' : m.name}</option>)}
+                    {forOpts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </div>
               )}
               {showTax && (
-                <div className={members.length > 1 ? '' : 'col-span-2'}>
+                <div className={forOpts.length > 1 ? '' : 'col-span-2'}>
                   <Label>Tax (India)</Label>
                   <select value={form.tax_tag} onChange={e => set({ tax_tag: e.target.value })} className="wl-input" style={FIELD} aria-label="Tax deduction section">
                     <option value="">Not for tax</option>

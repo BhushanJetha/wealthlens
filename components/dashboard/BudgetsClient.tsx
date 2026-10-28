@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Plus, Sparkles, Pencil, Lock, Unlock, Trash2, Wallet, Target, TrendingUp, PiggyBank, BarChart2, CalendarRange, Repeat, Users, CheckCircle2 } from 'lucide-react'
 import { useViewStore } from '@/store/viewStore'
 import { useCategoryStore } from '@/store/categoryStore'
-import { useFamily } from '@/hooks/useFamily'
+import { useFamily, holderOptions } from '@/hooks/useFamily'
 import { createClient } from '@/lib/supabase/client'
 import { colorOf as catColorOf } from '@/lib/categories'
 import { fmtMoney, fmtCompact } from '@/lib/format'
@@ -152,7 +152,7 @@ export default function BudgetsClient({ today: serverToday, budgets: initial, tr
   const investCap = groups.find(g => g.key === 'invest')?.cap ?? 0
 
   // ── Per person ──
-  const memberOpts = members.map(m => ({ value: m.relationship === 'self' ? 'Self' : m.name, label: m.relationship === 'self' ? 'You' : m.name }))
+  const memberOpts = holderOptions(members, 'You')
   const personRows = budgets.filter(b => b.month_year === month && (b.currency || 'INR') === cur && b.category === PERSON)
   const pSpend = personSpend(transactions, month, cur)
 

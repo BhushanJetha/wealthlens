@@ -40,6 +40,13 @@ export function useFamily() {
   return { members, reload }
 }
 
+// Who something can be for, in every "For" / "In the name of" picker: you
+// first ('Self' — always there, whether or not you added yourself to the
+// family list), then each family member once. Same values the data uses.
+export function holderOptions(members: { name: string; relationship: string }[], me = 'Me'): { value: string; label: string }[] {
+  return [{ value: 'Self', label: me }, ...members.filter(m => m.relationship !== 'self').map(m => ({ value: m.name, label: m.name }))]
+}
+
 // Holder chips use the same names the data uses: '' = everyone, 'Self' = the
 // account owner, otherwise a family member's name (rows' holder_name).
 export const holderMatches = (row: any, holder: string) =>

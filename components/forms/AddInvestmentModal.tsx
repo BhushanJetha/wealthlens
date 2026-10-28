@@ -1,4 +1,5 @@
 'use client'
+import { holderOptions } from '@/hooks/useFamily'
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { X, Loader2, Save } from 'lucide-react'
@@ -30,12 +31,12 @@ export default function AddInvestmentModal({ onClose, defaultType = 'stock', edi
     ...( editData ? Object.fromEntries(Object.entries(editData).map(([k,v])=>[k, String(v??'')])) : {} ),
   })
   const [saving, setSaving] = useState(false)
-  const [members, setMembers] = useState<{ name: string }[]>([])
+  const [members, setMembers] = useState<{ name: string; relationship: string }[]>([])
   const supabase = createClient()
   const router = useRouter()
 
   useEffect(() => {
-    supabase.from('family_members').select('name').eq('is_active', true).order('created_at')
+    supabase.from('family_members').select('name, relationship').eq('is_active', true).order('created_at')
       .then(({ data }) => setMembers(data ?? []))
   }, [])
 
@@ -198,8 +199,7 @@ export default function AddInvestmentModal({ onClose, defaultType = 'stock', edi
               <select value={form.holder_name ?? 'Self'} onChange={f('holder_name')}
                 className="w-full rounded-lg px-3 py-2 text-[12px] focus:outline-none"
                 style={{ background:'var(--bg2)', border:'1px solid var(--border)', color:'var(--text)' }}>
-                <option value="Self">Self</option>
-                {members.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
+                {holderOptions(members, 'Self').map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
 

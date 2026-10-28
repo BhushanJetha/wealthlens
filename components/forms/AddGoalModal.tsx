@@ -10,6 +10,7 @@ import { OCCASIONS, occasionOf, nextDueDate } from '@/lib/occasions'
 import { fundPlan } from '@/lib/budgets'
 import { fmtDay } from '@/lib/insights'
 import { Segmented } from '@/components/ui/kit'
+import { holderOptions } from '@/hooks/useFamily'
 
 const ALL_INV_TYPES = ['stocks', 'mutual_funds', 'fixed_deposits', 'recurring_deposits', 'nps_accounts', 'lic_policies', 'gold_investments', 'bond_investments', 'etf_investments']
 // The older category column (used by investment matching) for each type
@@ -239,7 +240,7 @@ export default function AddGoalModal({ onClose, editData, allInvestments, defaul
               <Label>For</Label>
               <select value={holder} onChange={e => setHolder(e.target.value)} className={field} style={{ height: 42 }} aria-label="Who it's for">
                 <option value="">The whole family</option>
-                {members.map(m => <option key={m.name} value={m.relationship === 'self' ? 'Self' : m.name}>{m.relationship === 'self' ? 'Me' : m.name}</option>)}
+                {holderOptions(members).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
           </div>
