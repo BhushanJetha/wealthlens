@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { loadPortfolioData } from '@/lib/portfolio/data'
 import { portfolioHoldings } from '@/lib/portfolio/holdings'
 import { portfolioPerf } from '@/lib/portfolio/perf'
@@ -9,7 +9,7 @@ import PortfolioClient from '@/components/dashboard/PortfolioClient'
 // target mix, what to add, and what to do first
 export default async function PortfolioPage() {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getSessionUser(supabase)
   const d = await loadPortfolioData(supabase, user!.id)
   const perf = await portfolioPerf(portfolioHoldings(d.holdings, d.links, d.today))
   const p = buildPortfolio(d, perf)

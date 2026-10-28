@@ -91,13 +91,14 @@ export async function recordEmi(supabase: any, userId: string, d: EmiDue, opts: 
 // already recorded, and return the rest for a confirm.
 export async function runEmis(supabase: any, userId: string, today: string, loans: any[], txns: any[], loanTxns: any[]) {
   const pending: EmiDue[] = []
-  if (!loans.length || !('emi_last_month' in loans[0])) return { ready: loans.length === 0, pending }
+  let writes = 0   // anything recorded or ticked off (the page re-reads its data)
+  if (!loans.length || !('emi_last_month' in loans[0])) return { ready: loans.length === 0, pending, writes }
   for (const d of dueEmis(loans, today, loanTxns)) {
-    if (emiRecorded(d, loanTxns)) { await claimEmiMonth(supabase, d.loan, d.month); continue }
+    if (emiRecorded(d, loanTxns)) { await claimEmiMonth(supabase, d.loan, d.month); writes++; continue }
     const bank = emiInBank(d, txns, loans)
-    if (bank) { d.evidence = bank; await recordEmi(supabase, userId, d, { moneyRow: false, note: 'Found in your bank statement' }) }
-    else if (d.loan.emi_auto) await recordEmi(supabase, userId, d, { moneyRow: true, note: 'Recorded on the EMI day' })
+    if (bank) { d.evidence = bank; await recordEmi(supabase, userId, d, { moneyRow: false, note: 'Found in your bank statement' }); writes++ }
+    else if (d.loan.emi_auto) { await recordEmi(supabase, userId, d, { moneyRow: true, note: 'Recorded on the EMI day' }); writes++ }
     else pending.push(d)
   }
-  return { ready: true, pending }
+  return { ready: true, pending, writes }
 }

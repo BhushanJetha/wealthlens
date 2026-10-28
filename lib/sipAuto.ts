@@ -73,13 +73,14 @@ export async function recordSip(supabase: any, userId: string, d: SipDue, opts: 
 
 export async function runSips(supabase: any, userId: string, today: string, funds: any[], txns: any[], invTxns: any[]) {
   const pending: SipDue[] = []
-  if (!funds.length || !('sip_last_month' in funds[0])) return { ready: funds.length === 0, pending }
+  let writes = 0   // anything recorded or ticked off (the page re-reads its data)
+  if (!funds.length || !('sip_last_month' in funds[0])) return { ready: funds.length === 0, pending, writes }
   for (const d of dueSips(funds, today)) {
-    if (sipRecorded(d, invTxns)) { await claimSipMonth(supabase, d.fund, d.month); continue }
+    if (sipRecorded(d, invTxns)) { await claimSipMonth(supabase, d.fund, d.month); writes++; continue }
     const bank = sipInBank(d, txns)
-    if (bank) { d.evidence = bank; await recordSip(supabase, userId, d, { moneyRow: false }) }
-    else if (d.fund.sip_auto) await recordSip(supabase, userId, d, { moneyRow: true })
+    if (bank) { d.evidence = bank; await recordSip(supabase, userId, d, { moneyRow: false }); writes++ }
+    else if (d.fund.sip_auto) { await recordSip(supabase, userId, d, { moneyRow: true }); writes++ }
     else pending.push(d)
   }
-  return { ready: true, pending }
+  return { ready: true, pending, writes }
 }

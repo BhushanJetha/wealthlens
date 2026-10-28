@@ -92,9 +92,11 @@ export async function addOccurrence(supabase: any, userId: string, o: Occurrence
 
 // Run when Home or Money opens: auto entries are added, months already in
 // your transactions are ticked off, and the rest wait for a confirm.
-export async function runRecurring(supabase: any, userId: string, today: string, txns: any[]):
+// `rules` = the recurring_txns read already done (lib/automation reads it with
+// everything else, saving a round trip); read here when not given.
+export async function runRecurring(supabase: any, userId: string, today: string, txns: any[], rules?: { data: any; error: any }):
   Promise<{ ready: boolean; list: RecurringTxn[]; pending: Occurrence[]; inserted: any[] }> {
-  const { data, error } = await supabase.from('recurring_txns').select('*').eq('user_id', userId).order('created_at')
+  const { data, error } = rules ?? await supabase.from('recurring_txns').select('*').eq('user_id', userId).order('created_at')
   if (error) return { ready: !isMissingTable(error), list: [], pending: [], inserted: [] }
   const list = (data ?? []) as RecurringTxn[]
   const pending: Occurrence[] = [], inserted: any[] = []

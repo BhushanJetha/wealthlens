@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { fetchAll } from '@/lib/supabase/fetchAll'
 import { activeLoansWithEmi } from '@/lib/loans'
 import FinancialHealthClient from '@/components/dashboard/FinancialHealthClient'
@@ -9,7 +9,7 @@ import { isMissingTable } from '@/lib/supabase/missingTable'
 
 export default async function FinancialHealthPage() {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getSessionUser(supabase)
   const uid = user!.id
 
   // 6 complete months of income / spending for the Freedom Check averages

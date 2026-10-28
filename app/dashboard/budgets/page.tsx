@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { fetchAllRows } from '@/lib/supabase/fetchAll'
 import { markUnitemisedCardBills } from '@/lib/money'
 import { isMissingTable } from '@/lib/supabase/missingTable'
@@ -13,27 +13,31 @@ import BudgetsClient from '@/components/dashboard/BudgetsClient'
 // Before migration 031 they come from budget_funds (029).
 export default async function BudgetsPage() {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getSessionUser(supabase)
   const uid = user!.id
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' })
   const start = new Date(); start.setUTCMonth(start.getUTCMonth() - 13)
   const fromDate = `${start.toISOString().slice(0, 7)}-01`
 
-  const [txns, budgetsRes, cardsRes, recRes, contribRes] = await Promise.all([
+  const recP = Promise.resolve(supabase.from('goals').select('*').eq('user_id', uid).not('repeat_months', 'is', null).eq('status', 'active').order('target_date'))
+  // A goal kept in its own savings account counts that account's balance
+  // (read as soon as the goals arrive, alongside everything else)
+  const accountsP: Promise<any[]> = recP.then(r => !r.error && (r.data ?? []).some((g: any) => g.account_id)
+    ? getAedInr().then(({ rate }) => activeAccountsWithLedger(supabase, uid, rate)).then(a => a.data ?? []) : [])
+  const [txns, budgetsRes, cardsRes, recRes, contribRes, accounts] = await Promise.all([
     fetchAllRows((a, b) => supabase.from('transactions').select('*')
       .eq('user_id', uid).gte('txn_date', fromDate)
       .order('txn_date', { ascending: false }).order('id').range(a, b)),
     supabase.from('budgets').select('*').eq('user_id', uid).gte('month_year', fromDate.slice(0, 7)),
     supabase.from('accounts').select('id').eq('user_id', uid).eq('account_type', 'credit_card'),
-    supabase.from('goals').select('*').eq('user_id', uid).not('repeat_months', 'is', null).eq('status', 'active').order('target_date'),
+    recP,
     supabase.from('goal_contributions').select('goal_id,amount,contrib_date').eq('user_id', uid),
+    accountsP,
   ])
 
   let funds: Fund[] = [], fundsReady = true, fundsSource: 'goals' | 'funds' = 'goals'
   if (!recRes.error) {
     const recs = (recRes.data ?? []) as any[], contribs = (contribRes.data ?? []) as any[]
-    // A goal kept in its own savings account counts that account's balance
-    const accounts = recs.some(g => g.account_id) ? ((await activeAccountsWithLedger(supabase, uid, (await getAedInr()).rate)).data ?? []) : []
     funds = recs.map(g => {
       const cur = g.currency === 'AED' ? 'AED' : 'INR'
       const mine = contribs.filter(c => c.goal_id === g.id)

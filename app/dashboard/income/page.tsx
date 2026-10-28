@@ -1,10 +1,10 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { fetchAll } from '@/lib/supabase/fetchAll'
 import IncomeClient from '@/components/dashboard/IncomeClient'
 
 export default async function IncomePage() {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getSessionUser(supabase)
 
   const [txnsRes, accsRes, transfersRes] = await Promise.all([
     fetchAll((a, b) => supabase.from('transactions').select('*')

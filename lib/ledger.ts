@@ -7,6 +7,7 @@
 // bills, ATM cash, NRE → NRO and UAE → NRE) — unless that account already has
 // its own record of the same money, so nothing counts twice.
 import { catOf, CC_BILL, isNreToNro, isRemitOut, pairRemittances } from './money'
+import { fetchAll } from './supabase/fetchAll'
 
 export type AccKind = 'bank' | 'card' | 'cash'
 export const kindOf = (a: any): AccKind => a?.account_type === 'credit_card' ? 'card' : a?.account_type === 'wallet' ? 'cash' : 'bank'
@@ -127,21 +128,14 @@ export async function withLedgerBalances(supabase: any, userId: string, accounts
   if (!accounts?.length) return accounts ?? []
   const since = accounts.map(asOfOf).filter(Boolean).sort()[0] ?? null
   const cols = 'id,account_id,counter_account_id,txn_date,amount,currency,txn_type,category,sub_category,merchant,description'
-  const fetchAll = async (sel: string) => {
-    const rows: any[] = []
-    for (let i = 0; i < 10; i++) {
-      let q = supabase.from('transactions').select(sel).eq('user_id', userId)
-      if (since) q = q.gte('txn_date', since)
-      const { data, error } = await q.order('txn_date', { ascending: true }).order('id').range(i * 1000, i * 1000 + 999)
-      if (error) return { rows, error }
-      rows.push(...(data ?? []))
-      if (!data || data.length < 1000) break
-    }
-    return { rows, error: null }
-  }
-  let res = await fetchAll(cols)
-  if (res.error) res = await fetchAll(cols.replace('counter_account_id,', ''))
-  return applyLedgers(accounts, computeLedgers(accounts, res.rows, fx))
+  const read = (sel: string) => fetchAll((a, b) => {
+    let q = supabase.from('transactions').select(sel).eq('user_id', userId)
+    if (since) q = q.gte('txn_date', since)
+    return q.order('txn_date', { ascending: true }).order('id').range(a, b)
+  }, 10)
+  let res = await read(cols)
+  if (res.error) res = await read(cols.replace('counter_account_id,', ''))
+  return applyLedgers(accounts, computeLedgers(accounts, res.data, fx))
 }
 
 // ── How you paid ────────────────────────────────────────────────────────────

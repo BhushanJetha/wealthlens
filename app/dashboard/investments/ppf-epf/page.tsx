@@ -1,9 +1,9 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getSessionUser } from '@/lib/supabase/server'
 import PpfEpfClient from '@/components/dashboard/PpfEpfClient'
 
 export default async function PpfEpfPage() {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getSessionUser(supabase)
 
   // Defensive: if migration 017 hasn't been run yet the table won't exist.
   // Swallow the error and render an empty list rather than crashing the page.

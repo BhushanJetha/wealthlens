@@ -1,10 +1,10 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { fetchAll } from '@/lib/supabase/fetchAll'
 import ExpensesReportClient from '@/components/dashboard/ExpensesReportClient'
 
 export default async function ExpensesReportPage() {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getSessionUser(supabase)
   const uid = user!.id
   const thisMonth = new Date().toISOString().slice(0, 7)
 

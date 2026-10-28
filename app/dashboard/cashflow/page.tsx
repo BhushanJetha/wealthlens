@@ -1,11 +1,11 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { fetchAll } from '@/lib/supabase/fetchAll'
 import { activeLoansWithEmi } from '@/lib/loans'
 import CashFlowClient from '@/components/dashboard/CashFlowClient'
 
 export default async function CashFlowPage() {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getSessionUser(supabase)
   const uid = user!.id
 
   const since = new Date(); since.setMonth(since.getMonth() - 4)

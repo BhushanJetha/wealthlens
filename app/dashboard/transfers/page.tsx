@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { fetchAllRows } from '@/lib/supabase/fetchAll'
 import MoneyFlowClient from '@/components/dashboard/MoneyFlowClient'
 import { markUnitemisedCardBills } from '@/lib/money'
@@ -6,7 +6,7 @@ import { markUnitemisedCardBills } from '@/lib/money'
 // Money flow: UAE earnings → sent to India → NRE → NRO → spent / invested.
 export default async function MoneyFlowPage() {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getSessionUser(supabase)
   const uid = user!.id
   const from = new Date(); from.setUTCMonth(from.getUTCMonth() - 13)
   const fromDate = `${from.toISOString().slice(0, 7)}-01`

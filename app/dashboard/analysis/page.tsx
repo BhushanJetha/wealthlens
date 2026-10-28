@@ -1,11 +1,11 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { fetchAllRows } from '@/lib/supabase/fetchAll'
 import AnalysisClient from '@/components/dashboard/AnalysisClient'
 import { markUnitemisedCardBills } from '@/lib/money'
 
 export default async function AnalysisPage() {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getSessionUser(supabase)
   const uid = user!.id
   // 13 months back covers "same month last year"
   const start = new Date(); start.setUTCMonth(start.getUTCMonth() - 13)

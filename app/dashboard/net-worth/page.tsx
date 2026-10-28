@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getSessionUser } from '@/lib/supabase/server'
 import NetWorthClient from '@/components/dashboard/NetWorthClient'
 import { loadPortfolioData } from '@/lib/portfolio/data'
 import { buildPortfolio } from '@/lib/portfolio/build'
@@ -9,7 +9,7 @@ import { ACCESS, type Access } from '@/lib/portfolio/holdings'
 // whether it's protected — from the shared portfolio engine.
 export default async function NetWorthPage() {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getSessionUser(supabase)
   const uid = user!.id
   const histFrom = new Date(Date.now() - 400 * 86400000).toISOString().slice(0, 10)
 

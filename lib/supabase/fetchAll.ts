@@ -5,14 +5,19 @@ type Page = (from: number, to: number) => any
 
 // Same { data, error } shape as a plain query, so it drops into Promise.all
 // lists. A failed page returns what was read so far plus the error.
+// Pages are read BATCH at a time in parallel: each read is a round trip
+// (~450 ms from UAE/India), so up to 3,000 rows come back in one.
+const BATCH = 3
 export async function fetchAll(page: Page, maxPages = 25): Promise<{ data: any[]; error: any }> {
   const out: any[] = []
-  for (let i = 0; i < maxPages; i++) {
-    const { data, error } = await page(i * 1000, i * 1000 + 999)
-    if (error) return { data: out, error }
-    if (!data) break
-    out.push(...data)
-    if (data.length < 1000) break
+  for (let i = 0; i < maxPages; i += BATCH) {
+    const reads = Array.from({ length: Math.min(BATCH, maxPages - i) }, (_, k) => page((i + k) * 1000, (i + k) * 1000 + 999))
+    for (const { data, error } of await Promise.all(reads)) {
+      if (error) return { data: out, error }
+      if (!data) return { data: out, error: null }
+      out.push(...data)
+      if (data.length < 1000) return { data: out, error: null }
+    }
   }
   return { data: out, error: null }
 }

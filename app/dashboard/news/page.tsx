@@ -1,9 +1,9 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getSessionUser } from '@/lib/supabase/server'
 import NewsClient from '@/components/dashboard/NewsClient'
 
 export default async function NewsPage() {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getSessionUser(supabase)
   const uid = user!.id
   const [mfs, stocks, etfs] = await Promise.all([
     supabase.from('mutual_funds').select('fund_name').eq('user_id', uid),

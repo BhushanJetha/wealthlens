@@ -1,16 +1,12 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { fetchAll } from '@/lib/supabase/fetchAll'
-import { runAutomation } from '@/lib/automation'
+import { withAutomation } from '@/lib/automation'
 import InvestmentsClient from '@/components/dashboard/InvestmentsClient'
 
 export default async function InvestmentsPage() {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getSessionUser(supabase)
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' })
-  // SIPs whose day has come are recorded first (from your statement, or
-  // "record it for me"); the rest are asked on this page
-  const auto = await runAutomation(supabase, user!.id, today)
-
   const sixMonthsAgo = new Date()
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
   const cutoff = sixMonthsAgo.toISOString().slice(0, 10)
@@ -18,20 +14,13 @@ export default async function InvestmentsPage() {
   // Dated purchases / SIPs for the monthly chart. A CAS import can hold
   // thousands of rows and Supabase returns 1,000 per request, so page through.
   // (A missing table — migration 012 not run — just means no records.)
-  const loadInvTxns = async () => {
-    const out: any[] = []
-    for (let from = 0; from < 20000; from += 1000) {
-      const { data, error } = await supabase.from('investment_transactions')
-        .select('asset_type, asset_id, txn_date, txn_type, amount')
-        .eq('user_id', user!.id).order('txn_date', { ascending: true }).range(from, from + 999)
-      if (error || !data) break
-      out.push(...data)
-      if (data.length < 1000) break
-    }
-    return out
-  }
+  const loadInvTxns = () => fetchAll((a, b) => supabase.from('investment_transactions')
+    .select('asset_type, asset_id, txn_date, txn_type, amount')
+    .eq('user_id', user!.id).order('txn_date', { ascending: true }).order('id').range(a, b), 20).then(r => r.data)
 
-  const [stocksRes, mfRes, fdRes, rdRes, npsRes, licRes, goldRes, bondRes, etfRes, ppfRes, txnsRes, giRes, goalsRes, familyRes, invTxns] = await Promise.all([
+  // SIPs whose day has come are recorded alongside these reads (from your
+  // statement, or "record it for me"); the rest are asked on this page
+  const [auto, [stocksRes, mfRes, fdRes, rdRes, npsRes, licRes, goldRes, bondRes, etfRes, ppfRes, txnsRes, giRes, goalsRes, familyRes, invTxns]] = await withAutomation(supabase, user!.id, today, () => Promise.all([
     supabase.from('stocks').select('*').eq('user_id', user!.id),
     supabase.from('mutual_funds').select('*').eq('user_id', user!.id),
     supabase.from('fixed_deposits').select('*').eq('user_id', user!.id).eq('is_active', true),
@@ -53,7 +42,7 @@ export default async function InvestmentsPage() {
     supabase.from('goals').select('id, name, icon, color, category, target_amount, target_date, status').eq('user_id', user!.id).eq('status', 'active'),
     supabase.from('family_members').select('id, name, relationship').eq('user_id', user!.id).eq('is_active', true).order('created_at'),
     loadInvTxns(),
-  ])
+  ]))
 
   return (
     <InvestmentsClient

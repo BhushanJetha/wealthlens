@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getSessionUser } from '@/lib/supabase/server'
 import Sidebar from '@/components/layout/Sidebar'
 import Topbar from '@/components/layout/Topbar'
 import ChatPanel from '@/components/layout/ChatPanel'
@@ -11,23 +11,27 @@ import QuickAdd from '@/components/layout/QuickAdd'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getSessionUser(supabase)
   if (!user) redirect('/auth/login')
 
-  // Guarantee profile row exists — handles cases where the DB trigger
-  // failed silently on signup (e.g. after a full data reset)
-  await supabase.from('profiles').upsert({
-    id:         user.id,
-    email:      user.email ?? '',
-    full_name:  user.user_metadata?.full_name  ?? null,
-    avatar_url: user.user_metadata?.avatar_url ?? null,
-  }, { onConflict: 'id', ignoreDuplicates: true })
-
-  const { data: profile } = await supabase
+  let { data: profile } = await supabase
     .from('profiles')
     .select('*')
     .eq('id', user.id)
-    .single()
+    .maybeSingle()
+
+  // Guarantee profile row exists — handles cases where the DB trigger
+  // failed silently on signup (e.g. after a full data reset). Only then:
+  // each extra read is a round trip (~450 ms from UAE/India).
+  if (!profile) {
+    await supabase.from('profiles').upsert({
+      id:         user.id,
+      email:      user.email ?? '',
+      full_name:  user.user_metadata?.full_name  ?? null,
+      avatar_url: user.user_metadata?.avatar_url ?? null,
+    }, { onConflict: 'id', ignoreDuplicates: true })
+    ;({ data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single())
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-canvas">

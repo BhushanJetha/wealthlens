@@ -1,9 +1,9 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getSessionUser } from '@/lib/supabase/server'
 import MarketLinkedClient from '@/components/dashboard/MarketLinkedClient'
 
 export default async function MarketLinkedPage() {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getSessionUser(supabase)
   if (!user) return null
 
   const [mfRes, stRes, etfRes] = await Promise.all([

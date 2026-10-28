@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { activeLoansWithEmi } from '@/lib/loans'
 import { isMissingTable } from '@/lib/supabase/missingTable'
 import AssetsClient from '@/components/dashboard/AssetsClient'
@@ -7,7 +7,7 @@ import AssetsClient from '@/components/dashboard/AssetsClient'
 // outside the usual types (migration 032), and UAE gratuity
 export default async function AssetsPage() {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getSessionUser(supabase)
   const uid = user!.id
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' })
   const [oa, prof, loans] = await Promise.all([

@@ -1,11 +1,11 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { activeLoansWithEmi } from '@/lib/loans'
 import TaxClient from '@/components/dashboard/TaxClient'
 import { fyOf } from '@/lib/tax'
 
 export default async function TaxPage() {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getSessionUser(supabase)
   const uid = user!.id
   const fy = fyOf(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' }))
 

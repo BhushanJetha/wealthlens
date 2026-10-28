@@ -1,10 +1,10 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { fetchAll } from '@/lib/supabase/fetchAll'
 import IngestClient from '@/components/dashboard/IngestClient'
 
 export default async function IngestPage({ searchParams }: { searchParams: { m?: string } }) {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getSessionUser(supabase)
   const uid = user!.id
   const since = new Date(Date.now() - 90 * 86400000).toISOString()
 

@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { fetchAllRows } from '@/lib/supabase/fetchAll'
 import { getAedInr } from '@/lib/fx'
 import { loadRules } from '@/lib/rules'
@@ -7,7 +7,7 @@ import ReviewClient from '@/components/dashboard/ReviewClient'
 // Review inbox: transactions to check, fixed in a tap, plus your rules.
 export default async function ReviewPage() {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getSessionUser(supabase)
   const uid = user!.id
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' })
   // 13 months: the inbox covers 90 days, the rest teaches the suggestions

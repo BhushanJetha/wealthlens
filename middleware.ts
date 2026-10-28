@@ -20,7 +20,11 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  // getClaims refreshes an expired session and verifies the JWT locally
+  // against the project's signing keys — no round trip on every click like
+  // getUser(). API routes still check with getUser themselves.
+  const { data } = await supabase.auth.getClaims()
+  const user = data?.claims?.sub ? data.claims : null
   const { pathname } = request.nextUrl
 
   const authPaths = ['/auth/login', '/auth/signup', '/auth/forgot-password', '/auth/reset-password']
