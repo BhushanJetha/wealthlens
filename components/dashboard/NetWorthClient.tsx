@@ -8,6 +8,7 @@ import { buildHomeInsights, netWorthHistory, estimateNetWorthBack, fmtDay, type 
 import { fmtMoney, fmtCompact } from '@/lib/format'
 import { PageHeader, InsightBar, AiActions, LearnStrip, HeroStat, KpiTile, Donut, ProgressRow, EmptyState } from '@/components/ui/kit'
 import { ListCard, ListRow } from '@/components/ui/list'
+import { WealthNeeds, WealthPanels, type Overview } from './WealthOverviewPanels'
 
 interface Props {
   today: string; failed: string[]
@@ -15,6 +16,7 @@ interface Props {
   fixedDeposits: any[]; recurringDeposits: any[]; ppfEpf: any[]; gold: any[]
   bonds: any[]; lic: any[]; loans: any[]; transactions: any[]; snapshots: Snapshot[]
   otherAssets: any[]; gratuity: any
+  overview?: Overview
 }
 
 // Where each net-worth row is managed
@@ -71,7 +73,7 @@ export default function NetWorthClient(p: Props) {
   return (
     <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
       <div className="max-md:order-1">
-        <PageHeader title="Net worth" sub={`Assets minus liabilities · ${viewLabel}`} />
+        <PageHeader title="Wealth overview" sub={`Net worth — assets minus liabilities · ${viewLabel}`} />
       </div>
 
       {p.failed.length > 0 && (
@@ -86,6 +88,7 @@ export default function NetWorthClient(p: Props) {
         prompt={`Explain my net worth page in plain language. Net worth ${money(netWorth)}, assets ${money(totalAssets)}, liabilities ${money(totalLiab)}, debt ratio ${debtRatio}%, investment gain ${gainPct}%. Assets: ${assetRows.filter(r => r.value > 0).map(r => `${r.label} ${short(r.value)}`).join(', ')}. Liabilities: ${liabRows.filter(r => r.value > 0).map(r => `${r.label} ${short(r.value)}`).join(', ') || 'none'}.`} /></div>}
       {!empty && <div className="max-md:order-5"><AiActions actions={['What moved my net worth?', 'How do I grow it faster?']}
         context={`Net worth ${money(netWorth)}, assets ${money(totalAssets)}, liabilities ${money(totalLiab)}, debt ratio ${debtRatio}%.`} /></div>}
+      {p.overview && <div className="max-md:order-5"><WealthNeeds needs={p.overview.needs} /></div>}
 
       {empty ? (
         <div className="max-md:order-2">
@@ -156,11 +159,13 @@ export default function NetWorthClient(p: Props) {
         <div className="max-md:order-3 grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
           <KpiTile label="Assets" value={short(totalAssets)} delta={`${short(investedNow)} invested · ${short(cash)} in bank`} tint={1} icon={Wallet} href="/dashboard/investments" />
           <KpiTile label="Liabilities" value={short(totalLiab)} delta={totalLiab > 0 ? `${liabRows.filter(r => r.value > 0).map(r => r.label.toLowerCase()).join(' and ')}` : 'Debt-free'} tint={2} icon={Landmark} />
-          <KpiTile label="Debt / assets" value={`${debtRatio}%`} delta="Target under 30%" tint={3} icon={Scale}
+          <KpiTile label="Debt / assets" value={`${debtRatio}%`} delta="Target under 30% · see debt vs equity" tint={3} icon={Scale} href="/dashboard/debt-equity"
             tone={debtRatio < 30 ? 'good' : debtRatio < 50 ? 'neutral' : 'bad'} />
           <KpiTile label="Investment gain" value={`${gain >= 0 ? '+' : '−'}${short(Math.abs(gain))}`} tint={0} icon={TrendingUp}
             tone={gain >= 0 ? 'good' : 'bad'} delta={`${gainPct >= 0 ? '+' : ''}${gainPct}% on ${short(putIn)} put in`} />
         </div>
+
+        {p.overview && <div className="max-md:order-7"><WealthPanels o={p.overview} view={view} fx={FX} /></div>}
 
         <ListCard className="max-md:order-7" title="Assets & liabilities" sub="Cash and fixed income are held at cost · tap a row to manage it"
           head={['Holding', 'Type', 'Return', 'Value']}>

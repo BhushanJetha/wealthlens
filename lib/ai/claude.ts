@@ -13,6 +13,10 @@ export class AiRefused extends Error {
   constructor() { super('The request was declined. Try rephrasing it.') }
 }
 
+// True when a real-looking key is set (a placeholder doesn't count) — features
+// that only work with AI show themselves only then
+export const aiConfigured = () => /^sk-ant-[A-Za-z0-9_-]{40,}$/.test((process.env.ANTHROPIC_API_KEY ?? '').trim())
+
 let client: Anthropic | null = null
 function getClient() {
   if (!process.env.ANTHROPIC_API_KEY) throw new AiNotConfigured()

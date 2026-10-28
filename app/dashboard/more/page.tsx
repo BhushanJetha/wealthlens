@@ -24,11 +24,16 @@ const GROUPS: { label: string; items: Item[] }[] = [
   ] },
   { label: 'Wealth', items: [
     { label: 'Net worth', href: '/dashboard/net-worth' },
+    { label: 'Portfolio manager', href: '/dashboard/portfolio' },
+    { label: 'I need money', href: '/dashboard/portfolio/need-money' },
+    { label: 'Portfolio reports', href: '/dashboard/portfolio/reviews' },
+    { label: 'Property & assets', href: '/dashboard/assets' },
     { label: 'Debt vs equity', href: '/dashboard/debt-equity' },
     { label: 'Loans', href: '/dashboard/loans' },
     { label: 'Credit cards', href: '/dashboard/cards' },
     { label: 'Bank accounts', href: '/dashboard/accounts' },
     { label: 'Insurance', href: '/dashboard/insurance' },
+    { label: 'Nominees', href: '/dashboard/nominees' },
   ] },
   { label: 'Insights & account', items: [
     { label: 'Financial health', href: '/dashboard/financial-health' },

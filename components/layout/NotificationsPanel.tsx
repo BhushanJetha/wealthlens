@@ -1,23 +1,24 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { Bell, AlertTriangle, Clock, Shield, CheckCircle2, X, Gift } from 'lucide-react'
+import { Bell, AlertTriangle, Clock, Shield, CheckCircle2, X, Gift, FileBarChart2 } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { activeLoansWithEmi } from '@/lib/loans'
 import { fetchAllRows } from '@/lib/supabase/fetchAll'
 import { budgetLines, spendByCategory, carryIn, budgetLabel, addMonths, FIXED } from '@/lib/budgets'
 import { recurringState } from '@/lib/recurringGoals'
+import { lastPeriod } from '@/lib/portfolio/review'
 
 interface Notif {
   id: string
-  type: 'budget' | 'emi' | 'insurance' | 'goal'
+  type: 'budget' | 'emi' | 'insurance' | 'goal' | 'review'
   severity: 'high' | 'medium' | 'low'
   title: string
   body: string
   href?: string
 }
 
-const ICONS = { budget: AlertTriangle, emi: Clock, insurance: Shield, goal: Gift }
+const ICONS = { budget: AlertTriangle, emi: Clock, insurance: Shield, goal: Gift, review: FileBarChart2 }
 const SEV_STYLE = {
   high:   { bg: 'var(--rose-bg)',  color: 'var(--rose)' },
   medium: { bg: 'var(--gold-bg)',  color: 'var(--gold)' },
@@ -114,6 +115,22 @@ function loadNotifs(supabase: any): Promise<Notif[]> {
     }
     if (day >= 5) for (const [cur, amt] of Object.entries(todo)) notifs.push({ id: `goal-month-${cur}`, type: 'goal', severity: 'low', href: '/dashboard/goals',
       title: `Set aside ${cur === 'AED' ? 'AED ' : '₹'}${Math.round(amt).toLocaleString(cur === 'AED' ? 'en-US' : 'en-IN')} this month`, body: `For your ${cur === 'AED' ? 'UAE' : 'India'} festivals and yearly costs` })
+
+    // Portfolio reviews (migration 032): the one for the last finished quarter /
+    // half-year / year is made once, the first time the app is opened after it
+    const lp = lastPeriod(today)
+    const skipKey = `wl-review-skip-${lp.end}`
+    const has = await supabase.from('portfolio_reviews').select('id').eq('user_id', user.id).eq('kind', lp.kind).eq('period_end', lp.end).limit(1)
+    let skipped = false
+    try { skipped = !!localStorage.getItem(skipKey) } catch {}
+    if (!has.error && !has.data?.length && !skipped) {
+      const made = await fetch('/api/portfolio/review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'auto' }) }).then(r => r.json()).catch(() => null)
+      if (made?.skipped) try { localStorage.setItem(skipKey, '1') } catch {}
+    }
+    const latest = await supabase.from('portfolio_reviews').select('id,label,seen_at').eq('user_id', user.id).order('period_end', { ascending: false }).order('created_at', { ascending: false }).limit(1)
+    const lr = latest.data?.[0]
+    if (lr && !lr.seen_at) notifs.push({ id: `review-${lr.id}`, type: 'review', severity: 'medium', href: `/dashboard/portfolio/reviews/${lr.id}`,
+      title: `Your ${lr.label} portfolio review is ready`, body: 'What to keep, what to change and what to add' })
 
     notifs.sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.severity] - { high: 0, medium: 1, low: 2 }[b.severity]))
     return notifs

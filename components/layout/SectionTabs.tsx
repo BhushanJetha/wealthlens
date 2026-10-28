@@ -13,12 +13,15 @@ export default function SectionTabs() {
   if (!section || section.tabs.length < 2) return null
   const tabs = section.tabs.filter(t => !t.hidden)
 
-  const chips = (label: string, links: { label: string; href: string }[], current?: string) => (
+  // A small heading where a group of sub-tabs starts (Investments: Market-linked, Fixed income…)
+  const groupLabel = (l: { group?: string }) => l.group
+    ? <span key={`g-${l.group}`} className="flex-shrink-0 self-center text-[10.5px] font-semibold uppercase tracking-[0.05em] pl-2 pr-0.5" style={{ color: 'var(--text4)' }}>{l.group}</span>
+    : null
+  const chips = (label: string, links: { label: string; href: string; group?: string }[], current?: string) => (
     <nav aria-label={label} className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-4 px-4">
-      {links.map(l => (
+      {links.flatMap(l => [groupLabel(l),
         <Link key={l.href} href={l.href} className="wl-chip flex-shrink-0"
-          aria-current={current === l.href ? 'page' : undefined}>{l.label}</Link>
-      ))}
+          aria-current={current === l.href ? 'page' : undefined}>{l.label}</Link>])}
     </nav>
   )
 
@@ -41,12 +44,11 @@ export default function SectionTabs() {
         </nav>
         {tab?.subs && (
           <nav aria-label={`${tab.label} sections`} className="wl-tabs flex items-center gap-2 px-7 pt-4">
-            {tab.subs.map(s => (
+            {tab.subs.flatMap(s => [groupLabel(s),
               <Link key={s.href} href={s.href} className="wl-chip"
                 aria-current={sub?.href === s.href ? 'page' : undefined}>
                 {s.label}
-              </Link>
-            ))}
+              </Link>])}
           </nav>
         )}
       </div>

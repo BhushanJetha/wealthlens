@@ -12,6 +12,8 @@ import { ListCard, ListRow } from '@/components/ui/list'
 import { addMonths, fmtDay } from '@/lib/insights'
 import { fmtCompact } from '@/lib/format'
 import { CalendarClock, Layers, HeartPulse, Wallet } from 'lucide-react'
+import Link from 'next/link'
+import type { Protection } from '@/lib/portfolio/protection'
 
 function toINR(amt: number, cur: string, fx: number) { return cur === 'AED' ? amt * fx : amt }
 
@@ -27,7 +29,7 @@ const TYPE_LABELS: Record<string, string> = {
   vehicle: 'Vehicle', travel: 'Travel', other: 'Other',
 }
 
-export default function InsuranceClient({ policies }: { policies: any[] }) {
+export default function InsuranceClient({ policies, cover }: { policies: any[]; cover?: Protection & { nomineesMissing: number | null; parents: boolean } }) {
   const { view, fxRate: FX } = useViewStore()
   const router   = useRouter()
   const supabase = createClient()
@@ -167,6 +169,40 @@ export default function InsuranceClient({ policies }: { policies: any[] }) {
             delta={nextDue ? `${nextDue.policy_name}${daysToNext != null ? ` · in ${daysToNext}d` : ''}` : 'No dates set'} />
         </div>
       </>)}
+
+      {cover && (
+        <section className="wl-card max-md:order-4 px-4 md:px-5 py-4" aria-label="Is your cover enough">
+          <h2 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Is your cover enough?</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2.5">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.05em]" style={{ color: 'var(--text3)' }}>Life cover</div>
+              {cover.dependents === 0 ? (
+                <p className="text-[12.5px] mt-1.5 leading-snug" style={{ color: 'var(--text2)' }}>No one depends on your income{cover.loans > 0 ? `, but ${fmtCompact(cover.loans, 'INR')} of loans would fall on your family — cover at least that` : ', so life cover is optional for now'}.</p>
+              ) : (<>
+                <dl className="mt-1.5 text-[12.5px] flex flex-col gap-1">
+                  {[[`10 years of income (${cover.dependents} depend on you)`, cover.incomeYear * 10], ['+ loans to clear', cover.loans], ['− investments your family could sell', -cover.liquid]].map(([k, v]) => (
+                    <div key={k as string} className="flex justify-between gap-3"><dt style={{ color: 'var(--text3)' }}>{k}</dt><dd className="tabular-nums" style={{ color: 'var(--text)' }}>{(v as number) < 0 ? '−' : ''}{fmtCompact(Math.abs(v as number), 'INR')}</dd></div>
+                  ))}
+                  <div className="flex justify-between gap-3 pt-1" style={{ borderTop: '1px solid var(--track)' }}><dt className="font-semibold" style={{ color: 'var(--text)' }}>Cover needed</dt><dd className="font-semibold tabular-nums">{fmtCompact(cover.need, 'INR')}</dd></div>
+                  <div className="flex justify-between gap-3"><dt style={{ color: 'var(--text3)' }}>You have (term {fmtCompact(cover.termCover, 'INR')} + LIC {fmtCompact(cover.licCover, 'INR')})</dt><dd className="tabular-nums">{fmtCompact(cover.cover, 'INR')}</dd></div>
+                </dl>
+                <div className="mt-2 rounded-lg px-3 py-2 text-[12.5px] font-semibold" style={{ background: cover.gap > 0 ? 'var(--amber-bg)' : 'var(--pos-bg)', color: cover.gap > 0 ? 'var(--amber-text)' : 'var(--pos-text)' }}>
+                  {cover.gap > 0 ? `About ${fmtCompact(cover.gap, 'INR')} short — a term plan is the cheapest way to close it` : '✓ Your life cover is enough on this measure'}
+                </div>
+              </>)}
+            </div>
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.05em]" style={{ color: 'var(--text3)' }}>Health & the rest</div>
+              <ul className="mt-1.5 text-[12.5px] flex flex-col gap-1.5 leading-snug" style={{ color: 'var(--text2)' }}>
+                <li>{cover.health.count ? `${fmtCompact(cover.health.amount, 'INR')} of health cover across ${cover.health.count} polic${cover.health.count === 1 ? 'y' : 'ies'}.` : 'No health policy recorded — UAE employer cover usually ends with the job and doesn’t cover family in India.'}</li>
+                {cover.parents && <li>Parents in India: UAE cover doesn’t reach them. A senior-citizen policy or a family floater with a top-up keeps one hospital stay from becoming a crisis.</li>}
+                {cover.nomineesMissing != null && cover.nomineesMissing > 0 && <li><Link href="/dashboard/nominees" className="font-semibold" style={{ color: 'var(--accent)' }}>{cover.nomineesMissing} accounts and policies have no nominee recorded →</Link></li>}
+              </ul>
+              <p className="text-[11px] mt-2" style={{ color: 'var(--text4)' }}>Income is your last 3 months’ average (₹, AED at today’s rate). A guide, not an underwriter’s figure.</p>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Upload zone: local reader fills the Add-policy form */}
       <section className="wl-card max-md:order-8 px-4 md:px-5 py-3.5 md:py-[18px]">

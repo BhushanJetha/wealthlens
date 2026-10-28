@@ -1,69 +1,44 @@
 import { createClient } from '@/lib/supabase/server'
-import { fetchAll } from '@/lib/supabase/fetchAll'
-import { activeAccountsWithLedger } from '@/lib/ledger'
-import { getAedInr } from '@/lib/fx'
 import NetWorthClient from '@/components/dashboard/NetWorthClient'
-import { isMissingTable } from '@/lib/supabase/missingTable'
-import { loadWealthExtras } from '@/lib/wealthExtras'
+import { loadPortfolioData } from '@/lib/portfolio/data'
+import { buildPortfolio } from '@/lib/portfolio/build'
+import { ACCESS, type Access } from '@/lib/portfolio/holdings'
 
+// Wealth overview: net worth (same holdings and history as Home) plus what
+// needs you, how quickly your money can be reached, the AED / ₹ split and
+// whether it's protected — from the shared portfolio engine.
 export default async function NetWorthPage() {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const uid = user!.id
-
-  // Same window and dates as Home, so both draw the same net-worth line
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' })
-  const from = new Date(); from.setUTCMonth(from.getUTCMonth() - 13)
-  const fromDate = `${from.toISOString().slice(0, 7)}-01`
   const histFrom = new Date(Date.now() - 400 * 86400000).toISOString().slice(0, 10)
 
-  const fx = await getAedInr()
-  const named = {
-    'Bank accounts': activeAccountsWithLedger(supabase, uid, fx.rate),
-    'Stocks': supabase.from('stocks').select('*').eq('user_id', uid),
-    'Mutual funds': supabase.from('mutual_funds').select('*').eq('user_id', uid),
-    'ETFs': supabase.from('etf_investments').select('*').eq('user_id', uid),
-    'NPS': supabase.from('nps_accounts').select('*').eq('user_id', uid),
-    'Fixed deposits': supabase.from('fixed_deposits').select('*').eq('user_id', uid).eq('is_active', true),
-    'Recurring deposits': supabase.from('recurring_deposits').select('*').eq('user_id', uid).eq('is_active', true),
-    'PPF / EPF': supabase.from('ppf_epf_accounts').select('*').eq('user_id', uid),
-    'Gold': supabase.from('gold_investments').select('*').eq('user_id', uid),
-    'Bonds': supabase.from('bond_investments').select('*').eq('user_id', uid),
-    'LIC': supabase.from('lic_policies').select('*').eq('user_id', uid).eq('is_active', true),
-    'Loans': supabase.from('home_loans').select('*').eq('user_id', uid).eq('is_active', true),
-    'Transactions': fetchAll((a, b) => supabase.from('transactions').select('txn_type,amount,currency,txn_date,category,sub_category,merchant')
-      .eq('user_id', uid).gte('txn_date', fromDate).order('txn_date', { ascending: true }).order('id').range(a, b)),
-    'History': supabase.from('net_worth_snapshots').select('snap_date,fx,uae_assets,uae_liab,india_assets,india_liab,breakdown')
+  const [d, hist] = await Promise.all([
+    loadPortfolioData(supabase, uid, { txMonths: 13 }),
+    supabase.from('net_worth_snapshots').select('snap_date,fx,uae_assets,uae_liab,india_assets,india_liab,breakdown')
       .eq('user_id', uid).gte('snap_date', histFrom).order('snap_date', { ascending: true }),
+  ])
+  const p = buildPortfolio(d)
+  const overview = {
+    needs: p.needs.slice(0, 8),
+    access: (Object.keys(ACCESS) as Access[]).map(k => ({ key: k, ...ACCESS[k], value: p.access[k].value, count: p.access[k].items.length,
+      top: p.access[k].items.sort((a, b) => (b.currency === 'AED' ? b.value * d.fx : b.value) - (a.currency === 'AED' ? a.value * d.fx : a.value)).slice(0, 3).map(x => x.name) })),
+    currency: p.currency, returnPlan: (p.answers?.return as string | undefined) ?? null,
+    protection: { gap: p.protection.gap, cover: p.protection.cover, need: p.protection.need, dependents: p.protection.dependents, health: p.protection.health },
+    nominees: { missing: p.nominees.missing, total: p.nominees.rows.length, ready: p.nominees.ready },
+    keepInr: p.add.keep,
   }
-  const keys = Object.keys(named) as (keyof typeof named)[]
-  const res = await Promise.all(keys.map(k => named[k]))
-  const data = Object.fromEntries(keys.map((k, i) => [k, res[i].data ?? []])) as Record<keyof typeof named, any[]>
-  // A failed read would silently count as zero — say so on the page instead.
-  // (Optional tables that haven't been created yet aren't failures.)
-  const failed = keys.filter((k, i) => res[i].error && !isMissingTable(res[i].error))
-  const extras = await loadWealthExtras(supabase, uid)
 
   return (
     <NetWorthClient
-      today={today}
-      failed={failed}
-      accounts={data['Bank accounts']}
-      stocks={data['Stocks']}
-      mutualFunds={data['Mutual funds']}
-      etf={data['ETFs']}
-      nps={data['NPS']}
-      fixedDeposits={data['Fixed deposits']}
-      recurringDeposits={data['Recurring deposits']}
-      ppfEpf={data['PPF / EPF']}
-      gold={data['Gold']}
-      bonds={data['Bonds']}
-      lic={data['LIC']}
-      loans={data['Loans']}
-      transactions={data['Transactions']}
-      snapshots={data['History']}
-      otherAssets={extras.otherAssets}
-      gratuity={extras.gratuity}
+      today={d.today}
+      failed={d.failed}
+      {...d.holdings}
+      transactions={d.transactions}
+      snapshots={hist.data ?? []}
+      otherAssets={d.holdings.otherAssets ?? []}
+      gratuity={d.holdings.gratuity}
+      overview={overview}
     />
   )
 }

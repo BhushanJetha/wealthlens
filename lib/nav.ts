@@ -7,7 +7,7 @@ import {
   House, Receipt, Wallet, Target, Sparkles, BookOpen, SlidersHorizontal, type LucideIcon,
 } from 'lucide-react'
 
-export interface NavLink { label: string; href: string; also?: string[] }   // also = extra paths that activate it
+export interface NavLink { label: string; href: string; also?: string[]; group?: string }   // also = extra paths that activate it; group = small heading before it in a sub-tab row
 export interface NavTab extends NavLink { subs?: NavLink[]; hidden?: true }   // hidden = no tab, still resolves (breadcrumb, palette)
 export interface NavSection { key: string; label: string; desc: string; icon: LucideIcon; href: string; tabs: NavTab[] }
 
@@ -33,21 +33,29 @@ export const SECTIONS: NavSection[] = [
     { label: 'Review', href: '/dashboard/money/review', hidden: true },
     { label: 'Import', href: '/dashboard/ingest', hidden: true },
   ] },
-  { key: 'wealth', label: 'Wealth', desc: 'Net worth, investments and debt', icon: Wallet, href: '/dashboard/net-worth', tabs: [
-    { label: 'Net worth',      href: '/dashboard/net-worth' },
-    { label: 'Debt vs equity', href: '/dashboard/debt-equity' },
+  { key: 'wealth', label: 'Wealth', desc: 'Net worth, portfolio manager, investments and debt', icon: Wallet, href: '/dashboard/net-worth', tabs: [
+    { label: 'Overview', href: '/dashboard/net-worth', subs: [
+      { label: 'Net worth',      href: '/dashboard/net-worth' },
+      { label: 'Debt vs equity', href: '/dashboard/debt-equity' },
+    ] },
+    { label: 'Portfolio manager', href: '/dashboard/portfolio', subs: [
+      { label: 'Review',      href: '/dashboard/portfolio' },
+      { label: 'Need money?', href: '/dashboard/portfolio/need-money' },
+      { label: 'Reports',     href: '/dashboard/portfolio/reviews' },
+      { label: 'My profile',  href: '/dashboard/portfolio/profile' },
+    ] },
     { label: 'Investments', href: '/dashboard/investments', subs: [
       { label: 'Overview',           href: '/dashboard/investments' },
-      { label: 'Market-linked',      href: '/dashboard/investments/market-linked' },
+      { label: 'All market-linked',  href: '/dashboard/investments/market-linked', group: 'Market-linked' },
       { label: 'Mutual funds',       href: '/dashboard/investments/mutual-funds' },
       { label: 'Stocks',             href: '/dashboard/stocks', also: ['/dashboard/investments/stocks'] },
       { label: 'ETF',                href: '/dashboard/investments/etf' },
-      { label: 'Fixed deposits',     href: '/dashboard/investments/fixed-deposits' },
+      { label: 'Fixed deposits',     href: '/dashboard/investments/fixed-deposits', group: 'Fixed income' },
       { label: 'Recurring deposits', href: '/dashboard/investments/recurring-deposits' },
-      { label: 'PPF / EPF',          href: '/dashboard/investments/ppf-epf' },
-      { label: 'Gold',               href: '/dashboard/investments/gold' },
       { label: 'Bonds / SGB',        href: '/dashboard/investments/bonds' },
+      { label: 'PPF / EPF',          href: '/dashboard/investments/ppf-epf', group: 'Retirement' },
       { label: 'NPS',                href: '/dashboard/investments/nps' },
+      { label: 'Gold',               href: '/dashboard/investments/gold', group: 'Gold & insurance' },
       { label: 'LIC',                href: '/dashboard/investments/lic' },
     ] },
     { label: 'Property & assets', href: '/dashboard/assets' },
@@ -60,9 +68,14 @@ export const SECTIONS: NavSection[] = [
       { label: 'Loan on card', href: '/dashboard/loans/card' },
       { label: 'Other',        href: '/dashboard/loans/other' },
     ] },
-    { label: 'Credit cards',  href: '/dashboard/cards' },
-    { label: 'Bank accounts', href: '/dashboard/accounts' },
-    { label: 'Insurance',     href: '/dashboard/insurance' },
+    { label: 'Accounts & cards', href: '/dashboard/accounts', subs: [
+      { label: 'Bank accounts', href: '/dashboard/accounts' },
+      { label: 'Credit cards',  href: '/dashboard/cards' },
+    ] },
+    { label: 'Insurance', href: '/dashboard/insurance', subs: [
+      { label: 'Policies', href: '/dashboard/insurance' },
+      { label: 'Nominees', href: '/dashboard/nominees' },
+    ] },
   ] },
   { key: 'plan', label: 'Plan', desc: 'Budgets, goals and forecasts', icon: Target, href: '/dashboard/budgets', tabs: [
     { label: 'Budgets',            href: '/dashboard/budgets' },

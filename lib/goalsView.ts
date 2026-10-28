@@ -10,6 +10,19 @@ import { recurringState, type RecurringState } from './recurringGoals'
 export interface GoalItem { goal: any; kind: Kind; v: GoalValue; pace: number; plan: Plan; rec?: RecurringState }
 export interface PerCur { essentials: number; income: number; saved: number }
 
+// Per currency: average of the last 3 complete months (that had any money) —
+// essentials (spending + EMIs), income and what was saved. Shared with the
+// portfolio manager (emergency fund, what you can invest each month).
+export function monthlyAverages(transactions: any[], fx: number, today: string, prepared = prepareMoney(transactions, { fx })): Record<Cur, PerCur> {
+  const months = [1, 2, 3].map(i => addMonths(today.slice(0, 7), -i))
+  const per = (c: Cur): PerCur => {
+    const ms = months.map(m => monthMoney(prepared, m, c)).filter(x => x.income > 0 || x.spent > 0 || x.emi > 0)
+    const avg = (f: (x: ReturnType<typeof monthMoney>) => number) => ms.length ? ms.reduce((a, x) => a + f(x), 0) / ms.length : 0
+    return { essentials: avg(x => x.spent + x.emi), income: avg(x => x.income), saved: avg(x => x.saved) }
+  }
+  return { AED: per('AED'), INR: per('INR') }
+}
+
 function loanMonthsLeft(l: any): number | null {
   const bal = Number(l.outstanding_amt) || 0, emi = Number(l.emi_amount) || 0, r = (Number(l.interest_rate) || 0) / 1200
   if (bal <= 0 || emi <= 0 || emi <= bal * r) return null
@@ -36,15 +49,8 @@ export function buildGoals(d: {
       projectedRange: { cautious: v.value + rec.monthly * rec.slots, optimistic: v.value + rec.monthly * rec.slots }, gap: 0, reachAt: null, status } }
   })
 
-  // Per currency: last 3 complete months (that had any money)
   const prepared = prepareMoney(d.transactions, { fx: d.fx })
-  const months = [1, 2, 3].map(i => addMonths(today.slice(0, 7), -i))
-  const per = (c: Cur): PerCur => {
-    const ms = months.map(m => monthMoney(prepared, m, c)).filter(x => x.income > 0 || x.spent > 0 || x.emi > 0)
-    const avg = (f: (x: ReturnType<typeof monthMoney>) => number) => ms.length ? ms.reduce((a, x) => a + f(x), 0) / ms.length : 0
-    return { essentials: avg(x => x.spent + x.emi), income: avg(x => x.income), saved: avg(x => x.saved) }
-  }
-  const monthly: Record<Cur, PerCur> = { AED: per('AED'), INR: per('INR') }
+  const monthly = monthlyAverages(d.transactions, d.fx, today, prepared)
 
   // A goal on bank & cash (emergency fund) fills from your general saving:
   // its pace is the share the funding plan gives it (it's funded first)
