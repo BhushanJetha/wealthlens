@@ -7,6 +7,7 @@ import { useHolderStore } from '@/store/holderStore'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { Plus, Building2, ChevronLeft, Pencil, Trash2, Loader2 } from 'lucide-react'
 import AddLoanModal from '@/components/forms/AddLoanModal'
+import CardLoanSheet from '@/components/forms/CardLoanSheet'
 import FilterBar from './FilterBar'
 import Link from 'next/link'
 import { PageHeader, InsightBar, AiActions, LearnStrip, HeroStat, KpiTile, Bars, EmptyState } from '@/components/ui/kit'
@@ -36,9 +37,12 @@ interface Props {
   loans: any[]
   title: string
   loanType: string
+  // Loan on card: add it against a card (EMI worked out, billed to the card)
+  cards?: any[]
+  banks?: any[]
 }
 
-export default function LoanCategoryClient({ loans, title, loanType }: Props) {
+export default function LoanCategoryClient({ loans, title, loanType, cards = [], banks = [] }: Props) {
   const { view, fxRate: FX } = useViewStore()
   const router   = useRouter()
   const supabase = createClient()
@@ -215,7 +219,9 @@ export default function LoanCategoryClient({ loans, title, loanType }: Props) {
       </>)}
 
       {/* Add modal */}
-      {showAdd && <AddLoanModal onClose={() => setShowAdd(false)} defaultLoanType={loanType} />}
+      {showAdd && (loanType === 'loan_on_card' && cards.length
+        ? <CardLoanSheet cards={cards} banks={banks} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); router.refresh() }} />
+        : <AddLoanModal onClose={() => setShowAdd(false)} defaultLoanType={loanType} />)}
 
       {/* Edit modal */}
       {editLoan && (

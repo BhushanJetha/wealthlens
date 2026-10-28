@@ -11,7 +11,9 @@ import WhichCardPanel from './WhichCardPanel'
 import { PageHeader, InsightBar, AiActions, LearnStrip, HeroStat, KpiTile, Bars, ProgressRow, EmptyState } from '@/components/ui/kit'
 import { CreditCardFace } from '@/components/ui/BankCards'
 import AccountDetailsSheet from '@/components/forms/AccountDetailsSheet'
-import { addMonths, fmtDay, localToday } from '@/lib/insights'
+import { addMonths, fmtDay, localToday, nextCardDue } from '@/lib/insights'
+import { cardLimits, loansOnCard } from '@/lib/cardCycle'
+import CardLoanSheet from '@/components/forms/CardLoanSheet'
 import { fmtCompact } from '@/lib/format'
 import { Gauge, CalendarClock, Wallet } from 'lucide-react'
 
@@ -20,7 +22,7 @@ function toINR(amt: number, cur: string, fx: number) { return cur === 'AED' ? am
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const utilColor = (u: number) => u > 50 ? '#DC2626' : u > 30 ? '#D97706' : '#16A34A'
 
-export default function CardsClient({ cards, txns = [], details = [] }: { cards: any[]; txns?: any[]; details?: any[] }) {
+export default function CardsClient({ cards, txns = [], details = [], loans = [], banks = [] }: { cards: any[]; txns?: any[]; details?: any[]; loans?: any[]; banks?: any[] }) {
   const { view, fxRate: FX } = useViewStore()
   const router = useRouter()
   const supabase = createClient()
@@ -30,6 +32,7 @@ export default function CardsClient({ cards, txns = [], details = [] }: { cards:
   const [deleteId, setDeleteId]   = useState<string | null>(null)
   const [deleting, setDeleting]   = useState(false)
   const [openCard, setOpenCard]   = useState<any | null>(null)
+  const [loanFor, setLoanFor]     = useState<any | null | undefined>(undefined)   // undefined = closed, null = pick a card
   const detailsOf = (id: string) => details.find((d: any) => d.account_id === id) ?? null
 
   const filtered = view === 'uae'   ? cards.filter(c => c.currency === 'AED')
@@ -39,22 +42,20 @@ export default function CardsClient({ cards, txns = [], details = [] }: { cards:
   const sym  = view === 'uae' ? 'AED ' : '₹'
 
   const totalBal    = filtered.reduce((a, c) => a + conv(Number(c.outstanding_bal ?? 0), c.currency), 0)
+  // Loans on a card block that much of its limit (they're counted in Loans, not here)
+  const totalBlocked = filtered.reduce((a, c) => a + conv(cardLimits(c, loans).blocked, c.currency), 0)
+  const cardLoans = loans.filter(l => filtered.some(c => c.id === l.pay_from_account_id))
   const totalLimit  = filtered.reduce((a, c) => a + conv(Number(c.credit_limit ?? 0), c.currency), 0)
   const totalMinDue = filtered.reduce((a, c) => a + conv(Number(c.minimum_due ?? 0), c.currency), 0)
-  const overallUtil = totalLimit > 0 ? Math.round(totalBal / totalLimit * 100) : 0
+  // Banks count what's held by card loans as used too
+  const overallUtil = totalLimit > 0 ? Math.round((totalBal + totalBlocked) / totalLimit * 100) : 0
 
   const today = new Date()
   const short = (n: number) => fmtCompact(n, view === 'uae' ? 'AED' : 'INR')
   const money = (n: number) => `${sym}${Math.round(n).toLocaleString('en-IN')}`
 
-  // Next due date per card (a past date rolls forward a month at a time)
-  const dueOf = (c: any) => {
-    if (!c.due_date) return null
-    let d = String(c.due_date).slice(0, 10)
-    const t = today.toISOString().slice(0, 10)
-    for (let i = 0; d < t && i < 24; i++) d = `${addMonths(d.slice(0, 7), 1)}-${d.slice(8, 10)}`
-    return d
-  }
+  // Next due date per card: the due day stays, the month rolls on
+  const dueOf = (c: any) => nextCardDue(c, localToday())
   const next = filtered.map(c => ({ c, d: dueOf(c) })).filter(x => x.d).sort((a, b) => a.d!.localeCompare(b.d!))[0]
 
   // Charges on these cards by month (card bill payments excluded)
@@ -107,9 +108,9 @@ export default function CardsClient({ cards, txns = [], details = [] }: { cards:
           <section className="wl-card max-md:order-6 px-4 md:px-5 py-4 md:py-[18px] flex flex-col gap-3">
             <h2 className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Utilisation by card</h2>
             {filtered.map((c: any) => {
-              const u = Number(c.credit_limit) > 0 ? Math.round(Number(c.outstanding_bal) / Number(c.credit_limit) * 100) : 0
+              const cl = cardLimits(c, loans), u = Math.round(cl.util ?? 0)
               const l = c.currency === 'AED' ? 'AED ' : '₹'
-              return <ProgressRow key={c.id} name={c.name} sub={`${l}${Number(c.outstanding_bal ?? 0).toLocaleString('en-IN')} of ${l}${Number(c.credit_limit ?? 0).toLocaleString('en-IN')}`}
+              return <ProgressRow key={c.id} name={c.name} sub={`${l}${Math.round(cl.owed + cl.blocked).toLocaleString('en-IN')} of ${l}${Number(c.credit_limit ?? 0).toLocaleString('en-IN')}${cl.blocked > 0 ? ' (incl. card loans)' : ''}`}
                 value={`${u}%`} pct={u} color={utilColor(u)} />
             })}
             <p className="text-[11.5px] mt-auto" style={{ color: 'var(--text4)' }}>Lenders like to see under 30% used on each card.</p>
@@ -122,10 +123,10 @@ export default function CardsClient({ cards, txns = [], details = [] }: { cards:
           <KpiTile label="Next due" value={next ? fmtDay(next.d!) : '—'} tint={2} icon={CalendarClock}
             delta={next ? `${next.c.name} · ${next.c.currency === 'AED' ? 'AED ' : '₹'}${Number(next.c.outstanding_bal ?? 0).toLocaleString('en-IN')}` : 'No due dates set'} />
           <KpiTile label="Minimum due" value={money(totalMinDue)} delta="Pay in full to avoid interest" tint={3} icon={AlertTriangle} />
-          <KpiTile label="Credit limit" value={short(totalLimit)} delta={`${short(Math.max(totalLimit - totalBal, 0))} available`} tint={1} icon={Wallet} />
+          <KpiTile label="Credit limit" value={short(totalLimit)} delta={`${short(Math.max(totalLimit - totalBal - totalBlocked, 0))} available${totalBlocked > 0 ? ` · ${short(totalBlocked)} held by card loans` : ''}`} tint={1} icon={Wallet} />
         </div>
 
-        <WhichCardPanel cards={filtered} today={localToday()} className="max-md:order-4" />
+        <WhichCardPanel cards={filtered} today={localToday()} loans={loans} className="max-md:order-4" />
 
         {/* Your cards, drawn like the real thing — tap one for its details */}
         <section className="max-md:order-7 flex flex-col gap-2.5 md:gap-3">
@@ -135,7 +136,7 @@ export default function CardsClient({ cards, txns = [], details = [] }: { cards:
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4">
             {filtered.map((c: any) => {
-              const u = Number(c.credit_limit) > 0 ? Math.round(Number(c.outstanding_bal) / Number(c.credit_limit) * 100) : 0
+              const u = Math.round(cardLimits(c, loans).util ?? 0)
               const l = c.currency === 'AED' ? 'AED ' : '₹'
               const d = dueOf(c)
               const days = d ? Math.ceil((new Date(d).getTime() - today.getTime()) / 86400000) : null
@@ -149,6 +150,12 @@ export default function CardsClient({ cards, txns = [], details = [] }: { cards:
                       <span className="text-[16px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{l}{Number(c.outstanding_bal ?? 0).toLocaleString('en-IN')}</span>
                     </div>
                     <div className="h-1.5 rounded-full mt-1.5" style={{ background: 'var(--track)' }}><div className="h-full rounded-full" style={{ width: `${Math.min(Math.max(u, 2), 100)}%`, background: utilColor(u) }} /></div>
+                    {cardLimits(c, loans).blocked > 0 && (
+                      <div className="flex justify-between text-[11.5px] mt-1" style={{ color: 'var(--text3)' }}>
+                        <span>Held by {loansOnCard(c, loans).length} card loan{loansOnCard(c, loans).length === 1 ? '' : 's'}</span>
+                        <span className="tabular-nums">{l}{Math.round(cardLimits(c, loans).blocked).toLocaleString('en-IN')}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between gap-2 text-[11.5px] mt-1.5">
                       <span style={{ color: utilColor(u) }}>{u}% of {l}{Number(c.credit_limit ?? 0).toLocaleString('en-IN')} used</span>
                       <span style={{ color: days != null && days <= 5 ? '#DC2626' : 'var(--text3)' }}>{d ? `Due ${fmtDay(d)}${days != null && days <= 7 ? ` · ${days}d` : ''}` : 'No due date'}</span>
@@ -159,15 +166,54 @@ export default function CardsClient({ cards, txns = [], details = [] }: { cards:
             })}
           </div>
         </section>
+
+        {/* Loans taken on cards — kept in Loans, shown here against their card */}
+        <section className="max-md:order-7 wl-card px-4 md:px-5 py-4" aria-label="Loans on your cards">
+          <div className="flex items-baseline justify-between gap-2 flex-wrap">
+            <h2 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Loans on your cards</h2>
+            <button onClick={() => setLoanFor(null)} className="text-[12px] font-semibold flex items-center gap-1" style={{ color: 'var(--accent)' }}><Plus size={13} />Loan on a card</button>
+          </div>
+          {cardLoans.length === 0 ? (
+            <p className="text-[12.5px] mt-2 leading-snug" style={{ color: 'var(--text3)' }}>Took cash on a card, or turned a purchase into EMIs? Add it here: the EMI is worked out, it’s billed to the card each month, the loan goes down by itself, and what’s still owed is held from the card’s limit. It shows in Loans too — counted once.</p>
+          ) : (
+            <ul className="mt-1.5">
+              {cardLoans.map(ln => {
+                const c = filtered.find(x => x.id === ln.pay_from_account_id), l = ln.currency === 'AED' ? 'AED ' : '₹'
+                const left = Math.max(0, Number(ln.outstanding_amt) || 0), total = Number(ln.sanctioned_amt) || left
+                const pct = total > 0 ? Math.min(100, (total - left) / total * 100) : 0
+                return (
+                  <li key={ln.id} className="py-2.5" style={{ borderTop: '1px solid var(--track)' }}>
+                    <Link href={`/dashboard/loans/detail/${ln.id}`} className="block">
+                      <div className="flex justify-between gap-3">
+                        <span className="min-w-0">
+                          <span className="block text-[13.5px] font-semibold truncate" style={{ color: 'var(--text)' }}>{ln.name}</span>
+                          <span className="block text-[11.5px] truncate" style={{ color: 'var(--text3)' }}>{c?.name ?? 'Card'} · EMI {l}{Math.round(Number(ln.emi_amount) || 0).toLocaleString('en-IN')}{ln.next_emi_date ? ` · next ${fmtDay(String(ln.next_emi_date))}` : ''}{ln.flat_rate ? ` · ${ln.flat_rate}% flat` : ln.interest_rate ? ` · ${ln.interest_rate}%` : ''}</span>
+                        </span>
+                        <span className="text-right flex-shrink-0">
+                          <span className="block text-[14px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{l}{Math.round(left).toLocaleString('en-IN')}</span>
+                          <span className="block text-[11px]" style={{ color: 'var(--text4)' }}>still owed</span>
+                        </span>
+                      </div>
+                      <div className="h-1.5 rounded-full mt-1.5" style={{ background: 'var(--track)' }}><div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'var(--pos)' }} /></div>
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </section>
       </>)}
+
+      {loanFor !== undefined && <CardLoanSheet cards={filtered} card={loanFor} banks={banks} onClose={() => setLoanFor(undefined)} onSaved={() => { setLoanFor(undefined); router.refresh() }} />}
 
       {openCard && (() => {
         const c = openCard, l = c.currency === 'AED' ? 'AED ' : '₹', d = dueOf(c)
-        const lim = Number(c.credit_limit) || 0, bal = Number(c.outstanding_bal) || 0
+        const lim = Number(c.credit_limit) || 0, bal = Number(c.outstanding_bal) || 0, cl = cardLimits(c, loans)
         const fmtN = (n: number) => `${l}${Math.round(n).toLocaleString('en-IN')}`
         return <AccountDetailsSheet account={c} details={detailsOf(c.id)} isCard face={<CreditCardFace card={c} details={detailsOf(c.id)} />}
-          facts={[['Outstanding', fmtN(bal)], ['Credit limit', lim ? fmtN(lim) : '—'], ['Available', lim ? fmtN(Math.max(lim - bal, 0)) : '—'],
-            ['Minimum due', Number(c.minimum_due) > 0 ? fmtN(Number(c.minimum_due)) : '—'], ['Due date', d ? fmtDay(d) : '—'], ['Used', lim ? `${Math.round(bal / lim * 100)}%` : '—']]}
+          facts={[['Outstanding', fmtN(bal)], ['Credit limit', lim ? fmtN(lim) : '—'], ['Available', cl.available != null ? fmtN(cl.available) : '—'],
+            ...(cl.blocked > 0 ? [['Held by card loans', fmtN(cl.blocked)] as [string, string]] : []),
+            ['Minimum due', Number(c.minimum_due) > 0 ? fmtN(Number(c.minimum_due)) : '—'], ['Due date', d ? `${fmtDay(d)} · day ${Number(c.due_day) || Number(d.slice(8, 10))} each month` : '—'], ['Used', cl.util != null ? `${Math.round(cl.util)}%` : '—']]}
           onClose={() => setOpenCard(null)} onEdit={() => { setOpenCard(null); setEditCard(c) }} onDelete={() => { setOpenCard(null); setDeleteId(c.id) }} />
       })()}
 

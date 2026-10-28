@@ -20,7 +20,7 @@ const isNre = (a: any) => /\bnre\b/i.test(`${a?.name ?? ''}`)
 export function isCredit(t: any, a: any): boolean {
   if (t.txn_type === 'income') return true
   const c = catOf(t)
-  if (kindOf(a) === 'card') return c === CC_BILL || c === 'Refund'          // payment received / refund
+  if (kindOf(a) === 'card') return c === CC_BILL || c === 'Refund' || c === 'Converted to EMI'   // payment, refund, or a purchase moved into a card loan
   if (c === 'ATM Withdrawal') return kindOf(a) === 'cash'
   if (isNreToNro(t)) return isNro(a)
   return IN_CATS.has(c)

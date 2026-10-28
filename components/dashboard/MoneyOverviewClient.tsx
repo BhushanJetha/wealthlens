@@ -13,7 +13,7 @@ import { viewAmount } from '@/lib/netWorth'
 import { kindOf } from '@/lib/ledger'
 import { catOf, labelOf, isIncome as isIncomeIn } from '@/lib/money'
 import { brandOf } from '@/lib/banks'
-import { buildHomeInsights, localToday, fmtDay, daysBetween, type Attention } from '@/lib/insights'
+import { buildHomeInsights, localToday, fmtDay, daysBetween, nextCardDue, type Attention } from '@/lib/insights'
 import { buildDues, expectedIncome, balanceWarnings, safeToSpend, type Due } from '@/lib/moneyOverview'
 import { findReviewItems, reviewCount } from '@/lib/review'
 import { rankCards } from '@/lib/cardCycle'
@@ -244,7 +244,7 @@ export default function MoneyOverviewClient(p: Props) {
 
         {/* Live balances */}
         <Panel title="Balances" right={<MoreLink href="/dashboard/accounts">Accounts</MoreLink>}>
-          {(['AED', 'INR'] as const).map(c => rankCards(cards, c, today)[0]).filter(Boolean).map(b => (
+          {(['AED', 'INR'] as const).map(c => rankCards(cards, c, today, p.loans ?? [])[0]).filter(Boolean).map(b => (
             <Link key={b.card.id} href="/dashboard/cards" className="mt-2.5 flex items-center gap-2 rounded-lg px-3 py-2 text-[12px]"
               style={{ background: 'var(--accent-bg)', color: 'var(--accent2)' }}>
               <CreditCard size={13} className="flex-shrink-0" />
@@ -279,7 +279,7 @@ export default function MoneyOverviewClient(p: Props) {
                   <BankLogo brand={brandOf(c.bank_name, c.name)} />
                   <span className="flex-1 min-w-0">
                     <span className="block text-[13px] font-semibold truncate" style={{ color: 'var(--text)' }}>{c.name}</span>
-                    <span className="block text-[11.5px] truncate" style={{ color: 'var(--text3)' }}>Card · owed{c.due_date ? ` · due ${fmtDay(c.due_date)}` : ''}</span>
+                    <span className="block text-[11.5px] truncate" style={{ color: 'var(--text3)' }}>Card · owed{nextCardDue(c, today) ? ` · due ${fmtDay(nextCardDue(c, today)!)}` : ''}</span>
                   </span>
                   <span className="text-[13px] font-semibold tabular-nums whitespace-nowrap" style={{ color: 'var(--text)' }}>{fmtMoney(Number(c.outstanding_bal) || 0, c.currency)}</span>
                 </Link>

@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { fetchAll } from '@/lib/supabase/fetchAll'
 import { askClaude, aiErrorResponse } from '@/lib/ai/claude'
 import { computeNetWorth, type Holdings } from '@/lib/netWorth'
-import { buildHomeInsights } from '@/lib/insights'
+import { buildHomeInsights, nextCardDue } from '@/lib/insights'
 import { getAedInr } from '@/lib/fx'
 import { fmtCompact } from '@/lib/format'
 import { loadWealthExtras } from '@/lib/wealthExtras'
@@ -110,7 +110,7 @@ async function buildContext(supabase: ReturnType<typeof createClient>, uid: stri
   add('Holdings by type', nw.assetRows.filter(r => r.value > 0).map(r => `${r.label}: ${inr(r.value)}${r.invested && r.invested !== r.value ? ` (cost ${inr(r.invested)})` : ''}`))
   add('Loans', holdings.loans.map(l => `${l.name}: outstanding ${cur(l.outstanding_amt, l.currency)} at ${l.interest_rate}%, EMI ${cur(l.emi_amount, l.currency)}`))
   add('Credit cards', holdings.accounts.filter(a => a.account_type === 'credit_card').map(c =>
-    `${c.name}: ${cur(c.outstanding_bal, c.currency)} of ${cur(c.credit_limit, c.currency)} limit${c.due_date ? `, due ${c.due_date}` : ''}`))
+    `${c.name}: ${cur(c.outstanding_bal, c.currency)} of ${cur(c.credit_limit, c.currency)} limit${nextCardDue(c, today) ? `, due ${nextCardDue(c, today)}` : ''}`))
   add('Insurance', (policies.data ?? []).map(p => `${p.policy_name} (${p.policy_type}): cover ${cur(p.sum_assured, p.currency)}${p.expiry_date ? `, renews ${p.expiry_date}` : ''}`))
   add('Goals', (goals.data ?? []).map(g => `${g.name}: target ${cur(g.target_amount, g.currency)} by ${g.target_date}${g.status && g.status !== 'active' ? ` (${g.status})` : ''}`))
   add('SIPs', holdings.mutualFunds.filter(m => m.has_sip && Number(m.sip_amount) > 0).map(m => `${m.fund_name}: ₹${Number(m.sip_amount).toLocaleString('en-IN')} on day ${m.sip_date ?? '?'}`))

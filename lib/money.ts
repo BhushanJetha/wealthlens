@@ -21,6 +21,9 @@ export const MOVEMENT_CATS = new Set([
   'International Transfer', 'Transfer to India', 'Remittance',
   'NRE to NRO', 'NRE → NRO', 'NRO Settled', 'NRO to NRE', 'Self Transfer', 'Internal Transfer',
   'Loan Received', 'Loan Taken', 'Loan Disbursement', 'ATM Withdrawal',
+  // A card purchase turned into EMIs leaves the card balance for the loan
+  // (the purchase was already counted as spending; the EMIs aren't again)
+  'Converted to EMI',
 ])
 
 // Card bill payments settle purchases already counted on the card, so they're a

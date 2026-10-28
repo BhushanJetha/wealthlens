@@ -22,13 +22,15 @@ export function dueEmis(loans: any[], today: string, loanTxns: any[]): EmiDue[] 
     for (const m of months) {
       if (l.emi_last_month && m <= l.emi_last_month) continue
       // Not before the loan began, nor before a "next EMI" date that's still ahead
-      if (l.loan_start_date && ymOf(String(l.loan_start_date)) >= m) continue
+      // (a loan on a card can be billed in the month it was taken)
+      const date = dateIn(m, day)
+      if (l.loan_start_date && date < String(l.loan_start_date).slice(0, 10)) continue
       const next = String(l.next_emi_date).slice(0, 10)
       if (next > today && ymOf(next) > m) continue
-      const date = dateIn(m, day)
       if (date > today) continue
       // Split from the live balance (interest on what's owed, the rest is principal)
       const bal = liveOutstanding(l, loanTxns)?.value ?? (Number(l.outstanding_amt) || 0)
+      if (bal <= 0.5) continue                                  // repaid — no more EMIs
       const interest = Math.round(bal * (Number(l.interest_rate) || 0) / 1200)
       out.push({ loan: l, month: m, date, amount: emi, interest: Math.min(interest, emi), principal: Math.max(emi - interest, 0) })
     }
@@ -74,8 +76,11 @@ export async function recordEmi(supabase: any, userId: string, d: EmiDue, opts: 
     d.loan.emi_last_month = before
     return error.message
   }
+  // A loan on a card is billed to the card: it's a card-loan payment, not new
+  // spending (the money was counted when it was spent) — so never counted twice
+  const onCard = d.loan.loan_type === 'loan_on_card'
   if (opts.moneyRow) await supabase.from('transactions').insert({
-    user_id: userId, txn_date: paidOn, merchant: `${d.loan.name} EMI`, category: 'EMI/Loan', txn_type: 'loan', amount,
+    user_id: userId, txn_date: paidOn, merchant: `${d.loan.name} EMI`, category: onCard ? 'Loan on Card' : 'EMI/Loan', txn_type: 'loan', amount,
     currency: d.loan.currency || 'INR', country: (d.loan.currency || 'INR') === 'AED' ? 'UAE' : 'India',
     account_id: d.loan.pay_from_account_id ?? null, source: 'manual', is_verified: true,
   })

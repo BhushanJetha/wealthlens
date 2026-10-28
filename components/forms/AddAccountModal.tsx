@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { X, Loader2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { nextCardDue, localToday } from '@/lib/insights'
 
 interface Props {
   onClose: () => void
@@ -26,6 +27,9 @@ export default function AddAccountModal({ onClose, type = 'credit_card', initial
       outstanding_bal: String((type === 'credit_card' ? initialData.outstanding_bal : (initialData.current_balance ?? initialData.outstanding_bal)) ?? ''),
       minimum_due:     String(initialData.minimum_due ?? ''),
       due_date:        initialData.due_date ?? '',
+      // Cards: a due DAY and statement day — the month rolls on by itself
+      due_day:         String(initialData.due_day ?? (initialData.due_date ? Number(String(initialData.due_date).slice(8, 10)) : '')),
+      statement_day:   String(initialData.statement_day ?? ''),
       account_type:    type,
     } : {
       currency: 'INR',
@@ -81,6 +85,14 @@ export default function AddAccountModal({ onClose, type = 'credit_card', initial
       minimum_due:     form.minimum_due     ? Number(form.minimum_due)     : null,
       due_date:        form.due_date        || null,
     }
+    if (isCard) {
+      const day = Math.round(Number(form.due_day)), st = Math.round(Number(form.statement_day))
+      if (form.due_day && !(day >= 1 && day <= 31)) { setSaving(false); setError('The due day is a day of the month, 1–31.'); return }
+      payload.due_day = day >= 1 && day <= 31 ? day : null
+      payload.statement_day = st >= 1 && st <= 31 ? st : null
+      // Kept for older screens: the next due date from the day
+      payload.due_date = payload.due_day ? nextCardDue({ due_day: payload.due_day }, localToday()) : null
+    }
 
     let err
     const write = async (p: Record<string, any>) => {
@@ -90,8 +102,10 @@ export default function AddAccountModal({ onClose, type = 'credit_card', initial
       return (await supabase.from('accounts').insert({ ...p, user_id: user.id })).error
     }
     err = await write(payload)
-    // Before migration 026 there's no balance_as_of column — save without it
-    if (err && /balance_as_of/.test(err.message ?? '')) { delete payload.balance_as_of; err = await write(payload) }
+    // Columns from later migrations (026 balance_as_of, 027 statement_day, 033 due_day) — save without them
+    for (const col of ['balance_as_of', 'statement_day', 'due_day']) {
+      if (err && new RegExp(col).test(err.message ?? '')) { delete payload[col]; err = await write(payload) }
+    }
 
     setSaving(false)
     if (err) { setError(err.message); return }
@@ -152,10 +166,16 @@ export default function AddAccountModal({ onClose, type = 'credit_card', initial
                 {inp('Credit Limit', 'credit_limit', 'number', '400000')}
                 {inp('Outstanding Balance', 'outstanding_bal', 'number', '82000')}
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 {inp('Minimum Due', 'minimum_due', 'number', '16400')}
-                {inp('Payment Due Date', 'due_date', 'date')}
+                {inp('Due day (1–31)', 'due_day', 'number', '15')}
+                {inp('Statement day', 'statement_day', 'number', '20')}
               </div>
+              {Number(form.due_day) >= 1 && Number(form.due_day) <= 31 && (
+                <p className="text-[11.5px] -mt-1" style={{ color: 'var(--text3)' }}>
+                  Due on day {Math.round(Number(form.due_day))} every month — next on {nextCardDue({ due_day: Math.round(Number(form.due_day)) }, localToday())}. The month moves on by itself.
+                </p>
+              )}
             </>
           )}
 

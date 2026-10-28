@@ -1,4 +1,5 @@
 'use client'
+import { addDaysTo } from '@/lib/insights'
 import { useState, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -59,6 +60,16 @@ const BANKS = [
   { value: 'ADCB',         label: 'ADCB' },
   { value: 'FAB',          label: 'FAB (UAE)' },
 ]
+
+// A card-loan EMI the app already recorded on its EMI day (lib/loanAuto) shows
+// up again on the statement a few days later, under the bank's own wording —
+// the same amount within a week is the same EMI, not a second one
+const EMI_CATS = new Set(['Loan on Card', 'EMI/Loan'])
+function emiAlready(t: { date: string; amount: number; category?: string }, existing: { txn_date: string; amount: number; category?: string | null }[]) {
+  if (!EMI_CATS.has(String(t.category ?? ''))) return false
+  return existing.some(e => EMI_CATS.has(String(e.category ?? '')) && Math.abs(Number(e.amount) - Number(t.amount)) <= Math.max(1, Number(t.amount) * 0.01)
+    && Math.abs(Date.parse(e.txn_date) - Date.parse(t.date)) <= 8 * 864e5)
+}
 
 export default function CreditCardUploadModal({ onClose }: Props) {
   // The user's expense categories (plus Transfer) for the review dropdowns
@@ -145,11 +156,11 @@ export default function CreditCardUploadModal({ onClose }: Props) {
         const maxDate = dates[dates.length - 1]
         const { data: existing } = await supabase
           .from('transactions')
-          .select('txn_date, merchant, amount')
+          .select('txn_date, merchant, amount, category')
           .eq('user_id', user.id)
           .eq('currency', data.currency)
-          .gte('txn_date', minDate)
-          .lte('txn_date', maxDate)
+          .gte('txn_date', addDaysTo(minDate, -8))
+          .lte('txn_date', addDaysTo(maxDate, 8))
 
         // Match on date + amount only — robust to merchant renames, re-categorisation,
         // and charges first saved via a different parser (so all already-imported rows
@@ -158,7 +169,7 @@ export default function CreditCardUploadModal({ onClose }: Props) {
           (existing ?? []).map(e => `${e.txn_date}|${Math.round(Number(e.amount) * 100)}`)
         )
         txns = rawTxns.map(t => {
-          const isDuplicate = existingKeys.has(`${t.date}|${Math.round(Number(t.amount) * 100)}`)
+          const isDuplicate = existingKeys.has(`${t.date}|${Math.round(Number(t.amount) * 100)}`) || emiAlready(t, existing ?? [])
           if (isDuplicate) dupCount++
           return { ...t, isDuplicate, selected: !isDuplicate }
         })
@@ -198,17 +209,17 @@ export default function CreditCardUploadModal({ onClose }: Props) {
     const maxDate = dates[dates.length - 1]
     const { data: existing } = await supabase
       .from('transactions')
-      .select('txn_date, merchant, amount')
+      .select('txn_date, merchant, amount, category')
       .eq('user_id', user!.id)
       .eq('currency', result.currency)
-      .gte('txn_date', minDate)
-      .lte('txn_date', maxDate)
+      .gte('txn_date', addDaysTo(minDate, -8))
+      .lte('txn_date', addDaysTo(maxDate, 8))
 
     const existingKeys = new Set(
       (existing ?? []).map(e => `${e.txn_date}|${Math.round(Number(e.amount) * 100)}`)
     )
     const deduped = selected.filter(t =>
-      !existingKeys.has(`${t.date}|${Math.round(Number(t.amount) * 100)}`)
+      !existingKeys.has(`${t.date}|${Math.round(Number(t.amount) * 100)}`) && !emiAlready(t, existing ?? [])
     )
 
     if (deduped.length === 0) {
@@ -247,9 +258,12 @@ export default function CreditCardUploadModal({ onClose }: Props) {
       if (result.credit_limit    != null) updates.credit_limit    = result.credit_limit
       if (result.outstanding_bal != null) { updates.outstanding_bal = result.outstanding_bal; updates.balance_as_of = lastDate }
       if (result.minimum_due     != null) updates.minimum_due     = result.minimum_due
-      if (result.due_date        != null) updates.due_date        = result.due_date
-      const { error: upErr } = await supabase.from('accounts').update(updates).eq('id', accountId)
-      if (upErr && updates.balance_as_of) { delete updates.balance_as_of; await supabase.from('accounts').update(updates).eq('id', accountId) }
+      // The statement's due date also sets the card's due day (the month rolls on from it)
+      if (result.due_date        != null) { updates.due_date = result.due_date; updates.due_day = Number(String(result.due_date).slice(8, 10)) || null }
+      let { error: upErr } = await supabase.from('accounts').update(updates).eq('id', accountId)
+      for (const col of ['due_day', 'balance_as_of']) {
+        if (upErr && col in updates) { delete updates[col]; ({ error: upErr } = await supabase.from('accounts').update(updates).eq('id', accountId)) }
+      }
     } else {
       const { data: newAcct } = await supabase
         .from('accounts')

@@ -12,11 +12,11 @@ const ordinal = (n: number) => `${n}${n % 10 === 1 && n !== 11 ? 'st' : n % 10 =
 
 // Which card to use today: the most interest-free days in the currency you're
 // spending, from each card's statement cycle. Statement days can be set here.
-export default function WhichCardPanel({ cards, today, className = '' }: { cards: any[]; today: string; className?: string }) {
+export default function WhichCardPanel({ cards, today, className = '', loans = [] }: { cards: any[]; today: string; className?: string; loans?: any[] }) {
   const router = useRouter()
   const [error, setError] = useState('')
   const [saving, setSaving] = useState<string | null>(null)
-  const groups = (['AED', 'INR'] as const).map(cur => ({ cur, ranked: rankCards(cards, cur, today) })).filter(g => g.ranked.length)
+  const groups = (['AED', 'INR'] as const).map(cur => ({ cur, ranked: rankCards(cards, cur, today, loans) })).filter(g => g.ranked.length)
   const noCycle = cards.filter(c => c.account_type === 'credit_card' && !cycleOf(c, today))
   if (!today || (!groups.length && !noCycle.length)) return null
 

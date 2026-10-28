@@ -83,8 +83,9 @@ export default function CashFlowClient({ accounts, loans, transactions }: Props)
     // Credit-card bills (next due only)
     cards.forEach(c => {
       const due = disp(Number(c.minimum_due) || Number(c.outstanding_bal) || 0, c.currency)
-      if (due <= 0 || !c.due_date) return
-      const d = nextDates(new Date(c.due_date).getUTCDate())[0]
+      const day = Number(c.due_day) || (c.due_date ? new Date(c.due_date).getUTCDate() : 0)
+      if (due <= 0 || !day) return
+      const d = nextDates(day)[0]
       if (d) events.push({ date: d, label: `${c.name || 'Card'} bill`, kind: 'out', amount: due, type: 'cc' })
     })
 

@@ -30,6 +30,15 @@ export function nextOccurrence(date: string | null | undefined, today: string, e
   while (d < today && guard++ < 240) d = addMonthsToDate(d, every)
   return d
 }
+// A credit card's next payment due date: its due day (migration 033), else the
+// day of its saved due date — the day stays put and the month rolls on
+export function nextCardDue(card: any, today: string): string | null {
+  const day = Number(card?.due_day) || (card?.due_date ? Number(String(card.due_date).slice(8, 10)) : 0)
+  if (!day) return null
+  const on = (ym: string) => `${ym}-${String(Math.min(day, daysInMonth(ym))).padStart(2, '0')}`
+  const d = on(ymOf(today))
+  return d >= today ? d : on(addMonths(ymOf(today), 1))
+}
 export const fmtDay = (d: string) => new Date(utc(d)).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -206,8 +215,8 @@ export function buildHomeInsights(inp: InsightInput): HomeInsights {
   const cards = (inp.accounts ?? []).filter(a => a.account_type === 'credit_card' && inView(a.currency))
   for (const c of cards) {
     const out = Number(c.outstanding_bal) || 0
-    if (!c.due_date || out <= 0) continue
-    const due = nextOccurrence(c.due_date, today)!
+    const due = nextCardDue(c, today)
+    if (!due || out <= 0) continue
     const d = daysBetween(today, due)
     if (d <= 10) attention.push({
       id: `card-${c.id}`, severity: d <= 3 ? 'high' : 'medium',
@@ -383,7 +392,7 @@ export function buildHomeInsights(inp: InsightInput): HomeInsights {
   }
   for (const c of cards) {
     const out = Number(c.outstanding_bal) || 0
-    const d = c.due_date ? nextOccurrence(c.due_date, today) : null
+    const d = nextCardDue(c, today)
     if (out > 0 && within(d)) upcoming.push({ id: `u-card-${c.id}`, date: d!, label: `${c.name} bill`, sub: 'Credit card', amount: out, currency: c.currency, kind: 'card' })
   }
   for (const p of (inp.insurance ?? []).filter(p => inView(p.currency))) {

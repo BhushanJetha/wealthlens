@@ -7,7 +7,7 @@ import { viewAmount, type View } from './netWorth'
 import { kindOf, counterOf } from './ledger'
 import { catOf, CC_BILL, isIncome as isIncomeIn, isSpend } from './money'
 import { matchScore } from './loans'
-import { findRecurring, nextOccurrence, addDaysTo, daysBetween, ymOf, addMonths, daysInMonth, fmtDay } from './insights'
+import { findRecurring, nextOccurrence, nextCardDue, addDaysTo, daysBetween, ymOf, addMonths, daysInMonth, fmtDay } from './insights'
 import { nextDate, type RecurringTxn } from './recurring'
 import { ruleTextFor } from './rules'
 
@@ -74,7 +74,7 @@ export function buildDues(inp: {
   }
   for (const c of inp.accounts.filter(a => kindOf(a) === 'card' && inView(a.currency))) {
     const owed = Number(c.outstanding_bal) || 0
-    const d = c.due_date ? nextOccurrence(c.due_date, today) : null
+    const d = nextCardDue(c, today)
     if (owed <= 0 || !within(d)) continue
     const p = cardPayFrom(c, inp.txns, inp.accounts)
     out.push({ id: `card-${c.id}`, date: d!, label: `${c.name} bill`, sub: c.minimum_due ? `Minimum ${money(Number(c.minimum_due), c.currency)}` : 'Credit card',

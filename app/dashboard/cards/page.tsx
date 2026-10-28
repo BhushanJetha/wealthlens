@@ -3,6 +3,7 @@ import { fetchAll } from '@/lib/supabase/fetchAll'
 import { activeAccountsWithLedger } from '@/lib/ledger'
 import { getAedInr } from '@/lib/fx'
 import CardsClient from '@/components/dashboard/CardsClient'
+import { activeLoansWithEmi } from '@/lib/loans'
 
 export default async function CardsPage() {
   const supabase = createClient()
@@ -12,6 +13,9 @@ export default async function CardsPage() {
   const { rate } = await getAedInr()
   const { data: all } = await activeAccountsWithLedger(supabase, uid, rate)
   const cards = (all ?? []).filter(a => a.account_type === 'credit_card')
+  const banks = (all ?? []).filter(a => a.account_type !== 'credit_card')
+  // Loans on these cards (live outstanding — it blocks that much of the limit)
+  const { data: loans } = await activeLoansWithEmi(supabase, uid, q => q.eq('loan_type', 'loan_on_card'))
 
   // Six months of charges on these cards, for the spending bars
   const from = new Date(); from.setUTCMonth(from.getUTCMonth() - 5)
@@ -26,5 +30,5 @@ export default async function CardsPage() {
     ? await supabase.from('account_details').select('*').in('account_id', ids)
     : { data: [] }
 
-  return <CardsClient cards={cards} txns={txns ?? []} details={details ?? []} />
+  return <CardsClient cards={cards} txns={txns ?? []} details={details ?? []} loans={loans ?? []} banks={banks} />
 }
