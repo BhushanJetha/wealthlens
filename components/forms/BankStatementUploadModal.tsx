@@ -309,7 +309,8 @@ export default function BankStatementUploadModal({ onClose }: Props) {
           : cat === 'NRE to NRO'           ? 'Internal'
           : cat === 'NRO to Family'        ? 'Family'
           : cat === 'Family Transfer'      ? 'Family'
-          : cat === 'Self Transfer'        ? 'Internal'
+          : cat === 'Self Transfer'        ? 'Own'
+          : cat === 'NRO to NRE'           ? 'NRO to NRE'
           : null
         const rows = deduped.map(t => ({
           user_id:     user!.id,

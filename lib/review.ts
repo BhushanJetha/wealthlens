@@ -1,13 +1,14 @@
 // Review inbox (Money › Review): transactions that make the numbers less
 // accurate until someone looks at them — no "Paid from", a vague category,
-// a likely duplicate, or money sent home whose ₹ credit never showed up.
+// a likely duplicate, money sent home whose ₹ credit never showed up, or a
+// transfer of unknown kind (counted as money sent until it's sorted).
 // Same-merchant items are grouped so one tap fixes them all.
 import { normMerchant } from './categoryMemory'
 import { ruleTextFor } from './rules'
-import { catOf, isSpend, pairRemittances, CC_BILL, MOVEMENT_CATS } from './money'
+import { catOf, isSpend, pairRemittances, pairOwnTransfers, isUnknownTransfer, CC_BILL, MOVEMENT_CATS } from './money'
 import { daysBetween, addDaysTo } from './insights'
 
-export type ReviewKind = 'account' | 'category' | 'duplicate' | 'remit'
+export type ReviewKind = 'account' | 'category' | 'duplicate' | 'remit' | 'transfer'
 export interface ReviewItem {
   id: string; kind: ReviewKind; date: string
   txns: any[]                 // account / category: every match in the group (newest first); duplicate: [copy, keep]; remit: [sent]
@@ -75,7 +76,7 @@ export function findReviewItems(txns: any[], opts: { today: string; fx: number }
   }
 
   // No "Paid from" / vague category, grouped by merchant
-  const byKey = (kind: 'account' | 'category', rows: any[]) => {
+  const byKey = (kind: 'account' | 'category' | 'transfer', rows: any[]) => {
     const m: Record<string, any[]> = {}
     for (const t of rows) (m[ruleTextFor(t.merchant) || `id-${t.id}`] ||= []).push(t)
     for (const [key, ts] of Object.entries(m)) {
@@ -91,6 +92,9 @@ export function findReviewItems(txns: any[], opts: { today: string; fx: number }
   const rest = open.filter(t => !inDup.has(t.id))
   byKey('account', rest.filter(t => !t.account_id && (isSpend(t) || t.txn_type === 'income')))
   byKey('category', rest.filter(t => t.txn_type === 'expense' && isVagueCategory(t.category)))
+  // Transfers of unknown kind that aren't one side of a move between your own accounts
+  const own = new Set(pairOwnTransfers(real).map(p => p.out))
+  byKey('transfer', rest.filter(t => isUnknownTransfer(t) && !own.has(t)))
 
   return items.sort((a, b) => b.date.localeCompare(a.date))
 }

@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Landmark, Tag, Copy, Send, Trash2, X, Wand2 } from 'lucide-react'
+import { Landmark, Tag, Copy, Send, Trash2, X, Wand2, ArrowLeftRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useCategoryStore } from '@/store/categoryStore'
 import { fmtMoney } from '@/lib/format'
@@ -21,8 +21,11 @@ const KINDS: { key: ReviewKind; label: string; icon: typeof Landmark; c: string 
   { key: 'category', label: 'Category', icon: Tag, c: '#6A55E8' },
   { key: 'duplicate', label: 'Duplicates', icon: Copy, c: '#F29A2E' },
   { key: 'remit', label: 'Sent home', icon: Send, c: '#2FB67C' },
+  { key: 'transfer', label: 'Transfers', icon: ArrowLeftRight, c: '#0891B2' },
 ]
 const MIGRATION_HINT = 'Run migration 027 in Supabase to use this.'
+// What a transfer of unknown kind can be (the kinds in Add transaction)
+const TRANSFER_KIND_LABEL: Record<string, string> = { Own: 'My other account', International: 'UAE → India', Internal: 'NRE → NRO', 'NRO to NRE': 'NRO → NRE', Family: 'Family support' }
 const isNre = (a: any) => /\bnre\b/i.test(`${a?.name ?? ''}`)
 
 // Review inbox (design v2): each card fixes one problem — or a whole
@@ -79,14 +82,14 @@ export default function ReviewClient(p: Props) {
     return ` New ones with “${key}” will be done for you.`
   }
 
-  async function fix(item: ReviewItem, patch: { account_id?: string; category?: string }, always: boolean, key: string) {
+  async function fix(item: ReviewItem, patch: { account_id?: string; category?: string; sub_category?: string | null; txn_type?: string }, always: boolean, key: string) {
     setBusy(item.id)
     const ids = item.txns.map(t => t.id)
     const { error } = await supabase.from('transactions').update(patch).in('id', ids)
     if (error) { setBusy(null); fail(error.message); return }
     const extra = always ? await addRule(item, patch.category ? { set_category: patch.category } : { set_account_id: patch.account_id }, key) : ''
     setBusy(null)
-    const what = patch.category ? labelOf(patch.category) : accName(patch.account_id)
+    const what = patch.sub_category ? (TRANSFER_KIND_LABEL[patch.sub_category] ?? patch.sub_category) : patch.txn_type === 'expense' ? 'spending' : patch.category ? labelOf(patch.category) : accName(patch.account_id)
     finish(item.id, `${ids.length} transaction${ids.length === 1 ? '' : 's'} set to ${what}.${extra}`)
   }
 
@@ -200,7 +203,7 @@ export default function ReviewClient(p: Props) {
 
 function ReviewCard({ item, busy, accounts, accUse, accName, cats, onFix, onReviewed, onDeleteCopy, onAddCredit }: {
   item: ReviewItem; busy: boolean; accounts: any[]; accUse: Record<string, number>; accName: (id?: string | null) => string | null; cats: string[]
-  onFix: (patch: { account_id?: string; category?: string }, always: boolean, key: string) => void
+  onFix: (patch: { account_id?: string; category?: string; sub_category?: string | null; txn_type?: string }, always: boolean, key: string) => void
   onReviewed: (ids: string[], text: string) => void
   onDeleteCopy: () => void; onAddCredit: () => void
 }) {
@@ -262,6 +265,16 @@ function ReviewCard({ item, busy, accounts, accUse, accName, cats, onFix, onRevi
         </div>
       )
     }
+  } else if (item.kind === 'transfer') {
+    title = <>{t0.merchant || 'Transfer'}{n > 1 && <span className="font-normal" style={{ color: 'var(--text3)' }}> · {n} transfers</span>}</>
+    sub = `${fmtMoney(sum, cur)} · ${fmtDay(t0.txn_date)}${n > 1 && oldest !== t0.txn_date ? ` – ${fmtDay(oldest)}` : ''} · from ${accName(t0.account_id) ?? 'an account'} · kind unknown — counted as money sent until you choose`
+    const kinds = ['Own', ...(cur === 'AED' ? ['International'] : ['Internal', 'NRO to NRE']), 'Family']
+    body = (
+      <div className="flex flex-wrap gap-1.5">
+        {kinds.map((k, i) => chip(TRANSFER_KIND_LABEL[k], () => onFix({ category: 'Transfer', sub_category: k }, false, ''), i === 0, k))}
+        {chip('It was spending', () => onFix({ txn_type: 'expense', category: 'Other', sub_category: null }, false, ''), false, 'spend')}
+      </div>
+    )
   } else if (item.kind === 'duplicate') {
     const [copy, keep] = item.txns
     title = <>Possible duplicate · {keep.merchant}</>

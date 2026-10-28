@@ -8,7 +8,7 @@
 export const NRO_SETTLED_CATS = ['NRE to NRO', 'NRE → NRO', 'NRO Settled']
 
 export function isNroSettled(t: any): boolean {
-  return t?.currency === 'INR' && (t?.sub_category === 'Internal' || NRO_SETTLED_CATS.includes(t?.category))
+  return t?.currency === 'INR' && ((t?.sub_category === 'Internal' && t?.category !== 'Self Transfer') || NRO_SETTLED_CATS.includes(t?.category))
 }
 
 // Map a settled transfer into a "UAE Income (NRO)" income row (display only).

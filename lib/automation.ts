@@ -4,6 +4,7 @@
 //   • repeating entries (lib/recurring, migration 027)
 //   • loan EMIs (lib/loanAuto, migration 028)
 //   • SIP instalments (lib/sipAuto, migration 028)
+//   • moves between your own accounts, matched from both statements (lib/ownTransfers)
 // Each is recorded when there's proof (it's in your statement) or you've
 // asked for it to happen by itself; everything else comes back to confirm.
 import { fetchAllRows } from './supabase/fetchAll'
@@ -11,6 +12,7 @@ import { addDaysTo } from './insights'
 import { runRecurring, type Occurrence, type RecurringTxn } from './recurring'
 import { runEmis, type EmiDue } from './loanAuto'
 import { runSips, type SipDue } from './sipAuto'
+import { matchOwnTransfers } from './ownTransfers'
 
 export interface Automation {
   recurring: RecurringTxn[]; recurringReady: boolean
@@ -28,6 +30,7 @@ export async function runAutomation(supabase: any, userId: string, today: string
     supabase.from('mutual_funds').select('*').eq('user_id', userId).eq('has_sip', true),
     supabase.from('investment_transactions').select('asset_id,txn_type,txn_date,amount').eq('user_id', userId).eq('asset_type', 'mutual_fund').gte('txn_date', since),
   ])
+  await matchOwnTransfers(supabase, txns)
   const rec = await runRecurring(supabase, userId, today, txns)
   const all = [...rec.inserted, ...txns]
   const [emis, sips] = await Promise.all([

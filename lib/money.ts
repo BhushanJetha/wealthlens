@@ -36,9 +36,39 @@ export type SpendClass = 'expense' | 'ccbill' | 'excluded'
 export const classify = (c: string): SpendClass =>
   c === CC_BILL ? 'ccbill' : (MOVEMENT_CATS.has(c) || c === 'Loan on Card') ? 'excluded' : 'expense'
 
-// Manual transfers are stored as category "Transfer" + a sub_category
+// Manual transfers are stored as category "Transfer" + a sub_category (the
+// kind). Own = between your own accounts in the same country (ENBD → ADCB).
 export const TRANSFER_SUB_ROW: Record<string, string> = {
   Internal: 'NRE to NRO', International: 'International Transfer', Family: 'Family Transfer', 'ATM Withdrawal': 'ATM Withdrawal',
+  'NRO to NRE': 'NRO to NRE', Own: 'Self Transfer',
+}
+// A transfer whose kind isn't known yet (imported "NEFT / IMPS / transfer"
+// lines): until it's matched to your own account or given a kind in Review,
+// it counts as money sent to others
+export const isUnknownTransfer = (t: any) => catOf(t) === 'Transfer' && t?.txn_type !== 'income'
+
+// Moves between your own accounts that a statement shows as two plain
+// transfers — money out of one, the same amount into another of yours within
+// 3 days. Paired, they're a move (not spending, not income). Each row is used
+// once; the closest date wins.
+const OWN_IN_CATS = new Set(['Transfer', 'Other', 'Self Transfer', ''])
+export function pairOwnTransfers(txns: any[]): { out: any; in: any }[] {
+  const outs = txns.filter(t => t.account_id && isUnknownTransfer(t)).sort((a, b) => String(a.txn_date).localeCompare(String(b.txn_date)))
+  const ins = txns.filter(t => t.account_id && t.txn_type === 'income' && OWN_IN_CATS.has(String(t.category ?? '').trim()))
+  const used = new Set<any>(), pairs: { out: any; in: any }[] = []
+  const day = (d: string) => Math.floor(Date.parse(`${String(d).slice(0, 10)}T00:00:00Z`) / 864e5)
+  for (const o of outs) {
+    const amt = Number(o.amount) || 0
+    let best: any = null, gap = Infinity
+    for (const i of ins) {
+      if (used.has(i) || i.account_id === o.account_id || i.currency !== o.currency) continue
+      const g = Math.abs(day(i.txn_date) - day(o.txn_date))
+      if (g > 3 || Math.abs((Number(i.amount) || 0) - amt) > Math.max(1, amt * 0.005)) continue
+      if (g < gap) { best = i; gap = g }
+    }
+    if (best) { used.add(best); pairs.push({ out: o, in: best }) }
+  }
+  return pairs
 }
 
 export const ROW_LABEL: Record<string, string> = {
@@ -101,7 +131,8 @@ const REMIT_IN = new Set(['NRE Received', 'Received from UAE', 'Inward Remittanc
 const NRO_MOVE = new Set(['NRE to NRO', 'NRE → NRO', 'NRO Settled'])
 export const isRemitOut = (t: any) => t?.currency === 'AED' && t?.txn_type !== 'income' && REMIT_OUT.has(catOf(t))
 export const isRemitIn = (t: any) => !t?._remit && t?.currency === 'INR' && t?.txn_type !== 'expense' && REMIT_IN.has(String(t.category ?? '').trim())
-export const isNreToNro = (t: any) => t?.currency === 'INR' && (t?.sub_category === 'Internal' || NRO_MOVE.has(String(t.category ?? '').trim()))
+// (an imported "Self Transfer" once carried the Internal kind — it's not NRE → NRO)
+export const isNreToNro = (t: any) => t?.currency === 'INR' && ((t?.sub_category === 'Internal' && String(t.category ?? '').trim() !== 'Self Transfer') || NRO_MOVE.has(String(t.category ?? '').trim()))
 
 export interface Remittance {
   id: string; sentOn: string | null; landedOn: string; aed: number | null; inr: number

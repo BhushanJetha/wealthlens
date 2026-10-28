@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { X, Loader2, ArrowRight, RefreshCw, Plus, Settings2, Globe, ArrowLeftRight, Users, Banknote, CreditCard, Paperclip } from 'lucide-react'
+import { X, Loader2, ArrowRight, RefreshCw, Plus, Settings2, Globe, ArrowLeftRight, Users, Banknote, CreditCard, Paperclip, Undo2, Landmark } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useViewStore } from '@/store/viewStore'
 import { useCategoryStore } from '@/store/categoryStore'
@@ -15,13 +15,23 @@ import { RECEIPT_TYPES, uploadReceipt, openReceipt, removeReceipt } from '@/lib/
 
 type TxnType = 'expense' | 'income' | 'transfer' | 'loan'
 
+// Kinds of transfer, grouped: between your own accounts (a move — never
+// spending or income) first, then money to others (counted as sent)
 const TRANSFER_SUBTYPES = [
-  { value: 'International',  label: 'UAE → India',     desc: 'Send money home',              icon: Globe,          color: '#3B8EF0' },
-  { value: 'Internal',       label: 'NRE → NRO',       desc: 'Between your own accounts',    icon: ArrowLeftRight, color: '#6A55E8' },
-  { value: 'Family',         label: 'Family transfer', desc: 'Allowance to family',          icon: Users,          color: '#2FB67C' },
-  { value: 'ATM Withdrawal', label: 'ATM cash',        desc: 'Bank to your cash wallet',     icon: Banknote,       color: '#0891B2' },
-  { value: 'Card bill',      label: 'Card bill',       desc: 'Pay a credit card from a bank', icon: CreditCard,    color: '#9333EA' },
+  { value: 'International',  group: 'own',    label: 'UAE → India',      desc: 'Send money home (AED → ₹)',      icon: Globe,          color: '#3B8EF0' },
+  { value: 'Internal',       group: 'own',    label: 'NRE → NRO',        desc: 'For spending in India',          icon: ArrowLeftRight, color: '#6A55E8' },
+  { value: 'NRO to NRE',     group: 'own',    label: 'NRO → NRE',        desc: 'Back to NRE (form 15CA/CB)',     icon: Undo2,          color: '#7C3AED' },
+  { value: 'Own',            group: 'own',    label: 'My other account', desc: 'Same country, e.g. ENBD → ADCB', icon: Landmark,       color: '#0E7490' },
+  { value: 'Card bill',      group: 'own',    label: 'Card bill',        desc: 'Pay a credit card from a bank',  icon: CreditCard,     color: '#9333EA' },
+  { value: 'ATM Withdrawal', group: 'own',    label: 'ATM cash',         desc: 'Bank to your cash wallet',       icon: Banknote,       color: '#0891B2' },
+  { value: 'Family',         group: 'others', label: 'Family support',   desc: 'Allowance to family',            icon: Users,          color: '#2FB67C' },
 ]
+const TRANSFER_GROUPS = [
+  { key: 'own', label: 'Between your own accounts', note: 'not spending' },
+  { key: 'others', label: 'To others', note: 'counted as money sent' },
+]
+// Kinds that move money into another of your accounts (pick which one)
+const TO_ACCOUNT_KINDS = ['International', 'Internal', 'NRO to NRE', 'Own', 'Card bill']
 // How a bank payment was made (optional; else read from the description)
 const PAY_MODES = [['upi', 'UPI'], ['netbanking', 'Net banking'], ['debit_card', 'Debit card'], ['transfer', 'Transfer'], ['autodebit', 'Auto-debit']] as const
 // Loan categories are recorded as loan payments (they show under Loan payments)
@@ -139,14 +149,15 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
   }
   function setTransferSubtype(sub: string) {
     const isAtm = sub === 'ATM Withdrawal', isBill = sub === 'Card bill'
-    const autoMerchant = sub === 'International' ? 'Transfer to India' : sub === 'Internal' ? 'NRE to NRO' : isAtm ? 'ATM Withdrawal' : isBill ? 'Credit card bill' : 'Family Transfer'
+    const autoMerchant = sub === 'International' ? 'Transfer to India' : sub === 'Internal' ? 'NRE to NRO' : sub === 'NRO to NRE' ? 'NRO to NRE'
+      : sub === 'Own' ? 'Transfer to my account' : isAtm ? 'ATM Withdrawal' : isBill ? 'Credit card bill' : 'Family Transfer'
     setForm(p => ({
       ...p, sub_category: isBill ? '' : sub, counter_account_id: '',
       // ATM cash is a money movement into the Cash wallet; a card bill settles
       // card spends already counted — neither is spending
       category:   isAtm ? 'ATM Withdrawal' : isBill ? 'Credit Card Payment' : 'Transfer',
       account_id: isAtm ? '__cash__' : (p.account_id === '__cash__' ? '' : p.account_id),
-      currency:   sub === 'International' ? 'AED' : p.currency,
+      currency:   sub === 'International' ? 'AED' : sub === 'Internal' || sub === 'NRO to NRE' ? 'INR' : p.currency,
       merchant:   p.merchant && !TRANSFER_SUBTYPES.some(x => x.label === p.merchant) ? p.merchant : autoMerchant,
     }))
   }
@@ -263,8 +274,11 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
           {isTransfer && (
             <div>
               <Label>Kind of transfer</Label>
+              {TRANSFER_GROUPS.map(g => (
+              <div key={g.key} className="mb-2 last:mb-0">
+              <div className="text-[10.5px] font-semibold uppercase tracking-[0.05em] mb-1.5" style={{ color: 'var(--text4)' }}>{g.label} <span className="normal-case tracking-normal font-normal">· {g.note}</span></div>
               <div className="grid grid-cols-2 gap-2">
-                {TRANSFER_SUBTYPES.map(s => {
+                {TRANSFER_SUBTYPES.filter(s => s.group === g.key).map(s => {
                   const on = transferKind === s.value
                   return (
                     <button key={s.value} onClick={() => setTransferSubtype(s.value)} aria-pressed={on}
@@ -279,6 +293,8 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
                   )
                 })}
               </div>
+              </div>
+              ))}
               {form.sub_category === 'ATM Withdrawal' && (
                 <div className="mt-2 text-[12px] rounded-lg px-3 py-2 leading-snug" style={{ background: '#E0F4F8', color: '#0E7490' }}>
                   Adds the cash to your Cash wallet. It isn’t counted as spending; log what you buy with it as cash expenses.
@@ -322,7 +338,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
           </div>
 
           {/* The other side of a move, so both balances update from one entry */}
-          {isTransfer && ['International', 'Internal', 'Card bill'].includes(transferKind) && (
+          {isTransfer && TO_ACCOUNT_KINDS.includes(transferKind) && (
             <div>
               <Label>{transferKind === 'Card bill' ? 'Card paid' : transferKind === 'International' ? 'Lands in (India account)' : 'To account'}</Label>
               <select value={form.counter_account_id} onChange={e => set({ counter_account_id: e.target.value })} className="wl-input" style={FIELD}>

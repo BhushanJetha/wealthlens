@@ -95,6 +95,7 @@ export default function MoneyFlowClient({ transactions, accounts }: { transactio
     const paired = remits.filter(r => r.aed && r.source !== 'estimated')
     const rate = paired.length ? paired.reduce((a, r) => a + r.inr, 0) / paired.reduce((a, r) => a + (r.aed ?? 0), 0) : null
     const moved = sum(t => isNreToNro(t))
+    const back = sum(t => t.currency === 'INR' && catOf(t) === 'NRO to NRE')     // moved back from NRO to NRE
     const earnedIndia = sum(t => inr(t) && isIncome(t, 'consolidated'))
     const side = (nre: boolean) => (t: any) => inr(t) && isNreAcc(t.account_id) === nre
     const outOf = (nre: boolean) => ({
@@ -104,14 +105,14 @@ export default function MoneyFlowClient({ transactions, accounts }: { transactio
     const nre = outOf(true), nro = outOf(false)
     const moves = P.filter(t => (MOVEMENT_CATS.has(catOf(t)) || catOf(t) === CC_BILL) && !isRemitOut(t))
       .sort((a, b) => b.txn_date.localeCompare(a.txn_date))
-    return { uae, landed, sentAed, rate, moved, earnedIndia, nre, nro, moves }
+    return { uae, landed, sentAed, rate, moved, back, earnedIndia, nre, nro, moves }
   }, [transactions, remits, fromMonth, toMonth, accounts])
 
   const { uae, nre, nro } = f
   const uaeLeft = uae.earned - uae.spent - uae.emi - uae.invest - uae.sent
-  const nreIn = f.landed + nre.earned, nreUsed = nre.spent + nre.emi + nre.invest
+  const nreIn = f.landed + nre.earned + f.back, nreUsed = nre.spent + nre.emi + nre.invest
   const nreLeft = nreIn - f.moved - nreUsed
-  const nroIn = f.moved + nro.earned, nroLeft = nroIn - nro.spent - nro.emi - nro.invest
+  const nroIn = f.moved + nro.earned, nroLeft = nroIn - nro.spent - nro.emi - nro.invest - f.back
   const indiaIn = f.landed + f.earnedIndia
   const indiaSpent = nre.spent + nro.spent, indiaEmi = nre.emi + nro.emi, indiaInvest = nre.invest + nro.invest
   const indiaSaved = indiaIn - indiaSpent - indiaEmi
@@ -166,7 +167,7 @@ export default function MoneyFlowClient({ transactions, accounts }: { transactio
                 amount: remits.filter(r => r.source === s).reduce((a, r) => a + r.inr, 0), color: STATUS[s].color })),
             ]} />
           <Flow />
-          <Stage icon={Landmark} where="India" title="NRE account" big={inrFmt(nreIn)} sub="Where remittances land" total={Math.max(nreIn, f.moved + nreUsed)}
+          <Stage icon={Landmark} where="India" title="NRE account" big={inrFmt(nreIn)} sub={f.back > 0 ? `Where remittances land · incl. ${inrShort(f.back)} back from NRO` : 'Where remittances land'} total={Math.max(nreIn, f.moved + nreUsed)}
             rows={[
               { label: 'Moved to NRO', value: inrShort(f.moved), amount: f.moved, color: '#3B8EF0' },
               ...(nreUsed > 0 ? [{ label: 'Paid from NRE (EMIs, SIPs…)', value: inrShort(nreUsed), amount: nreUsed, color: '#2FB67C' }] : []),
@@ -178,6 +179,7 @@ export default function MoneyFlowClient({ transactions, accounts }: { transactio
               { label: 'Spent', value: inrShort(nro.spent), amount: nro.spent, color: '#6A55E8' },
               { label: 'EMIs', value: inrShort(nro.emi), amount: nro.emi, color: '#F29A2E' },
               { label: 'Invested', value: inrShort(nro.invest), amount: nro.invest, color: '#2FB67C' },
+              ...(f.back > 0 ? [{ label: 'Moved back to NRE', value: inrShort(f.back), amount: f.back, color: '#7C3AED' }] : []),
               { label: nroLeft >= 0 ? 'Left over' : 'Drawn from savings', value: inrShort(nroLeft), amount: Math.max(nroLeft, 0), color: '#CBD5E1' },
             ]} />
         </div>
@@ -248,7 +250,8 @@ export default function MoneyFlowClient({ transactions, accounts }: { transactio
             <li><b style={{ color: 'var(--text2)' }}>UAE → India</b> is your own money moving. Its AED debit and ₹ credit are paired and counted once.</li>
             <li><b style={{ color: 'var(--text2)' }}>India income</b> is what lands in NRE. It shows as income in the India view only.</li>
             <li>In the <b style={{ color: 'var(--text2)' }}>All</b> view your UAE salary is the income, so the remittance isn’t added again.</li>
-            <li><b style={{ color: 'var(--text2)' }}>NRE → NRO</b>, card bills and ATM cash are moves: never income or spending.</li>
+            <li><b style={{ color: 'var(--text2)' }}>NRE → NRO</b>, NRO → NRE, transfers to your other accounts, card bills and ATM cash are moves: never income or spending.</li>
+            <li>Imported transfers with no kind are matched to your own account when the same amount lands in another of yours within 3 days; the rest wait in <b style={{ color: 'var(--text2)' }}>Review</b> for one tap.</li>
             <li><b style={{ color: 'var(--text2)' }}>Family support</b> (allowance to parents or spouse) is spending — the money leaves your accounts.</li>
             <li>Accounts named “NRE” are treated as NRE; your other India accounts as NRO / daily spending.</li>
           </ul>
