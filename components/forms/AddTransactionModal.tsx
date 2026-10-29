@@ -41,8 +41,9 @@ const TO_ACCOUNT_KINDS = ['International', 'Internal', 'Own', 'Card bill']
 // Kinds that only exist in one currency: UAE → India leaves in AED, NRE → NRO is ₹
 const KIND_CURRENCY: Record<string, 'AED' | 'INR'> = { International: 'AED', Internal: 'INR', 'NRO to NRE': 'INR' }
 export const kindFits = (kind: string, currency: string) => !KIND_CURRENCY[kind] || KIND_CURRENCY[kind] === currency
-// How a bank payment was made (optional; else read from the description)
-const PAY_MODES = [['upi', 'UPI'], ['netbanking', 'Net banking'], ['debit_card', 'Debit card'], ['transfer', 'Transfer'], ['autodebit', 'Auto-debit']] as const
+// How a bank payment was made (optional; else read from the description).
+// UPI and net banking are India's; the rest work in both countries.
+const PAY_MODES = [['upi', 'UPI', 'INR'], ['netbanking', 'Net banking', 'INR'], ['debit_card', 'Debit card', null], ['transfer', 'Transfer', null], ['autodebit', 'Auto-debit', null]] as const
 // Loan categories are recorded as loan payments (they show under Loan payments)
 const LOAN_CATS = new Set(['Loan on Card', 'EMI/Loan'])
 
@@ -142,6 +143,15 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
   useEffect(() => { if (form.currency === 'AED' && liveRate === null) fetchLiveRate() }, [form.currency])
 
   const set = (patch: Partial<typeof form>) => setForm(p => ({ ...p, ...patch }))
+  // Accounts and payment options follow the currency (₹ = India, AED = UAE):
+  // switching it drops an account or payment mode from the other country
+  function setCurrency(c: string) {
+    const other = (id: string) => !!id && id !== '__cash__' && accounts.some(a => a.id === id && a.currency !== c)
+    setForm(p => ({ ...p, currency: c,
+      account_id: other(p.account_id) ? '' : p.account_id,
+      counter_account_id: other(p.counter_account_id) && p.sub_category !== 'International' ? '' : p.counter_account_id,
+      payment_mode: PAY_MODES.some(([k, , only]) => k === p.payment_mode && only && only !== c) ? '' : p.payment_mode }))
+  }
   const isTransfer = form.txn_type === 'transfer'
   const isIncome   = form.txn_type === 'income'
   const showTax    = form.txn_type === 'expense' && form.currency === 'INR'
@@ -298,7 +308,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
                   autoFocus={mode === 'add'} aria-label="Amount"
                   className={`wl-input ${sym === 'AED' ? 'pl-12' : 'pl-8'} tabular-nums`} style={{ ...FIELD, height: 50, fontSize: 22, fontWeight: 700 }} />
               </div>
-              <Segmented label="Currency" value={form.currency} onChange={c => set({ currency: c })}
+              <Segmented label="Currency" value={form.currency} onChange={setCurrency}
                 options={[{ value: 'INR', label: '₹ INR' }, { value: 'AED', label: 'AED' }]} />
             </div>
             {form.currency === 'AED' && Number(form.amount) > 0 && (
@@ -369,13 +379,21 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
             </div>
             {form.sub_category !== 'ATM Withdrawal' ? (
               <div>
-                <Label>{isTransfer ? 'From account' : isIncome ? 'Received in' : 'Paid from'}</Label>
-                <select value={form.account_id === '__cash__' ? cashId : form.account_id} onChange={e => set({ account_id: e.target.value })} className="wl-input" style={FIELD}>
-                  <option value="">Not linked</option>
-                  {!isTransfer && <option value={cashId}>Cash wallet</option>}
-                  {accounts.filter(a => a.account_type !== 'wallet').filter(a => !isTransfer || (a.currency === form.currency && a.account_type !== 'credit_card'))
-                    .map(a => <option key={a.id} value={a.id}>{a.account_type === 'credit_card' ? 'Card · ' : ''}{a.name}{a.bank_name && a.bank_name !== a.name ? ` · ${a.bank_name}` : ''}</option>)}
-                </select>
+                <Label right={<span className="text-[11px]" style={{ color: 'var(--text4)' }}>{form.currency === 'AED' ? 'UAE' : 'India'}</span>}>{isTransfer ? 'From account' : isIncome ? 'Received in' : 'Paid from'}</Label>
+                {(() => {
+                  // Only this currency's accounts (and the one already chosen, so an edit never loses it)
+                  const opts = accounts.filter(a => a.account_type !== 'wallet' && (a.id === form.account_id || a.currency === form.currency))
+                  const banks = opts.filter(a => a.account_type !== 'credit_card'), cards = isTransfer ? [] : opts.filter(a => a.account_type === 'credit_card')
+                  const label = (a: any) => `${a.name}${a.bank_name && a.bank_name !== a.name ? ` · ${a.bank_name}` : ''}${a.currency !== form.currency ? ` (${a.currency})` : ''}`
+                  return (
+                    <select value={form.account_id === '__cash__' ? cashId : form.account_id} onChange={e => set({ account_id: e.target.value })} className="wl-input" style={FIELD}>
+                      <option value="">Not linked</option>
+                      {!isTransfer && <option value={cashId}>Cash wallet</option>}
+                      {banks.length > 0 && <optgroup label="Bank accounts">{banks.map(a => <option key={a.id} value={a.id}>{label(a)}</option>)}</optgroup>}
+                      {cards.length > 0 && <optgroup label="Credit cards">{cards.map(a => <option key={a.id} value={a.id}>{label(a)}</option>)}</optgroup>}
+                    </select>
+                  )
+                })()}
               </div>
             ) : (
               <div>
@@ -419,7 +437,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
               <div>
                 <Label>How you paid (optional)</Label>
                 <div className="flex flex-wrap gap-1.5">
-                  {PAY_MODES.map(([k, l]) => (
+                  {PAY_MODES.filter(([, , only]) => !only || only === form.currency).map(([k, l]) => (
                     <button key={k} onClick={() => set({ payment_mode: form.payment_mode === k ? '' : k })} aria-pressed={form.payment_mode === k} className="wl-chip" style={{ height: 32 }}>{l}</button>
                   ))}
                 </div>
