@@ -29,6 +29,7 @@ export const SECTIONS: NavSection[] = [
       { label: 'Money report',   href: '/dashboard/reports' },
       { label: 'Expense report', href: '/dashboard/expenses/report' },
       { label: 'Income report',  href: '/dashboard/income/report' },
+      { label: 'Accounts report', href: '/dashboard/reports/accounts' },
     ] },
     { label: 'Review', href: '/dashboard/money/review', hidden: true },
     { label: 'Import', href: '/dashboard/ingest', hidden: true },
