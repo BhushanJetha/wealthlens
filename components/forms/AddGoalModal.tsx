@@ -192,13 +192,13 @@ export default function AddGoalModal({ onClose, editData, allInvestments, defaul
             )}
           </div>
 
-          <div className="grid grid-cols-[1fr_auto] gap-3 items-end">
-            <div>
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 items-end">
+            <div className="min-w-0">
               <Label>{recurring ? 'How much each time' : 'How much, in today’s money'}</Label>
               <div className="flex items-center rounded-xl px-3" style={{ background: '#F7F8FA', border: '1px solid #E2E8F0', height: 46 }}>
                 <span className="text-[14px] font-semibold mr-2" style={{ color: 'var(--text3)' }}>{cur === 'AED' ? 'AED' : '₹'}</span>
                 <input value={target} onChange={e => setTarget(e.target.value.replace(/[^0-9.]/g, ''))} inputMode="decimal" placeholder="0" aria-label="Target amount"
-                  className="flex-1 bg-transparent outline-none text-[18px] font-bold tabular-nums" style={{ color: 'var(--text)' }} />
+                  className="flex-1 min-w-0 w-full bg-transparent outline-none text-[18px] font-bold tabular-nums" style={{ color: 'var(--text)' }} />
               </div>
             </div>
             <Segmented label="Currency" value={cur} onChange={(c: Cur) => { setCur(c); setAccountId('') }} options={[{ value: 'INR', label: '₹ India' }, { value: 'AED', label: 'AED UAE' }]} />

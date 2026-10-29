@@ -6,15 +6,13 @@ import { createClient } from '@/lib/supabase/client'
 import { buildCategoryMemory } from '@/lib/categoryMemory'
 import { useViewStore } from '@/store/viewStore'
 import { useCategoryStore } from '@/store/categoryStore'
-import {
-  X, Upload, Loader2, CheckCircle2, AlertCircle,
-  FileText, Lock, Eye, EyeOff, CreditCard, Trash2,
-} from 'lucide-react'
+import { Upload, CheckCircle2, Lock, CreditCard } from 'lucide-react'
 import { useDropzone } from 'react-dropzone'
+import { ImportSheet, BankField, DropZone, PasswordStep, Working, Notice, ResultState, ReviewSummary, ReviewRow, rowSelect, rowSelectStyle, dayLabel, type ImportStage } from './StatementImport'
 
 interface Props { onClose: () => void }
 
-type Stage = 'idle' | 'detecting' | 'needs-password' | 'parsing' | 'review' | 'saving' | 'done' | 'error'
+type Stage = ImportStage
 
 interface ParsedTxn {
   date: string
@@ -344,378 +342,106 @@ export default function CreditCardUploadModal({ onClose }: Props) {
   const sym           = result?.currency === 'AED' ? 'AED ' : '₹'
   const selectedCount = result?.transactions.filter(t => t.selected).length ?? 0
 
+  const monthLabel = (m: string) => new Date(`${m}-01T00:00:00`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
+  const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+  const money = (n: number) => `${sym}${Number(n).toLocaleString('en-IN')}`
+  const btn = { height: 44, padding: '0 18px' }
+  const primary = { height: 44, fontSize: 14 }
+
+  const footer =
+    stage === 'idle' ? <>
+      <button onClick={onClose} className="wl-btn" style={btn}>Cancel</button>
+      <button onClick={() => submit()} disabled={!file} className="wl-btn wl-btn-primary flex-1 disabled:opacity-50" style={primary}><Upload size={15} />Read statement</button>
+    </>
+    : stage === 'needs-password' ? <>
+      <button onClick={() => { setStage('idle'); setPassword('') }} className="wl-btn" style={btn}>Change file</button>
+      <button onClick={() => submit(password)} disabled={!password} className="wl-btn wl-btn-primary flex-1 disabled:opacity-50" style={primary}><Lock size={15} />Unlock and read</button>
+    </>
+    : stage === 'review' ? <>
+      <button onClick={() => { setStage('idle'); setResult(null) }} className="wl-btn" style={btn}>Start over</button>
+      <button onClick={save} disabled={selectedCount === 0} className="wl-btn wl-btn-primary flex-1 disabled:opacity-50" style={primary}><CheckCircle2 size={15} />Save {plural(selectedCount, 'row')}</button>
+    </>
+    : stage === 'done' ? <button onClick={onClose} className="wl-btn wl-btn-primary flex-1" style={primary}>Done</button>
+    : stage === 'error' ? <>
+      <button onClick={onClose} className="wl-btn" style={btn}>Close</button>
+      <button onClick={() => setStage('idle')} className="wl-btn wl-btn-primary flex-1" style={primary}>Try again</button>
+    </>
+    : undefined
+
   return (
-    <div className="fixed inset-0 wl-sheet bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="wl-sheet-panel rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col"
-        style={{ background: '#fff', border: '1px solid var(--border)', boxShadow: '0 8px 40px rgba(0,0,0,0.15)' }}>
+    <ImportSheet icon={CreditCard} color="#6A55E8" title="Credit card statement" stage={stage} onClose={onClose} footer={footer}
+      hint="A PDF from your card. Every row comes back for you to check before it’s saved.">
 
-        {/* Header */}
-        <div className="flex justify-between items-center px-6 py-4 border-b flex-shrink-0"
-          style={{ borderColor: 'var(--border)' }}>
-          <div className="flex items-center gap-2">
-            <CreditCard size={18} style={{ color: 'var(--blue)' }} />
-            <h2 className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>Credit Card Statement</h2>
-          </div>
-          <button onClick={onClose} style={{ color: 'var(--text3)' }}><X size={18} /></button>
+      {stage === 'idle' && (
+        <div className="flex flex-col gap-4">
+          <BankField value={bank} onChange={setBank} banks={BANKS} />
+          <DropZone root={getRootProps()} input={getInputProps()} active={isDragActive} file={file} onClear={() => setFile(null)} what="card statement" />
         </div>
+      )}
 
-        <div className="flex-1 overflow-y-auto p-6">
+      {stage === 'detecting' && <Working title="Opening the PDF…" />}
 
-          {/* IDLE */}
-          {stage === 'idle' && (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1.5"
-                  style={{ color: 'var(--text3)' }}>
-                  Bank (optional — helps with password hints)
-                </label>
-                <select value={bank} onChange={e => setBank(e.target.value)}
-                  className="wl-input w-full"
-                  style={{ background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }}>
-                  {BANKS.map(b => <option key={b.value} value={b.value}>{b.label}</option>)}
-                </select>
-              </div>
+      {stage === 'needs-password' && (
+        <PasswordStep bank={detectedBank} hint={pwdHint} value={password} onChange={setPassword}
+          show={showPwd} onShow={() => setShowPwd(p => !p)} wrong={wrongPwd} onSubmit={() => submit(password)} />
+      )}
 
-              <div {...getRootProps()}
-                className="border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all"
-                style={{
-                  borderColor: isDragActive ? 'var(--blue)' : 'var(--border)',
-                  background: isDragActive ? '#EFF6FF' : 'var(--bg2)',
-                }}>
-                <input {...getInputProps()} />
-                <CreditCard size={28} className="mx-auto mb-2" style={{ color: 'var(--text3)' }} />
-                <div className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
-                  {isDragActive ? 'Drop your CC statement here' : 'Drag & drop or click to select PDF'}
-                </div>
-                <div className="text-[11px] mt-1" style={{ color: 'var(--text3)' }}>
-                  Password-protected PDFs are supported
-                </div>
-              </div>
+      {stage === 'parsing' && <Working title="Reading the transactions…" sub="Rule-based reader on our server, no AI" />}
 
-              {file && (
-                <div className="flex items-center gap-2 p-3 rounded-lg" style={{ background: 'var(--bg2)' }}>
-                  <FileText size={16} style={{ color: 'var(--blue)' }} />
-                  <span className="text-[12px] font-medium flex-1 truncate" style={{ color: 'var(--text)' }}>
-                    {file.name}
-                  </span>
-                  <button onClick={() => setFile(null)} style={{ color: 'var(--text3)' }}><X size={14} /></button>
-                </div>
-              )}
+      {stage === 'review' && result && (
+        <div className="flex flex-col gap-3.5">
+          {duplicateCount > 0 && (
+            <Notice title={`${plural(duplicateCount, 'row is', 'rows are')} already in the app`}>They’re unticked. Tick one to save it again.</Notice>
+          )}
+          {parseWarning && <Notice>{parseWarning}</Notice>}
 
-              <div className="flex gap-3">
-                <button onClick={onClose}
-                  className="flex-1 py-2.5 rounded-lg border text-[12px] font-semibold"
-                  style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>
-                  Cancel
-                </button>
-                <button onClick={() => submit()} disabled={!file}
-                  className="flex-1 py-2.5 rounded-lg text-white text-[12px] font-bold flex items-center justify-center gap-2 disabled:opacity-40"
-                  style={{ background: 'var(--blue)' }}>
-                  <Upload size={14} />
-                  Upload & Parse
-                </button>
-              </div>
+          <ReviewSummary
+            title={`${result.card_name ?? result.bank_name}${result.card_last4 ? ` ••••${result.card_last4}` : ''}`}
+            tags={['Credit card', result.currency]}
+            facts={[
+              { label: 'Ticked to save', value: `${selectedCount} of ${result.transactions.length}` },
+              ...(result.outstanding_bal ? [{ label: 'Outstanding', value: money(result.outstanding_bal), color: 'var(--rose)' }] : []),
+              ...(result.minimum_due ? [{ label: 'Minimum due', value: money(result.minimum_due), color: '#B96A0B' }] : []),
+              ...(result.due_date ? [{ label: 'Pay by', value: dayLabel(result.due_date) }] : []),
+              ...(result.credit_limit ? [{ label: 'Limit', value: money(result.credit_limit) }] : []),
+            ]}
+            onAll={() => selectAll(true)} onNone={() => selectAll(false)} />
+
+          {result.transactions.length === 0 ? <Notice>No transactions were found in this PDF.</Notice> : (
+            <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--line)' }}>
+              {result.transactions.map((t, i) => (
+                <ReviewRow key={i} t={t} sym={sym} first={i === 0} onToggle={() => toggleTxn(i)} onRemove={() => removeTxn(i)}
+                  category={
+                    <select value={t.category} onChange={e => updateTxn(i, 'category', e.target.value)} aria-label="Category" className={rowSelect} style={rowSelectStyle}>
+                      {(cardCats.includes(t.category) ? cardCats : [t.category, ...cardCats]).map(c => <option key={c}>{c}</option>)}
+                    </select>
+                  }
+                  type={
+                    <select value={t.txn_type} onChange={e => updateTxn(i, 'txn_type', e.target.value as 'expense' | 'income' | 'transfer' | 'loan')} aria-label="Type" className={rowSelect} style={rowSelectStyle}>
+                      <option value="expense">Expense</option>
+                      <option value="income">Refund</option>
+                      <option value="transfer">Card payment</option>
+                      <option value="loan">Loan</option>
+                    </select>
+                  } />
+              ))}
             </div>
           )}
-
-          {/* DETECTING */}
-          {stage === 'detecting' && (
-            <div className="flex flex-col items-center py-12 gap-3">
-              <Loader2 size={32} className="animate-spin" style={{ color: 'var(--blue)' }} />
-              <div className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Checking PDF…</div>
-            </div>
-          )}
-
-          {/* NEEDS PASSWORD */}
-          {stage === 'needs-password' && (
-            <div className="space-y-4">
-              <div className="flex items-start gap-3 p-4 rounded-xl"
-                style={{ background: '#FEF3C7', border: '1px solid #FCD34D' }}>
-                <Lock size={20} style={{ color: '#D97706', flexShrink: 0, marginTop: 1 }} />
-                <div>
-                  <div className="text-[13px] font-semibold" style={{ color: '#92400E' }}>
-                    {detectedBank ? `${detectedBank} — Password Protected` : 'This PDF is password-protected'}
-                  </div>
-                  <div className="text-[11px] mt-1" style={{ color: '#92400E' }}>
-                    <strong>Hint:</strong> {pwdHint}
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] uppercase tracking-wider font-semibold mb-1.5"
-                  style={{ color: 'var(--text3)' }}>
-                  PDF Password
-                </label>
-                <div className="relative">
-                  <input
-                    type={showPwd ? 'text' : 'password'}
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && password && submit(password)}
-                    placeholder="Enter PDF password…"
-                    className="wl-input w-full pr-10"
-                    style={{
-                      background: 'var(--bg2)',
-                      border: `1px solid ${wrongPwd ? 'var(--rose)' : 'var(--border)'}`,
-                      color: 'var(--text)',
-                    }}
-                    autoFocus
-                  />
-                  <button type="button" onClick={() => setShowPwd(p => !p)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2"
-                    style={{ color: 'var(--text3)' }}>
-                    {showPwd ? <EyeOff size={15} /> : <Eye size={15} />}
-                  </button>
-                </div>
-                {wrongPwd && (
-                  <div className="text-[11px] mt-1" style={{ color: 'var(--rose)' }}>
-                    Incorrect password — please try again.
-                  </div>
-                )}
-              </div>
-
-              <div className="flex gap-3">
-                <button onClick={() => { setStage('idle'); setPassword('') }}
-                  className="flex-1 py-2.5 rounded-lg border text-[12px] font-semibold"
-                  style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>
-                  Change File
-                </button>
-                <button onClick={() => submit(password)} disabled={!password}
-                  className="flex-1 py-2.5 rounded-lg text-white text-[12px] font-bold flex items-center justify-center gap-2 disabled:opacity-40"
-                  style={{ background: 'var(--blue)' }}>
-                  <Lock size={14} />
-                  Unlock & Parse
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* PARSING */}
-          {stage === 'parsing' && (
-            <div className="flex flex-col items-center py-12 gap-3">
-              <Loader2 size={32} className="animate-spin" style={{ color: 'var(--blue)' }} />
-              <div className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
-                Parsing transactions…
-              </div>
-              <div className="text-[11px]" style={{ color: 'var(--text3)' }}>Reading your PDF locally</div>
-            </div>
-          )}
-
-          {/* REVIEW */}
-          {stage === 'review' && result && (
-            <div className="space-y-4">
-              {duplicateCount > 0 && (
-                <div className="flex items-start gap-2 p-3 rounded-lg text-[11px]"
-                  style={{ background: '#FEF3C7', border: '1px solid #FCD34D', color: '#92400E' }}>
-                  <span style={{ flexShrink: 0 }}>⚠️</span>
-                  <span>
-                    <strong>{duplicateCount} transaction{duplicateCount !== 1 ? 's' : ''} already imported</strong> — pre-deselected below.
-                    You can re-check them if you want to save again.
-                  </span>
-                </div>
-              )}
-              {parseWarning && (
-                <div className="flex items-start gap-2 p-3 rounded-lg text-[11px]"
-                  style={{ background: '#FEF3C7', border: '1px solid #FCD34D', color: '#92400E' }}>
-                  <span style={{ flexShrink: 0 }}>⚠️</span>
-                  <span>{parseWarning}</span>
-                </div>
-              )}
-              {/* Summary bar */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-[13px] font-bold" style={{ color: 'var(--text)' }}>
-                    {result.card_name ?? result.bank_name}{result.card_last4 ? ` ••••${result.card_last4}` : ''}
-                    <span className="ml-2 text-[10px] font-normal px-1.5 py-0.5 rounded"
-                      style={{ background: 'var(--bg2)', color: 'var(--text3)' }}>
-                      {result.currency}
-                    </span>
-                  </div>
-                  <div className="text-[11px] mt-0.5" style={{ color: 'var(--text3)' }}>
-                    {result.transactions.length} transactions · {selectedCount} selected
-                  </div>
-                  {/* Show extracted card details */}
-                  {(result.credit_limit || result.outstanding_bal || result.minimum_due || result.due_date) && (
-                    <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1">
-                      {result.credit_limit    && <span className="text-[10px]" style={{ color:'var(--text3)' }}>Limit: <strong style={{ color:'var(--text)' }}>{result.currency === 'AED' ? 'AED ' : '₹'}{Number(result.credit_limit).toLocaleString('en-IN')}</strong></span>}
-                      {result.outstanding_bal && <span className="text-[10px]" style={{ color:'var(--text3)' }}>Outstanding: <strong style={{ color:'var(--rose)' }}>{result.currency === 'AED' ? 'AED ' : '₹'}{Number(result.outstanding_bal).toLocaleString('en-IN')}</strong></span>}
-                      {result.minimum_due     && <span className="text-[10px]" style={{ color:'var(--text3)' }}>Min Due: <strong style={{ color:'var(--gold)' }}>{result.currency === 'AED' ? 'AED ' : '₹'}{Number(result.minimum_due).toLocaleString('en-IN')}</strong></span>}
-                      {result.due_date        && <span className="text-[10px]" style={{ color:'var(--text3)' }}>Due: <strong style={{ color:'var(--text)' }}>{result.due_date}</strong></span>}
-                    </div>
-                  )}
-                </div>
-                <div className="flex gap-1.5">
-                  <button onClick={() => selectAll(true)}
-                    className="text-[10px] px-2.5 py-1 rounded font-medium"
-                    style={{ background: 'var(--bg2)', color: 'var(--text3)' }}>
-                    Select All
-                  </button>
-                  <button onClick={() => selectAll(false)}
-                    className="text-[10px] px-2.5 py-1 rounded font-medium"
-                    style={{ background: 'var(--bg2)', color: 'var(--text3)' }}>
-                    None
-                  </button>
-                </div>
-              </div>
-
-              {/* Transaction table */}
-              <div className="rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
-                <div className="overflow-y-auto" style={{ maxHeight: 340 }}>
-                  <table className="w-full text-[11px]">
-                    <thead className="sticky top-0" style={{ background: 'var(--bg2)' }}>
-                      <tr>
-                        <th className="px-2 py-2 w-6"></th>
-                        <th className="px-2 py-2 text-left font-semibold" style={{ color: 'var(--text3)' }}>Date</th>
-                        <th className="px-2 py-2 text-left font-semibold" style={{ color: 'var(--text3)' }}>Merchant</th>
-                        <th className="px-2 py-2 text-right font-semibold" style={{ color: 'var(--text3)' }}>Amount</th>
-                        <th className="px-2 py-2 text-left font-semibold" style={{ color: 'var(--text3)' }}>Category</th>
-                        <th className="px-2 py-2 text-left font-semibold" style={{ color: 'var(--text3)' }}>Type</th>
-                        <th className="px-2 py-2 w-6"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {result.transactions.map((t, i) => (
-                        <tr key={i} className="border-t transition-all"
-                          style={{
-                            borderColor: 'var(--border)',
-                            opacity: t.selected ? 1 : 0.4,
-                            background: t.selected ? 'transparent' : 'var(--bg2)',
-                          }}>
-                          <td className="px-2 py-2 text-center">
-                            <input type="checkbox" checked={t.selected} onChange={() => toggleTxn(i)}
-                              className="cursor-pointer" style={{ accentColor: 'var(--blue)' }} />
-                          </td>
-                          <td className="px-2 py-2 whitespace-nowrap" style={{ color: 'var(--text3)' }}>
-                            {t.date}
-                          </td>
-                          <td className="px-2 py-2" style={{ maxWidth: 150 }}>
-                            <div className="flex items-center gap-1.5">
-                              <span className="truncate font-medium" style={{ color: 'var(--text)' }}>
-                                {t.merchant}
-                              </span>
-                              {t.isDuplicate && (
-                                <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold flex-shrink-0"
-                                  style={{ background: '#FEF3C7', color: '#92400E' }}>
-                                  duplicate
-                                </span>
-                              )}
-                              {t.autoCat && !t.isDuplicate && (
-                                <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold flex-shrink-0"
-                                  title="Auto-categorized from your past entries"
-                                  style={{ background: 'var(--sage-bg)', color: 'var(--sage)' }}>auto</span>
-                              )}
-                            </div>
-                            {t.description && t.description !== t.merchant && (
-                              <div className="truncate text-[10px]" style={{ color: 'var(--text3)' }}>
-                                {t.description}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-2 py-2 text-right font-semibold whitespace-nowrap"
-                            style={{ color: t.txn_type === 'income' ? 'var(--income)' : t.txn_type === 'transfer' ? 'var(--blue)' : 'var(--rose)' }}>
-                            {t.txn_type === 'expense' ? '-' : '+'}{sym}{t.amount.toLocaleString('en-IN')}
-                          </td>
-                          <td className="px-2 py-2">
-                            <select value={t.category} onChange={e => updateTxn(i, 'category', e.target.value)}
-                              className="text-[10px] px-1.5 py-1 rounded border w-full"
-                              style={{ borderColor: 'var(--border)', background: 'var(--bg2)', color: 'var(--text)' }}>
-                              {(cardCats.includes(t.category) ? cardCats : [t.category, ...cardCats]).map(c => <option key={c}>{c}</option>)}
-                            </select>
-                          </td>
-                          <td className="px-2 py-2">
-                            <select value={t.txn_type} onChange={e => updateTxn(i, 'txn_type', e.target.value as 'expense' | 'income' | 'transfer' | 'loan')}
-                              className="text-[10px] px-1.5 py-1 rounded border"
-                              style={{ borderColor: 'var(--border)', background: 'var(--bg2)', color: 'var(--text)' }}>
-                              <option value="expense">Expense</option>
-                              <option value="income">Income / Refund</option>
-                              <option value="transfer">CC Payment</option>
-                              <option value="loan">Loan</option>
-                            </select>
-                          </td>
-                          <td className="px-2 py-2">
-                            <button onClick={() => removeTxn(i)} style={{ color: 'var(--rose)' }}>
-                              <Trash2 size={13} />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="flex gap-3">
-                <button onClick={() => { setStage('idle'); setResult(null) }}
-                  className="flex-1 py-2.5 rounded-lg border text-[12px] font-semibold"
-                  style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}>
-                  Re-upload
-                </button>
-                <button onClick={save} disabled={selectedCount === 0}
-                  className="flex-1 py-2.5 rounded-lg text-white text-[12px] font-bold flex items-center justify-center gap-2 disabled:opacity-40"
-                  style={{ background: 'var(--blue)' }}>
-                  <CheckCircle2 size={14} />
-                  Save {selectedCount} Transaction{selectedCount !== 1 ? 's' : ''}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* SAVING */}
-          {stage === 'saving' && (
-            <div className="flex flex-col items-center py-12 gap-3">
-              <Loader2 size={32} className="animate-spin" style={{ color: 'var(--blue)' }} />
-              <div className="text-[13px]" style={{ color: 'var(--text)' }}>Saving transactions…</div>
-            </div>
-          )}
-
-          {/* DONE */}
-          {stage === 'done' && (
-            <div className="flex flex-col items-center py-10 gap-3">
-              <CheckCircle2 size={40} style={{ color: 'var(--income)' }} />
-              <div className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>
-                {savedCount > 0 ? 'Imported Successfully!' : 'Nothing New to Import'}
-              </div>
-              <div className="text-[12px]" style={{ color: 'var(--text3)' }}>
-                {savedCount > 0
-                  ? `${savedCount} transaction${savedCount !== 1 ? 's' : ''} saved`
-                  : 'All transactions from this statement were already imported.'}
-              </div>
-              {savedRange && (
-                <div className="text-center px-4 py-3 rounded-xl w-full text-[11px]"
-                  style={{ background: 'var(--sage-bg)', color: 'var(--sage)', border: '1px solid var(--sage)' }}>
-                  ✓ Date range auto-set to <strong>{savedRange.from}</strong> → <strong>{savedRange.to}</strong>
-                  <br />Your transactions are now visible on the Expenses page.
-                </div>
-              )}
-              <button onClick={onClose}
-                className="mt-1 px-6 py-2.5 rounded-lg text-white text-[12px] font-bold"
-                style={{ background: 'var(--income)' }}>
-                View Expenses
-              </button>
-            </div>
-          )}
-
-          {/* ERROR */}
-          {stage === 'error' && (
-            <div className="flex flex-col items-center py-10 gap-3">
-              <AlertCircle size={32} style={{ color: 'var(--rose)' }} />
-              <div className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
-                Something went wrong
-              </div>
-              <div className="text-[11px] text-center max-w-xs" style={{ color: 'var(--text3)' }}>
-                {errorMsg}
-              </div>
-              <button onClick={() => setStage('idle')}
-                className="px-4 py-2 rounded-lg text-white text-[12px] font-semibold"
-                style={{ background: 'var(--sage)' }}>
-                Try Again
-              </button>
-            </div>
-          )}
-
         </div>
-      </div>
-    </div>
+      )}
+
+      {stage === 'saving' && <Working title="Saving…" />}
+
+      {stage === 'done' && (
+        <ResultState ok title={savedCount > 0 ? 'Statement imported' : 'Nothing new to import'}>
+          {savedCount > 0
+            ? <span>{plural(savedCount, 'transaction')} saved — they’re on the Expenses page.</span>
+            : <span>Every row in this statement was already in the app.</span>}
+          {savedRange && <span>Your pages now show {savedRange.from === savedRange.to ? monthLabel(savedRange.from) : `${monthLabel(savedRange.from)} – ${monthLabel(savedRange.to)}`}.</span>}
+        </ResultState>
+      )}
+
+      {stage === 'error' && <ResultState ok={false} title="That didn’t work">{errorMsg}</ResultState>}
+    </ImportSheet>
   )
 }

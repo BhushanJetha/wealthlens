@@ -268,7 +268,7 @@ export function Segmented<T extends string>({ options, value, onChange, violet, 
         const on = o.value === value
         return (
           <button key={o.value} role="radio" aria-checked={on} onClick={() => onChange(o.value)}
-            className={`${full ? 'flex-1' : ''} px-4 py-[7px] rounded-lg text-[13px] whitespace-nowrap transition-all`}
+            className={`${full ? 'flex-1 min-w-0 px-2 sm:px-4' : 'px-4'} py-[7px] rounded-lg text-[13px] whitespace-nowrap transition-all`}
             style={on
               ? violet ? { background: 'var(--accent)', color: '#fff', fontWeight: 600 } : { background: '#fff', color: 'var(--text)', fontWeight: 600, boxShadow: '0 1px 2px rgba(0,0,0,.12)' }
               : { color: 'var(--text3)', fontWeight: 500 }}>
