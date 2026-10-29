@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation'
 import { useViewStore } from '@/store/viewStore'
 import { useCategoryStore } from '@/store/categoryStore'
 import { colorOf } from '@/lib/categories'
+import { canonCategory } from '@/lib/money'
 import { Segmented } from '@/components/ui/kit'
 import { CategoryIcon } from '@/components/ui/CategoryIcon'
 import { toast } from '@/components/ui/toaster'
@@ -18,6 +19,9 @@ import { RECEIPT_TYPES, uploadReceipt, openReceipt, removeReceipt } from '@/lib/
 type TxnType = 'expense' | 'income' | 'transfer' | 'loan'
 
 const TRANSFER_NOT_CATEGORIES = new Set(['Family Transfer', 'Credit Card Payment', 'Transfer'])
+// A card payment (the category, or one you named like it) is a card bill:
+// money from a bank to a card — you pick the card, and both balances move once
+const isCardPayment = (name: string) => !!name && canonCategory(name) === 'Credit Card Payment'
 // Kinds of transfer, grouped: between your own accounts (a move — never
 // spending or income) first, then money to others (counted as sent)
 const TRANSFER_SUBTYPES = [
@@ -65,13 +69,14 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
   const t0 = edit?.txn
   const mode: 'add' | 'edit' | 'duplicate' = !edit ? 'add' : edit.duplicate ? 'duplicate' : 'edit'
   const [form, setForm] = useState(() => {
-    const type = (t0?.txn_type ?? defaults?.txn_type ?? 'expense') as TxnType
+    const cardPay = isCardPayment(t0?.category ?? defaults?.category ?? '')
+    const type = (cardPay ? 'transfer' : t0?.txn_type ?? defaults?.txn_type ?? 'expense') as TxnType
     return {
       txn_date:     t0?.txn_date ?? defaults?.txn_date ?? new Date().toISOString().slice(0, 10),
       merchant:     t0?.merchant ?? defaults?.merchant ?? '',
       description:  t0 ? (t0.description && t0.description !== t0.merchant ? t0.description : '') : (defaults?.description ?? ''),
-      category:     t0?.category ?? defaults?.category ?? (type === 'income' ? 'Salary' : type === 'transfer' ? 'Transfer' : 'Food'),
-      sub_category: t0?.sub_category ?? defaults?.sub_category ?? '',
+      category:     cardPay ? 'Credit Card Payment' : t0?.category ?? defaults?.category ?? (type === 'income' ? 'Salary' : type === 'transfer' ? 'Transfer' : 'Food'),
+      sub_category: cardPay ? '' : t0?.sub_category ?? defaults?.sub_category ?? '',
       amount:       t0 ? String(Math.abs(Number(t0.amount))) : (defaults?.amount ?? ''),
       currency:     t0?.currency ?? defaults?.currency ?? (view === 'uae' ? 'AED' : 'INR'),
       txn_type:     type,
@@ -145,7 +150,9 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
   // The user's categories for this type, plus the current one if it isn't in the list (e.g. from an import)
   const cats = useMemo(() => {
     // Family support and card bills are kinds of transfer, and "Transfer" isn't a category — pick Type: Transfer
-    const list = categories.filter(c => c.kind === catKind && !(catKind === 'expense' && TRANSFER_NOT_CATEGORIES.has(c.name)))
+    const list = categories.filter(c => c.kind === catKind && !(catKind === 'expense' && (TRANSFER_NOT_CATEGORIES.has(c.name) || isCardPayment(c.name))))
+    // Paying a card bill starts here for most people — the chip turns this into a card bill
+    if (catKind === 'expense') list.push({ id: 'card-payment', kind: 'expense', name: 'Credit Card Payment', color: '#9333EA', icon: 'credit-card', sort_order: 999 } as any)
     return form.category && !list.some(c => c.name === form.category) && !isTransfer
       ? [{ id: 'current', kind: catKind, name: form.category, color: colorOf(categories, form.category), icon: 'tag', sort_order: -1 }, ...list]
       : list
@@ -154,7 +161,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
   function setType(t: TxnType) {
     if (t === form.txn_type) return
     const kindCats = categories.filter(c => c.kind === (t === 'income' ? 'income' : 'expense'))
-    const keep = t !== 'transfer' && kindCats.some(c => c.name === form.category)
+    const keep = t !== 'transfer' && kindCats.some(c => c.name === form.category) && !isCardPayment(form.category)
     set({
       txn_type: t, sub_category: '',
       category: t === 'transfer' ? 'Transfer' : keep ? form.category
@@ -163,6 +170,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
     })
   }
   function setCategory(name: string) {
+    if (isCardPayment(name)) { set({ txn_type: 'transfer' }); setTransferSubtype('Card bill'); return }
     // Loan categories are loan payments; leaving them makes it an expense again
     const txn_type: TxnType = LOAN_CATS.has(name) ? 'loan' : form.txn_type === 'loan' ? 'expense' : form.txn_type
     set({ category: name, txn_type })
@@ -171,15 +179,18 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
     const isAtm = sub === 'ATM Withdrawal', isBill = sub === 'Card bill'
     const autoMerchant = sub === 'International' ? 'Transfer to India' : sub === 'Internal' ? 'NRE to NRO' : sub === 'NRO to NRE' ? 'NRO to NRE'
       : sub === 'Own' ? 'Transfer to my account' : isAtm ? 'ATM Withdrawal' : isBill ? 'Credit card bill' : 'Family Transfer'
+    const cardsIn = (cur: string) => accounts.filter(a => a.account_type === 'credit_card' && a.currency === cur)
+    const isCard = (id: string) => accounts.some(a => a.id === id && a.account_type === 'credit_card')
     setForm(p => ({
-      ...p, sub_category: isBill ? '' : sub, counter_account_id: '',
+      ...p, sub_category: isBill ? '' : sub,
+      counter_account_id: isBill && cardsIn(p.currency).length === 1 ? cardsIn(p.currency)[0].id : '',
       // Only a new, still-empty entry takes the kind's currency. An amount
       // that's there already keeps its own (relabelling ₹40,000 as AED 40,000
       // made it about ₹9 lakh everywhere).
       // ATM cash is a money movement into the Cash wallet; a card bill settles
       // card spends already counted — neither is spending
       category:   isAtm ? 'ATM Withdrawal' : isBill ? 'Credit Card Payment' : 'Transfer',
-      account_id: isAtm ? '__cash__' : (p.account_id === '__cash__' ? '' : p.account_id),
+      account_id: isAtm ? '__cash__' : (p.account_id === '__cash__' || (isBill && isCard(p.account_id)) ? '' : p.account_id),
       currency:   mode === 'add' && !p.amount && KIND_CURRENCY[sub] ? KIND_CURRENCY[sub] : p.currency,
       merchant:   p.merchant && !TRANSFER_SUBTYPES.some(x => x.label === p.merchant) ? p.merchant : autoMerchant,
     }))
@@ -206,6 +217,10 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
     if (!form.merchant.trim()) { setError(isTransfer ? 'Give the transfer a label.' : isIncome ? 'Who paid you? Add a source.' : 'Where did you spend it? Add a merchant.'); return }
     if (!form.txn_date) { setError('Pick a date.'); return }
     if (isTransfer && !transferKind) { setError('Choose the kind of transfer.'); return }
+    if (isTransfer && transferKind === 'Card bill' && accounts.some(a => a.account_type === 'credit_card' && a.currency === form.currency)) {
+      const card = accounts.find(a => a.id === form.counter_account_id)
+      if (!card || card.currency !== form.currency) { setError('Pick the card this paid, so its balance goes down.'); return }
+    }
     if (isTransfer && !kindFits(transferKind, form.currency)) {
       setError(transferKind === 'International' ? 'UAE → India is for amounts in AED. Pick another kind, or change the currency if it really was AED.'
         : 'NRE → NRO is for amounts in ₹. Pick another kind, or change the currency if it really was ₹.'); return
@@ -385,8 +400,13 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
                     : a.account_type !== 'credit_card' && a.account_type !== 'wallet' && (transferKind === 'International' ? a.currency === 'INR' : a.currency === form.currency))
                   .map(a => <option key={a.id} value={a.id}>{a.name}{a.bank_name && a.bank_name !== a.name ? ` · ${a.bank_name}` : ''}</option>)}
               </select>
+              {transferKind === 'Card bill' && !accounts.some(a => a.account_type === 'credit_card' && a.currency === form.currency) && (
+                <div className="text-[12px] mt-1.5" style={{ color: '#B96A0B' }}>No {form.currency === 'AED' ? 'AED' : '₹'} card yet — add it under Accounts & cards so its balance can go down.</div>
+              )}
               <div className="text-[11.5px] mt-1" style={{ color: 'var(--text4)' }}>
-                {transferKind === 'Card bill' ? 'Lowers the bank balance and what you owe on the card. Not spending — the purchases were already counted.' : 'Both balances update from this one entry. Not income or spending.'}
+                {transferKind === 'Card bill'
+                  ? 'Takes this amount off the bank and off what you owe on the card — once. Not spending (the purchases were counted when you made them). A card-loan EMI is added to the card on its own day, so nothing counts twice.'
+                  : 'Both balances update from this one entry. Not income or spending.'}
               </div>
             </div>
           )}

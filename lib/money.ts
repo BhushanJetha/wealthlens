@@ -77,7 +77,8 @@ export const ROW_LABEL: Record<string, string> = {
 // Categories merged into one (migration 034 rewrites saved data; this keeps
 // anything still carrying an old name — a rule, an old import — in the right row)
 export const CATEGORY_ALIAS: Record<string, string> = { Transport: 'Travel & transport', Travel: 'Travel & transport', 'Trip/Vacation': 'Travel & transport' }
-export const canonCategory = (c: string) => CATEGORY_ALIAS[c] ?? c
+const CARD_PAYMENT_NAME = /^(credit\s*card|cc|card)\s*(bill|payment|repayment)s?$/i
+export const canonCategory = (c: string) => CATEGORY_ALIAS[c] ?? (CARD_PAYMENT_NAME.test(c.trim()) ? 'Credit Card Payment' : c)
 export const labelOf = (cat: string) => ROW_LABEL[cat] ?? cat
 
 // Report row a transaction belongs to
