@@ -62,6 +62,8 @@ export default function CardsClient({ cards, txns = [], details = [], loans = []
   const totalMinDue = filtered.reduce((a, c) => a + conv(Number(c.minimum_due ?? 0), c.currency), 0)
   // Banks count what's held by card loans as used too
   const overallUtil = totalLimit > 0 ? Math.round((totalBal + totalBlocked) / totalLimit * 100) : 0
+  // Everything owed on the cards: the bills plus what card loans still owe
+  const totalOverall = totalBal + totalBlocked
 
   const today = new Date()
   const short = (n: number) => fmtCompact(n, view === 'uae' ? 'AED' : 'INR')
@@ -100,8 +102,8 @@ export default function CardsClient({ cards, txns = [], details = [], loans = []
         onAdd={() => setShowAdd(true)} addLabel="Add card"
         actions={<button onClick={() => setShowAdd(true)} className="wl-btn wl-btn-primary" style={{ height: 34 }}><Plus size={14} />Add card</button>} /></div>
       {filtered.length > 0 && <div className="max-md:order-4"><InsightBar
-        text={`You owe ${sym}${Math.round(totalBal).toLocaleString('en-IN')} on ${sym}${Math.round(totalLimit).toLocaleString('en-IN')} of limits — ${overallUtil}% used. ${overallUtil > 30 ? 'Bringing it under 30% helps your credit score.' : 'That is under the 30% that lenders like to see.'} Minimum due across cards: ${sym}${Math.round(totalMinDue).toLocaleString('en-IN')}.`}
-        prompt={`Explain my credit cards page. Outstanding ${sym}${Math.round(totalBal)}, limits ${sym}${Math.round(totalLimit)}, utilisation ${overallUtil}%, minimum due ${sym}${Math.round(totalMinDue)}. Cards: ${filtered.map((c: any) => `${c.name} ${c.currency} ${c.outstanding_bal} of ${c.credit_limit}${c.due_date ? ` due ${c.due_date}` : ''}`).join('; ')}.`} /></div>}
+        text={`You owe ${money(totalBal)} on card bills${totalBlocked > 0 ? ` and ${money(totalBlocked)} on card loans — ${money(totalOverall)} overall` : ''}, on ${sym}${Math.round(totalLimit).toLocaleString('en-IN')} of limits — ${overallUtil}% used. ${overallUtil > 30 ? 'Bringing it under 30% helps your credit score.' : 'That is under the 30% that lenders like to see.'} Minimum due across cards: ${sym}${Math.round(totalMinDue).toLocaleString('en-IN')}.`}
+        prompt={`Explain my credit cards page. Card bills ${sym}${Math.round(totalBal)}, card loans ${sym}${Math.round(totalBlocked)}, overall outstanding ${sym}${Math.round(totalOverall)}, limits ${sym}${Math.round(totalLimit)}, utilisation ${overallUtil}%, minimum due ${sym}${Math.round(totalMinDue)}. Cards: ${filtered.map((c: any) => `${c.name} ${c.currency} ${c.outstanding_bal} of ${c.credit_limit}${c.due_date ? ` due ${c.due_date}` : ''}`).join('; ')}.`} /></div>}
       {filtered.length > 0 && <div className="max-md:order-5"><AiActions actions={['Which card should I pay first?', 'How do I lower my utilisation?']}
         context={`Cards: ${filtered.map((c: any) => `${c.name} ${c.currency} ${c.outstanding_bal} of ${c.credit_limit}${c.due_date ? ` due ${c.due_date}` : ''}`).join('; ')}.`} /></div>}
 
@@ -110,7 +112,14 @@ export default function CardsClient({ cards, txns = [], details = [], loans = []
           cta="Add card" onCta={() => setShowAdd(true)} onImport={() => router.push('/dashboard/ingest?m=card')} /></div>
       ) : (<>
         <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4">
-          <HeroStat className="max-md:order-2" label="Outstanding" value={money(totalBal)} tone={overallUtil > 30 ? 'bad' : 'good'}
+          <HeroStat className="max-md:order-2" label="Outstanding" tone={overallUtil > 30 ? 'bad' : 'good'}
+            value={totalBlocked > 0 ? (
+              // Two figures: what the next bills cover, and everything owed on the cards
+              <span className="flex flex-wrap gap-x-8 gap-y-2">
+                <span>{money(totalBal)}<span className="block text-[11.5px] font-medium tracking-normal" style={{ color: 'var(--text3)' }}>Card bills · paid with the next statements</span></span>
+                <span>{money(totalOverall)}<span className="block text-[11.5px] font-medium tracking-normal" style={{ color: 'var(--text3)' }}>Overall · incl. {money(totalBlocked)} still owed on card loans</span></span>
+              </span>
+            ) : money(totalBal)}
             delta={`${overallUtil}% of ${short(totalLimit)} in limits used${overallUtil > 30 ? ' · aim for under 30%' : ''}`}
             right={<span className="text-[11.5px]" style={{ color: 'var(--text3)' }}>Spent on cards by month</span>}>
             {spendBars.some(b => b.value > 0)
@@ -251,7 +260,8 @@ export default function CardsClient({ cards, txns = [], details = [], loans = []
         const lim = Number(c.credit_limit) || 0, bal = Number(c.outstanding_bal) || 0, cl = cardLimits(c, loans)
         const fmtN = (n: number) => `${l}${Math.round(n).toLocaleString('en-IN')}`
         return <AccountDetailsSheet account={c} details={detailsOf(c.id)} isCard face={<CreditCardFace card={c} details={detailsOf(c.id)} />}
-          facts={[['Outstanding', fmtN(bal)], ['Credit limit', lim ? fmtN(lim) : '—'], ['Available', cl.available != null ? fmtN(cl.available) : '—'],
+          facts={[['Outstanding', fmtN(bal)], ...(cl.blocked > 0 ? [['Overall (incl. card loans)', fmtN(bal + cl.blocked)] as [string, string]] : []),
+            ['Credit limit', lim ? fmtN(lim) : '—'], ['Available', cl.available != null ? fmtN(cl.available) : '—'],
             ...(cl.blocked > 0 ? [['Held by card loans', fmtN(cl.blocked)] as [string, string]] : []),
             ['Minimum due', Number(c.minimum_due) > 0 ? fmtN(Number(c.minimum_due)) : '—'], ['Due date', d ? `${fmtDay(d)} · day ${Number(c.due_day) || Number(d.slice(8, 10))} each month` : '—'], ['Used', cl.util != null ? `${Math.round(cl.util)}%` : '—']]}
           onClose={() => setOpenCard(null)} onEdit={() => { setOpenCard(null); setEditCard(c) }} onDelete={() => { setOpenCard(null); setDeleteId(c.id) }} />
