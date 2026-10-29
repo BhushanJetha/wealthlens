@@ -98,6 +98,27 @@ export function liveOutstanding(loan: any, loanTxns: any[]): LiveOutstanding | n
   return { value: Math.max(0, Math.round(bal)), saved, asOf, emis, principal: Math.round(principal), interest: Math.round(interest) }
 }
 
+// What a loan still owed on `date`: its saved outstanding moved by the
+// principal repaid between outstanding_as_of and that day (either way)
+export function loanOwedOn(loan: any, loanTxns: any[], date: string): number {
+  const asOf = loan.outstanding_as_of ? String(loan.outstanding_as_of).slice(0, 10) : null
+  const saved = Math.max(0, Number(loan.outstanding_amt) || 0)
+  if (!asOf || asOf === date) return saved
+  const [lo, hi] = asOf < date ? [asOf, date] : [date, asOf]
+  const repaid = loanTxns.filter(t => t.loan_id === loan.id && t.txn_date > lo && t.txn_date <= hi && (t.kind === 'emi' || t.kind === 'prepayment'))
+    .reduce((s, t) => s + (t.kind === 'emi' && t.principal != null ? Number(t.principal) : Math.max(0, (Number(t.amount) || 0) - (Number(t.interest) || 0))), 0)
+  return Math.max(0, asOf < date ? saved - repaid : saved + repaid)
+}
+
+// The part of a card's balance on `date` that is its card loans, for banks
+// that show them inside the card's outstanding: every loan on the card taken
+// by then, at what it still owed that day
+export function loansInCardBalance(cardId: string, date: string, loans: any[], loanTxns: any[]): number {
+  return loans.filter(l => l.pay_from_account_id === cardId && l.loan_type === 'loan_on_card' && l.is_active !== false
+      && (!l.loan_start_date || String(l.loan_start_date).slice(0, 10) <= date))
+    .reduce((s, l) => s + loanOwedOn(l, loanTxns, date), 0)
+}
+
 // Server/client loader: fetch EMI and prepayment records and statement
 // payments, then apply them — the EMI actually paid, and the live
 // outstanding. Missing tables (migration 019 not run) just mean no records.

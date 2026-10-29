@@ -8,6 +8,7 @@ import { useViewStore } from '@/store/viewStore'
 import { useCategoryStore } from '@/store/categoryStore'
 import { Upload, CheckCircle2, Lock, CreditCard } from 'lucide-react'
 import { useDropzone } from 'react-dropzone'
+import { cardPartOfStatement } from '@/lib/cardLoans'
 import { ImportSheet, BankField, DropZone, PasswordStep, Working, Notice, ResultState, ReviewSummary, ReviewRow, rowSelect, rowSelectStyle, dayLabel, type ImportStage } from './StatementImport'
 
 interface Props { onClose: () => void }
@@ -254,7 +255,8 @@ export default function CreditCardUploadModal({ onClose }: Props) {
       // Update all fields with latest statement data (name may now include card product)
       const updates: Record<string, any> = { name: accountName }
       if (result.credit_limit    != null) updates.credit_limit    = result.credit_limit
-      if (result.outstanding_bal != null) { updates.outstanding_bal = result.outstanding_bal; updates.balance_as_of = lastDate }
+      // (a card whose balance includes its loans keeps only the card part — the loans are in Loans)
+      if (result.outstanding_bal != null) { updates.outstanding_bal = await cardPartOfStatement(supabase, accountId!, result.outstanding_bal, lastDate); updates.balance_as_of = lastDate }
       if (result.minimum_due     != null) updates.minimum_due     = result.minimum_due
       // The statement's due date also sets the card's due day (the month rolls on from it)
       if (result.due_date        != null) { updates.due_date = result.due_date; updates.due_day = Number(String(result.due_date).slice(8, 10)) || null }

@@ -14,6 +14,8 @@ import AccountDetailsSheet from '@/components/forms/AccountDetailsSheet'
 import { addMonths, fmtDay, localToday, nextCardDue } from '@/lib/insights'
 import { cardLimits, loansOnCard } from '@/lib/cardCycle'
 import CardLoanSheet from '@/components/forms/CardLoanSheet'
+import { setCardIncludesLoans } from '@/lib/cardLoans'
+import { toast } from '@/components/ui/toaster'
 import { fmtCompact } from '@/lib/format'
 import { Gauge, CalendarClock, Wallet } from 'lucide-react'
 
@@ -33,6 +35,17 @@ export default function CardsClient({ cards, txns = [], details = [], loans = []
   const [deleting, setDeleting]   = useState(false)
   const [openCard, setOpenCard]   = useState<any | null>(null)
   const [loanFor, setLoanFor]     = useState<any | null | undefined>(undefined)   // undefined = closed, null = pick a card
+  const [answering, setAnswering] = useState<string | null>(null)
+  // Banks differ on whether a card loan sits inside the card's outstanding —
+  // the answer decides whether it's taken out of the card's balance (lib/cardLoans)
+  async function answer(c: any, included: boolean) {
+    setAnswering(c.id)
+    const err = await setCardIncludesLoans(supabase, c.id, included)
+    setAnswering(null)
+    if (err) { toast(err, 'error'); return }
+    toast(included ? `Taken out of ${c.name}’s balance — the loan is counted once, under Loans` : `Kept separate — ${c.name}’s balance is just what’s billed`, 'success')
+    router.refresh()
+  }
   const detailsOf = (id: string) => details.find((d: any) => d.account_id === id) ?? null
 
   const filtered = view === 'uae'   ? cards.filter(c => c.currency === 'AED')
@@ -156,6 +169,9 @@ export default function CardsClient({ cards, txns = [], details = [], loans = []
                         <span className="tabular-nums">{l}{Math.round(cardLimits(c, loans).blocked).toLocaleString('en-IN')}</span>
                       </div>
                     )}
+                    {u > 100 && c.balance_includes_loans == null && loansOnCard(c, loans).length > 0 && (
+                      <div className="text-[11.5px] font-semibold mt-1" style={{ color: '#B96A0B' }}>Over 100%? The loan may be counted twice — check below</div>
+                    )}
                     <div className="flex justify-between gap-2 text-[11.5px] mt-1.5">
                       <span style={{ color: utilColor(u) }}>{u}% of {l}{Number(c.credit_limit ?? 0).toLocaleString('en-IN')} used</span>
                       <span style={{ color: days != null && days <= 5 ? '#DC2626' : 'var(--text3)' }}>{d ? `Due ${fmtDay(d)}${days != null && days <= 7 ? ` · ${days}d` : ''}` : 'No due date'}</span>
@@ -173,6 +189,30 @@ export default function CardsClient({ cards, txns = [], details = [], loans = []
             <h2 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Loans on your cards</h2>
             <button onClick={() => setLoanFor(null)} className="text-[12px] font-semibold flex items-center gap-1" style={{ color: 'var(--accent)' }}><Plus size={13} />Loan on a card</button>
           </div>
+          {filtered.filter(c => loansOnCard(c, loans).length > 0).map(c => {
+            const cl = cardLimits(c, loans), u = Math.round(cl.util ?? 0), l = c.currency === 'AED' ? 'AED ' : '₹'
+            const m = (n: number) => `${l}${Math.round(n).toLocaleString('en-IN')}`
+            const busy = answering === c.id
+            if (c.balance_includes_loans != null) return (
+              <div key={c.id} className="flex items-center justify-between gap-3 text-[12px] mt-2 rounded-lg px-3 py-2" style={{ background: 'var(--bg2)', color: 'var(--text3)' }}>
+                <span className="min-w-0">{c.name}: {c.balance_includes_loans ? 'the bank shows the loan inside the card’s outstanding — WealthLens counts it once, under Loans' : 'the bank shows the loan separately from the card’s outstanding'}</span>
+                <button onClick={() => answer(c, !c.balance_includes_loans)} disabled={busy} className="font-semibold flex-shrink-0 disabled:opacity-50" style={{ color: 'var(--accent)' }}>{busy ? 'Saving…' : 'Change'}</button>
+              </div>
+            )
+            return (
+              <div key={c.id} className="rounded-xl px-3.5 py-3 mt-2.5" style={u > 100 ? { background: '#FFF6E8', border: '1px solid #F6DDB4' } : { background: 'var(--accent-bg)', border: '1px solid var(--accent-border)' }}>
+                <div className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Is the loan inside {c.name}’s outstanding?</div>
+                <div className="text-[12px] mt-1 leading-snug" style={{ color: 'var(--text2)' }}>
+                  {u > 100 && <>It shows {u}% used, which usually means the loan is counted twice. </>}
+                  Some banks show a card loan inside the card’s outstanding, others separately. If the outstanding in your bank app for this card ({m(cl.owed)}) already covers the {m(cl.blocked)} loan, tap Yes — it’s then counted once, under Loans.
+                </div>
+                <div className="flex flex-wrap gap-2 mt-2.5">
+                  <button onClick={() => answer(c, true)} disabled={busy} className="wl-btn wl-btn-primary disabled:opacity-50" style={{ height: 32, fontSize: 12.5 }}>{busy ? <Loader2 size={13} className="animate-spin" /> : null}Yes, it’s included</button>
+                  <button onClick={() => answer(c, false)} disabled={busy} className="wl-btn disabled:opacity-50" style={{ height: 32, fontSize: 12.5 }}>No, it’s separate</button>
+                </div>
+              </div>
+            )
+          })}
           {cardLoans.length === 0 ? (
             <p className="text-[12.5px] mt-2 leading-snug" style={{ color: 'var(--text3)' }}>Took cash on a card, or turned a purchase into EMIs? Add it here: the EMI is worked out, it’s billed to the card each month, the loan goes down by itself, and what’s still owed is held from the card’s limit. It shows in Loans too — counted once.</p>
           ) : (

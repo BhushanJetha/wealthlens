@@ -166,6 +166,9 @@ export default function AddAccountModal({ onClose, type = 'credit_card', initial
                 {inp('Credit Limit', 'credit_limit', 'number', '400000')}
                 {inp('Outstanding Balance', 'outstanding_bal', 'number', '82000')}
               </div>
+              {initialData?.balance_includes_loans === true && (
+                <p className="text-[11.5px] -mt-1 leading-snug" style={{ color: 'var(--text3)' }}>Outstanding here is without the card loan — the loan is counted under Loans.</p>
+              )}
               <div className="grid grid-cols-3 gap-3">
                 {inp('Minimum Due', 'minimum_due', 'number', '16400')}
                 {inp('Due day (1–31)', 'due_day', 'number', '15')}

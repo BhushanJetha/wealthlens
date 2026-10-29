@@ -6,6 +6,7 @@ import { fmtMoney } from '@/lib/format'
 import { addMonths, localToday, fmtDay } from '@/lib/insights'
 import { cycleOf } from '@/lib/cardCycle'
 import { solveLoan, balanceAfter } from '@/lib/loanMath'
+import { takeNewLoanOutOfCard } from '@/lib/cardLoans'
 import { Segmented } from '@/components/ui/kit'
 
 const num = (s: string) => (s.trim() === '' ? null : Number(s))
@@ -77,6 +78,9 @@ export default function CardLoanSheet({ cards, card: start, banks, onClose, onSa
       if (res.error && new RegExp(col).test(res.error.message)) { delete loan[col]; res = await supabase.from('home_loans').insert(loan).select('id').single() }
     }
     if (res.error) { setBusy(false); setError(res.error.message); return }
+    // On a card whose balance includes its loans, a loan taken by that
+    // balance's date is inside it too — take it out (counted in Loans)
+    await takeNewLoanOutOfCard(supabase, card, Math.round(owed * 100) / 100, taken)
     // A new loan moves money once: cash lands in your bank (not income), or the
     // purchase leaves the card balance for the loan (it was already counted as spending)
     if (record && k === 0) {

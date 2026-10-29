@@ -65,7 +65,10 @@ export function buildDues(inp: {
   const within = (d: string | null) => d != null && daysBetween(today, d) >= 0 && daysBetween(today, d) <= days
   const out: Due[] = []
 
+  const cardIds = new Set(inp.accounts.filter(a => kindOf(a) === 'card').map(a => a.id))
   for (const l of inp.loans.filter(l => inView(l.currency || 'INR'))) {
+    // A loan on a card is paid through the card's bill (listed below), not on its own
+    if (l.loan_type === 'loan_on_card' && cardIds.has(l.pay_from_account_id)) continue
     const d = nextOccurrence(l.next_emi_date, today)
     if (!within(d) || !(Number(l.emi_amount) > 0)) continue
     const p = loanPayFrom(l, inp.txns, inp.accounts, inp.loans)
