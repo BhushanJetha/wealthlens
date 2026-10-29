@@ -4,7 +4,7 @@ import { useViewStore } from '@/store/viewStore'
 import { Download, ChevronLeft, ChevronRight, CalendarDays, CalendarRange, Target, CreditCard, Landmark, Wallet, Link2Off } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, Cell, Legend } from 'recharts'
 import TxnDrillModal from '@/components/dashboard/TxnDrillModal'
-import { CC_BILL, classify, labelOf, catOf, prepareMoney, isIncome, isNreToNro, markUnitemisedCardBills, INDIA_INCOME } from '@/lib/money'
+import { CC_BILL, classify, labelOf, catOf, prepareMoney, isIncome, isNreToNro, markUnitemisedCardBills, INDIA_INCOME, cashOut, cashLeft, type CashOut } from '@/lib/money'
 import { PageHeader, KpiTile, Segmented } from '@/components/ui/kit'
 import { useCategoryStore } from '@/store/categoryStore'
 
@@ -148,11 +148,42 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
   const incomeCol = (m: string) => incByMonth[m] ?? 0
   const netCol = (m: string) => incomeCol(m) - outflowCol(m)
 
+  // What left your bank & cash each month, and what's left of the income
+  // (lib/money cashOut): card bills paid come off, not the card charges they
+  // pay for — those are in the expenses above, so nothing is taken off twice
+  const isCardRow = (t: any) => t.accounts?.account_type === 'credit_card'
+  const flowByMonth = useMemo(() => {
+    const by: Record<string, any[]> = {}
+    yearTxns.forEach(t => { const m = t.txn_date?.slice(0, 7); if (m) (by[m] ||= []).push(t) })
+    return Object.fromEntries(months.map(m => [m, cashOut(by[m] ?? [], { view, isCard: isCardRow, amount: disp })])) as Record<string, CashOut>
+  }, [yearTxns, view, FX])
+  // NRE alone: what moved on to NRO left it too
+  const toNro = (m: string) => scope !== 'nre' ? 0 : yearTxns.filter(t => t.txn_date?.slice(0, 7) === m && isNreToNro(t)).reduce((a, t) => a + disp(t), 0)
+  const leftCol = (m: string) => cashLeft(incomeCol(m), flowByMonth[m]) - toNro(m)
+
   const outflowGrand  = months.reduce((a, m) => a + outflowCol(m), 0)
   const incomeGrand   = months.reduce((a, m) => a + incomeCol(m), 0)
   const netGrand      = incomeGrand - outflowGrand
   const investGrand   = rowTot('Investment')
   const savingsRate   = incomeGrand > 0 ? Math.round((netGrand + investGrand) / incomeGrand * 100) : 0   // investing counts as saved
+  const leftGrand     = months.reduce((a, m) => a + leftCol(m), 0)
+
+  // "Where your income went": the months picked at the top (if in this year), or the whole year
+  const [flowPeriod, setFlowPeriod] = useState<'range' | 'year'>('range')
+  const rangeMonths = months.filter(m => m >= fromMonth && m <= toMonth)
+  const fMonths = flowPeriod === 'range' && rangeMonths.length ? rangeMonths : months
+  const fLabel = flowPeriod === 'range' && rangeMonths.length
+    ? (rangeMonths.length === 1 ? mLabel(rangeMonths[0]) : `${mLabel(rangeMonths[0])} – ${mLabel(rangeMonths[rangeMonths.length - 1])}`) : String(viewYear)
+  const F = fMonths.reduce((acc, m) => {
+    const f = flowByMonth[m]
+    return { direct: acc.direct + f.direct, cardBills: acc.cardBills + f.cardBills, emis: acc.emis + f.emis, invested: acc.invested + f.invested,
+      sentHome: acc.sentHome + f.sentHome, onCards: acc.onCards + f.onCards, cardLoanEmis: acc.cardLoanEmis + f.cardLoanEmis }
+  }, { direct: 0, cardBills: 0, emis: 0, invested: 0, sentHome: 0, onCards: 0, cardLoanEmis: 0 } as CashOut)
+  const fIncome = fMonths.reduce((a, m) => a + incomeCol(m), 0)
+  const fToNro = fMonths.reduce((a, m) => a + toNro(m), 0)
+  const fExpenses = fMonths.reduce((a, m) => a + outflowCol(m), 0)
+  const fLeft = cashLeft(fIncome, F) - fToNro
+  const fCharged = F.onCards + F.cardLoanEmis
 
   const activeExpense  = expenseCats.filter(c => rowTot(c) > 0).sort((a, b) => rowTot(b) - rowTot(a))
   const activeExcluded = excludedCats.filter(c => rowTot(c) > 0).sort((a, b) => rowTot(b) - rowTot(a))
@@ -260,6 +291,7 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
     rows.push(['TOTAL MONTHLY EXPENSES', ...months.map(m => Math.round(outflowCol(m)).toString()), Math.round(outflowGrand).toString()])
     rows.push(['INCOME', ...months.map(m => Math.round(incomeCol(m)).toString()), Math.round(incomeGrand).toString()])
     rows.push(['NET (Income − Expenses)', ...months.map(m => Math.round(netCol(m)).toString()), Math.round(netGrand).toString()])
+    rows.push(['LEFT IN YOUR ACCOUNTS (Income − bank & cash out, card bills not card charges)', ...months.map(m => Math.round(leftCol(m)).toString()), Math.round(leftGrand).toString()])
     rows.push([], ['Spend by Account / Card', ...monthHeads, 'Total'])
     accountRows.forEach(r => rows.push([r.sub ? `${r.name} (${r.sub})` : r.name, ...months.map(m => Math.round(r.byMonth[m] ?? 0).toString()), Math.round(r.total).toString()]))
     csvExport([['Category', ...monthHeads, 'Total'], ...rows])
@@ -316,8 +348,8 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
           <KpiTile label={`${viewYear} income`} value={money(incomeGrand)} tint={1} icon={Wallet} />
           <KpiTile label={`${viewYear} expenses`} value={money(outflowGrand)} tint={0} icon={CreditCard} />
-          <KpiTile label="Net (income − expenses)" value={`${netGrand < 0 ? '−' : ''}${money(Math.abs(netGrand))}`} tone={netGrand >= 0 ? 'good' : 'bad'} tint={3} icon={Landmark}
-            delta={netGrand >= 0 ? 'kept this year' : 'spent more than came in'} />
+          <KpiTile label="Left in your accounts" value={`${leftGrand < 0 ? '−' : ''}${money(Math.abs(leftGrand))}`} tone={leftGrand >= 0 ? 'good' : 'bad'} tint={3} icon={Landmark}
+            delta={leftGrand >= 0 ? 'income − what left your bank & cash' : 'more left your accounts than came in'} />
           <KpiTile label="Savings rate" value={`${savingsRate}%`} tone={savingsRate >= 20 ? 'good' : 'bad'} tint={2} icon={Target}
             delta={investGrand > 0 ? `incl. ${money(investGrand)} invested · target 20%` : 'target 20%'} />
         </div>
@@ -326,6 +358,63 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
       {/* ─────────────── MONTHLY TAB ─────────────── */}
       {tab === 'monthly' && (
         <>
+          {/* Where the income went, in cash: each thing that left your bank & cash once */}
+          {(fIncome > 0 || fExpenses > 0) && (() => {
+            const lines = [
+              { k: 'Spent from bank & cash', sub: 'living costs and family support, paid directly', v: F.direct, c: '#6A55E8' },
+              { k: 'Card bills paid', sub: fCharged > 0 ? `pays for what you charged to cards — ${money(fCharged)} in this period` : 'pays for what you charged to cards', v: F.cardBills, c: '#9333EA' },
+              { k: 'Loan EMIs', sub: 'paid from the bank', v: F.emis, c: '#F29A2E' },
+              { k: 'Invested', sub: 'still yours — counts as saving', v: F.invested, c: '#2FB67C' },
+              { k: 'Sent to India', sub: 'left your UAE accounts for your NRE', v: F.sentHome, c: '#0EA5E9' },
+              { k: 'Moved to NRO', sub: 'left the NRE account for daily spending', v: fToNro, c: '#3B8EF0' },
+            ].filter(l => l.v > 0)
+            const base = Math.max(fIncome, lines.reduce((a, l) => a + l.v, 0), 1)
+            const gap = fCharged - F.cardBills
+            return (
+              <section className="wl-card px-4 md:px-5 py-4 md:py-[18px]" aria-label="Where your income went">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <h2 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Where your income went · {fLabel}</h2>
+                  {rangeMonths.length > 0 && rangeMonths.length < months.length && (
+                    <Segmented label="Period" value={flowPeriod} onChange={setFlowPeriod}
+                      options={[{ value: 'range' as const, label: rangeMonths.length === 1 ? mLabel(rangeMonths[0]) : 'Selected months' }, { value: 'year' as const, label: String(viewYear) }]} />
+                  )}
+                </div>
+                <div className="flex h-2.5 rounded-full overflow-hidden gap-[2px] mt-3" style={{ background: 'var(--track)' }} role="img"
+                  aria-label={`${lines.map(l => `${l.k} ${money(l.v)}`).join(', ')}, left ${money(Math.max(fLeft, 0))}`}>
+                  {lines.map(l => <div key={l.k} style={{ width: `${l.v / base * 100}%`, background: l.c }} />)}
+                  {fLeft > 0 && <div style={{ width: `${fLeft / base * 100}%`, background: '#CBD5E1' }} />}
+                </div>
+                <div className="mt-2">
+                  <div className="flex justify-between gap-3 py-2 text-[13.5px]">
+                    <span className="font-semibold" style={{ color: 'var(--text)' }}>Came in</span>
+                    <span className="font-bold tabular-nums" style={{ color: '#1E8F5F' }}>{money(fIncome)}</span>
+                  </div>
+                  {lines.map(l => (
+                    <div key={l.k} className="flex justify-between gap-3 py-2" style={{ borderTop: '1px solid var(--track)' }}>
+                      <span className="flex items-start gap-2 min-w-0">
+                        <i className="w-2.5 h-2.5 rounded-sm flex-shrink-0 mt-1" style={{ background: l.c }} />
+                        <span className="min-w-0"><span className="block text-[13px]" style={{ color: 'var(--text2)' }}>− {l.k}</span>
+                          <span className="block text-[11.5px]" style={{ color: 'var(--text4)' }}>{l.sub}</span></span>
+                      </span>
+                      <span className="text-[13px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{money(l.v)}</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between gap-3 pt-2.5 mt-1" style={{ borderTop: '1.5px solid var(--line)' }}>
+                    <span className="flex items-center gap-2"><i className="w-2.5 h-2.5 rounded-sm" style={{ background: '#CBD5E1' }} />
+                      <span className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>= Left in your accounts</span></span>
+                    <span className="text-[16px] font-bold tabular-nums" style={{ color: fLeft >= 0 ? '#1E8F5F' : '#D9482F' }}>{fLeft < 0 ? '−' : ''}{money(Math.abs(fLeft))}</span>
+                  </div>
+                </div>
+                <div className="mt-3 rounded-xl px-3.5 py-3 text-[12px] leading-relaxed" style={{ background: '#FAFAFE', border: '1px solid var(--line)', color: 'var(--text3)' }}>
+                  <b style={{ color: 'var(--text2)' }}>Counted once.</b> Your expenses for {fLabel} ({money(fExpenses)}) = {money(F.direct)} paid from bank &amp; cash
+                  {F.onCards > 0 ? <> + {money(F.onCards)} charged to cards</> : null}{F.emis > 0 ? <> + {money(F.emis)} EMIs</> : null}{F.invested > 0 ? <> + {money(F.invested)} invested</> : null}.
+                  {' '}Card charges leave your bank only when you pay the card, so here the card bills come off instead
+                  {fCharged > 0 || F.cardBills > 0 ? <> — charged {money(fCharged)}{F.cardLoanEmis > 0 ? ` (incl. ${money(F.cardLoanEmis)} card-loan EMIs)` : ''}, paid {money(F.cardBills)}{Math.abs(gap) >= 1 ? (gap > 0 ? `; ${money(gap)} is still on the cards` : `; ${money(-gap)} of the bills paid for earlier charges`) : ''}</> : null}.
+                </div>
+              </section>
+            )
+          })()}
+
           {/* Income vs Expense bar */}
           <div className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
             <div className="flex justify-between items-center gap-3 mb-3">
@@ -439,10 +528,17 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
                     </tr>
                     {/* Net */}
                     <tr style={{ background: '#FAFAFE', borderTop: '1px solid var(--line)' }}>
-                      <td className="sticky left-0 px-4 py-3 font-black text-[11px] uppercase tracking-wider" style={{ background: '#FAFAFE', color: 'var(--text)', borderRight: '1px solid var(--line)' }}>Net (Inc − Exp)</td>
+                      <td className="sticky left-0 px-4 py-3 font-black text-[11px] uppercase tracking-wider" style={{ background: '#FAFAFE', color: 'var(--text)', borderRight: '1px solid var(--line)' }}>Income − expenses</td>
                       {months.map(m => { const n = netCol(m); const has = incomeCol(m) > 0 || outflowCol(m) > 0
                         return (<td key={m} className="px-3 py-3 text-right tabular-nums font-black" style={{ color: !has ? 'var(--text3)' : n >= 0 ? 'var(--income)' : 'var(--rose)' }}>{has ? `${n < 0 ? '-' : ''}${sym}${fmt(Math.abs(n))}` : '—'}</td>) })}
                       <td className="px-4 py-3 text-right tabular-nums font-black text-[13px]" style={{ color: netGrand >= 0 ? 'var(--income)' : 'var(--rose)', borderLeft: '2px solid var(--line)' }}>{netGrand < 0 ? '-' : ''}{money(Math.abs(netGrand))}</td>
+                    </tr>
+                    {/* Left in your accounts: income − what left your bank & cash (card bills, not card charges) */}
+                    <tr style={{ background: '#F3F1FB', borderTop: '1px solid var(--line)' }}>
+                      <td className="sticky left-0 px-4 py-3 font-black text-[11px] uppercase tracking-wider" style={{ background: '#F3F1FB', color: 'var(--accent2)', borderRight: '1px solid var(--line)' }}>Left in your accounts</td>
+                      {months.map(m => { const n = leftCol(m), f = flowByMonth[m]; const has = incomeCol(m) > 0 || f.direct + f.cardBills + f.emis + f.invested + f.sentHome > 0
+                        return (<td key={m} className="px-3 py-3 text-right tabular-nums font-black" style={{ color: !has ? 'var(--text3)' : n >= 0 ? 'var(--income)' : 'var(--rose)' }}>{has ? `${n < 0 ? '-' : ''}${sym}${fmt(Math.abs(n))}` : '—'}</td>) })}
+                      <td className="px-4 py-3 text-right tabular-nums font-black text-[13px]" style={{ color: leftGrand >= 0 ? 'var(--income)' : 'var(--rose)', borderLeft: '2px solid var(--line)' }}>{leftGrand < 0 ? '-' : ''}{money(Math.abs(leftGrand))}</td>
                     </tr>
                   </tfoot>
                 </table>
@@ -451,6 +547,7 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
             <div className="px-4 py-2 text-[10px]" style={{ color: 'var(--text3)', borderTop: '1px solid var(--line)' }}>
               Total Monthly Expenses = every spend category, incl. money sent (Money Transfer, Transfer to India, Family), Investment &amp; EMI.
               The credit card bill only settles card spend already counted above, and moves between your own accounts / money received are the same money — so those are shown but not summed.
+              Left in your accounts = income − what left your bank &amp; cash: spending paid directly, card bills paid (not the card charges), EMIs, investing{view === 'uae' ? ' and money sent to India' : ''}.
             </div>
           </div>
 

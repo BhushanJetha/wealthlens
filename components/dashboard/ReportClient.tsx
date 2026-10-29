@@ -9,7 +9,7 @@ import { useViewStore } from '@/store/viewStore'
 import { useCategoryStore } from '@/store/categoryStore'
 import { colorOf as catColorOf } from '@/lib/categories'
 import { CategoryIcon } from '@/components/ui/CategoryIcon'
-import { SPEND_GROUPS, spendGroup, catOf, labelOf, CC_BILL, isIncome, isRemitOut, prepareMoney, type SpendGroup, type View } from '@/lib/money'
+import { SPEND_GROUPS, spendGroup, catOf, labelOf, CC_BILL, isIncome, isRemitOut, prepareMoney, type SpendGroup, type View, cashOut, cashLeft } from '@/lib/money'
 import { addMonths, daysInMonth, localToday } from '@/lib/insights'
 import { fmtMoney, fmtCompact } from '@/lib/format'
 import { PageHeader, InsightBar, AiActions, KpiTile, Segmented, EmptyState, type Tone } from '@/components/ui/kit'
@@ -149,7 +149,12 @@ export default function ReportClient({ transactions: raw, accounts = [], events 
   const spending = spendingOf(P), out = outOf(P), kept = keptOf(P)
   const rate = P.income > 0 ? Math.round(kept / P.income * 100) : null
   const sentHome = view === 'uae' ? P.home : 0                  // shown only in the UAE view
-  const leftOver = P.income - out - sentHome
+  const econLeft = P.income - out - sentHome                     // income less every outgoing (the split bar)
+  // What's left in your bank & cash: card bills paid come off, not the card
+  // charges they pay for (lib/money cashOut)
+  const flow = useMemo(() => cashOut(transactions.filter(t => months.includes(String(t.txn_date).slice(0, 7)) && inView(t.currency)),
+    { view, isCard: t => cardSet.has(t.account_id), amount: t => conv(Number(t.amount) || 0, t.currency) }), [transactions, months.join(), view, FX, cardSet])
+  const leftOver = cashLeft(P.income, flow)
 
   // ── Chart: 12 months ending at the month (monthly) or the calendar year ──
   const chartMonths = mode === 'month' ? Array.from({ length: 12 }, (_, i) => addMonths(month, i - 11)) : yearMonths(year)
@@ -281,7 +286,7 @@ export default function ReportClient({ transactions: raw, accounts = [], events 
   const splitTotal = Math.max(P.income, out + sentHome)
   const split = [...SPEND_GROUPS.map(g => ({ key: g.key, label: g.label, color: g.color, v: P[g.key] })),
     ...(sentHome > 0 ? [{ key: 'home', label: 'Sent to India', color: '#0EA5E9', v: sentHome }] : []),
-    { key: 'kept', label: 'Left over', color: '#CBD5E1', v: Math.max(leftOver, 0) }].filter(s => s.v > 0)
+    { key: 'kept', label: 'Left over', color: '#CBD5E1', v: Math.max(econLeft, 0) }].filter(s => s.v > 0)
 
   return (
     <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
@@ -436,7 +441,7 @@ export default function ReportClient({ transactions: raw, accounts = [], events 
         )}
         <div className="flex items-center justify-between gap-3 mt-3 pt-3" style={{ borderTop: '1.5px solid var(--line)' }}>
           <span><span className="block text-[13.5px] font-semibold" style={{ color: 'var(--text)' }}>Left in your accounts</span>
-            <span className="block text-[11.5px]" style={{ color: 'var(--text4)' }}>Came in − living costs − family − EMIs − invested{sentHome > 0 ? ' − sent to India' : ''}. Saved {short(Math.max(kept, 0))} ({rate ?? 0}%) = this + invested{sentHome > 0 ? ' + sent to India' : ''}.</span></span>
+            <span className="block text-[11.5px]" style={{ color: 'var(--text4)' }}>Came in − spent from bank &amp; cash − card bills paid − EMIs − invested{sentHome > 0 ? ' − sent to India' : ''}{flow.onCards + flow.cardLoanEmis > 0 ? ` · ${short(flow.onCards + flow.cardLoanEmis)} charged to cards, paid through card bills` : ''}. Saved {short(Math.max(kept, 0))} ({rate ?? 0}%) = came in − spending − EMIs.</span></span>
           <span className="text-[16px] font-bold tabular-nums" style={{ color: leftOver >= 0 ? '#1E8F5F' : '#D9482F' }}>{leftOver < 0 ? '−' : ''}{short(Math.abs(leftOver))}</span>
         </div>
         {unsorted > 0 && <a href="/dashboard/money/review" className="block text-[12px] font-semibold mt-3" style={{ color: 'var(--accent)' }}>{short(unsorted)} of transfers aren’t sorted yet — they count as money sent until you say what they were →</a>}

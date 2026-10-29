@@ -178,6 +178,41 @@ export function pairRemittances(txns: any[], fx: number): Remittance[] {
   return out.sort((a, b) => b.landedOn.localeCompare(a.landedOn))
 }
 
+// ── Where income went, in cash ──────────────────────────────────────────────
+// What left your bank & cash: spending paid directly, card bills (they pay for
+// what was charged to cards — so the charges aren't taken off again), EMIs,
+// investing and, in the UAE view, money sent to India. Charges on cards are
+// kept apart (`onCards`, `cardLoanEmis`): spending, but out of your bank only
+// as card bills. Moves between your own accounts don't leave you.
+export interface CashOut {
+  direct: number; cardBills: number; emis: number; invested: number; sentHome: number
+  onCards: number; cardLoanEmis: number
+}
+export function cashOut(rows: any[], opts: { view: View; isCard: (t: any) => boolean; amount: (t: any) => number }): CashOut {
+  const o: CashOut = { direct: 0, cardBills: 0, emis: 0, invested: 0, sentHome: 0, onCards: 0, cardLoanEmis: 0 }
+  // A payment on both statements (bank debit + card credit) is one payment
+  const bankBills = rows.filter(t => catOf(t) === CC_BILL && !opts.isCard(t))
+  const onBank = (t: any) => bankBills.some(b => b.currency === t.currency && Math.abs(dayNum(b.txn_date) - dayNum(t.txn_date)) <= 4
+    && Math.abs((Number(b.amount) || 0) - (Number(t.amount) || 0)) <= Math.max(1, (Number(t.amount) || 0) * 0.01))
+  for (const t of rows) {
+    if (t.txn_type === 'income' || t._remit) continue
+    const v = opts.amount(t)
+    if (!(v > 0)) continue
+    const c = catOf(t), card = opts.isCard(t)
+    if (c === CC_BILL) { if (!card || !onBank(t)) o.cardBills += v; continue }
+    if (isRemitOut(t)) { if (opts.view === 'uae') o.sentHome += v; continue }
+    if (c === 'Loan on Card') { if (card) o.cardLoanEmis += v; else o.emis += v; continue }
+    const g = spendGroup(t)
+    if (!g) continue
+    if (card) o.onCards += v
+    else if (g === 'loans') o.emis += v
+    else if (g === 'invest') o.invested += v
+    else o.direct += v
+  }
+  return o
+}
+export const cashLeft = (income: number, o: CashOut) => income - o.direct - o.cardBills - o.emis - o.invested - o.sentHome
+
 // Card bills stand in for card purchases only when that month's purchases on
 // cards of the same currency were never imported (else they'd count twice).
 export function markUnitemisedCardBills(txns: any[], cardIds: Set<string>): any[] {
