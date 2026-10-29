@@ -46,6 +46,15 @@ function acctScope(t: any): 'nre' | 'nro' {
   return /\bnre\b|non[-\s]?resident\s+external/.test(s) ? 'nre' : 'nro'
 }
 
+// One country's money in a period: what came in (plus, for India, what
+// arrived from UAE) and what left its bank & cash (lib/money cashOut)
+type Side = { cur: 'AED' | 'INR'; income: number; received: number; flow: CashOut }
+const NO_FLOW: CashOut = { direct: 0, cardBills: 0, emis: 0, invested: 0, sentHome: 0, onCards: 0, cardLoanEmis: 0 }
+const sumFlows = (fs: CashOut[]): CashOut => fs.reduce((a, f) => ({ direct: a.direct + f.direct, cardBills: a.cardBills + f.cardBills,
+  emis: a.emis + f.emis, invested: a.invested + f.invested, sentHome: a.sentHome + f.sentHome, onCards: a.onCards + f.onCards,
+  cardLoanEmis: a.cardLoanEmis + f.cardLoanEmis }), NO_FLOW)
+const sideLeft = (x: Side) => cashLeft(x.income + x.received, x.flow)
+
 function buildMonths(from: string, to: string): string[] {
   const months: string[] = []; let cur = from
   while (cur <= to && months.length < 60) {
@@ -150,16 +159,30 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
 
   // What left your bank & cash each month, and what's left of the income
   // (lib/money cashOut): card bills paid come off, not the card charges they
-  // pay for — those are in the expenses above, so nothing is taken off twice
+  // pay for — those are in the expenses above, so nothing is taken off twice.
+  // Each country is its own side: in the All view money sent to India comes
+  // off the UAE side and arrives on the India side, so it neither vanishes nor doubles.
   const isCardRow = (t: any) => t.accounts?.account_type === 'credit_card'
-  const flowByMonth = useMemo(() => {
-    const by: Record<string, any[]> = {}
-    yearTxns.forEach(t => { const m = t.txn_date?.slice(0, 7); if (m) (by[m] ||= []).push(t) })
-    return Object.fromEntries(months.map(m => [m, cashOut(by[m] ?? [], { view, isCard: isCardRow, amount: disp })])) as Record<string, CashOut>
-  }, [yearTxns, view, FX])
+  const landedRows = useMemo(() => view === 'consolidated' ? prepareMoney([...rawIncome, ...rawTxns], { fx: FX }).filter(t => t._remit) : [],
+    [rawIncome, rawTxns, FX, view])
+  const sideCurs: ('AED' | 'INR')[] = view === 'uae' ? ['AED'] : view === 'india' ? ['INR'] : ['AED', 'INR']
+  const sidesByMonth = useMemo(() => {
+    const rows: Record<string, any[]> = {}, inc: Record<string, number> = {}, landed: Record<string, number> = {}
+    yearTxns.forEach(t => { const m = t.txn_date?.slice(0, 7); if (m) (rows[`${t.currency}|${m}`] ||= []).push(t) })
+    incomeTransactions.forEach(t => {
+      const m = t.txn_date?.slice(0, 7); if (!m || !inView(t.currency) || !inScope(t)) return
+      inc[`${t.currency}|${m}`] = (inc[`${t.currency}|${m}`] ?? 0) + conv(Number(t.amount) || 0, t.currency)
+    })
+    landedRows.forEach(t => { const m = t.txn_date?.slice(0, 7); if (m && inScope(t)) landed[m] = (landed[m] ?? 0) + (Number(t.amount) || 0) })
+    return Object.fromEntries(months.map(m => [m, sideCurs.map(c => ({
+      cur: c, income: inc[`${c}|${m}`] ?? 0, received: c === 'INR' ? landed[m] ?? 0 : 0,
+      flow: cashOut(rows[`${c}|${m}`] ?? [], { view: c === 'AED' ? 'uae' : 'india', isCard: isCardRow, amount: disp }),
+    }))])) as Record<string, Side[]>
+  }, [yearTxns, incomeTransactions, landedRows, view, FX, scope])
+  const flowByMonth = useMemo(() => Object.fromEntries(months.map(m => [m, sumFlows(sidesByMonth[m].map(x => x.flow))])) as Record<string, CashOut>, [sidesByMonth])
   // NRE alone: what moved on to NRO left it too
   const toNro = (m: string) => scope !== 'nre' ? 0 : yearTxns.filter(t => t.txn_date?.slice(0, 7) === m && isNreToNro(t)).reduce((a, t) => a + disp(t), 0)
-  const leftCol = (m: string) => cashLeft(incomeCol(m), flowByMonth[m]) - toNro(m)
+  const leftCol = (m: string) => sidesByMonth[m].reduce((a, x) => a + sideLeft(x), 0) - toNro(m)
 
   const outflowGrand  = months.reduce((a, m) => a + outflowCol(m), 0)
   const incomeGrand   = months.reduce((a, m) => a + incomeCol(m), 0)
@@ -174,15 +197,15 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
   const fMonths = flowPeriod === 'range' && rangeMonths.length ? rangeMonths : months
   const fLabel = flowPeriod === 'range' && rangeMonths.length
     ? (rangeMonths.length === 1 ? mLabel(rangeMonths[0]) : `${mLabel(rangeMonths[0])} – ${mLabel(rangeMonths[rangeMonths.length - 1])}`) : String(viewYear)
-  const F = fMonths.reduce((acc, m) => {
-    const f = flowByMonth[m]
-    return { direct: acc.direct + f.direct, cardBills: acc.cardBills + f.cardBills, emis: acc.emis + f.emis, invested: acc.invested + f.invested,
-      sentHome: acc.sentHome + f.sentHome, onCards: acc.onCards + f.onCards, cardLoanEmis: acc.cardLoanEmis + f.cardLoanEmis }
-  }, { direct: 0, cardBills: 0, emis: 0, invested: 0, sentHome: 0, onCards: 0, cardLoanEmis: 0 } as CashOut)
+  const fSides: Side[] = sideCurs.map(c => {
+    const xs = fMonths.map(m => sidesByMonth[m].find(x => x.cur === c)!)
+    return { cur: c, income: xs.reduce((a, x) => a + x.income, 0), received: xs.reduce((a, x) => a + x.received, 0), flow: sumFlows(xs.map(x => x.flow)) }
+  })
+  const F = sumFlows(fSides.map(x => x.flow))
   const fIncome = fMonths.reduce((a, m) => a + incomeCol(m), 0)
   const fToNro = fMonths.reduce((a, m) => a + toNro(m), 0)
   const fExpenses = fMonths.reduce((a, m) => a + outflowCol(m), 0)
-  const fLeft = cashLeft(fIncome, F) - fToNro
+  const fLeft = fSides.reduce((a, x) => a + sideLeft(x), 0) - fToNro
   const fCharged = F.onCards + F.cardLoanEmis
 
   const activeExpense  = expenseCats.filter(c => rowTot(c) > 0).sort((a, b) => rowTot(b) - rowTot(a))
@@ -358,17 +381,61 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
       {/* ─────────────── MONTHLY TAB ─────────────── */}
       {tab === 'monthly' && (
         <>
-          {/* Where the income went, in cash: each thing that left your bank & cash once */}
+          {/* Where the income went, in cash: each thing that left your bank & cash once.
+              All view: UAE and India side by side — sent to India leaves one, arrives in the other */}
           {(fIncome > 0 || fExpenses > 0) && (() => {
-            const lines = [
-              { k: 'Spent from bank & cash', sub: 'living costs and family support, paid directly', v: F.direct, c: '#6A55E8' },
-              { k: 'Card bills paid', sub: fCharged > 0 ? `pays for what you charged to cards — ${money(fCharged)} in this period` : 'pays for what you charged to cards', v: F.cardBills, c: '#9333EA' },
-              { k: 'Loan EMIs', sub: 'paid from the bank', v: F.emis, c: '#F29A2E' },
-              { k: 'Invested', sub: 'still yours — counts as saving', v: F.invested, c: '#2FB67C' },
-              { k: 'Sent to India', sub: 'left your UAE accounts for your NRE', v: F.sentHome, c: '#0EA5E9' },
-              { k: 'Moved to NRO', sub: 'left the NRE account for daily spending', v: fToNro, c: '#3B8EF0' },
-            ].filter(l => l.v > 0)
-            const base = Math.max(fIncome, lines.reduce((a, l) => a + l.v, 0), 1)
+            const two = fSides.length > 1
+            const where = (x: Side) => two ? (x.cur === 'AED' ? 'UAE accounts' : 'India accounts') : 'your accounts'
+            const renderSide = (x: Side) => {
+              const lines = [
+                { k: 'Spent from bank & cash', sub: 'living costs and family support, paid directly', v: x.flow.direct, c: '#6A55E8' },
+                { k: 'Card bills paid', sub: x.flow.onCards + x.flow.cardLoanEmis > 0 ? `pays for what you charged to cards — ${money(x.flow.onCards + x.flow.cardLoanEmis)} in this period` : 'pays for what you charged to cards', v: x.flow.cardBills, c: '#9333EA' },
+                { k: 'Loan EMIs', sub: 'paid from the bank', v: x.flow.emis, c: '#F29A2E' },
+                { k: 'Invested', sub: 'still yours — counts as saving', v: x.flow.invested, c: '#2FB67C' },
+                { k: 'Sent to India', sub: 'from your UAE accounts to your NRE', v: x.flow.sentHome, c: '#0EA5E9' },
+                ...(x.cur === 'INR' ? [{ k: 'Moved to NRO', sub: 'left the NRE account for daily spending', v: fToNro, c: '#3B8EF0' }] : []),
+              ].filter(l => l.v > 0)
+              const left = sideLeft(x) - (x.cur === 'INR' ? fToNro : 0)
+              const base = Math.max(x.income + x.received, lines.reduce((a, l) => a + l.v, 0), 1)
+              return (
+                <div key={x.cur} className="min-w-0">
+                  {two && <div className="text-[11px] font-semibold uppercase tracking-[0.05em]" style={{ color: 'var(--text3)' }}>{where(x)}{x.cur === 'AED' && view === 'consolidated' ? ' · in ₹ at today’s rate' : ''}</div>}
+                  <div className="flex h-2.5 rounded-full overflow-hidden gap-[2px] mt-2" style={{ background: 'var(--track)' }} role="img"
+                    aria-label={`${lines.map(l => `${l.k} ${money(l.v)}`).join(', ')}, left ${money(Math.max(left, 0))}`}>
+                    {lines.map(l => <div key={l.k} style={{ width: `${l.v / base * 100}%`, background: l.c }} />)}
+                    {left > 0 && <div style={{ width: `${left / base * 100}%`, background: '#CBD5E1' }} />}
+                  </div>
+                  <div className="mt-2">
+                    <div className="flex justify-between gap-3 py-2 text-[13.5px]">
+                      <span className="font-semibold" style={{ color: 'var(--text)' }}>Came in</span>
+                      <span className="font-bold tabular-nums" style={{ color: '#1E8F5F' }}>{money(x.income)}</span>
+                    </div>
+                    {x.received > 0 && (
+                      <div className="flex justify-between gap-3 py-2" style={{ borderTop: '1px solid var(--track)' }}>
+                        <span className="min-w-0"><span className="block text-[13px]" style={{ color: 'var(--text2)' }}>+ Received from UAE</span>
+                          <span className="block text-[11.5px]" style={{ color: 'var(--text4)' }}>what you sent, as it landed in NRE</span></span>
+                        <span className="text-[13px] font-semibold tabular-nums" style={{ color: '#1E8F5F' }}>{money(x.received)}</span>
+                      </div>
+                    )}
+                    {lines.map(l => (
+                      <div key={l.k} className="flex justify-between gap-3 py-2" style={{ borderTop: '1px solid var(--track)' }}>
+                        <span className="flex items-start gap-2 min-w-0">
+                          <i className="w-2.5 h-2.5 rounded-sm flex-shrink-0 mt-1" style={{ background: l.c }} />
+                          <span className="min-w-0"><span className="block text-[13px]" style={{ color: 'var(--text2)' }}>− {l.k}</span>
+                            <span className="block text-[11.5px]" style={{ color: 'var(--text4)' }}>{l.sub}</span></span>
+                        </span>
+                        <span className="text-[13px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{money(l.v)}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between gap-3 pt-2.5 mt-1" style={{ borderTop: '1.5px solid var(--line)' }}>
+                      <span className="flex items-center gap-2"><i className="w-2.5 h-2.5 rounded-sm" style={{ background: '#CBD5E1' }} />
+                        <span className="text-[13.5px] font-bold" style={{ color: 'var(--text)' }}>= Left in {where(x)}</span></span>
+                      <span className="text-[15px] font-bold tabular-nums" style={{ color: left >= 0 ? '#1E8F5F' : '#D9482F' }}>{left < 0 ? '−' : ''}{money(Math.abs(left))}</span>
+                    </div>
+                  </div>
+                </div>
+              )
+            }
             const gap = fCharged - F.cardBills
             return (
               <section className="wl-card px-4 md:px-5 py-4 md:py-[18px]" aria-label="Where your income went">
@@ -379,32 +446,14 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
                       options={[{ value: 'range' as const, label: rangeMonths.length === 1 ? mLabel(rangeMonths[0]) : 'Selected months' }, { value: 'year' as const, label: String(viewYear) }]} />
                   )}
                 </div>
-                <div className="flex h-2.5 rounded-full overflow-hidden gap-[2px] mt-3" style={{ background: 'var(--track)' }} role="img"
-                  aria-label={`${lines.map(l => `${l.k} ${money(l.v)}`).join(', ')}, left ${money(Math.max(fLeft, 0))}`}>
-                  {lines.map(l => <div key={l.k} style={{ width: `${l.v / base * 100}%`, background: l.c }} />)}
-                  {fLeft > 0 && <div style={{ width: `${fLeft / base * 100}%`, background: '#CBD5E1' }} />}
-                </div>
-                <div className="mt-2">
-                  <div className="flex justify-between gap-3 py-2 text-[13.5px]">
-                    <span className="font-semibold" style={{ color: 'var(--text)' }}>Came in</span>
-                    <span className="font-bold tabular-nums" style={{ color: '#1E8F5F' }}>{money(fIncome)}</span>
+                <div className={two ? 'grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5 mt-3' : 'mt-1'}>{fSides.map(renderSide)}</div>
+                {two && (
+                  <div className="flex justify-between gap-3 mt-4 rounded-xl px-3.5 py-3" style={{ background: 'var(--accent-bg)', border: '1px solid var(--accent-border)' }}>
+                    <span className="min-w-0"><span className="block text-[14px] font-bold" style={{ color: 'var(--text)' }}>Left in your accounts</span>
+                      <span className="block text-[11.5px]" style={{ color: 'var(--text3)' }}>UAE + India. What you sent home came off the UAE side and arrived on the India side, so it’s counted once.</span></span>
+                    <span className="text-[17px] font-bold tabular-nums flex-shrink-0" style={{ color: fLeft >= 0 ? '#1E8F5F' : '#D9482F' }}>{fLeft < 0 ? '−' : ''}{money(Math.abs(fLeft))}</span>
                   </div>
-                  {lines.map(l => (
-                    <div key={l.k} className="flex justify-between gap-3 py-2" style={{ borderTop: '1px solid var(--track)' }}>
-                      <span className="flex items-start gap-2 min-w-0">
-                        <i className="w-2.5 h-2.5 rounded-sm flex-shrink-0 mt-1" style={{ background: l.c }} />
-                        <span className="min-w-0"><span className="block text-[13px]" style={{ color: 'var(--text2)' }}>− {l.k}</span>
-                          <span className="block text-[11.5px]" style={{ color: 'var(--text4)' }}>{l.sub}</span></span>
-                      </span>
-                      <span className="text-[13px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{money(l.v)}</span>
-                    </div>
-                  ))}
-                  <div className="flex justify-between gap-3 pt-2.5 mt-1" style={{ borderTop: '1.5px solid var(--line)' }}>
-                    <span className="flex items-center gap-2"><i className="w-2.5 h-2.5 rounded-sm" style={{ background: '#CBD5E1' }} />
-                      <span className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>= Left in your accounts</span></span>
-                    <span className="text-[16px] font-bold tabular-nums" style={{ color: fLeft >= 0 ? '#1E8F5F' : '#D9482F' }}>{fLeft < 0 ? '−' : ''}{money(Math.abs(fLeft))}</span>
-                  </div>
-                </div>
+                )}
                 <div className="mt-3 rounded-xl px-3.5 py-3 text-[12px] leading-relaxed" style={{ background: '#FAFAFE', border: '1px solid var(--line)', color: 'var(--text3)' }}>
                   <b style={{ color: 'var(--text2)' }}>Counted once.</b> Your expenses for {fLabel} ({money(fExpenses)}) = {money(F.direct)} paid from bank &amp; cash
                   {F.onCards > 0 ? <> + {money(F.onCards)} charged to cards</> : null}{F.emis > 0 ? <> + {money(F.emis)} EMIs</> : null}{F.invested > 0 ? <> + {money(F.invested)} invested</> : null}.

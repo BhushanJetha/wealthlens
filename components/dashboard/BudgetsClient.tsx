@@ -13,7 +13,7 @@ import { prepareMoney, spendGroup, SPEND_GROUPS, type SpendGroup } from '@/lib/m
 import { daysInMonth, localToday, fmtDay } from '@/lib/insights'
 import {
   spendByCategory, budgetLines, budgetLabel, planMonthBudgets, carryIn, fundPlan, fundCover, weekOf, monthMoney, personSpend, addMonths,
-  NOT_PLANABLE, FIXED, SAVINGS, PERSON, type BudgetLine, type Cur, type Fund,
+  NOT_PLANABLE, PAYMENT_BUDGETS, FIXED, SAVINGS, PERSON, type BudgetLine, type Cur, type Fund,
 } from '@/lib/budgets'
 import { PageHeader, InsightBar, AiActions, KpiTile, KpiGrid, Panel, Ring, LearnStrip, MoreLink } from '@/components/ui/kit'
 import { ChipFilter } from '@/components/ui/list'
@@ -118,16 +118,20 @@ export default function BudgetsClient({ today: serverToday, budgets: initial, tr
   const build = (c: Cur, m: string) => {
     const spend = spendByCategory(transactions, m, c)
     const ls = budgetLines(budgets, spend, m, c, { carry: carryIn(budgets, transactions, m, c), cover: fundCover(funds, m, c) })
-    return { spend, lines: ls, cap: ls.reduce((a, l) => a + l.cap, 0), spent: ls.reduce((a, l) => a + l.spent, 0) }
+    // Totals leave out the card-payment budget (it pays for purchases counted above)
+    const counted = ls.filter(l => !PAYMENT_BUDGETS.has(l.category))
+    return { spend, lines: ls, cap: counted.reduce((a, l) => a + l.cap, 0), spent: counted.reduce((a, l) => a + l.spent, 0) }
   }
   const { spend, lines, cap, spent } = useMemo(() => build(cur, month), [budgets, transactions, funds, cur, month]) // eslint-disable-line react-hooks/exhaustive-deps
   const both = useMemo(() => view === 'consolidated' ? (['AED', 'INR'] as Cur[]).map(c => ({ c, ...build(c, month) })) : [], [budgets, transactions, funds, view, month]) // eslint-disable-line react-hooks/exhaustive-deps
   const left = cap - spent
-  const outside = Object.entries(spend).filter(([c]) => !lines.some(l => l.category === c) && !NOT_PLANABLE.has(c)).reduce((a, [, v]) => a + v, 0)
+  const outside = Object.entries(spend).filter(([c]) => !lines.some(l => l.category === c) && !NOT_PLANABLE.has(c) && !PAYMENT_BUDGETS.has(c)).reduce((a, [, v]) => a + v, 0)
+  const counted = lines.filter(l => !PAYMENT_BUDGETS.has(l.category))
+  const payLines = lines.filter(l => PAYMENT_BUDGETS.has(l.category))
   const flex = lines.filter(l => !FIXED.has(l.category))
   const flexLeft = flex.reduce((a, l) => a + Math.max(l.left, 0), 0)
-  const expectedNow = flex.reduce((a, l) => a + l.cap * day / dim, 0) + lines.filter(l => FIXED.has(l.category)).reduce((a, l) => a + l.spent, 0)
-  const projected = !isCurrent ? spent : lines.reduce((a, l) => a + (FIXED.has(l.category) ? Math.max(l.spent, l.cap) : day > 0 ? l.spent / day * dim : l.spent), 0)
+  const expectedNow = flex.reduce((a, l) => a + l.cap * day / dim, 0) + counted.filter(l => FIXED.has(l.category)).reduce((a, l) => a + l.spent, 0)
+  const projected = !isCurrent ? spent : counted.reduce((a, l) => a + (FIXED.has(l.category) ? Math.max(l.spent, l.cap) : day > 0 ? l.spent / day * dim : l.spent), 0)
   const usedPct = cap > 0 ? spent / cap * 100 : 0
   const counts = { over: lines.filter(l => l.status === 'over').length, near: lines.filter(l => l.status === 'near').length, ok: lines.filter(l => l.status === 'ok').length }
   const shown = lines.filter(l => filter === 'all' || l.status === filter)
@@ -145,7 +149,7 @@ export default function BudgetsClient({ today: serverToday, budgets: initial, tr
   const setAside = fundRows.reduce((a, r) => a + r.p.monthly, 0)
 
   // ── Income split ──
-  const groups = SPEND_GROUPS.map(g => ({ key: g.key as string, label: g.label, color: g.color, cap: lines.filter(l => groupOf(l.category) === g.key).reduce((a, l) => a + l.base, 0) })).filter(g => g.cap > 0)
+  const groups = SPEND_GROUPS.map(g => ({ key: g.key as string, label: g.label, color: g.color, cap: counted.filter(l => groupOf(l.category) === g.key).reduce((a, l) => a + l.base, 0) })).filter(g => g.cap > 0)
   if (setAside > 0) groups.push({ key: 'funds', label: 'Set aside for yearly costs', color: '#0891B2', cap: setAside })
   const planned = groups.reduce((a, g) => a + g.cap, 0)
   const unplanned = incomeAvg - planned
@@ -163,7 +167,7 @@ export default function BudgetsClient({ today: serverToday, budgets: initial, tr
 
   // ── History & grid ──
   const history = useMemo(() => {
-    const cats = new Set(lines.map(l => l.category))
+    const cats = new Set(lines.map(l => l.category).filter(c => !PAYMENT_BUDGETS.has(c)))
     return Array.from({ length: 12 }, (_, i) => addMonths(month, i - 11)).map(m => {
       const sp = spendByCategory(transactions, m, cur)
       const c = budgetLines(budgets, sp, m, cur).filter(l => cats.has(l.category)).reduce((a, l) => a + l.base, 0)
@@ -174,7 +178,7 @@ export default function BudgetsClient({ today: serverToday, budgets: initial, tr
   const grid = useMemo(() => {
     const months = Array.from({ length: 6 }, (_, i) => addMonths(month, i - 5))
     const per = months.map(m => ({ sp: spendByCategory(transactions, m, cur), ls: budgetLines(budgets, {}, m, cur) }))
-    const cats = Array.from(new Set([...lines.map(l => l.category), ...Object.entries(spend).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([c]) => c)])).filter(c => !NOT_PLANABLE.has(c))
+    const cats = Array.from(new Set([...lines.map(l => l.category), ...Object.entries(spend).filter(([c]) => !PAYMENT_BUDGETS.has(c)).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([c]) => c)])).filter(c => !NOT_PLANABLE.has(c))
     return { months, cats, cell: (c: string, i: number) => ({ v: per[i].sp[c] ?? 0, cap: per[i].ls.find(l => l.category === c)?.base ?? 0 }) }
   }, [transactions, budgets, month, cur, lines, spend])
 
@@ -376,6 +380,7 @@ export default function BudgetsClient({ today: serverToday, budgets: initial, tr
                           {l.manual ? <Lock size={11} style={{ color: 'var(--text4)' }} aria-label="Fixed amount" className="flex-shrink-0" />
                             : <span className="text-[10px] font-semibold px-1.5 py-[1px] rounded-full flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent2)' }}>Auto</span>}
                           {l.rollover && <Repeat size={11} style={{ color: 'var(--text4)' }} aria-label="Rolls over" className="flex-shrink-0" />}
+                          {PAYMENT_BUDGETS.has(l.category) && <span className="text-[10px] font-semibold px-1.5 py-[1px] rounded-full flex-shrink-0" style={{ background: '#F3E8FF', color: '#7E22CE' }} title="Card bills you paid this month. They pay for card purchases already counted in the other budgets, so this isn’t added to the totals.">not in totals</span>}
                           {l.carry > 0 && <span className="hidden sm:inline text-[10.5px] font-semibold px-1.5 py-[1px] rounded-full flex-shrink-0" style={{ background: '#E7F7EF', color: '#1E7A50' }}>+{short(l.carry)} rolled over</span>}
                           {l.cover > 0 && <span className="hidden sm:inline text-[10.5px] font-semibold px-1.5 py-[1px] rounded-full flex-shrink-0" style={{ background: '#E0F4F8', color: '#0E7490' }}>+{short(l.cover)} from yearly fund</span>}
                         </span>
@@ -401,6 +406,11 @@ export default function BudgetsClient({ today: serverToday, budgets: initial, tr
               )
             })}
           </ul>
+        )}
+        {payLines.length > 0 && (
+          <p className="px-4 md:px-5 py-2.5 text-[11.5px] leading-snug" style={{ borderTop: '1px solid var(--track)', color: 'var(--text4)' }}>
+            {budgetLabel('Credit Card Payment')} counts the card bills you pay (a payment on both your bank and card statement counts once). It pays for card purchases already in the budgets above, so it shows its own % used but isn’t added to the totals. EMI / loan payments include EMIs billed to a card.
+          </p>
         )}
       </section>
 

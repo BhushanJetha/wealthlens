@@ -22,15 +22,19 @@ export type Cur = 'AED' | 'INR'
 // The money view a currency's budget is counted in
 export const curView = (c: Cur): View => (c === 'AED' ? 'uae' : 'india')
 
-// Card bills settle spends already budgeted elsewhere; refunds are money back
-export const NOT_PLANABLE = new Set(['Credit Card Payment', 'Loan on Card', 'Refund'])
+// Refunds are money back; a card-loan EMI counts under EMI / loan payments
+export const NOT_PLANABLE = new Set(['Loan on Card', 'Refund'])
+// Card bills paid: a budget of its own (what goes to card bills each month),
+// shown with its % used but kept out of the totals — the card purchases it
+// pays for are already in their own categories
+export const PAYMENT_BUDGETS = new Set(['Credit Card Payment'])
 // Fixed commitments: budgeted at their latest amount, never "ahead of pace", no rollover
-export const FIXED = new Set(['EMI/Loan', 'Rent', 'Investment', 'Family Transfer', 'Insurance'])
+export const FIXED = new Set(['EMI/Loan', 'Rent', 'Investment', 'Family Transfer', 'Insurance', 'Credit Card Payment'])
 // Reserved budget rows (not categories)
 export const SAVINGS = '__savings__'
 export const PERSON = '__person__'
 export const isReserved = (c: string) => c === SAVINGS || c === PERSON
-const LABEL: Record<string, string> = { 'EMI/Loan': 'EMI / loan payments', Transfer: 'Money transfer', 'International Transfer': 'Sent home' }
+const LABEL: Record<string, string> = { 'EMI/Loan': 'EMI / loan payments', Transfer: 'Money transfer', 'International Transfer': 'Sent home', 'Credit Card Payment': 'Credit card payments' }
 export const budgetLabel = (c: string) => LABEL[c] ?? labelOf(c)
 
 // Money out that a category budget can cover (spent, EMIs, investing, money sent home)
@@ -39,15 +43,27 @@ export const budgetLabel = (c: string) => LABEL[c] ?? labelOf(c)
 const budgetable = (t: any) => (isSpend(t) || isRemitOut(t)) && !t.event_id
 const curOf = (b: any): Cur => (b.currency === 'AED' ? 'AED' : 'INR')
 
-// Spend per category in a month, in that currency (optionally between two days)
+// Spend per category in a month, in that currency (optionally between two days).
+// Also: card bills paid (under Credit Card Payment — a payment on both the bank
+// and the card statement counts once) and card-loan EMIs (under EMI/Loan).
 export function spendByCategory(txns: any[], month: string, cur: Cur, fromDay = 1, toDay = 31): Record<string, number> {
   const out: Record<string, number> = {}
+  const add = (c: string, v: number) => { out[c] = (out[c] ?? 0) + v }
+  const bills: any[] = []
   for (const t of txns) {
-    if (t.currency !== cur || ymOf(t.txn_date) !== month || !budgetable(t)) continue
+    if (t.currency !== cur || ymOf(t.txn_date) !== month || t.txn_type === 'income') continue
     const d = Number(String(t.txn_date).slice(8, 10))
     if (d < fromDay || d > toDay) continue
-    const c = catOf(t)
-    out[c] = (out[c] ?? 0) + (Number(t.amount) || 0)
+    const v = Number(t.amount) || 0
+    if (canonCategory(String(t.category ?? '').trim()) === 'Credit Card Payment') {
+      const twin = bills.some(b => b.account_id !== t.account_id && Math.abs((Number(b.amount) || 0) - v) <= Math.max(1, v * 0.01)
+        && Math.abs(Number(String(b.txn_date).slice(8, 10)) - d) <= 4)
+      if (!twin) { add('Credit Card Payment', v); bills.push(t) }
+      if (!t._cardSpend) continue          // a bill standing in for unimported card purchases is spending too
+    }
+    if (catOf(t) === 'Loan on Card') { if (!t.event_id) add('EMI/Loan', v); continue }
+    if (!budgetable(t)) continue
+    add(catOf(t), v)
   }
   return out
 }
@@ -119,7 +135,7 @@ export function budgetLines(budgets: any[], spend: Record<string, number>, month
   extras: { carry?: Record<string, number>; cover?: Record<string, number> } = {}): BudgetLine[] {
   const RANK: Record<BudgetStatus, number> = { over: 0, near: 1, ok: 2 }
   return budgets
-    .filter(b => b.month_year === month && curOf(b) === cur && !NOT_PLANABLE.has(b.category) && !isReserved(b.category) && Number(b.monthly_cap) >= 0)
+    .filter(b => b.month_year === month && curOf(b) === cur && !NOT_PLANABLE.has(canonCategory(b.category)) && !isReserved(b.category) && Number(b.monthly_cap) >= 0)
     .map(b => {
       const category = canonCategory(b.category), base = Number(b.monthly_cap) || 0
       const carry = extras.carry?.[category] ?? 0, cover = extras.cover?.[category] ?? 0
