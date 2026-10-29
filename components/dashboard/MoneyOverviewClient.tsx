@@ -73,7 +73,7 @@ export default function MoneyOverviewClient(p: Props) {
   const weekIn = incoming.filter(i => daysBetween(today, i.date) <= 7)
   const dueWeek = week.reduce((s, d) => s + viewAmount(d.amount, d.currency, view, FX), 0)
   const owed = cards.reduce((s, c) => s + viewAmount(Number(c.outstanding_bal) || 0, c.currency, view, FX), 0)
-  const toReview = useMemo(() => reviewCount(findReviewItems(p.transactions, { today, fx: FX })), [p.transactions, today, FX])
+  const toReview = useMemo(() => reviewCount(findReviewItems(p.transactions, { today, fx: FX, accounts: p.accounts })), [p.transactions, today, FX, p.accounts])
   const needs = [...warnings, ...ins.attention.filter(KEEP),
     ...(toReview ? [{ id: 'review', severity: 'low' as const, title: `${toReview} transaction${toReview === 1 ? '' : 's'} to review`,
       detail: 'Missing “Paid from”, vague categories or possible duplicates — fix them in a tap', href: '/dashboard/money/review' }] : [])]

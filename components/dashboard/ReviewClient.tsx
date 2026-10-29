@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Landmark, Tag, Copy, Send, Trash2, X, Wand2, ArrowLeftRight } from 'lucide-react'
+import { Landmark, Tag, Copy, Send, Trash2, X, Wand2, ArrowLeftRight, Coins } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useCategoryStore } from '@/store/categoryStore'
 import { fmtMoney } from '@/lib/format'
@@ -22,6 +22,7 @@ const KINDS: { key: ReviewKind; label: string; icon: typeof Landmark; c: string 
   { key: 'duplicate', label: 'Duplicates', icon: Copy, c: '#F29A2E' },
   { key: 'remit', label: 'Sent home', icon: Send, c: '#2FB67C' },
   { key: 'transfer', label: 'Transfers', icon: ArrowLeftRight, c: '#0891B2' },
+  { key: 'currency', label: 'Currency', icon: Coins, c: '#D9482F' },
 ]
 const MIGRATION_HINT = 'Run migration 027 in Supabase to use this.'
 // What a transfer of unknown kind can be (the kinds in Add transaction)
@@ -47,7 +48,7 @@ export default function ReviewClient(p: Props) {
   const [limit, setLimit] = useState(15)
   useEffect(() => setRules(p.rules), [p.rules])
 
-  const all = useMemo(() => findReviewItems(p.transactions, { today, fx: p.fx }), [p.transactions, today, p.fx])
+  const all = useMemo(() => findReviewItems(p.transactions, { today, fx: p.fx, accounts: p.accounts }), [p.transactions, today, p.fx, p.accounts])
   const items = all.filter(i => !done.has(i.id))
   const shown = items.filter(i => filter === 'all' || i.kind === filter)
   const accById = new Map(p.accounts.map(a => [a.id, a]))
@@ -91,6 +92,20 @@ export default function ReviewClient(p: Props) {
     setBusy(null)
     const what = patch.sub_category ? (TRANSFER_KIND_LABEL[patch.sub_category] ?? patch.sub_category) : patch.txn_type === 'expense' ? 'spending' : patch.category ? labelOf(patch.category) : accName(patch.account_id)
     finish(item.id, `${ids.length} transaction${ids.length === 1 ? '' : 's'} set to ${what}.${extra}`)
+  }
+
+  // Put an amount back in its account's currency. A transfer kind that only
+  // exists in the other currency (UAE → India is AED, NRE → NRO is ₹) is
+  // cleared, so it comes back under Transfers to pick what it was.
+  async function fixCurrency(item: ReviewItem) {
+    const t = item.txns[0], cur = item.currency!
+    const wrongKind = (t.sub_category === 'International' && cur === 'INR') || ((t.sub_category === 'Internal' || t.sub_category === 'NRO to NRE') && cur === 'AED')
+    setBusy(item.id)
+    const { error } = await supabase.from('transactions')
+      .update({ currency: cur, country: cur === 'AED' ? 'UAE' : 'India', ...(wrongKind ? { sub_category: null } : {}) }).eq('id', t.id)
+    setBusy(null)
+    if (error) { fail(error.message); return }
+    finish(item.id, `Back to ${fmtMoney(Number(t.amount), cur)}.${wrongKind ? ' Now pick what kind of transfer it was, under Transfers.' : ''}`)
   }
 
   async function markReviewed(item: ReviewItem, ids: string[], text: string) {
@@ -150,7 +165,8 @@ export default function ReviewClient(p: Props) {
               onFix={(patch, always, key) => fix(item, patch, always, key)}
               onReviewed={(ids, text) => markReviewed(item, ids, text)}
               onDeleteCopy={() => deleteCopy(item)}
-              onAddCredit={() => setAdding(item)} />
+              onAddCredit={() => setAdding(item)}
+              onFixCurrency={() => fixCurrency(item)} />
           ))}
           {shown.length > limit && (
             <button onClick={() => setLimit(l => l + 15)} className="wl-btn self-center" style={{ height: 34 }}>Show {Math.min(15, shown.length - limit)} more</button>
@@ -201,11 +217,11 @@ export default function ReviewClient(p: Props) {
   )
 }
 
-function ReviewCard({ item, busy, accounts, accUse, accName, cats, onFix, onReviewed, onDeleteCopy, onAddCredit }: {
+function ReviewCard({ item, busy, accounts, accUse, accName, cats, onFix, onReviewed, onDeleteCopy, onAddCredit, onFixCurrency }: {
   item: ReviewItem; busy: boolean; accounts: any[]; accUse: Record<string, number>; accName: (id?: string | null) => string | null; cats: string[]
   onFix: (patch: { account_id?: string; category?: string; sub_category?: string | null; txn_type?: string }, always: boolean, key: string) => void
   onReviewed: (ids: string[], text: string) => void
-  onDeleteCopy: () => void; onAddCredit: () => void
+  onDeleteCopy: () => void; onAddCredit: () => void; onFixCurrency: () => void
 }) {
   const K = KINDS.find(k => k.key === item.kind)!
   const t0 = item.txns[0]
@@ -273,6 +289,16 @@ function ReviewCard({ item, busy, accounts, accUse, accName, cats, onFix, onRevi
       <div className="flex flex-wrap gap-1.5">
         {kinds.map((k, i) => chip(TRANSFER_KIND_LABEL[k], () => onFix({ category: 'Transfer', sub_category: k }, false, ''), i === 0, k))}
         {chip('It was spending', () => onFix({ txn_type: 'expense', category: 'Other', sub_category: null }, false, ''), false, 'spend')}
+      </div>
+    )
+  } else if (item.kind === 'currency') {
+    const right = item.currency!
+    title = <>{t0.merchant || 'Transaction'} · {fmtMoney(Number(t0.amount), cur)}</>
+    sub = `${fmtDay(t0.txn_date)} · ${accName(t0.account_id) ?? 'its account'} is a ${right === 'AED' ? 'dirham' : 'rupee'} account, so the currency was probably changed by mistake${item.estimate ? ` — it counts as about ${fmtMoney(item.estimate, 'INR')}` : ''}`
+    body = (
+      <div className="flex flex-wrap gap-1.5">
+        {chip(`Change to ${fmtMoney(Number(t0.amount), right)}`, onFixCurrency, true, 'fix')}
+        {chip(`It really was ${cur === 'AED' ? 'AED' : '₹'}`, () => onReviewed([t0.id], `Kept in ${cur}.`), false, 'keep')}
       </div>
     )
   } else if (item.kind === 'duplicate') {

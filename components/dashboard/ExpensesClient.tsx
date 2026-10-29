@@ -176,7 +176,12 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
     { key: 'atm',         label: 'ATM Withdrawal',   desc: 'Cash withdrawn from bank — tops up Cash', icon: Banknote,   color: '#0891B2' },
   ]
 
-  const paged = filteredForMonth.slice((page-1)*pageSize, page*pageSize)
+  // The list is spending: moves between your own accounts (UAE → India,
+  // NRE → NRO, card bills, ATM cash…) are on Money flow, unless you pick
+  // their category in the filter
+  const listRows  = cat === 'All' ? filteredForMonth.filter(t => spendGroup(t)) : filteredForMonth
+  const movesLeft = filteredForMonth.length - listRows.length
+  const paged = listRows.slice((page-1)*pageSize, page*pageSize)
 
   // ── Design v2 summary: KPIs, monthly bars, category breakdown, insight ──
   const cur       = view === 'uae' ? 'AED' : 'INR'
@@ -231,7 +236,8 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
       if (view === 'uae' && t.currency !== 'AED') return
       if (view === 'india' && t.currency !== 'INR') return
       if (!inRange(t.txn_date) || (accFilter !== 'All' && t.account_id !== accFilter)) return
-      n[t.category] = (n[t.category] ?? 0) + 1; all++
+      n[t.category] = (n[t.category] ?? 0) + 1
+      if (spendGroup(t)) all++     // "All" lists spending only (moves are on Money flow)
     })
     if (cat !== 'All' && !n[cat]) n[cat] = 0
     return [{ key: 'All', label: 'All', count: all },
@@ -479,7 +485,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
 
       {/* Transactions: search, account and category filters live in the card */}
       <ListCard className="max-md:order-9" title="Transactions"
-        sub={`${filteredForMonth.length} in ${rangeLabel}${cat !== 'All' ? ` · ${cat}` : ''}`}
+        sub={`${listRows.length} in ${rangeLabel}${cat !== 'All' ? ` · ${cat}` : ''}`}
         head={['Merchant', 'Category', 'Date', 'Amount']}
         right={<button onClick={() => setManageCats(true)} className="wl-btn flex-shrink-0" style={{ height: 30, fontSize: 12 }}><Settings2 size={13} />Categories</button>}
         toolbar={<>
@@ -493,14 +499,19 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
           <ChipFilter label="Category" value={cat} options={catOptions}
             onChange={c => { setCat(c); if ((getBudgetStatus(c)?.pct ?? 0) >= 100) setAlertCat(c) }} />
         </>}
-        empty={filteredForMonth.length === 0
+        empty={listRows.length === 0
           ? <div className="text-center py-12 text-[13px]" style={{ color:'var(--text3)', borderTop: '1px solid var(--line)' }}>
               No transactions{cat !== 'All' ? ` in ${cat}` : ''} for {rangeLabel}.
             </div>
           : undefined}
-        footer={filteredForMonth.length > 0 && <div>
-          <Pagination total={filteredForMonth.length} page={page} pageSize={pageSize}
-            onPage={setPage} onPageSize={s => { setPageSize(s); setPage(1) }} />
+        footer={(listRows.length > 0 || movesLeft > 0) && <div>
+          {movesLeft > 0 && (
+            <Link href="/dashboard/transfers" className="block px-4 md:px-5 py-3 text-[12.5px]" style={{ color: 'var(--text3)', borderTop: '1px solid var(--line)' }}>
+              {movesLeft} move{movesLeft === 1 ? '' : 's'} between your own accounts (UAE → India, NRE → NRO, card bills, ATM cash) {movesLeft === 1 ? 'isn’t' : 'aren’t'} spending, so {movesLeft === 1 ? 'it’s' : 'they’re'} on <span className="font-semibold" style={{ color: 'var(--accent)' }}>Money flow →</span>
+            </Link>
+          )}
+          {listRows.length > 0 && <Pagination total={listRows.length} page={page} pageSize={pageSize}
+            onPage={setPage} onPageSize={s => { setPageSize(s); setPage(1) }} />}
         </div>}>
         {paged.map(t => {
           const isTransfer = t.txn_type === 'transfer'

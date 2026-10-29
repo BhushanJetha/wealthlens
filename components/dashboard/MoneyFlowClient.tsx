@@ -1,10 +1,12 @@
 'use client'
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   Briefcase, Globe, Landmark, Wallet, ArrowRight, ArrowDown, Plus, ArrowRightLeft, CheckCircle2, Info, AlertTriangle, ChevronDown, ChevronUp,
-  type LucideIcon,
+  Pencil, Trash2, type LucideIcon,
 } from 'lucide-react'
+import { toast } from '@/components/ui/toaster'
 import { useViewStore } from '@/store/viewStore'
 import { pairRemittances, isIncome, isRemitOut, isNreToNro, spendGroup, catOf, labelOf, CC_BILL, MOVEMENT_CATS, type Remittance } from '@/lib/money'
 import { fmtDay } from '@/lib/insights'
@@ -71,7 +73,18 @@ const Flow = () => (
 export default function MoneyFlowClient({ transactions, accounts }: { transactions: any[]; accounts: any[] }) {
   const { fromMonth, toMonth, fxRate: FX } = useViewStore()
   const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState<any>(null)
+  const [deleting, setDeleting] = useState<string | null>(null)
   const [showMoves, setShowMoves] = useState(false)
+  const router = useRouter()
+  async function remove(t: any, ask: string) {
+    if (!confirm(ask)) return
+    setDeleting(t.id)
+    const res = await fetch(`/api/transactions?id=${t.id}`, { method: 'DELETE' })
+    setDeleting(null)
+    toast(res.ok ? 'Deleted' : 'Couldn’t delete it. Try again.', res.ok ? 'success' : 'error')
+    if (res.ok) router.refresh()
+  }
   const inR = (d?: string) => { const m = d?.slice(0, 7) ?? ''; return m >= fromMonth && m <= toMonth }
   const acc = (id?: string) => accounts.find(a => a.id === id)
   const isNreAcc = (id?: string) => /\bnre\b/i.test(`${acc(id)?.name ?? ''}`)
@@ -204,7 +217,17 @@ export default function MoneyFlowClient({ transactions, accounts }: { transactio
                   title={r.aed ? `${aedFmt(r.aed)} → ${inrFmt(r.inr)}` : inrFmt(r.inr)}
                   sub={[r.sentOn ? `Sent ${fmtDay(r.sentOn)}${from ? ` from ${from}` : ''}` : null, `landed ${fmtDay(r.landedOn)}${to ? ` in ${to}` : ''}`, st.note].filter(Boolean).join(' · ')}
                   tag={st.label} meta={r.rate ? `₹${r.rate.toFixed(2)}/AED` : '—'}
-                  amount={inrFmt(r.inr)} amountSub={r.aed ? aedFmt(r.aed) : undefined} />
+                  amount={inrFmt(r.inr)} amountSub={r.aed ? aedFmt(r.aed) : undefined}
+                  onOpen={() => setEditing(r.out ?? r.in)}
+                  actions={[
+                    ...(r.out ? [{ label: 'Edit transfer', icon: Pencil, onClick: () => setEditing(r.out) }] : []),
+                    ...(r.in && r.source !== 'via NRO' ? [{ label: r.out ? 'Edit the ₹ credit' : 'Edit', icon: Pencil, onClick: () => setEditing(r.in) }] : []),
+                    r.out
+                      ? { label: 'Delete transfer', icon: Trash2, danger: true, disabled: deleting === r.out.id,
+                          onClick: () => remove(r.out, `Delete the ${aedFmt(r.aed ?? 0)} transfer to India?${r.in && r.source === 'matched' ? ' The ₹ that landed stays, as money received from UAE.' : ''} This can’t be undone.`) }
+                      : { label: 'Delete', icon: Trash2, danger: true, disabled: deleting === r.in?.id,
+                          onClick: () => remove(r.in, `Delete the ${inrFmt(r.inr)} received from UAE? This can’t be undone.`) },
+                  ]} />
               )
             })}
           </ListCard>
@@ -238,7 +261,13 @@ export default function MoneyFlowClient({ transactions, accounts }: { transactio
               return (
                 <ListRow key={t.id ?? i} color="#94A3B8" initial={<ArrowRightLeft size={15} />} title={t.merchant || kind}
                   sub={acc(t.account_id)?.name} tag={kind} meta={fmtDay(t.txn_date)}
-                  amount={t.currency === 'AED' ? aedFmt(Number(t.amount)) : inrFmt(Number(t.amount))} amountColor="var(--text2)" />
+                  amount={t.currency === 'AED' ? aedFmt(Number(t.amount)) : inrFmt(Number(t.amount))} amountColor="var(--text2)"
+                  onOpen={() => setEditing(t)}
+                  actions={[
+                    { label: 'Edit', icon: Pencil, onClick: () => setEditing(t) },
+                    { label: 'Delete', icon: Trash2, danger: true, disabled: deleting === t.id,
+                      onClick: () => remove(t, `Delete ${t.merchant || 'this move'}? This can’t be undone.`) },
+                  ]} />
               )
             })}
           </ListCard>
@@ -258,6 +287,7 @@ export default function MoneyFlowClient({ transactions, accounts }: { transactio
         </section>
       </>)}
 
+      {editing && <AddTransactionModal edit={{ txn: editing }} onClose={() => { setEditing(null); router.refresh() }} />}
       {adding && <AddTransactionModal onClose={() => setAdding(false)} defaults={{ txn_type: 'transfer', sub_category: 'International', category: 'Transfer', currency: 'AED', merchant: 'Transfer to India' }} />}
     </div>
   )

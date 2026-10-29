@@ -1,27 +1,29 @@
 // Review inbox (Money › Review): transactions that make the numbers less
 // accurate until someone looks at them — no "Paid from", a vague category,
-// a likely duplicate, money sent home whose ₹ credit never showed up, or a
-// transfer of unknown kind (counted as money sent until it's sorted).
+// a likely duplicate, money sent home whose ₹ credit never showed up, a
+// transfer of unknown kind (counted as money sent until it's sorted), or an
+// amount in a different currency from its account.
 // Same-merchant items are grouped so one tap fixes them all.
 import { normMerchant } from './categoryMemory'
 import { ruleTextFor } from './rules'
 import { catOf, isSpend, pairRemittances, pairOwnTransfers, isUnknownTransfer, CC_BILL, MOVEMENT_CATS } from './money'
 import { daysBetween, addDaysTo } from './insights'
 
-export type ReviewKind = 'account' | 'category' | 'duplicate' | 'remit' | 'transfer'
+export type ReviewKind = 'account' | 'category' | 'duplicate' | 'remit' | 'transfer' | 'currency'
 export interface ReviewItem {
   id: string; kind: ReviewKind; date: string
   txns: any[]                 // account / category: every match in the group (newest first); duplicate: [copy, keep]; remit: [sent]
   key?: string                // rule text for the group's merchant
   suggestAccount?: string | null
   suggestCategory?: string | null
-  estimate?: number           // remit: ₹ at today's rate
+  estimate?: number           // remit / currency (AED): ₹ at today's rate
+  currency?: 'AED' | 'INR'    // currency: the account's currency
 }
 
 export const REVIEW_DAYS = 90
 export const isVagueCategory = (c: any) => !c || /^(other|uncategori[sz]ed)$/i.test(String(c).trim())
 
-export function findReviewItems(txns: any[], opts: { today: string; fx: number }): ReviewItem[] {
+export function findReviewItems(txns: any[], opts: { today: string; fx: number; accounts?: any[] }): ReviewItem[] {
   const { today, fx } = opts
   const since = addDaysTo(today, -REVIEW_DAYS)
   const real = txns.filter(t => !t._remit && t.txn_date)
@@ -40,6 +42,19 @@ export function findReviewItems(txns: any[], opts: { today: string; fx: number }
 
   const items: ReviewItem[] = []
   const inDup = new Set<string>()
+
+  // An amount in another currency than its account (any date): an account is
+  // one currency, so it was relabelled — e.g. ₹40,000 marked UAE → India
+  // became AED 40,000, about ₹9 lakh everywhere
+  const accCur = new Map((opts.accounts ?? []).map(a => [a.id, a.currency]))
+  const wrongCur = new Set<any>()
+  for (const t of real) {
+    const c = accCur.get(t.account_id)
+    if ((c !== 'AED' && c !== 'INR') || t.currency === c || t.reviewed_at) continue
+    wrongCur.add(t)
+    items.push({ id: `cur-${t.id}`, kind: 'currency', date: t.txn_date, txns: [t], currency: c,
+      ...(t.currency === 'AED' ? { estimate: Math.round((Number(t.amount) || 0) * fx) } : {}) })
+  }
 
   // Likely duplicates: same amount and currency within a day, same kind, a
   // similar merchant, and not two accounts' sides of one move
@@ -70,7 +85,7 @@ export function findReviewItems(txns: any[], opts: { today: string; fx: number }
 
   // Money sent home with no ₹ credit found (after 3 days) — counted at an estimate
   for (const r of pairRemittances(real, fx)) {
-    if (r.source !== 'estimated' || !r.out || !r.sentOn || r.sentOn < since || r.out.reviewed_at) continue
+    if (r.source !== 'estimated' || !r.out || !r.sentOn || r.sentOn < since || r.out.reviewed_at || wrongCur.has(r.out)) continue
     if (daysBetween(r.sentOn, today) < 3) continue
     items.push({ id: `remit-${r.out.id}`, kind: 'remit', date: r.sentOn, txns: [r.out], estimate: r.inr })
   }
@@ -89,7 +104,7 @@ export function findReviewItems(txns: any[], opts: { today: string; fx: number }
       })
     }
   }
-  const rest = open.filter(t => !inDup.has(t.id))
+  const rest = open.filter(t => !inDup.has(t.id) && !wrongCur.has(t))
   byKey('account', rest.filter(t => !t.account_id && (isSpend(t) || t.txn_type === 'income')))
   byKey('category', rest.filter(t => t.txn_type === 'expense' && isVagueCategory(t.category)))
   // Transfers of unknown kind that aren't one side of a move between your own accounts

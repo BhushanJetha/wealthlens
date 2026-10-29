@@ -34,6 +34,9 @@ const TRANSFER_GROUPS = [
 ]
 // Kinds that move money into another of your accounts (pick which one)
 const TO_ACCOUNT_KINDS = ['International', 'Internal', 'Own', 'Card bill']
+// Kinds that only exist in one currency: UAE → India leaves in AED, NRE → NRO is ₹
+const KIND_CURRENCY: Record<string, 'AED' | 'INR'> = { International: 'AED', Internal: 'INR', 'NRO to NRE': 'INR' }
+export const kindFits = (kind: string, currency: string) => !KIND_CURRENCY[kind] || KIND_CURRENCY[kind] === currency
 // How a bank payment was made (optional; else read from the description)
 const PAY_MODES = [['upi', 'UPI'], ['netbanking', 'Net banking'], ['debit_card', 'Debit card'], ['transfer', 'Transfer'], ['autodebit', 'Auto-debit']] as const
 // Loan categories are recorded as loan payments (they show under Loan payments)
@@ -170,11 +173,14 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
       : sub === 'Own' ? 'Transfer to my account' : isAtm ? 'ATM Withdrawal' : isBill ? 'Credit card bill' : 'Family Transfer'
     setForm(p => ({
       ...p, sub_category: isBill ? '' : sub, counter_account_id: '',
+      // Only a new, still-empty entry takes the kind's currency. An amount
+      // that's there already keeps its own (relabelling ₹40,000 as AED 40,000
+      // made it about ₹9 lakh everywhere).
       // ATM cash is a money movement into the Cash wallet; a card bill settles
       // card spends already counted — neither is spending
       category:   isAtm ? 'ATM Withdrawal' : isBill ? 'Credit Card Payment' : 'Transfer',
       account_id: isAtm ? '__cash__' : (p.account_id === '__cash__' ? '' : p.account_id),
-      currency:   sub === 'International' ? 'AED' : sub === 'Internal' ? 'INR' : p.currency,
+      currency:   mode === 'add' && !p.amount && KIND_CURRENCY[sub] ? KIND_CURRENCY[sub] : p.currency,
       merchant:   p.merchant && !TRANSFER_SUBTYPES.some(x => x.label === p.merchant) ? p.merchant : autoMerchant,
     }))
   }
@@ -200,6 +206,10 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
     if (!form.merchant.trim()) { setError(isTransfer ? 'Give the transfer a label.' : isIncome ? 'Who paid you? Add a source.' : 'Where did you spend it? Add a merchant.'); return }
     if (!form.txn_date) { setError('Pick a date.'); return }
     if (isTransfer && !transferKind) { setError('Choose the kind of transfer.'); return }
+    if (isTransfer && !kindFits(transferKind, form.currency)) {
+      setError(transferKind === 'International' ? 'UAE → India is for amounts in AED. Pick another kind, or change the currency if it really was AED.'
+        : 'NRE → NRO is for amounts in ₹. Pick another kind, or change the currency if it really was ₹.'); return
+    }
     setSaving(true); setError('')
     let account_id: string | null
     try { account_id = await resolveAccountId() } catch (e: any) { setSaving(false); setError(e.message ?? 'Could not save'); return }
@@ -298,14 +308,16 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
               <div className="grid grid-cols-2 gap-2">
                 {TRANSFER_SUBTYPES.filter(s => s.group === g.key).map(s => {
                   const on = transferKind === s.value
+                  // With an amount in, a kind for the other currency can't be picked
+                  const off = !on && (mode !== 'add' || !!form.amount) && !kindFits(s.value, form.currency)
                   return (
-                    <button key={s.value} onClick={() => setTransferSubtype(s.value)} aria-pressed={on}
-                      className="rounded-xl px-3 py-2.5 text-left flex items-start gap-2.5 transition-colors"
+                    <button key={s.value} onClick={() => setTransferSubtype(s.value)} aria-pressed={on} disabled={off}
+                      className="rounded-xl px-3 py-2.5 text-left flex items-start gap-2.5 transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
                       style={on ? { background: s.color + '14', boxShadow: `inset 0 0 0 1.5px ${s.color}` } : { background: '#fff', border: '1px solid var(--line)' }}>
                       <span className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: s.color + '1A', color: s.color }}><s.icon size={14} /></span>
                       <span className="min-w-0">
                         <span className="block text-[12.5px] font-semibold" style={{ color: on ? s.color : 'var(--text)' }}>{s.label}</span>
-                        <span className="block text-[11px] leading-tight mt-0.5" style={{ color: 'var(--text3)' }}>{s.desc}</span>
+                        <span className="block text-[11px] leading-tight mt-0.5" style={{ color: 'var(--text3)' }}>{off ? `${KIND_CURRENCY[s.value] === 'AED' ? 'AED' : '₹'} amounts only` : s.desc}</span>
                       </span>
                     </button>
                   )
@@ -313,6 +325,13 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
               </div>
               </div>
               ))}
+              {transferKind && !kindFits(transferKind, form.currency) && (
+                <div role="alert" className="mt-2 text-[12px] rounded-lg px-3 py-2 leading-snug" style={{ background: '#FFF2E2', color: '#8A4B08' }}>
+                  {transferKind === 'International'
+                    ? <>UAE → India is money leaving in <b>AED</b>, but this amount is in ₹. If it went from NRE to NRO, to another of your accounts or to family, pick that instead.</>
+                    : <>{transferKind === 'Internal' ? 'NRE → NRO' : 'NRO → NRE'} is a move in <b>₹</b>, but this amount is in AED. If it was money sent home, pick UAE → India.</>}
+                </div>
+              )}
               {form.sub_category === 'ATM Withdrawal' && (
                 <div className="mt-2 text-[12px] rounded-lg px-3 py-2 leading-snug" style={{ background: '#E0F4F8', color: '#0E7490' }}>
                   Adds the cash to your Cash wallet. It isn’t counted as spending; log what you buy with it as cash expenses.
