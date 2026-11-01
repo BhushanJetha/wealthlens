@@ -118,7 +118,7 @@ export default function LoanNeedsPanel({ loans, pendingEmis, pendingDrafts = [],
                 title={l.emi_auto ? 'Recorded on the EMI day — tap to be asked first' : 'You’re asked if it isn’t in your statement — tap to record it automatically'}
                 className="rounded-full px-2 h-[26px] text-[11px] font-semibold flex items-center gap-1 flex-shrink-0"
                 style={l.emi_auto ? { background: '#E7F7EF', color: '#1E7A50' } : { background: 'var(--accent-bg)', color: 'var(--accent2)' }}>
-                {l.emi_auto ? <><Zap size={11} />Auto</> : <><Hand size={11} />Ask</>}
+                {l.emi_auto ? <><Zap size={11} />Auto</> : <><Hand size={11} />Review</>}
               </button>
             </div>
           ))}
