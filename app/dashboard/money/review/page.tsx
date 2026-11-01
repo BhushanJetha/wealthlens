@@ -5,14 +5,16 @@ import { loadRules } from '@/lib/rules'
 import ReviewClient from '@/components/dashboard/ReviewClient'
 
 // Review inbox: transactions to check, fixed in a tap, plus your rules.
-export default async function ReviewPage() {
+export default async function ReviewPage({ searchParams }: { searchParams?: { from?: string } }) {
   const supabase = createClient()
   const user = await getSessionUser(supabase)
   const uid = user!.id
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' })
   // 13 months: the inbox covers 90 days, the rest teaches the suggestions
   const start = new Date(); start.setUTCMonth(start.getUTCMonth() - 13)
-  const fromDate = `${start.toISOString().slice(0, 7)}-01`
+  // ?from=2026-01 (from the Expense report): check everything since that month
+  const from = /^\d{4}-\d{2}$/.test(searchParams?.from ?? '') ? `${searchParams!.from}-01` : undefined
+  const fromDate = from && from < `${start.toISOString().slice(0, 7)}-01` ? from : `${start.toISOString().slice(0, 7)}-01`
 
   const [txns, accsRes, rules, fx] = await Promise.all([
     fetchAllRows((a, b) => supabase.from('transactions').select('*')
@@ -23,5 +25,5 @@ export default async function ReviewPage() {
     getAedInr(),
   ])
 
-  return <ReviewClient today={today} fx={fx.rate} transactions={txns} accounts={accsRes.data ?? []} rules={rules} />
+  return <ReviewClient today={today} fx={fx.rate} transactions={txns} accounts={accsRes.data ?? []} rules={rules} since={from} />
 }

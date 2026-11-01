@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Landmark, Tag, Copy, Send, Trash2, X, Wand2, ArrowLeftRight, Coins } from 'lucide-react'
+import { Landmark, Tag, Copy, Send, Trash2, X, Wand2, ArrowLeftRight, Coins, Link2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useCategoryStore } from '@/store/categoryStore'
 import { fmtMoney } from '@/lib/format'
@@ -14,7 +14,7 @@ import { PageHeader, Panel } from '@/components/ui/kit'
 import { ChipFilter } from '@/components/ui/list'
 import AddTransactionModal from '@/components/forms/AddTransactionModal'
 
-interface Props { today: string; fx: number; transactions: any[]; accounts: any[]; rules: TxnRule[] }
+interface Props { today: string; fx: number; transactions: any[]; accounts: any[]; rules: TxnRule[]; since?: string }
 
 const KINDS: { key: ReviewKind; label: string; icon: typeof Landmark; c: string }[] = [
   { key: 'account', label: 'Paid from', icon: Landmark, c: '#3B8EF0' },
@@ -23,6 +23,7 @@ const KINDS: { key: ReviewKind; label: string; icon: typeof Landmark; c: string 
   { key: 'remit', label: 'Sent home', icon: Send, c: '#2FB67C' },
   { key: 'transfer', label: 'Transfers', icon: ArrowLeftRight, c: '#0891B2' },
   { key: 'currency', label: 'Currency', icon: Coins, c: '#D9482F' },
+  { key: 'counter', label: 'Which account', icon: Link2, c: '#9333EA' },
 ]
 const MIGRATION_HINT = 'Run migration 027 in Supabase to use this.'
 // What a transfer of unknown kind can be (the kinds in Add transaction)
@@ -48,7 +49,8 @@ export default function ReviewClient(p: Props) {
   const [limit, setLimit] = useState(15)
   useEffect(() => setRules(p.rules), [p.rules])
 
-  const all = useMemo(() => findReviewItems(p.transactions, { today, fx: p.fx, accounts: p.accounts }), [p.transactions, today, p.fx, p.accounts])
+  const all = useMemo(() => findReviewItems(p.transactions, { today, fx: p.fx, accounts: p.accounts, since: p.since }), [p.transactions, today, p.fx, p.accounts, p.since])
+  const period = p.since ? `since ${new Date(`${p.since}T00:00:00`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}` : 'last 90 days'
   const items = all.filter(i => !done.has(i.id))
   const shown = items.filter(i => filter === 'all' || i.kind === filter)
   const accById = new Map(p.accounts.map(a => [a.id, a]))
@@ -92,6 +94,15 @@ export default function ReviewClient(p: Props) {
     setBusy(null)
     const what = patch.sub_category ? (TRANSFER_KIND_LABEL[patch.sub_category] ?? patch.sub_category) : patch.txn_type === 'expense' ? 'spending' : patch.category ? labelOf(patch.category) : accName(patch.account_id)
     finish(item.id, `${ids.length} transaction${ids.length === 1 ? '' : 's'} set to ${what}.${extra}`)
+  }
+
+  // Say which account a move went to, so both balances change
+  async function setCounter(item: ReviewItem, acc: any) {
+    setBusy(item.id)
+    const { error } = await supabase.from('transactions').update({ counter_account_id: acc.id }).eq('id', item.txns[0].id)
+    setBusy(null)
+    if (error) { fail(error.message); return }
+    finish(item.id, `Linked to ${acc.name} — both balances now move.`)
   }
 
   // Put an amount back in its account's currency. A transfer kind that only
@@ -141,7 +152,7 @@ export default function ReviewClient(p: Props) {
 
   return (
     <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up max-w-[900px]">
-      <PageHeader title="Review" sub={total ? `${total} transaction${total === 1 ? '' : 's'} to check · last 90 days` : 'Nothing to check · last 90 days'} />
+      <PageHeader title="Review" sub={total ? `${total} transaction${total === 1 ? '' : 's'} to check · ${period}` : `Nothing to check · ${period}`} />
       <p className="text-[12.5px] md:text-[13px] -mt-1" style={{ color: 'var(--text3)' }}>
         These make reports, budgets and balances less accurate. Fix a whole merchant in one tap, and tick <b>Always</b> so new ones are sorted for you.
       </p>
@@ -155,7 +166,7 @@ export default function ReviewClient(p: Props) {
         <div className="wl-card flex flex-col items-center justify-center text-center py-12 gap-1.5">
           <div className="w-11 h-11 rounded-full flex items-center justify-center text-[19px]" style={{ background: 'var(--income-bg)', color: 'var(--income)' }}>✓</div>
           <div className="text-[15px] font-semibold mt-1" style={{ color: 'var(--text)' }}>All reviewed</div>
-          <div className="text-[12.5px]" style={{ color: 'var(--text3)' }}>Every transaction from the last 90 days has an account and a category.</div>
+          <div className="text-[12.5px]" style={{ color: 'var(--text3)' }}>Every transaction {p.since ? period : 'from the last 90 days'} has an account and a category.</div>
         </div>
       ) : (
         <div className="flex flex-col gap-2.5">
@@ -166,7 +177,8 @@ export default function ReviewClient(p: Props) {
               onReviewed={(ids, text) => markReviewed(item, ids, text)}
               onDeleteCopy={() => deleteCopy(item)}
               onAddCredit={() => setAdding(item)}
-              onFixCurrency={() => fixCurrency(item)} />
+              onFixCurrency={() => fixCurrency(item)}
+              onCounter={(acc: any) => setCounter(item, acc)} />
           ))}
           {shown.length > limit && (
             <button onClick={() => setLimit(l => l + 15)} className="wl-btn self-center" style={{ height: 34 }}>Show {Math.min(15, shown.length - limit)} more</button>
@@ -217,11 +229,11 @@ export default function ReviewClient(p: Props) {
   )
 }
 
-function ReviewCard({ item, busy, accounts, accUse, accName, cats, onFix, onReviewed, onDeleteCopy, onAddCredit, onFixCurrency }: {
+function ReviewCard({ item, busy, accounts, accUse, accName, cats, onFix, onReviewed, onDeleteCopy, onAddCredit, onFixCurrency, onCounter }: {
   item: ReviewItem; busy: boolean; accounts: any[]; accUse: Record<string, number>; accName: (id?: string | null) => string | null; cats: string[]
   onFix: (patch: { account_id?: string; category?: string; sub_category?: string | null; txn_type?: string }, always: boolean, key: string) => void
   onReviewed: (ids: string[], text: string) => void
-  onDeleteCopy: () => void; onAddCredit: () => void; onFixCurrency: () => void
+  onDeleteCopy: () => void; onAddCredit: () => void; onFixCurrency: () => void; onCounter: (acc: any) => void
 }) {
   const K = KINDS.find(k => k.key === item.kind)!
   const t0 = item.txns[0]
@@ -289,6 +301,18 @@ function ReviewCard({ item, busy, accounts, accUse, accName, cats, onFix, onRevi
       <div className="flex flex-wrap gap-1.5">
         {kinds.map((k, i) => chip(TRANSFER_KIND_LABEL[k], () => onFix({ category: 'Transfer', sub_category: k }, false, ''), i === 0, k))}
         {chip('It was spending', () => onFix({ txn_type: 'expense', category: 'Other', sub_category: null }, false, ''), false, 'spend')}
+      </div>
+    )
+  } else if (item.kind === 'counter') {
+    const what = t0.category === 'Credit Card Payment' ? 'Which card did this pay?' : t0.category === 'ATM Withdrawal' ? 'Which cash wallet did it go to?' : 'Which of your accounts did it go to?'
+    title = <>{t0.merchant || 'Transfer'} · {fmtMoney(Number(t0.amount), cur)}</>
+    sub = `${fmtDay(t0.txn_date)} · from ${accName(t0.account_id) ?? 'an account'} · ${what} Until then only one balance changes.`
+    const choices = item.choices ?? []
+    body = (
+      <div className="flex flex-wrap gap-1.5">
+        {choices.map((a: any, i: number) => chip(a.name, () => onCounter(a), i === 0, a.id))}
+        {choices.length === 0 && <span className="text-[12px] self-center" style={{ color: 'var(--text3)' }}>No matching {cur} account yet — add it on Accounts &amp; cards.</span>}
+        {chip('Leave it', () => onReviewed([t0.id], 'Left as it is.'), false, 'keep')}
       </div>
     )
   } else if (item.kind === 'currency') {

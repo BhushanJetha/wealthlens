@@ -49,6 +49,26 @@ export function counterOf(t: any, from: any, accounts: any[]): string | null {
   return null
 }
 
+// A move between your accounts whose other account can't be worked out, so
+// only one balance would change: a card bill with no card (more than one to
+// choose from), NRE → NRO with no clear NRO, ATM cash with no cash wallet, a
+// move to "my other account" that doesn't say which
+export function missingCounter(t: any, a: any, accounts: any[]): boolean {
+  if (!a || t.txn_type === 'income' || t.counter_account_id || isCredit(t, a)) return false
+  const c = catOf(t)
+  const own = (c === CC_BILL && kindOf(a) !== 'card') || isNreToNro(t) || c === 'ATM Withdrawal' || c === 'Self Transfer'
+  return own && !counterOf(t, a, accounts)
+}
+// The accounts that move could have gone to
+export function counterChoices(t: any, a: any, accounts: any[]): any[] {
+  const c = catOf(t)
+  const same = accounts.filter(x => x.id !== a?.id && x.is_active !== false && x.currency === t.currency)
+  if (c === CC_BILL) return same.filter(x => kindOf(x) === 'card')
+  if (c === 'ATM Withdrawal') return same.filter(x => kindOf(x) === (kindOf(a) === 'cash' ? 'bank' : 'cash'))
+  if (isNreToNro(t)) return same.filter(x => kindOf(x) === 'bank').sort((x, y) => Number(isNro(y)) - Number(isNro(x)))
+  return same.filter(x => kindOf(x) !== 'card')
+}
+
 export interface Ledger {
   balance: number; anchor: number; asOf: string | null
   inflow: number; outflow: number; count: number
@@ -59,7 +79,8 @@ const asOfOf = (a: any): string | null => (a.balance_as_of ?? a.updated_at ?? a.
 const anchorOf = (a: any) => kindOf(a) === 'card' ? Number(a.outstanding_bal) || 0 : Number(a.current_balance) || Number(a.outstanding_bal) || 0
 const dayN = (d: string) => Math.floor(new Date(`${d.slice(0, 10)}T00:00:00Z`).getTime() / 864e5)
 
-export function computeLedgers(accounts: any[], txns: any[], fx: number): Record<string, Ledger> {
+// Every change to each account's balance after its starting balance date
+function ledgerMoves(accounts: any[], txns: any[], fx: number): Record<string, { t: any; delta: number }[]> {
   const byId = new Map(accounts.map(a => [a.id, a]))
   const moves: Record<string, { t: any; delta: number }[]> = {}
   const push = (id: string, t: any, delta: number) => { (moves[id] ||= []).push({ t, delta }) }
@@ -94,7 +115,25 @@ export function computeLedgers(accounts: any[], txns: any[], fx: number): Record
     if (c.currency === t.currency && recorded(c.id, camt, t.txn_date, counterCredit, t)) continue
     push(c.id, t, kindOf(c) === 'card' ? -camt : (counterCredit ? camt : -camt))
   }
+  return moves
+}
 
+// Each account's balance at the end of each given day (for a card, what's
+// owed). null where the app doesn't know it: before the account's starting
+// balance date — nothing is guessed.
+export function balancesAt(accounts: any[], txns: any[], fx: number, days: string[]): Record<string, (number | null)[]> {
+  const moves = ledgerMoves(accounts, txns, fx)
+  const out: Record<string, (number | null)[]> = {}
+  for (const a of accounts) {
+    const asOf = asOfOf(a), rows = moves[a.id] ?? []
+    out[a.id] = days.map(d => asOf && d < asOf ? null
+      : anchorOf(a) + rows.filter(r => String(r.t.txn_date).slice(0, 10) <= d).reduce((s, r) => s + r.delta, 0))
+  }
+  return out
+}
+
+export function computeLedgers(accounts: any[], txns: any[], fx: number): Record<string, Ledger> {
+  const moves = ledgerMoves(accounts, txns, fx)
   const out: Record<string, Ledger> = {}
   for (const a of accounts) {
     const rows = (moves[a.id] ?? []).sort((x, y) => x.t.txn_date.localeCompare(y.t.txn_date))

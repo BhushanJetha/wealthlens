@@ -1,15 +1,17 @@
 // Review inbox (Money › Review): transactions that make the numbers less
 // accurate until someone looks at them — no "Paid from", a vague category,
 // a likely duplicate, money sent home whose ₹ credit never showed up, a
-// transfer of unknown kind (counted as money sent until it's sorted), or an
-// amount in a different currency from its account.
+// transfer of unknown kind (counted as money sent until it's sorted), an
+// amount in a different currency from its account, or a move between your
+// accounts that doesn't say which account it went to (only one balance moves).
 // Same-merchant items are grouped so one tap fixes them all.
 import { normMerchant } from './categoryMemory'
 import { ruleTextFor } from './rules'
 import { catOf, isSpend, pairRemittances, pairOwnTransfers, isUnknownTransfer, CC_BILL, MOVEMENT_CATS } from './money'
 import { daysBetween, addDaysTo } from './insights'
+import { missingCounter, counterChoices } from './ledger'
 
-export type ReviewKind = 'account' | 'category' | 'duplicate' | 'remit' | 'transfer' | 'currency'
+export type ReviewKind = 'account' | 'category' | 'duplicate' | 'remit' | 'transfer' | 'currency' | 'counter'
 export interface ReviewItem {
   id: string; kind: ReviewKind; date: string
   txns: any[]                 // account / category: every match in the group (newest first); duplicate: [copy, keep]; remit: [sent]
@@ -18,14 +20,16 @@ export interface ReviewItem {
   suggestCategory?: string | null
   estimate?: number           // remit / currency (AED): ₹ at today's rate
   currency?: 'AED' | 'INR'    // currency: the account's currency
+  choices?: any[]             // counter: the accounts it could have gone to
 }
 
 export const REVIEW_DAYS = 90
 export const isVagueCategory = (c: any) => !c || /^(other|uncategori[sz]ed)$/i.test(String(c).trim())
 
-export function findReviewItems(txns: any[], opts: { today: string; fx: number; accounts?: any[] }): ReviewItem[] {
+// `since`: look further back than the last 90 days (the Expense report checks its whole year)
+export function findReviewItems(txns: any[], opts: { today: string; fx: number; accounts?: any[]; since?: string }): ReviewItem[] {
   const { today, fx } = opts
-  const since = addDaysTo(today, -REVIEW_DAYS)
+  const since = opts.since ?? addDaysTo(today, -REVIEW_DAYS)
   const real = txns.filter(t => !t._remit && t.txn_date)
   const open = real.filter(t => t.txn_date >= since && t.txn_date <= today && !t.reviewed_at)
 
@@ -105,7 +109,18 @@ export function findReviewItems(txns: any[], opts: { today: string; fx: number; 
     }
   }
   const rest = open.filter(t => !inDup.has(t.id) && !wrongCur.has(t))
-  byKey('account', rest.filter(t => !t.account_id && (isSpend(t) || t.txn_type === 'income')))
+  // Moves between your accounts that don't say which account they went to
+  const accById = new Map((opts.accounts ?? []).map(a => [a.id, a]))
+  const noCounter = new Set<any>()
+  if (opts.accounts?.length) for (const t of rest) {
+    const a = accById.get(t.account_id)
+    if (a && missingCounter(t, a, opts.accounts)) {
+      noCounter.add(t)
+      items.push({ id: `counter-${t.id}`, kind: 'counter', date: t.txn_date, txns: [t], choices: counterChoices(t, a, opts.accounts) })
+    }
+  }
+  // No "Paid from": nothing comes off (or goes into) any balance — transfers and EMIs too
+  byKey('account', rest.filter(t => !t.account_id && (isSpend(t) || ['income', 'transfer', 'loan'].includes(t.txn_type))))
   byKey('category', rest.filter(t => t.txn_type === 'expense' && isVagueCategory(t.category)))
   // Transfers of unknown kind that aren't one side of a move between your own accounts
   const own = new Set(pairOwnTransfers(real).map(p => p.out))

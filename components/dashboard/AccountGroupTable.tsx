@@ -17,7 +17,9 @@ function style(l: GroupLine, card: boolean, colorOf: (c?: string) => string) {
     : l.external ? { sign: '+', dot: '#1E8F5F', ink: 'var(--text2)', tag: 'money in', tagBg: '#E7F7EF', tagInk: '#1E7A50' }
     : { sign: '+', dot: '#8A89A3', ink: 'var(--text3)', tag: 'from your account', tagBg: '#F1F0F7', tagInk: '#5B5A75' }
   switch (l.kind) {
-    case 'spend': return { sign: '−', dot: colorOf(l.category), ink: 'var(--text)' }
+    case 'spend': return l.category === 'Transfer'
+      ? { sign: '−', dot: '#D97706', ink: 'var(--text)', tag: 'to sort', tagBg: '#FFF2E2', tagInk: '#9A5A08' }
+      : { sign: '−', dot: colorOf(l.category), ink: 'var(--text)' }
     case 'emi': return { sign: '−', dot: '#F29A2E', ink: 'var(--text)', tag: 'EMI', tagBg: '#FFF2E2', tagInk: '#9A5A08' }
     case 'invest': return { sign: '−', dot: '#2FB67C', ink: 'var(--text)', tag: 'investing', tagBg: '#E7F7EF', tagInk: '#1E7A50' }
     case 'card': return { sign: '−', dot: '#9333EA', ink: 'var(--text)', tag: 'card bill', tagBg: '#F3E8FF', tagInk: '#7E22CE' }
@@ -38,8 +40,8 @@ const badgeOf = (a: any) => a._unlinked ? { t: '?', bg: '#F1F5F9', ink: '#64748B
 // rupee or dirham that left) and credit cards (what was bought on each), then
 // came in − money out of your bank accounts = left in your accounts. Groups
 // and accounts fold away. Phones get the focus month as cards.
-export default function AccountGroupTable({ groups, months, focus, cell, money, colorOf, isHighlighted, viewNote, onDrill }: {
-  groups: AccountGroups; months: string[]; focus: number
+export default function AccountGroupTable({ groups, months, focus, cell, money, colorOf, isHighlighted, viewNote, onDrill, sentLabel = 'Sent outside these accounts' }: {
+  groups: AccountGroups; months: string[]; focus: number; sentLabel?: string
   cell: (n: number) => string; money: (n: number) => string; colorOf: (c?: string) => string
   isHighlighted: (m: string) => boolean; viewNote: (a: any) => string
   onDrill: (title: string, subtitle: string, items: any[]) => void
@@ -70,8 +72,23 @@ export default function AccountGroupTable({ groups, months, focus, cell, money, 
     })}
   </>)
 
+  const balanceRow = (label: string, tag: string, values: (number | null)[], bg: string, ink: string) => (
+    <div className="grid items-center" style={{ gridTemplateColumns: cols, borderTop: '1px solid #F1F0F7', minHeight: 38, background: bg }}>
+      <div className="sticky left-0 z-[1] flex items-center gap-2 py-1.5 pl-[50px] pr-3 min-w-0" style={{ background: bg }}>
+        <span className="text-[12.5px] font-bold truncate" style={{ color: ink }}>{label}</span>
+        <span className="text-[10px] font-semibold px-1.5 py-[1px] rounded-full flex-shrink-0" style={{ background: '#FFFFFF', color: 'var(--text3)', border: '1px solid var(--line)' }}>{tag}</span>
+      </div>
+      {[...values, null].map((v, i) => (
+        <div key={i} className="text-right tabular-nums text-[12.5px] px-2 whitespace-nowrap font-bold self-stretch flex items-center justify-end"
+          style={{ color: ink, background: i < values.length && isHighlighted(months[i]) ? 'rgba(106,85,232,.05)' : undefined, borderLeft: i === values.length ? '1.5px solid var(--line)' : undefined }}>
+          {v == null ? '' : amt(v)}
+        </div>
+      ))}
+    </div>
+  )
   const accountRows = (g: GroupAccount) => {
     const open = !closed.has(g.id), b = badgeOf(g.account)
+    const known = g.start.some(v => v != null)
     return (
       <div key={g.id}>
         <button onClick={() => toggle(g.id)} aria-expanded={open} className="grid w-full text-left items-center hover:bg-[#FAFAFE]" style={{ gridTemplateColumns: cols, borderTop: '1px solid #F1F0F7', minHeight: 48 }}>
@@ -85,6 +102,7 @@ export default function AccountGroupTable({ groups, months, focus, cell, money, 
           </div>
           <Cells values={g.head} signed={!g.card} bold />
         </button>
+        {open && known && balanceRow(g.card ? 'Owed at the start' : 'Started the month with', 'from your balances', g.start, g.card ? '#FBF7FF' : '#F5F9FF', 'var(--text)')}
         {open && g.lines.map(l => {
           const s = style(l, g.card, colorOf)
           return (
@@ -106,6 +124,7 @@ export default function AccountGroupTable({ groups, months, focus, cell, money, 
             </div>
           )
         })}
+        {open && known && balanceRow(g.card ? '= Owed at the end' : '= Left at the end of the month', 'started + in − out', g.end, g.card ? '#FBF7FF' : '#F0FAF5', g.card ? 'var(--text)' : '#1E8F5F')}
       </div>
     )
   }
@@ -130,11 +149,19 @@ export default function AccountGroupTable({ groups, months, focus, cell, money, 
     )
   }
 
-  const totals = [
-    { label: 'Came in', sub: 'salary and other income', values: groups.income, ink: '#1E8F5F', bg: '#FFFFFF' },
+  // All bank accounts together, each type on its own line
+  type Total = { label: string; sub: string; values: (number | null)[]; ink: string; bg: string; signed?: boolean; strong?: boolean }
+  const T = groups.byType
+  const totals: Total[] = [
+    ...(groups.startTotal.some(v => v != null) ? [{ label: 'Started the month with', sub: 'all bank and cash balances, where known', values: groups.startTotal, ink: 'var(--text)', bg: '#F5F9FF', strong: true }] : []),
+    { label: '+ Came in', sub: 'salary and other income', values: groups.income, ink: '#1E8F5F', bg: '#FFFFFF' },
     ...(sum(groups.otherIn) > 0 ? [{ label: '+ Other money in', sub: 'from outside these accounts — received from UAE, loan money', values: groups.otherIn, ink: '#1E8F5F', bg: '#FFFFFF' }] : []),
-    { label: '− Money out of your bank accounts', sub: 'spending, EMIs, investing, card bills — and money sent outside these accounts; moves between them cancel out', values: groups.moneyOut, ink: 'var(--text)', bg: '#FFFFFF' },
-    { label: '= Left in your accounts', sub: 'what stayed in your banks and cash', values: groups.left, ink: '#1E8F5F', bg: '#F0FAF5', signed: true },
+    ...([['− Spending from bank & cash', 'rent, bills, school, family…', T.spend], ['− EMIs', 'loans paid from the bank', T.emi], ['− Investing', 'SIPs and other investments', T.invest],
+      ['− Card bills', 'what you bought on cards is below the cards', T.card], [`− ${sentLabel}`, 'money that left these accounts', T.sentOut]] as [string, string, number[]][])
+      .filter(([, , v]) => sum(v) > 0).map(([label, sub, values]) => ({ label, sub, values, ink: 'var(--text)', bg: '#FFFFFF' })),
+    { label: '= Came in − went out', sub: 'moves between your own accounts cancel out', values: groups.left, ink: '#1E8F5F', bg: '#F0FAF5', signed: true, strong: true },
+    ...(groups.endTotal.some(v => v != null) ? [{ label: '= Left at the end of the month', sub: 'started with + came in − went out', values: groups.endTotal, ink: '#1E8F5F', bg: '#F0FAF5', strong: true }] : []),
+    { label: 'Spent on cards', sub: 'paid through the card bills above', values: groups.charged, ink: '#7E22CE', bg: '#FBF7FF' },
     { label: 'All spending, by category', sub: 'paid from bank + bought on cards — what your budgets use', values: groups.allSpend, ink: 'var(--accent2)', bg: '#FAFAFE' },
   ]
 
@@ -159,6 +186,11 @@ export default function AccountGroupTable({ groups, months, focus, cell, money, 
         </button>
         {open && (
           <div className="px-3.5 pb-2.5">
+            {g.start[focus] != null && (
+              <div className="flex justify-between gap-2.5 py-2 text-[13px] font-bold" style={{ borderTop: '1px solid #F3F2F8', color: 'var(--text)' }}>
+                <span>{g.card ? 'Owed at the start' : 'Started the month with'}</span><span className="tabular-nums">{full(g.start[focus]!)}</span>
+              </div>
+            )}
             {lines.length === 0 && <div className="text-[12.5px] py-2" style={{ color: 'var(--text4)' }}>Nothing this month.</div>}
             {lines.map(l => {
               const s = style(l, g.card, colorOf)
@@ -173,6 +205,11 @@ export default function AccountGroupTable({ groups, months, focus, cell, money, 
                 </button>
               )
             })}
+            {g.end[focus] != null && (
+              <div className="flex justify-between gap-2.5 py-2 text-[13px] font-bold" style={{ borderTop: '1.5px solid var(--line)', color: g.card ? 'var(--text)' : '#1E8F5F' }}>
+                <span>{g.card ? '= Owed at the end' : '= Left at the end of the month'}</span><span className="tabular-nums">{full(g.end[focus]!)}</span>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -221,10 +258,12 @@ export default function AccountGroupTable({ groups, months, focus, cell, money, 
             {totals.map(t => (
               <div key={t.label} className="grid items-center" style={{ gridTemplateColumns: cols, background: t.bg, borderTop: '1px solid var(--line)', minHeight: 52 }}>
                 <div className="sticky left-0 z-[1] py-2 pl-4 pr-3 min-w-0" style={{ background: t.bg }}>
-                  <span className="block text-[13px] font-bold" style={{ color: t.ink }}>{t.label}</span>
+                  <span className="block text-[13px]" style={{ color: t.ink, fontWeight: t.strong ? 700 : 600 }}>{t.label}</span>
                   <span className="block text-[11px]" style={{ color: 'var(--text4)' }}>{t.sub}</span>
                 </div>
-                <Cells values={t.values} color={t.ink} bold signed={'signed' in t && t.signed} />
+                {t.values.some(v => v == null)
+                  ? [...t.values, null].map((v, i) => <div key={i} className="text-right tabular-nums text-[12.5px] px-2 whitespace-nowrap font-bold" style={{ color: t.ink, borderLeft: i === t.values.length ? '1.5px solid var(--line)' : undefined }}>{v == null ? '' : amt(v)}</div>)
+                  : <Cells values={t.values as number[]} color={t.ink} bold signed={t.signed} />}
               </div>
             ))}
           </div>
@@ -237,10 +276,10 @@ export default function AccountGroupTable({ groups, months, focus, cell, money, 
       {pGroup('bank', 'Bank accounts', 'Where your salary went', `${money(groups.moneyOut[focus] ?? 0)} out`, '#F7F5FF', groups.banks)}
       {pGroup('cards', 'Credit cards', 'Paid through the card bills above', money(groups.charged[focus] ?? 0), '#FBF5FF', groups.cards)}
       <div className="wl-card px-3.5 py-1.5">
-        {totals.map(t => (
-          <div key={t.label} className="flex justify-between gap-3 py-2.5" style={{ borderTop: t.label === 'Came in' ? 'none' : '1px solid #F3F2F8' }}>
-            <span className="text-[13px] font-semibold min-w-0" style={{ color: t.label.startsWith('=') ? 'var(--text)' : 'var(--text2)' }}>{t.label}</span>
-            <span className="text-[13.5px] font-bold tabular-nums flex-shrink-0" style={{ color: t.ink }}>{full(t.values[focus] ?? 0, 'signed' in t && !!t.signed)}</span>
+        {totals.filter(t => t.values[focus] != null).map((t, i) => (
+          <div key={t.label} className="flex justify-between gap-3 py-2.5" style={{ borderTop: i ? '1px solid #F3F2F8' : 'none' }}>
+            <span className="text-[13px] min-w-0" style={{ color: t.strong ? 'var(--text)' : 'var(--text2)', fontWeight: t.strong ? 700 : 500 }}>{t.label}</span>
+            <span className="text-[13.5px] font-bold tabular-nums flex-shrink-0" style={{ color: t.ink }}>{full(t.values[focus] ?? 0, !!t.signed)}</span>
           </div>
         ))}
       </div>

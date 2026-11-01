@@ -1,12 +1,14 @@
 'use client'
 import { useMemo, useState, useEffect } from 'react'
 import { useViewStore } from '@/store/viewStore'
-import { Download, ChevronLeft, ChevronRight, CalendarDays, CalendarRange, Target, CreditCard, Landmark, Wallet, Link2Off } from 'lucide-react'
+import Link from 'next/link'
+import { Download, ChevronLeft, ChevronRight, CalendarDays, CalendarRange, Target, CreditCard, Landmark, Wallet, Link2Off, AlertTriangle, ArrowRight } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, Cell, Legend } from 'recharts'
 import TxnDrillModal from '@/components/dashboard/TxnDrillModal'
 import AccountGroupTable from '@/components/dashboard/AccountGroupTable'
 import { buildAccountGroups } from '@/lib/accountFlows'
 import { CC_BILL, classify, labelOf, catOf, prepareMoney, isIncome, isNreToNro, markUnitemisedCardBills, INDIA_INCOME, cashOut, cashLeft, type CashOut } from '@/lib/money'
+import { findReviewItems, type ReviewKind } from '@/lib/review'
 import { PageHeader, KpiTile, Segmented } from '@/components/ui/kit'
 import { useCategoryStore } from '@/store/categoryStore'
 
@@ -95,6 +97,7 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
   const disp = (t: any) => inView(t.currency) ? conv(Number(t.amount) || 0, t.currency) : 0
   const sym = view === 'uae' ? 'AED ' : '₹'
   const money = (n: number) => `${sym}${Math.round(n).toLocaleString('en-IN')}`
+  const signed = (n: number) => `${n < 0 ? '−' : ''}${money(Math.abs(n))}`
   const mLabel = (m: string) => new Date(m + '-01').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
 
   // Colours follow the user's own categories (same as Expenses and Reports)
@@ -201,6 +204,34 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
   const focusMonth = months.includes(toMonth) ? toMonth : months.includes(fromMonth) ? fromMonth : months[months.length - 1]
   const focus = months.indexOf(focusMonth)
   const viewNote = (a: any) => [a.currency === 'AED' ? (view === 'consolidated' ? 'UAE · AED in ₹' : 'UAE') : 'India', a.is_active === false ? 'closed' : null].filter(Boolean).join(' · ')
+  const started = groups.startTotal[focus], ended = groups.endTotal[focus]
+
+  // Anything this year that can put the numbers off (the same checks as
+  // Review): transfers not sorted, no account, a move missing its other
+  // account, likely duplicates, the wrong currency
+  const gaps = useMemo(() => {
+    const today = new Date().toLocaleDateString('en-CA')
+    const items = findReviewItems([...rawIncome, ...rawTxns], { today, fx: FX, accounts, since: `${yearFrom}-01` })
+      .filter(i => i.date <= `${yearTo}-31` && inView(i.txns[0]?.currency ?? 'INR'))
+    const by: Partial<Record<ReviewKind, { n: number; amount: number }>> = {}
+    for (const i of items) {
+      const rows = i.kind === 'duplicate' ? i.txns.slice(0, 1) : i.txns.filter((t: any) => t.txn_date >= `${yearFrom}-01` && t.txn_date <= `${yearTo}-31`)
+      const g = (by[i.kind] ||= { n: 0, amount: 0 })
+      g.n += rows.length
+      g.amount += rows.reduce((a: number, t: any) => a + conv(Number(t.amount) || 0, t.currency), 0)
+    }
+    return by
+  }, [rawIncome, rawTxns, FX, accounts, viewYear, view]) // eslint-disable-line react-hooks/exhaustive-deps
+  const GAP_TEXT: [ReviewKind, string, string][] = [
+    ['transfer', 'transfer', 'not sorted — counted as money sent'],
+    ['account', 'transaction', 'with no account — no balance moves'],
+    ['counter', 'move', "that doesn't say which of your accounts it went to"],
+    ['duplicate', 'possible duplicate', 'counted twice'],
+    ['currency', 'amount', "in a different currency from its account"],
+    ['remit', 'transfer to India', 'with no ₹ credit found'],
+  ]
+  const gapList = GAP_TEXT.filter(([k]) => gapN(k))
+  function gapN(k: ReviewKind) { return gaps[k]?.n ?? 0 }
 
   const activeExpense  = expenseCats.filter(c => rowTot(c) > 0).sort((a, b) => rowTot(b) - rowTot(a))
   const activeExcluded = excludedCats.filter(c => rowTot(c) > 0).sort((a, b) => rowTot(b) - rowTot(a))
@@ -274,12 +305,20 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
       rows.push([title, ...vals(title === 'BANK ACCOUNTS' ? groups.moneyOut : groups.charged)])
       for (const g of list) {
         rows.push([`${g.account.name} (${g.card ? 'charged' : 'net change'})`, ...vals(g.head)])
+        const bal = (v: (number | null)[]) => [...v.map(x => x == null ? '' : Math.round(x).toString()), '']
+        if (g.start.some(v => v != null)) rows.push([`   ${g.card ? 'Owed at the start' : 'Started the month with'}`, ...bal(g.start)])
         for (const l of g.lines) rows.push([`   ${g.card ? '' : l.dir === 'in' ? '+ ' : '− '}${l.label}`, ...vals(l.values)])
+        if (g.end.some(v => v != null)) rows.push([`   ${g.card ? '= Owed at the end' : '= Left at the end of the month'}`, ...bal(g.end)])
       }
     }
     rows.push([], ['CAME IN', ...vals(groups.income)])
     if (groups.otherIn.some(Boolean)) rows.push(['OTHER MONEY IN', ...vals(groups.otherIn)])
-    rows.push(['MONEY OUT OF YOUR BANK ACCOUNTS', ...vals(groups.moneyOut)], ['LEFT IN YOUR ACCOUNTS', ...vals(groups.left)], ['ALL SPENDING (bank + cards)', ...vals(groups.allSpend)])
+    const T = groups.byType
+    rows.push(['− SPENDING FROM BANK & CASH', ...vals(T.spend)], ['− EMIS', ...vals(T.emi)], ['− INVESTING', ...vals(T.invest)], ['− CARD BILLS', ...vals(T.card)], ['− SENT OUTSIDE THESE ACCOUNTS', ...vals(T.sentOut)],
+      ['= CAME IN − WENT OUT', ...vals(groups.left)])
+    if (groups.startTotal.some(v => v != null)) rows.splice(rows.findIndex(r => r[0] === 'CAME IN'), 0, ['STARTED THE MONTH WITH', ...groups.startTotal.map(x => x == null ? '' : Math.round(x).toString()), ''])
+    if (groups.endTotal.some(v => v != null)) rows.push(['= LEFT AT THE END OF THE MONTH', ...groups.endTotal.map(x => x == null ? '' : Math.round(x).toString()), ''])
+    rows.push(['SPENT ON CARDS', ...vals(groups.charged)], ['ALL SPENDING (bank + cards)', ...vals(groups.allSpend)])
     csvExport([['', ...monthHeads, 'Total'], ...rows])
   }
 
@@ -332,14 +371,39 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
 
       {tab === 'monthly' && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
+          {started != null && <KpiTile label={`Started ${mLabel(focusMonth)} with`} value={signed(started)} tint={0} icon={Landmark}
+            delta="all bank and cash balances" />}
           <KpiTile label={`Came in · ${mLabel(focusMonth)}`} value={money((groups.income[focus] ?? 0) + (groups.otherIn[focus] ?? 0))} tint={1} icon={Wallet}
             delta={groups.otherIn[focus] ? `incl. ${money(groups.otherIn[focus])} from outside these accounts` : 'salary and other income'} />
-          <KpiTile label="Money out of your bank accounts" value={money(groups.moneyOut[focus] ?? 0)} tint={0} icon={Landmark}
-            delta="spending, EMIs, investing, card bills" />
-          <KpiTile label="Left in your accounts" value={`${(groups.left[focus] ?? 0) < 0 ? '−' : ''}${money(Math.abs(groups.left[focus] ?? 0))}`} tint={3} icon={Target}
-            tone={(groups.left[focus] ?? 0) >= 0 ? 'good' : 'bad'} delta="came in − money out" />
-          <KpiTile label="Charged to cards" value={money(groups.charged[focus] ?? 0)} tint={2} icon={CreditCard}
-            delta="paid through the card bills" />
+          <KpiTile label="Went out of your bank accounts" value={money(groups.moneyOut[focus] ?? 0)} tint={0} icon={Landmark}
+            delta="spending, EMIs, investing, card bills, money sent" />
+          {ended != null
+            ? <KpiTile label="Left at the end of the month" value={signed(ended)} tint={3} icon={Target}
+                tone={ended >= 0 ? 'good' : 'bad'} delta={`${(groups.left[focus] ?? 0) < 0 ? '−' : '+'}${money(Math.abs(groups.left[focus] ?? 0))} over the month`} />
+            : <KpiTile label="Came in − went out" value={signed(groups.left[focus] ?? 0)} tint={3} icon={Target}
+                tone={(groups.left[focus] ?? 0) >= 0 ? 'good' : 'bad'} delta="start balances not known for this month" />}
+          {started == null && <KpiTile label="Charged to cards" value={money(groups.charged[focus] ?? 0)} tint={2} icon={CreditCard}
+            delta="paid through the card bills" />}
+        </div>
+      )}
+      {tab === 'monthly' && gapList.length > 0 && (
+        <div className="wl-card px-4 py-3 flex flex-col md:flex-row md:items-center gap-2.5 md:gap-4" style={{ background: '#FFF8EC', borderColor: '#F6DDB4' }}>
+          <div className="flex items-start gap-2.5 min-w-0 flex-1">
+            <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" style={{ color: '#B96A0B' }} />
+            <div className="min-w-0">
+              <div className="text-[13px] font-semibold" style={{ color: '#7A4A06' }}>A few things in {viewYear} can put these numbers off</div>
+              <ul className="mt-1 flex flex-col gap-0.5">
+                {gapList.map(([k, one, what]) => (
+                  <li key={k} className="text-[12.5px]" style={{ color: '#8A5A12' }}>
+                    <b>{gapN(k)} {one}{gapN(k) === 1 ? '' : 's'}</b> {what}{gaps[k]!.amount > 0 && k !== 'duplicate' ? <> · {money(gaps[k]!.amount)}</> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          <Link href={`/dashboard/money/review?from=${yearFrom}`} className="wl-btn flex-shrink-0 self-start md:self-center" style={{ height: 36 }}>
+            Fix in Review <ArrowRight size={14} />
+          </Link>
         </div>
       )}
       {tab === 'budget' && (
@@ -357,6 +421,7 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
       {tab === 'monthly' && (
         <>
           <AccountGroupTable groups={groups} months={months} focus={focus} cell={(n: number) => `${sym}${fmt(n)}`} money={money} viewNote={viewNote}
+            sentLabel={view === 'uae' ? 'Sent to India & other money out' : 'Sent outside these accounts'}
             colorOf={(c?: string) => (c ? colorOf(c, 0) : '#6A55E8')} isHighlighted={(m: string) => m >= fromMonth && m <= toMonth}
             onDrill={(title, subtitle, items) => setDrill({ title, subtitle, items })} />
 

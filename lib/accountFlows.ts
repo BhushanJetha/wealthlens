@@ -4,7 +4,7 @@
 // Axis" on the bank and "paid from HDFC" on the card; UAE → India as "sent to
 // India" on ENBD and "received from UAE" on NRE), and once per account.
 import { catOf, labelOf, CC_BILL, isNreToNro, isRemitOut, isIncome, spendGroup, pairRemittances, type View } from './money'
-import { isCredit, counterOf, kindOf } from './ledger'
+import { isCredit, counterOf, kindOf, balancesAt } from './ledger'
 
 export type FlowKind = 'income' | 'spend' | 'emi' | 'invest' | 'card' | 'move' | 'payment' | 'refund'
 export interface FlowLine {
@@ -161,11 +161,19 @@ export interface GroupAccount {
   id: string; account: any; card: boolean
   lines: GroupLine[]
   head: number[]; headTotal: number      // banks: net change · cards: charged
+  // What it held at the start of each month (a card: what was owed) and at
+  // the end = start + in − out (a card: + charged − paid). null where the app
+  // doesn't know the balance yet — never guessed.
+  start: (number | null)[]; end: (number | null)[]
 }
 export interface AccountGroups {
   banks: GroupAccount[]; cards: GroupAccount[]
   income: number[]; otherIn: number[]; moneyOut: number[]; left: number[]
   charged: number[]; paidToCards: number[]; allSpend: number[]
+  // Money out of your bank accounts, each type on its own
+  byType: { spend: number[]; emi: number[]; invest: number[]; card: number[]; sentOut: number[] }
+  // All bank accounts together, where every one's start is known (else null)
+  startTotal: (number | null)[]; endTotal: (number | null)[]
   merchants: Record<string, { name: string; amount: number }[]>   // per account, over all the months
 }
 const BANK_OUT: FlowKind[] = ['spend', 'emi', 'invest', 'card']
@@ -174,7 +182,7 @@ const BANK_OUT: FlowKind[] = ['spend', 'emi', 'invest', 'card']
 const ORDER: Record<string, number> = { income: 0, move: 1, spend: 2, emi: 3, invest: 4, card: 5, payment: 6, refund: 7 }
 const rank = (l: GroupLine) => l.dir === 'out' && l.kind === 'move' ? 6 : ORDER[l.kind]
 
-export function buildAccountGroups(accounts: any[], txns: any[], opts: { fx: number; months: string[]; view: View; toView: (n: number, cur: string) => number }): AccountGroups {
+export function buildAccountGroups(accounts: any[], txns: any[], opts: { fx: number; months: string[]; view: View; toView: (n: number, cur: string) => number; today?: string }): AccountGroups {
   const { months, view } = opts
   const inView = (cur: string) => view === 'consolidated' || (view === 'uae' ? cur === 'AED' : cur !== 'AED')
   const shown = new Set(accounts.filter(a => inView(a.currency)).map(a => a.id))
@@ -182,7 +190,11 @@ export function buildAccountGroups(accounts: any[], txns: any[], opts: { fx: num
   const n = months.length, zeros = () => Array<number>(n).fill(0)
   const accs = new Map<string, { account: any; lines: Map<string, GroupLine> }>()
   const merch = new Map<string, Map<string, number>>()
-  const T = { income: zeros(), otherIn: zeros(), moneyOut: zeros(), charged: zeros(), paidToCards: zeros(), bankSpend: zeros() }
+  const T = { income: zeros(), otherIn: zeros(), moneyOut: zeros(), charged: zeros(), paidToCards: zeros(), bankSpend: zeros(),
+    emi: zeros(), invest: zeros(), card: zeros(), sentOut: zeros() }
+  // Balances at the end of the day before each month starts (lib/ledger) — null where unknown
+  const dayBefore = (m: string) => { const d = new Date(`${m}-01T00:00:00Z`); d.setUTCDate(0); return d.toISOString().slice(0, 10) }
+  const opening = balancesAt(accounts, txns, opts.fx, months.map(dayBefore))
 
   months.forEach((m, i) => {
     for (const f of accountFlows(accounts, txns, opts.fx, d => d.slice(0, 7) === m, { inside })) {
@@ -190,8 +202,9 @@ export function buildAccountGroups(accounts: any[], txns: any[], opts: { fx: num
       if (!inView(cur)) continue
       const card = kindOf(a) === 'card'
       const e = accs.get(a.id) ?? accs.set(a.id, { account: a, lines: new Map() }).get(a.id)!
-      // Money sent home, in the All view: at what landed in India, so it cancels with NRE's credit
-      const val = (l: FlowLine) => view === 'consolidated' && cur === 'AED' && l.inr != null ? l.inr : opts.toView(l.amount, cur)
+      // Every line in the view's currency at one rate, so each account's
+      // start + in − out = left adds up exactly
+      const val = (l: FlowLine) => opts.toView(l.amount, cur)
       for (const [dir, ls] of [['in', f.ins], ['out', f.outs]] as const) for (const l of ls) {
         const k = `${dir}:${l.key}`
         const g = e.lines.get(k) ?? { key: k, label: l.label, kind: l.kind, dir, external: !!l.external, category: l.category, values: zeros(), total: 0, items: months.map(() => [] as any[]) }
@@ -207,6 +220,10 @@ export function buildAccountGroups(accounts: any[], txns: any[], opts: { fx: num
         } else if (BANK_OUT.includes(l.kind) || (l.kind === 'move' && l.external)) {
           T.moneyOut[i] += v
           if (l.kind === 'spend') T.bankSpend[i] += v
+          else if (l.kind === 'emi') T.emi[i] += v
+          else if (l.kind === 'invest') T.invest[i] += v
+          else if (l.kind === 'card') T.card[i] += v
+          else T.sentOut[i] += v
         }
       }
       const mm = merch.get(a.id) ?? merch.set(a.id, new Map()).get(a.id)!
@@ -222,19 +239,31 @@ export function buildAccountGroups(accounts: any[], txns: any[], opts: { fx: num
     const head = months.map((_, i) => card
       ? lines.filter(l => l.dir === 'out' && (l.kind === 'spend' || l.kind === 'emi')).reduce((s, l) => s + l.values[i], 0)
       : lines.reduce((s, l) => s + (l.dir === 'in' ? 1 : -1) * l.values[i], 0))
-    return { id: e.account.id, account: e.account, card, lines, head, headTotal: head.reduce((s, v) => s + v, 0) }
+    // A bank: in adds, out takes off · a card: charges add to what's owed, payments take off
+    const net = months.map((_, i) => lines.reduce((s, l) => s + (l.dir === 'in' ? 1 : -1) * (card ? -1 : 1) * l.values[i], 0))
+    const cur = e.account.currency ?? 'INR'
+    // A month that hasn't started yet has no starting balance
+    const thisMonth = (opts.today ?? new Date().toISOString()).slice(0, 7)
+    const start = months.map((m, i) => { const b = opening[e.account.id]?.[i]; return b == null || m > thisMonth ? null : opts.toView(b, cur) })
+    return { id: e.account.id, account: e.account, card, lines, head, headTotal: head.reduce((s, v) => s + v, 0),
+      start, end: start.map((b, i) => b == null ? null : b + net[i]) }
   }
   const all = Array.from(accs.values()).map(toGroup)
   const size = (g: GroupAccount) => g.lines.reduce((s, l) => s + l.total, 0)
   const banks = all.filter(g => !g.card).sort((x, y) => Number(!!x.account._unlinked) - Number(!!y.account._unlinked) || size(y) - size(x))
   const cards = all.filter(g => g.card).sort((x, y) => y.headTotal - x.headTotal)
   const cardSpend = months.map((_, i) => cards.reduce((s, g) => s + g.lines.filter(l => l.dir === 'out' && l.kind === 'spend').reduce((a, l) => a + l.values[i], 0), 0))
+  const realBanks = banks.filter(g => !g.account._unlinked)
+  const startTotal = months.map((_, i) => realBanks.length && realBanks.every(g => g.start[i] != null) ? realBanks.reduce((s, g) => s + (g.start[i] ?? 0), 0) : null)
   return {
     banks, cards,
     income: T.income, otherIn: T.otherIn, moneyOut: T.moneyOut,
     left: months.map((_, i) => T.income[i] + T.otherIn[i] - T.moneyOut[i]),
     charged: T.charged, paidToCards: T.paidToCards,
     allSpend: months.map((_, i) => T.bankSpend[i] + cardSpend[i]),
+    byType: { spend: T.bankSpend, emi: T.emi, invest: T.invest, card: T.card, sentOut: T.sentOut },
+    startTotal,
+    endTotal: startTotal.map((st, i) => st == null ? null : st + T.income[i] + T.otherIn[i] - T.moneyOut[i]),
     merchants: Object.fromEntries(Array.from(merch.entries()).map(([id, mm]) => [id, Array.from(mm.entries()).sort((x, y) => y[1] - x[1]).slice(0, 3).map(([name, amount]) => ({ name, amount }))])),
   }
 }
