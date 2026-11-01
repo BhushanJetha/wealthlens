@@ -12,7 +12,7 @@ export default function manifest(): MetadataRoute.Manifest {
     scope: '/',
     display: 'standalone',
     orientation: 'portrait',
-    background_color: '#FFFFFF',
+    background_color: '#6A55E8',   // Android's launch screen: same violet as the icon, so it blends
     theme_color: '#6A55E8',
     categories: ['finance', 'productivity'],
     // Android share sheet: "Share → WealthLens" a bank SMS/alert opens the

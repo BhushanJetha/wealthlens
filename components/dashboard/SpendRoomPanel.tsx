@@ -9,10 +9,10 @@ export type RoomCard = SpendRoom & { until: string; perDay: number | null }
 
 // How much more you can spend: per category, what's left of its budget (or a
 // rough allowance from your last 3 months), never above what's actually free.
-export default function SpendRoomPanel({ rooms }: { rooms: RoomCard[] }) {
+export default function SpendRoomPanel({ rooms, limit = 8, more }: { rooms: RoomCard[]; limit?: number; more?: React.ReactNode }) {
   if (!rooms.some(r => r.lines.length)) return null
   return (
-    <Panel title="How much more can you spend">
+    <Panel title="How much more can you spend" right={more}>
       <div className={`mt-2 grid gap-4 ${rooms.length > 1 ? 'md:grid-cols-2' : ''}`}>
         {rooms.map(r => {
           const m = (n: number) => fmtMoney(n, r.cur)
@@ -26,7 +26,7 @@ export default function SpendRoomPanel({ rooms }: { rooms: RoomCard[] }) {
                 <span className="text-[11.5px]" style={{ color: 'var(--text3)' }}>until {fmtDay(r.until)}{r.perDay ? ` · ${m(r.perDay)}/day` : ''}</span>
               </div>
               <ul className="mt-1.5">
-                {r.lines.slice(0, 8).map(l => {
+                {r.lines.slice(0, limit).map(l => {
                   const pct = l.cap > 0 ? Math.min(100, l.spent / l.cap * 100) : 100, over = l.left < 0
                   return (
                     <li key={l.category} className="py-2" style={{ borderTop: '1px solid var(--track)' }}>
@@ -55,9 +55,9 @@ export default function SpendRoomPanel({ rooms }: { rooms: RoomCard[] }) {
           )
         })}
       </div>
-      <p className="mt-2.5 text-[11.5px] leading-snug" style={{ color: 'var(--text4)' }}>
+      {limit >= 8 && <p className="mt-2.5 text-[11.5px] leading-snug" style={{ color: 'var(--text4)' }}>
         Free = bank &amp; cash minus what’s due before payday. “Estimate” is your average over the last 3 months plus 10%, for categories with no budget; set a budget to use your own number.
-      </p>
+      </p>}
     </Panel>
   )
 }

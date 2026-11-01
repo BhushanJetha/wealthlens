@@ -39,7 +39,7 @@ export default async function DashboardPage() {
   // recorded alongside; the rest wait for a confirm on Money, Loans or Investments.
   const load = () => Promise.all([
     fetchAllRows((a, b) => supabase.from('transactions')
-      .select('id,account_id,txn_date,merchant,category,sub_category,amount,currency,txn_type')
+      .select('*')
       .eq('user_id', uid).gte('txn_date', fromDate)
       .order('txn_date', { ascending: false }).order('id').range(a, b)),
     activeLoansWithEmi(supabase, uid),
@@ -64,10 +64,14 @@ export default async function DashboardPage() {
     loadWealthExtras(supabase, uid),
     supabase.from('net_worth_snapshots').select('snap_date,fx,uae_assets,uae_liab,india_assets,india_liab,breakdown')
       .eq('user_id', uid).gte('snap_date', histFrom).order('snap_date', { ascending: true }),
+    supabase.from('spend_events').select('id,name,kind,start_date,end_date,budget,currency,closed_at').eq('user_id', uid).gte('end_date', today),
+    supabase.from('friends').select('id,name').eq('user_id', uid),
+    supabase.from('txn_splits').select('id,friend_id,amount,transaction_id,transactions(id,txn_date,merchant,category,amount,currency)').eq('user_id', uid),
+    supabase.from('transactions').select('id,txn_date,merchant,category,amount,currency,txn_type,friend_id,paid_by_friend_id').eq('user_id', uid).or('paid_by_friend_id.not.is.null,friend_id.not.is.null'),
   ])
   // Goal interests live in user_metadata — read fresh (the session copy is as of sign-in)
   const [[auto, [txns, loansRes, ledger, stocksRes, mfRes, fdRes, insRes, goalsRes, giRes, budgetsRes,
-    rdRes, npsRes, licRes, goldRes, bondRes, etfRes, ppfRes, profileRes, extras, snapsRes]], { data: fresh }] = await Promise.all([
+    rdRes, npsRes, licRes, goldRes, bondRes, etfRes, ppfRes, profileRes, extras, snapsRes, eventsRes, friendsRes, splitsRes, friendTxnsRes]], { data: fresh }] = await Promise.all([
     withAutomation(supabase, uid, today, load), supabase.auth.getUser(),
   ])
 
@@ -115,7 +119,12 @@ export default async function DashboardPage() {
       today={today}
       holdings={holdings}
       transactions={txns}
-      pendingConfirms={auto.count}
+      pending={auto.pending}
+      recurring={auto.recurring}
+      events={eventsRes.data ?? []}
+      friends={friendsRes.data ?? []}
+      splits={splitsRes.data ?? []}
+      friendTxns={friendTxnsRes.data ?? []}
       insurance={insRes.data ?? []}
       budgets={budgetsRes.data ?? []}
       goals={goalsRes.data ?? []}

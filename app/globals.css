@@ -343,3 +343,18 @@ body {
     animation: sheetUp .25s cubic-bezier(0.16,1,0.3,1);
   }
 }
+
+/* Opening the installed app (app/layout.tsx): brand for a moment, then the page */
+#wl-splash { display: none; }
+.wl-splash #wl-splash {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  position: fixed; inset: 0; z-index: 9999; pointer-events: none; color: #fff;
+  background: linear-gradient(160deg, #6A55E8 0%, #4B38C9 55%, #2E2470 100%);
+  animation: wlSplashOut .3s ease-in .75s both;
+}
+#wl-splash img { width: 96px; height: 96px; border-radius: 24px; margin-bottom: 10px; animation: wlSplashIn .45s cubic-bezier(0.16,1,0.3,1) both; }
+#wl-splash strong { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; animation: wlSplashIn .45s cubic-bezier(0.16,1,0.3,1) .08s both; }
+#wl-splash span { font-size: 14px; color: #DAD3FF; animation: wlSplashIn .45s cubic-bezier(0.16,1,0.3,1) .14s both; }
+@keyframes wlSplashIn { from { opacity: 0; transform: translateY(10px) scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes wlSplashOut { to { opacity: 0; visibility: hidden; } }
+@media (prefers-reduced-motion: reduce) { #wl-splash img, #wl-splash strong, #wl-splash span { animation: none; } }
