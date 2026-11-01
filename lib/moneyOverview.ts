@@ -5,7 +5,7 @@
 // (pay_from_account_id, migration 027), else the one that paid it last time.
 import { viewAmount, type View } from './netWorth'
 import { kindOf, counterOf } from './ledger'
-import { catOf, CC_BILL, isIncome as isIncomeIn, isSpend, expandSplits } from './money'
+import { catOf, CC_BILL, isIncome as isIncomeIn, isSpend, expandSplits, prepareMoney } from './money'
 import { matchScore } from './loans'
 import { findRecurring, nextOccurrence, nextCardDue, addDaysTo, daysBetween, ymOf, addMonths, daysInMonth, fmtDay } from './insights'
 import { nextDate, type RecurringTxn } from './recurring'
@@ -208,8 +208,10 @@ export function safeToSpend(inp: { today: string; view: View; fx: number; accoun
   // Next payday: the day the month's biggest income usually lands
   const month = ymOf(today)
   const days: number[] = []
+  // (the same income every screen counts: in India, what lands from UAE; not your own moves)
+  const earned = prepareMoney(inp.txns, { fx })
   for (const m of [1, 2, 3].map(i => addMonths(month, -i))) {
-    const top = inp.txns.filter(t => ymOf(t.txn_date) === m && inView(t.currency) && isIncome(t))
+    const top = earned.filter(t => ymOf(t.txn_date) === m && inView(t.currency) && isIncome(t))
       .sort((a, b) => viewAmount(b.amount, b.currency, view, fx) - viewAmount(a.amount, a.currency, view, fx))[0]
     if (top) days.push(Number(top.txn_date.slice(8, 10)))
   }

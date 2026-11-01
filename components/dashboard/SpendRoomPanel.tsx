@@ -9,8 +9,35 @@ export type RoomCard = SpendRoom & { until: string; perDay: number | null }
 
 // How much more you can spend: per category, what's left of its budget (or a
 // rough allowance from your last 3 months), never above what's actually free.
-export default function SpendRoomPanel({ rooms, limit = 8, more }: { rooms: RoomCard[]; limit?: number; more?: React.ReactNode }) {
+export default function SpendRoomPanel({ rooms, limit = 8, more, flat }: { rooms: RoomCard[]; limit?: number; more?: React.ReactNode; flat?: boolean }) {
   if (!rooms.some(r => r.lines.length)) return null
+  // Home: both currencies in one even grid, as many as fill its rows
+  if (flat) {
+    const all = rooms.flatMap(r => r.lines.map(l => ({ ...l, cur: r.cur }))).sort((a, b) => Number(a.estimated) - Number(b.estimated) || b.spent / (b.cap || 1) - a.spent / (a.cap || 1))
+    const lines = all.slice(0, all.length >= 6 ? 6 : all.length > 3 ? 4 : all.length)
+    const cols = lines.length >= 6 || lines.length === 3 ? 'md:grid-cols-3' : lines.length === 1 ? '' : 'md:grid-cols-2'
+    return (
+      <Panel title="How much more can you spend" right={more}>
+        <div className={`grid grid-cols-1 ${cols} gap-2.5 mt-2.5`}>
+          {lines.map(l => {
+            const m = (n: number) => fmtMoney(n, l.cur), pct = l.cap > 0 ? Math.min(100, l.spent / l.cap * 100) : 100, over = l.left < 0
+            return (
+              <div key={`${l.cur}-${l.category}`} className="rounded-[14px] px-3.5 py-2.5 min-w-0" style={{ background: '#FAFAFE', border: '1px solid var(--line)' }}>
+                <div className="flex items-baseline justify-between gap-2 text-[13px]">
+                  <span className="min-w-0 truncate" style={{ color: 'var(--text)' }}>{labelOf(l.category)}</span>
+                  <span className="font-semibold tabular-nums flex-shrink-0" style={{ color: over ? '#DC2626' : 'var(--text)' }}>{over ? `over ${m(-l.left)}` : `${m(l.room)} more`}</span>
+                </div>
+                <div className="h-[5px] rounded-full mt-1.5 overflow-hidden" style={{ background: 'var(--track)' }}>
+                  <div className="h-full rounded-full" style={{ width: `${pct}%`, background: over ? '#DC2626' : pct >= 85 ? '#D97706' : 'var(--accent)' }} />
+                </div>
+                <div className="text-[11.5px] mt-1" style={{ color: 'var(--text3)' }}>{m(l.spent)} of {m(l.cap)}{l.estimated ? ' · estimate' : ''}</div>
+              </div>
+            )
+          })}
+        </div>
+      </Panel>
+    )
+  }
   return (
     <Panel title="How much more can you spend" right={more}>
       <div className={`mt-2 grid gap-4 ${rooms.length > 1 ? 'md:grid-cols-2' : ''}`}>

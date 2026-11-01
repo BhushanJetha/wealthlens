@@ -21,7 +21,7 @@ import { MobileControls, SearchButton, AskAiButton } from '@/components/layout/M
 import { KpiTile, PALETTE, type Tone as KTone } from '@/components/ui/kit'
 import { buildDues, expectedIncome, balanceWarnings, safeToSpend } from '@/lib/moneyOverview'
 import { spendRoom } from '@/lib/spendRoom'
-import { nextWeek, homePlan } from '@/lib/homePlan'
+import { nextWeek, homePlan, earnedIncoming, cashDues } from '@/lib/homePlan'
 import { friendBalances, friendTotals } from '@/lib/friends'
 import type { RecurringTxn } from '@/lib/recurring'
 import PendingConfirms, { pendingCount, type Pending } from './PendingConfirms'
@@ -154,8 +154,10 @@ export default function DashboardClient(p: Props) {
   const dueInp = { today, txns: p.transactions, accounts: h.accounts, loans: h.loans, insurance: p.insurance, mutualFunds: h.mutualFunds, recurring: p.recurring, rds: h.recurringDeposits }
   const dues = useMemo(() => buildDues({ ...dueInp, days: 45, view }), [reviewOk, p, h]) // eslint-disable-line react-hooks/exhaustive-deps
   const viewAccounts = useMemo(() => h.accounts.filter((a: any) => view === 'consolidated' || (view === 'uae' ? a.currency === 'AED' : a.currency !== 'AED')), [h.accounts, view])
-  const incoming = useMemo(() => expectedIncome(p.transactions, viewAccounts, today, 45), [p.transactions, viewAccounts, today])
-  const warnings = useMemo(() => balanceWarnings(viewAccounts, dues, incoming, today, 7).filter(w => w.severity !== 'low'), [viewAccounts, dues, incoming, today])
+  // Each account's warning counts any money reaching it; the totals count only real income
+  const reachingAccounts = useMemo(() => expectedIncome(p.transactions, viewAccounts, today, 45), [p.transactions, viewAccounts, today])
+  const incoming = useMemo(() => expectedIncome(earnedIncoming(p.transactions, view, FX), viewAccounts, today, 45), [p.transactions, view, FX, viewAccounts, today])
+  const warnings = useMemo(() => balanceWarnings(viewAccounts, dues, reachingAccounts, today, 7).filter(w => w.severity !== 'low'), [viewAccounts, dues, reachingAccounts, today])
 
   // Per currency on its own: dirhams can't pay in India
   const rooms = useMemo(() => (view === 'uae' ? ['AED'] as const : view === 'india' ? ['INR'] as const : ['AED', 'INR'] as const).map(c => {
@@ -182,7 +184,8 @@ export default function DashboardClient(p: Props) {
   const pctDiff = (v: number, b: number | null) => b && b > 0 ? Math.round((v - b) / b * 1000) / 10 : null
   const incPct = ins.income.comparable ? pctDiff(ins.income.value, ins.income.baseline) : null
   const spendPct = ins.spend.comparable ? pctDiff(ins.spend.value, ins.spend.baseline) : null
-  const cardsOwed = h.accounts.filter((a: any) => a.account_type === 'credit_card').reduce((s: number, a: any) => s + Math.max(0, toView(Number(a.outstanding_bal) || 0, a.currency)), 0)
+  // The same two figures net worth takes off
+  const owedOn = (key: string) => nw.liabRows.find(r => r.key === key)?.value ?? 0
   const gain = nw.investments.value - nw.investments.cost
   const nwChange = hist.ref ? nw.netWorth - hist.ref.value : null
   const kpis: { label: string; value: string; delta: string; tone: KTone; icon: LucideIcon; href: string }[] = [
@@ -198,8 +201,8 @@ export default function DashboardClient(p: Props) {
       delta: ins.saved.rate != null ? `${ins.saved.rate}% of income · target 20%` : 'Waiting for income',
       tone: ins.saved.rate == null ? 'neutral' : ins.saved.rate >= 20 ? 'good' : 'bad', icon: PiggyBank, href: '/dashboard/reports' },
     { label: 'Investments', value: short(nw.investments.value), delta: nw.investments.cost > 0 ? `${gain >= 0 ? '▲' : '▼'} ${short(Math.abs(gain))} ${gain >= 0 ? 'gain' : 'loss'}` : 'Nothing added yet', tone: nw.investments.cost > 0 ? (gain >= 0 ? 'good' : 'bad') : 'neutral', icon: TrendingUp, href: '/dashboard/investments' },
-    { label: 'Card bills', value: short(cardsOwed), delta: 'Owed on cards', tone: 'neutral', icon: CreditCard, href: '/dashboard/cards' },
-    { label: 'Loans', value: short(Math.max(0, nw.totalLiab - cardsOwed)), delta: 'Still to repay', tone: 'neutral', icon: Banknote, href: '/dashboard/loans' },
+    { label: 'Card bills', value: short(owedOn('cards')), delta: 'Owed on cards', tone: 'neutral', icon: CreditCard, href: '/dashboard/cards' },
+    { label: 'Loans', value: short(owedOn('loans')), delta: 'Still to repay', tone: 'neutral', icon: Banknote, href: '/dashboard/loans' },
   ]
 
   return (
@@ -252,25 +255,21 @@ export default function DashboardClient(p: Props) {
       </div>
 
       {/* 3 · Next week, and the plan ahead */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.35fr] gap-3.5 md:gap-4 lg:items-start">
-        <NextWeekCard today={today} items={week.items} warnings={warnings} money={money} friends={friendPair}
-          dueTotal={week.out.reduce((s, d) => s + toView(d.amount, d.currency), 0)} inTotal={week.in.reduce((s, i) => s + toView(i.amount, i.currency), 0)} />
-        <div className="flex flex-col gap-3.5 md:gap-4 min-w-0">
-          <PlanCard plan={plan} money={money} />
-          <SpendRoomPanel rooms={rooms} limit={3} more={<MoreLink href="/dashboard/money">All</MoreLink>} />
-        </div>
-      </div>
+      <NextWeekCard today={today} items={week.items} later={week.later} warnings={warnings} money={money} friends={friendPair}
+        dueTotal={cashDues(week.out, h.accounts).reduce((s, d) => s + toView(d.amount, d.currency), 0)} inTotal={week.in.reduce((s, i) => s + toView(i.amount, i.currency), 0)} />
+      <PlanCard plan={plan} money={money} />
+      <SpendRoomPanel rooms={rooms} flat more={<MoreLink href="/dashboard/money">All</MoreLink>} />
 
       {/* 4 · Progress */}
       <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-3.5 md:gap-4">
         <NetWorthCard nw={nw} hist={hist} est={nwEst} historyReady={p.historyReady} holderLabel={holder ? holderLabel : null}
           savingsRate={ins.trend.savingsRate} money={money} short={short} />
-        <GoalsCard goals={goals} short={short} interests={p.goalInterests} />
+        <div className="flex flex-col gap-3.5 md:gap-4 min-w-0">
+          <GoalsCard goals={goals} short={short} interests={p.goalInterests} className="flex-1" />
+          <HealthCard score={health.score} parts={health.parts} />
+        </div>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 md:gap-4">
-        <CashFlowCard forecast={ins.forecast} short={short} money={money} />
-        <HealthCard score={health.score} parts={health.parts} />
-      </div>
+      <CashFlowCard forecast={ins.forecast} short={short} money={money} />
 
       {/* 5 · To read when you have a minute */}
       <section className="rounded-[18px] md:rounded-[20px] bg-review text-white px-4 md:px-[22px] py-3.5 md:py-[18px] flex flex-col md:flex-row gap-2.5 md:gap-4 md:items-center">
