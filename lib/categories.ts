@@ -10,11 +10,11 @@ export interface Category {
 // [name, colour, icon] — icon keys are in components/ui/CategoryIcon
 type Def = [string, string, string]
 const EXPENSE: Def[] = [
-  ['Food', '#F29A2E', 'utensils'], ['Shopping', '#3B8EF0', 'shopping-bag'], ['Utilities', '#7C3AED', 'zap'],
-  ['Travel & transport', '#0891B2', 'car'], ['Health', '#DC2626', 'heart-pulse'], ['Personal Care', '#DB2777', 'sparkles'],
+  ['Food', '#F29A2E', 'utensils'], ['Shopping', '#3B8EF0', 'shopping-bag'], ['Rent', '#0F766E', 'home'], ['Utilities', '#7C3AED', 'zap'],
+  ['Travel & transport', '#0891B2', 'car'], ['Flights', '#0369A1', 'plane'], ['Health', '#DC2626', 'heart-pulse'], ['Personal Care', '#DB2777', 'sparkles'],
   ['Entertainment', '#EC5B8C', 'clapperboard'],
   ['Event/Function', '#C026D3', 'party-popper'], ['Education', '#2563EB', 'graduation-cap'], ['Subscription', '#6A55E8', 'repeat'],
-  ['Investment', '#16A34A', 'trending-up'], ['Tax Payment', '#BE123C', 'landmark'], ['EMI/Loan', '#EA580C', 'banknote'],
+  ['Investment', '#16A34A', 'trending-up'], ['Home purchase', '#15803D', 'building'], ['Tax Payment', '#BE123C', 'landmark'], ['EMI/Loan', '#EA580C', 'banknote'],
   ['Loan on Card', '#D97706', 'credit-card'], ['Credit Card Payment', '#9333EA', 'credit-card'], ['Family Transfer', '#0EA5E9', 'users'],
   ['Refund', '#059669', 'undo'], ['Other', '#64748B', 'more'],
 ]
@@ -35,7 +35,9 @@ export const DEFAULT_CATEGORIES: Category[] = [
 // money movements, NRO income…). They can be recoloured but not renamed or
 // deleted, or totals elsewhere would silently change.
 const SYSTEM: Record<CatKind, Set<string>> = {
-  expense: new Set(['Credit Card Payment', 'Loan on Card', 'EMI/Loan', 'Investment', 'Family Transfer', 'Refund', 'Other']),
+  // Rent (a fixed cost in Budgets), Home purchase (money into your home, not
+  // spending) and Flights are added for everyone who doesn't have them yet
+  expense: new Set(['Credit Card Payment', 'Loan on Card', 'EMI/Loan', 'Investment', 'Family Transfer', 'Refund', 'Other', 'Rent', 'Flights', 'Home purchase']),
   income:  new Set(['Salary', 'UAE Income (NRO)', 'NRE Received', 'NRI Transfer', 'FD/RD Maturity', 'Loan Taken', 'Refund', 'Other']),
 }
 export const isSystemCategory = (kind: CatKind, name: string) => SYSTEM[kind].has(name)

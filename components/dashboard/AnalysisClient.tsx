@@ -7,7 +7,7 @@ import { useViewStore } from '@/store/viewStore'
 import { useFamily } from '@/hooks/useFamily'
 import SpendCalendar from './SpendCalendar'
 import { useUiStore } from '@/store/uiStore'
-import { isSpend, isSpending, catOf, labelOf, spendGroup, SPEND_GROUPS } from '@/lib/money'
+import { isSpend, isSpending, catOf, labelOf, spendGroup, SPEND_GROUPS, expandSplits } from '@/lib/money'
 import { useCategoryStore } from '@/store/categoryStore'
 import { colorOf as catColorOf } from '@/lib/categories'
 import { CategoryIcon } from '@/components/ui/CategoryIcon'
@@ -24,7 +24,9 @@ const SENT_COLOR: Record<string, string> = { 'International Transfer': '#3B8EF0'
 
 // Spending analysis (design v2): budget vs actual, pace, comparisons, movers,
 // big purchases. "Spend" uses the shared rule in lib/money (same as Home).
-export default function AnalysisClient({ transactions, budgets }: { transactions: any[]; budgets: any[] }) {
+export default function AnalysisClient({ transactions: raw, budgets }: { transactions: any[]; budgets: any[] }) {
+  // Your share of anything split with friends
+  const transactions = useMemo(() => expandSplits(raw), [raw])
   const { view, toMonth, fxRate: FX } = useViewStore()
   const { openAdvisor } = useUiStore()
   const { rows: categories, load: loadCategories } = useCategoryStore()

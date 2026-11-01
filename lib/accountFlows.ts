@@ -3,7 +3,7 @@
 // a move between your accounts shows on both (a card bill as "card bill →
 // Axis" on the bank and "paid from HDFC" on the card; UAE → India as "sent to
 // India" on ENBD and "received from UAE" on NRE), and once per account.
-import { catOf, labelOf, CC_BILL, isNreToNro, isRemitOut, isIncome, spendGroup, pairRemittances, ownCredits, type View } from './money'
+import { catOf, labelOf, CC_BILL, isNreToNro, isRemitOut, isIncome, spendGroup, pairRemittances, ownCredits, expandSplits, type View } from './money'
 import { isCredit, counterOf, kindOf, balancesAt } from './ledger'
 
 export type FlowKind = 'income' | 'spend' | 'emi' | 'invest' | 'card' | 'move' | 'payment' | 'refund'
@@ -79,8 +79,11 @@ const near = (x: any, amount: number, date: string) =>
 
 // `inside(id)`: is that account on screen? A move to or from one that isn't
 // (NRE in the UAE view, or no account at all) is money really leaving or arriving.
-export function accountFlows(accounts: any[], txns: any[], fx: number, inPeriod: (date: string) => boolean,
+export function accountFlows(accounts: any[], rows: any[], fx: number, inPeriod: (date: string) => boolean,
   opts: { inside?: (id: string) => boolean } = {}): AccountFlow[] {
+  // A split: your share and your friends' share as two lines on the account.
+  // Paid by a friend: no money left any of your accounts — not here at all.
+  const txns = expandSplits(rows).filter(t => !t.paid_by_friend_id)
   const byId = new Map(accounts.map(a => [a.id, a]))
   const flows = new Map<string, { account: any; ins: Map<string, FlowLine>; outs: Map<string, FlowLine>; merch: Map<string, number> }>()
   const flowOf = (a: any) => {
@@ -179,6 +182,7 @@ export interface AccountGroups {
   banks: GroupAccount[]; cards: GroupAccount[]
   income: number[]; otherIn: number[]; moneyOut: number[]; left: number[]
   charged: number[]; paidToCards: number[]; allSpend: number[]
+  friendPaid: number[]                   // your share of what friends paid for you (spending, from no account)
   // Money out of your bank accounts, each type on its own
   byType: { spend: number[]; emi: number[]; invest: number[]; card: number[]; sentOut: number[] }
   // All bank accounts together, where every one's start is known (else null)
@@ -265,6 +269,12 @@ export function buildAccountGroups(accounts: any[], txns: any[], opts: { fx: num
   const banks = all.filter(g => !g.card).sort((x, y) => Number(!!x.account._unlinked) - Number(!!y.account._unlinked) || size(y) - size(x))
   const cards = all.filter(g => g.card).sort((x, y) => y.headTotal - x.headTotal)
   const cardSpend = months.map((_, i) => cards.reduce((s, g) => s + g.lines.filter(l => l.dir === 'out' && l.kind === 'spend').reduce((a, l) => a + l.values[i], 0), 0))
+  const friendPaid = zeros()
+  for (const t of txns) {
+    if (!t.paid_by_friend_id || t.txn_type !== 'expense' || !inView(t.currency ?? 'INR')) continue
+    const i = months.indexOf(String(t.txn_date).slice(0, 7))
+    if (i >= 0) friendPaid[i] += opts.toView(Number(t.amount) || 0, t.currency ?? 'INR')
+  }
   const realBanks = banks.filter(g => !g.account._unlinked && g.account.is_active !== false)
   const startTotal = months.map((_, i) => realBanks.length && realBanks.every(g => g.start[i] != null) ? realBanks.reduce((s, g) => s + (g.start[i] ?? 0), 0) : null)
   return {
@@ -272,7 +282,8 @@ export function buildAccountGroups(accounts: any[], txns: any[], opts: { fx: num
     income: T.income, otherIn: T.otherIn, moneyOut: T.moneyOut,
     left: months.map((_, i) => T.income[i] + T.otherIn[i] - T.moneyOut[i]),
     charged: T.charged, paidToCards: T.paidToCards,
-    allSpend: months.map((_, i) => T.bankSpend[i] + cardSpend[i]),
+    allSpend: months.map((_, i) => T.bankSpend[i] + cardSpend[i] + friendPaid[i]),
+    friendPaid,
     byType: { spend: T.bankSpend, emi: T.emi, invest: T.invest, card: T.card, sentOut: T.sentOut },
     startTotal,
     endTotal: startTotal.map((st, i) => st == null ? null : st + T.income[i] + T.otherIn[i] - T.moneyOut[i]),

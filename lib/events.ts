@@ -4,7 +4,7 @@
 // never counts anything twice. Tagged spending is kept out of monthly budgets
 // (lib/budgets) — those measure everyday living — but always counts in what
 // you spent and saved.
-import { isSpend, catOf } from './money'
+import { isSpend, catOf, expandSplits } from './money'
 import { FIXED } from './budgets'
 
 export type EventKind = 'trip' | 'function' | 'festival' | 'project' | 'medical' | 'other'
@@ -32,7 +32,8 @@ export interface EventStats {
 }
 // What an event has cost so far, in its own currency (AED ↔ ₹ at today's rate)
 export function eventStats(ev: any, txns: any[], fx: number, today: string): EventStats {
-  const rows = txns.filter(t => t.event_id === ev.id && isSpend(t)).sort((a, b) => String(b.txn_date).localeCompare(String(a.txn_date)))
+  // (your share of anything split with friends)
+  const rows = expandSplits(txns).filter(t => t.event_id === ev.id && isSpend(t)).sort((a, b) => String(b.txn_date).localeCompare(String(a.txn_date)))
   const cur = ev.currency === 'AED' ? 'AED' : 'INR'
   const v = (t: any) => conv(Number(t.amount) || 0, t.currency, cur, fx)
   const group = (key: (t: any) => string) => {
@@ -57,7 +58,7 @@ export function eventStats(ev: any, txns: any[], fx: number, today: string): Eve
 // Untagged spending that probably belongs: anything in its dates (not rent,
 // EMIs, bills or investments), and for a trip, flight and hotel bookings made
 // in the 90 days before it
-const NOT_EVENT = new Set([...Array.from(FIXED), 'Utilities', 'Subscription', 'Tax Payment', 'Loan on Card', 'Credit Card Payment'])
+const NOT_EVENT = new Set([...Array.from(FIXED), 'Utilities', 'Subscription', 'Tax Payment', 'Loan on Card', 'Credit Card Payment', 'Home purchase'])
 const BOOKING = /flight|airline|air ?india|indigo|spicejet|vistara|akasa|emirates|flydubai|air ?arabia|etihad|hotel|resort|airbnb|booking\.com|agoda|makemytrip|goibibo|cleartrip|yatra|easemytrip|\boyo\b|visa/i
 export function eventSuggestions(ev: any, txns: any[]): any[] {
   return txns.filter(t => !t.event_id && isSpend(t) && !NOT_EVENT.has(catOf(t)) && (

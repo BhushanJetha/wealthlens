@@ -1,8 +1,9 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, Pencil, Trash2, ChevronDown, Loader2 } from 'lucide-react'
+import { X, Pencil, Trash2, ChevronDown, Loader2, Users } from 'lucide-react'
 import AddTransactionModal from '@/components/forms/AddTransactionModal'
+import SplitSheet from '@/components/dashboard/SplitSheet'
 import { createClient } from '@/lib/supabase/client'
 import { useCategoryStore } from '@/store/categoryStore'
 import { MOVEMENT_CATS, CC_BILL, labelOf } from '@/lib/money'
@@ -31,10 +32,13 @@ export default function TxnDrillModal({
   const [busy, setBusy] = useState<string | null>(null)
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
   const [editing, setEditing] = useState<any | null>(null)
+  const [splitting, setSplitting] = useState<any | null>(null)
   useEffect(() => {
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !editing) onClose() }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !editing && !splitting) onClose() }
     window.addEventListener('keydown', esc); return () => window.removeEventListener('keydown', esc)
-  }, [editing, onClose])
+  }, [editing, splitting, onClose])
+  // A split shows here as your share and your friends' share — each acts on the whole transaction
+  const whole = (t: any) => t._whole ?? t
 
   const total = rows.filter(t => !moved.has(t.id)).reduce((s, t) => s + amt(t), 0)
   const colorOf = (c: string) => cats.find(r => r.name === c)?.color ?? '#94A3B8'
@@ -56,7 +60,7 @@ export default function TxnDrillModal({
   async function recategorise(t: any, category: string) {
     if (category === t.category) return
     setBusy(t.id)
-    const res = await fetch('/api/transactions', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: t.id, category }) })
+    const res = await fetch('/api/transactions', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: whole(t).id, category }) })
     setBusy(null)
     if (!res.ok) { toast('Couldn’t change the category. Try again.', 'error'); return }
     refresh(t.id, { category }, 'moved')
@@ -64,10 +68,10 @@ export default function TxnDrillModal({
   }
   async function remove(t: any) {
     setBusy(t.id)
-    const res = await fetch(`/api/transactions?id=${t.id}`, { method: 'DELETE' })
+    const res = await fetch(`/api/transactions?id=${whole(t).id}`, { method: 'DELETE' })
     setBusy(null); setConfirmDel(null)
     if (!res.ok) { toast('Couldn’t delete it. Try again.', 'error'); return }
-    setRows(rs => rs.filter(r => r.id !== t.id))
+    setRows(rs => rs.filter(r => whole(r).id !== whole(t).id))
     toast('Transaction deleted')
     router.refresh()
   }
@@ -108,7 +112,7 @@ export default function TxnDrillModal({
               if (confirmDel === t.id) return (
                 <div key={t.id} className="px-5 py-3 flex items-center gap-3 flex-wrap" style={{ borderBottom: '1px solid #F1F0F7', background: '#FFF5F5' }}>
                   <span className="text-[13px] flex-1 min-w-[180px]" style={{ color: '#7F1D1D' }}>
-                    Delete <b>{t.merchant || 'this transaction'}</b> · {money(amt(t))}? Balances and reports drop it. This can’t be undone.
+                    Delete <b>{t.merchant || 'this transaction'}</b> · {money(amt(whole(t)))}{t._whole ? ' (the whole payment)' : ''}? Balances and reports drop it. This can’t be undone.
                   </span>
                   <div className="flex gap-2 ml-auto">
                     <button onClick={() => setConfirmDel(null)} disabled={isBusy} className="wl-btn" style={{ height: 34 }}>Keep</button>
@@ -142,8 +146,14 @@ export default function TxnDrillModal({
                         <span className="inline-flex items-center h-[26px] px-2.5 rounded-full text-[12px]" style={{ background: 'var(--bg2)', color: 'var(--text3)' }}>{labelOf(t.category)}</span>
                       )}
                       {saved && <span className="text-[11px] font-semibold" style={{ color: '#1E8F5F' }}>{changed ? 'moved · saved' : 'saved'}</span>}
+                      {t._whole && <span className="text-[11px] font-semibold" style={{ color: 'var(--accent2)' }}>{t._friendShare ? 'friends’ share' : 'your share'} of {money(amt(t._whole))}</span>}
+                      {t.paid_by_friend_id && <span className="text-[11px] font-semibold" style={{ color: '#B45309' }}>a friend paid</span>}
                       <span className="ml-auto flex items-center gap-0.5">
-                        <button onClick={() => setEditing(t)} disabled={isBusy} aria-label={`Edit ${t.merchant}`} title="Edit"
+                        {whole(t).txn_type === 'expense' && whole(t).account_id && !whole(t).paid_by_friend_id && (
+                          <button onClick={() => setSplitting(whole(t))} disabled={isBusy} aria-label={`Split ${t.merchant}`} title="Split with friends"
+                            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[var(--bg2)]" style={{ color: 'var(--text2)' }}><Users size={15} /></button>
+                        )}
+                        <button onClick={() => setEditing(whole(t))} disabled={isBusy} aria-label={`Edit ${t.merchant}`} title="Edit"
                           className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[var(--bg2)]" style={{ color: 'var(--text2)' }}><Pencil size={15} /></button>
                         <button onClick={() => setConfirmDel(t.id)} disabled={isBusy} aria-label={`Delete ${t.merchant}`} title="Delete"
                           className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#FEF2F2]" style={{ color: '#DC2626' }}><Trash2 size={15} /></button>
@@ -156,11 +166,15 @@ export default function TxnDrillModal({
           </div>
 
           <div className="px-5 py-3 flex-shrink-0 text-[12px]" style={{ borderTop: '1px solid var(--line)', color: 'var(--text3)' }}>
-            Tap a category to move it · <Pencil size={11} className="inline -mt-0.5" /> to change anything else. Changes save straight away and update the report.
+            Tap a category to move it · <Users size={11} className="inline -mt-0.5" /> to split with friends · <Pencil size={11} className="inline -mt-0.5" /> to change anything else. Changes save straight away and update the report.
           </div>
         </div>
       </div>
       {editing && <AddTransactionModal edit={{ txn: editing }} onClose={() => setEditing(null)} onAdded={() => reload(editing.id)} />}
+      {splitting && <SplitSheet txn={splitting} onClose={() => setSplitting(null)} onSaved={share => {
+        setRows(rs => rs.map(r => whole(r).id === splitting.id ? { ...whole(r), friend_share: share || null } : r).filter((r, i, a) => a.findIndex(x => whole(x).id === whole(r).id) === i))
+        setEdited(m => new Set(m).add(splitting.id))
+      }} />}
     </>
   )
 }

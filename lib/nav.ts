@@ -25,6 +25,7 @@ export const SECTIONS: NavSection[] = [
       { label: 'FX optimizer', href: '/dashboard/fx' },
     ] },
     { label: 'Bills',      href: '/dashboard/bills' },
+    { label: 'Friends',    href: '/dashboard/money/friends' },
     { label: 'Reports',    href: '/dashboard/reports', subs: [
       { label: 'Money report',   href: '/dashboard/reports' },
       { label: 'Expense report', href: '/dashboard/expenses/report' },

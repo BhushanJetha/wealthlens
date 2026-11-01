@@ -3,7 +3,7 @@
 // the budgets table: one cap per category, per currency, per month, plus two
 // reserved kinds — a "save first" target and per-person budgets.
 // Spending is counted with the same rules as everywhere else (lib/money).
-import { isSpend, isSpending, isRemitOut, catOf, labelOf, isIncome, spendGroup, type View, canonCategory } from './money'
+import { isSpend, isSpending, isRemitOut, catOf, labelOf, isIncome, spendGroup, type View, canonCategory, expandSplits } from './money'
 
 // Own date helpers (lib/insights imports this file)
 const ymOf = (d: string) => String(d ?? '').slice(0, 7)
@@ -23,7 +23,7 @@ export type Cur = 'AED' | 'INR'
 export const curView = (c: Cur): View => (c === 'AED' ? 'uae' : 'india')
 
 // Refunds are money back; a card-loan EMI counts under EMI / loan payments
-export const NOT_PLANABLE = new Set(['Loan on Card', 'Refund'])
+export const NOT_PLANABLE = new Set(['Loan on Card', 'Refund', 'Home purchase'])
 // Card bills paid: a budget of its own (what goes to card bills each month),
 // shown with its % used but kept out of the totals — the card purchases it
 // pays for are already in their own categories
@@ -50,7 +50,7 @@ export function spendByCategory(txns: any[], month: string, cur: Cur, fromDay = 
   const out: Record<string, number> = {}
   const add = (c: string, v: number) => { out[c] = (out[c] ?? 0) + v }
   const bills: any[] = []
-  for (const t of txns) {
+  for (const t of expandSplits(txns)) {          // your share of a split
     if (t.currency !== cur || ymOf(t.txn_date) !== month || t.txn_type === 'income') continue
     const d = Number(String(t.txn_date).slice(8, 10))
     if (d < fromDay || d > toDay) continue
@@ -201,7 +201,7 @@ export interface Suggestion { cap: number; avg: number; max: number; months: num
 export function suggestCaps(txns: any[], currency: Cur, month: string): Record<string, Suggestion> {
   const months = [1, 2, 3].map(i => addMonths(month, -i))
   const per: Record<string, Record<string, number>> = {}
-  for (const t of txns) {
+  for (const t of expandSplits(txns)) {
     const m = ymOf(t.txn_date)
     if (t.currency !== currency || !months.includes(m) || !budgetable(t)) continue
     const c = catOf(t)

@@ -5,7 +5,7 @@
 // (pay_from_account_id, migration 027), else the one that paid it last time.
 import { viewAmount, type View } from './netWorth'
 import { kindOf, counterOf } from './ledger'
-import { catOf, CC_BILL, isIncome as isIncomeIn, isSpend } from './money'
+import { catOf, CC_BILL, isIncome as isIncomeIn, isSpend, expandSplits } from './money'
 import { matchScore } from './loans'
 import { findRecurring, nextOccurrence, nextCardDue, addDaysTo, daysBetween, ymOf, addMonths, daysInMonth, fmtDay } from './insights'
 import { nextDate, type RecurringTxn } from './recurring'
@@ -111,7 +111,7 @@ export function buildDues(inp: {
   const repeatKeys = new Set(repeats.map(r => ruleTextFor(r.merchant)))
   // Bills & subscriptions not yet charged this month, on their usual day
   const month = ymOf(today), dayNow = Number(today.slice(8, 10))
-  const spends = inp.txns.filter(t => isSpend(t) && inView(t.currency))
+  const spends = expandSplits(inp.txns).filter(t => isSpend(t) && inView(t.currency))
   for (const r of findRecurring(spends, month, t => Number(t.amount) || 0)) {
     if (repeatKeys.has(ruleTextFor(r.name))) continue
     const ym = r.paidThisMonth ? addMonths(month, 1) : r.day >= dayNow ? month : null

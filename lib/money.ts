@@ -24,6 +24,8 @@ export const MOVEMENT_CATS = new Set([
   // A card purchase turned into EMIs leaves the card balance for the loan
   // (the purchase was already counted as spending; the EMIs aren't again)
   'Converted to EMI',
+  // Splitting with friends: their share of what you paid, and settling up
+  'Lent to friends', 'Repaid by friend', 'Paid back to friend',
 ])
 
 // Card bill payments settle purchases already counted on the card, so they're a
@@ -114,7 +116,8 @@ export function spendGroup(t: any): SpendGroup | null {
   if (!isSpend(t)) return null
   const c = catOf(t)
   if (t.txn_type === 'loan' || c === 'EMI/Loan') return 'loans'
-  if (c === 'Investment') return 'invest'
+  // Money into an asset: investments, and payments towards your home
+  if (c === 'Investment' || c === 'Home purchase') return 'invest'
   if (t.txn_type === 'transfer' || SENT_CATS.has(c)) return 'sent'
   return 'living'
 }
@@ -125,7 +128,7 @@ export const isSpending = (t: any) => { const g = spendGroup(t); return g === 'l
 // Income-typed rows that are really moves (money received from yourself,
 // borrowing, or the old auto "NRO" copies)
 const NOT_INCOME = new Set(['NRE Received', 'Received from NRE', 'Received from UAE', 'NRI Transfer', 'Inward Remittance',
-  'Loan Taken', 'Loan Received', 'UAE Income (NRO)', 'Self Transfer', 'NRE to NRO', 'NRO Settled'])
+  'Loan Taken', 'Loan Received', 'UAE Income (NRO)', 'Self Transfer', 'NRE to NRO', 'NRO Settled', 'Repaid by friend'])
 export const INDIA_INCOME = 'Received from UAE'
 
 // Income in a view. Remittances landing in India (rows made by prepareMoney)
@@ -192,6 +195,33 @@ export function pairRemittances(txns: any[], fx: number): Remittance[] {
   return out.sort((a, b) => b.landedOn.localeCompare(a.landedOn))
 }
 
+// ── Splitting with friends ──────────────────────────────────────────────────
+// You paid for friends too: `friend_share` is what they owe you back. Only
+// your share is spending; theirs is money lent — a move out of your account
+// that comes back as "Repaid by friend". A friend paid for you
+// (`paid_by_friend_id`, no account): your share is spending, nothing left
+// your accounts, and paying them back ("Paid back to friend") isn't spending
+// again. Neither money back is income.
+export const LENT_TO_FRIENDS = 'Lent to friends'
+export const REPAID_BY_FRIEND = 'Repaid by friend'
+export const PAID_BACK_FRIEND = 'Paid back to friend'
+export const myShare = (t: any) => Math.max(0, (Number(t?.amount) || 0) - (Number(t?.friend_share) || 0))
+// A split expense becomes two rows on the same account: your share (its own
+// category) and your friends' share ("Lent to friends"). Together they're the
+// full amount that left the account. Safe to call twice.
+export function expandSplits(txns: any[]): any[] {
+  if (!txns.some(t => Number(t?.friend_share) > 0)) return txns
+  const out: any[] = []
+  for (const t of txns) {
+    const amount = Number(t?.amount) || 0, share = Math.min(Number(t?.friend_share) || 0, amount)
+    if (!(share > 0) || t.txn_type !== 'expense' || t._remit) { out.push(t); continue }
+    if (amount - share > 0.004) out.push({ ...t, amount: amount - share, friend_share: null, _whole: t })
+    out.push({ ...t, id: `${t.id}:friends`, amount: share, friend_share: null, category: LENT_TO_FRIENDS, sub_category: null,
+      txn_type: 'transfer', event_id: null, counter_account_id: null, _friendShare: true, _whole: t })
+  }
+  return out
+}
+
 // ── Where income went, in cash ──────────────────────────────────────────────
 // What left your bank & cash: spending paid directly, card bills (they pay for
 // what was charged to cards — so the charges aren't taken off again), EMIs,
@@ -201,18 +231,22 @@ export function pairRemittances(txns: any[], fx: number): Remittance[] {
 export interface CashOut {
   direct: number; cardBills: number; emis: number; invested: number; sentHome: number
   onCards: number; cardLoanEmis: number
+  friends: number      // lent to friends + paid back to them − what they repaid (out of your bank & cash)
 }
 export function cashOut(rows: any[], opts: { view: View; isCard: (t: any) => boolean; amount: (t: any) => number }): CashOut {
-  const o: CashOut = { direct: 0, cardBills: 0, emis: 0, invested: 0, sentHome: 0, onCards: 0, cardLoanEmis: 0 }
+  const o: CashOut = { direct: 0, cardBills: 0, emis: 0, invested: 0, sentHome: 0, onCards: 0, cardLoanEmis: 0, friends: 0 }
   // A payment on both statements (bank debit + card credit) is one payment
   const bankBills = rows.filter(t => catOf(t) === CC_BILL && !opts.isCard(t))
   const onBank = (t: any) => bankBills.some(b => b.currency === t.currency && Math.abs(dayNum(b.txn_date) - dayNum(t.txn_date)) <= 4
     && Math.abs((Number(b.amount) || 0) - (Number(t.amount) || 0)) <= Math.max(1, (Number(t.amount) || 0) * 0.01))
-  for (const t of rows) {
-    if (t.txn_type === 'income' || t._remit) continue
+  for (const t of expandSplits(rows)) {
+    if (t._remit || t.paid_by_friend_id) continue          // a friend paid: nothing left your accounts
     const v = opts.amount(t)
     if (!(v > 0)) continue
+    if (catOf(t) === REPAID_BY_FRIEND) { o.friends -= v; continue }
+    if (t.txn_type === 'income') continue
     const c = catOf(t), card = opts.isCard(t)
+    if (c === LENT_TO_FRIENDS || c === PAID_BACK_FRIEND) { if (!card) o.friends += v; continue }
     if (c === CC_BILL) { if (!card || !onBank(t)) o.cardBills += v; continue }
     if (isRemitOut(t)) { if (opts.view === 'uae') o.sentHome += v; continue }
     if (c === 'Loan on Card') { if (card) o.cardLoanEmis += v; else o.emis += v; continue }
@@ -225,7 +259,7 @@ export function cashOut(rows: any[], opts: { view: View; isCard: (t: any) => boo
   }
   return o
 }
-export const cashLeft = (income: number, o: CashOut) => income - o.direct - o.cardBills - o.emis - o.invested - o.sentHome
+export const cashLeft = (income: number, o: CashOut) => income - o.direct - o.cardBills - o.emis - o.invested - o.sentHome - o.friends
 
 // Card bills stand in for card purchases only when that month's purchases on
 // cards of the same currency were never imported (else they'd count twice).
@@ -272,7 +306,7 @@ export function ownCredits(txns: any[]): Map<any, any> {
 // accounts) marked `_ownIn` so they're never income, plus one "Received
 // from UAE" income row per remittance (₹, India view only).
 export function prepareMoney(txns: any[], opts: { fx: number; cardIds?: Set<string> }): any[] {
-  const raw = txns.filter(t => !t?._remit)          // safe to call twice
+  const raw = expandSplits(txns.filter(t => !t?._remit))   // safe to call twice
   const marked = opts.cardIds ? markUnitemisedCardBills(raw, opts.cardIds) : raw
   const remits = pairRemittances(marked, opts.fx)
   const landed = new Set(remits.map(r => r.in).filter(Boolean))

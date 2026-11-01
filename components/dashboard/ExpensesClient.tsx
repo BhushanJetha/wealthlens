@@ -12,13 +12,14 @@ import TransactionVoiceModal from '@/components/forms/TransactionVoiceModal'
 import CreditCardUploadModal from '@/components/forms/CreditCardUploadModal'
 import MessageParseModal from '@/components/forms/MessageParseModal'
 import ManageCategoriesSheet from '@/components/forms/ManageCategoriesSheet'
+import SplitSheet from '@/components/dashboard/SplitSheet'
 import PaidBy from './PaidBy'
 import { useCategoryStore } from '@/store/categoryStore'
 import { colorOf as catColorOf } from '@/lib/categories'
-import { isSpending, spendGroup, catOf, labelOf } from '@/lib/money'
+import { isSpending, spendGroup, catOf, labelOf, myShare } from '@/lib/money'
 import { toast } from '@/components/ui/toaster'
 
-import { Upload, Image, Mic, PenLine, BarChart2, X, CreditCard, Pencil, Trash2, ChevronDown, Plus, Copy, Wallet, Banknote, MessageSquareText, Landmark, TrendingUp, CalendarDays, Settings2, Paperclip } from 'lucide-react'
+import { Upload, Image, Mic, PenLine, BarChart2, X, CreditCard, Pencil, Trash2, ChevronDown, Plus, Copy, Wallet, Banknote, MessageSquareText, Landmark, TrendingUp, CalendarDays, Settings2, Paperclip, Users } from 'lucide-react'
 import { openReceipt } from '@/lib/receipts'
 import Link from 'next/link'
 import { PageHeader, InsightBar, AiActions, KpiTile, HeroStat, Bars, Donut, ProgressRow, LearnStrip, PALETTE } from '@/components/ui/kit'
@@ -52,6 +53,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
   const [budgets,      setBudgets]      = useState<any[]>([])
   const [alertCat,     setAlertCat]     = useState<string | null>(null)
   const [editing,      setEditing]      = useState<{ txn: any; duplicate?: boolean } | null>(null)
+  const [splitting,    setSplitting]    = useState<any | null>(null)
   const [manageCats,   setManageCats]   = useState(false)
   const { rows: categories, load: loadCategories } = useCategoryStore()
   const [openPanel,    setOpenPanel]    = useState<string | null>(null)
@@ -135,7 +137,8 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
   const realExpensesForMonth    = filteredForMonth.filter(isSpending)
   const investmentsForMonth     = filteredForMonth.filter(t => spendGroup(t) === 'invest')
 
-  const rangeExpenses     = realExpensesForMonth.reduce((a, t) => a + toDisplay(Number(t.amount), t.currency), 0)
+  // Your share of anything split with friends
+  const rangeExpenses     = realExpensesForMonth.reduce((a, t) => a + toDisplay(myShare(t), t.currency), 0)
   const rangeCCPayments   = ccPaymentsForMonth.reduce((a, t) => a + toDisplay(Number(t.amount), t.currency), 0)
   const rangeLoanPayments = loansForMonth.reduce((a, t) => a + toDisplay(Number(t.amount), t.currency), 0)
   const rangeInvestments  = investmentsForMonth.reduce((a, t) => a + toDisplay(Number(t.amount), t.currency), 0)
@@ -531,11 +534,14 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
               tag={label} warn={bs && bs.pct >= 75 ? `${t.category}: ${Math.round(bs.pct)}% of this month's budget used` : null}
               meta={fmtDay(t.txn_date)} amount={`−${lSym}${Number(t.amount).toLocaleString('en-IN')}`}
               amountColor={isSpending(t) || spendGroup(t) ? '#DC2626' : 'var(--text3)'}
-              amountSub={inrEq ?? (!spendGroup(t) ? 'move · not spending' : undefined)}
+              amountSub={Number(t.friend_share) > 0 ? `split · your share ${lSym}${myShare(t).toLocaleString('en-IN')}`
+                : t.paid_by_friend_id ? 'a friend paid · you owe them' : inrEq ?? (!spendGroup(t) ? 'move · not spending' : undefined)}
               onOpen={() => openEdit(t)}
               actions={[
                 { label: 'Edit', icon: Pencil, onClick: () => openEdit(t) },
                 { label: 'Duplicate', icon: Copy, onClick: () => openDuplicate(t) },
+                ...(t.txn_type === 'expense' && t.account_id && !t.paid_by_friend_id
+                  ? [{ label: Number(t.friend_share) > 0 ? 'Change split' : 'Split with friends', icon: Users, onClick: () => setSplitting(t) }] : []),
                 ...(t.receipt_path ? [{ label: 'View receipt', icon: Paperclip, onClick: () => { openReceipt(supabase, t.receipt_path) } }] : []),
                 { label: 'Delete', icon: Trash2, onClick: () => deleteTxn(t), danger: true, disabled: deletingId === t.id },
               ]} />
@@ -555,6 +561,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
       {activeModal === 'credit_card' && <CreditCardUploadModal onClose={() => setActiveModal('none')} />}
 
       {editing && <AddTransactionModal edit={editing} onClose={() => setEditing(null)} />}
+      {splitting && <SplitSheet txn={splitting} onClose={() => setSplitting(null)} />}
       {manageCats && <ManageCategoriesSheet usage={catUsage} onClose={() => setManageCats(false)} onChanged={() => router.refresh()} />}
     </div>
   )

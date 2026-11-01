@@ -120,7 +120,7 @@ export function findReviewItems(txns: any[], opts: { today: string; fx: number; 
     }
   }
   // No "Paid from": nothing comes off (or goes into) any balance — transfers and EMIs too
-  byKey('account', rest.filter(t => !t.account_id && (isSpend(t) || ['income', 'transfer', 'loan'].includes(t.txn_type))))
+  byKey('account', rest.filter(t => !t.account_id && !t.paid_by_friend_id && (isSpend(t) || ['income', 'transfer', 'loan'].includes(t.txn_type))))
   byKey('category', rest.filter(t => t.txn_type === 'expense' && isVagueCategory(t.category)))
   // Transfers of unknown kind that aren't one side of a move between your own accounts
   const own = new Set(pairOwnTransfers(real).map(p => p.out))

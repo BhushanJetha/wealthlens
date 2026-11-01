@@ -163,7 +163,8 @@ export default function AccountGroupTable({ groups, months, focus, cell, money, 
     { label: '= Came in − went out', sub: 'moves between your own accounts cancel out', values: groups.left, ink: '#1E8F5F', bg: '#F0FAF5', signed: true, strong: true },
     ...(groups.endTotal.some(v => v != null) ? [{ label: '= Left at the end of the month', sub: 'started with + came in − went out', values: groups.endTotal, ink: '#1E8F5F', bg: '#F0FAF5', strong: true }] : []),
     { label: 'Spent on cards', sub: 'paid through the card bills above', values: groups.charged, ink: '#7E22CE', bg: '#FBF7FF' },
-    { label: 'All spending, by category', sub: 'paid from bank + bought on cards — what your budgets use', values: groups.allSpend, ink: 'var(--accent2)', bg: '#FAFAFE' },
+    ...(sum(groups.friendPaid) > 0 ? [{ label: 'Paid for you by friends', sub: 'your share — nothing left your accounts; you owe them', values: groups.friendPaid, ink: '#B45309', bg: '#FFFBF5' }] : []),
+    { label: 'All spending, by category', sub: 'paid from bank + bought on cards + paid by friends — what your budgets use', values: groups.allSpend, ink: 'var(--accent2)', bg: '#FAFAFE' },
   ]
 
   // ── Phone: the focus month as cards ──

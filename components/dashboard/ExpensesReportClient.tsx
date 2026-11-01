@@ -9,7 +9,7 @@ import AccountGroupTable from '@/components/dashboard/AccountGroupTable'
 import MergeAccountsSheet from '@/components/dashboard/MergeAccountsSheet'
 import { duplicateAccounts } from '@/lib/accountMerge'
 import { buildAccountGroups } from '@/lib/accountFlows'
-import { CC_BILL, classify, labelOf, catOf, prepareMoney, isIncome, isNreToNro, markUnitemisedCardBills, INDIA_INCOME, cashOut, cashLeft, type CashOut } from '@/lib/money'
+import { CC_BILL, classify, labelOf, catOf, prepareMoney, isIncome, isNreToNro, markUnitemisedCardBills, expandSplits, INDIA_INCOME, cashOut, cashLeft, type CashOut } from '@/lib/money'
 import { findReviewItems, type ReviewKind } from '@/lib/review'
 import { PageHeader, KpiTile, Segmented } from '@/components/ui/kit'
 import { useCategoryStore } from '@/store/categoryStore'
@@ -55,10 +55,10 @@ function acctScope(t: any): 'nre' | 'nro' {
 // One country's money in a period: what came in (plus, for India, what
 // arrived from UAE) and what left its bank & cash (lib/money cashOut)
 type Side = { cur: 'AED' | 'INR'; income: number; received: number; flow: CashOut }
-const NO_FLOW: CashOut = { direct: 0, cardBills: 0, emis: 0, invested: 0, sentHome: 0, onCards: 0, cardLoanEmis: 0 }
+const NO_FLOW: CashOut = { direct: 0, cardBills: 0, emis: 0, invested: 0, sentHome: 0, onCards: 0, cardLoanEmis: 0, friends: 0 }
 const sumFlows = (fs: CashOut[]): CashOut => fs.reduce((a, f) => ({ direct: a.direct + f.direct, cardBills: a.cardBills + f.cardBills,
   emis: a.emis + f.emis, invested: a.invested + f.invested, sentHome: a.sentHome + f.sentHome, onCards: a.onCards + f.onCards,
-  cardLoanEmis: a.cardLoanEmis + f.cardLoanEmis }), NO_FLOW)
+  cardLoanEmis: a.cardLoanEmis + f.cardLoanEmis, friends: a.friends + f.friends }), NO_FLOW)
 const sideLeft = (x: Side) => cashLeft(x.income + x.received, x.flow)
 
 function buildMonths(from: string, to: string): string[] {
@@ -91,7 +91,7 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
   { transactions: any[]; incomeTransactions?: any[]; budgets?: any[]; accounts?: any[] }) {
   const { view, fromMonth, toMonth, fxRate: FX } = useViewStore()
   // Card bills count only when that month's card purchases weren't imported
-  const transactions = useMemo(() => markUnitemisedCardBills(rawTxns,
+  const transactions = useMemo(() => markUnitemisedCardBills(expandSplits(rawTxns),
     new Set(rawTxns.filter((t: any) => t.accounts?.account_type === 'credit_card').map((t: any) => t.account_id))), [rawTxns])
 
   const inView = (cur: string) => view === 'consolidated' || (view === 'uae' ? cur === 'AED' : cur === 'INR')
