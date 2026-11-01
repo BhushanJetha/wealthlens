@@ -3,11 +3,11 @@ import { fetchAllRows } from '@/lib/supabase/fetchAll'
 import { activeAccountsWithLedger } from '@/lib/ledger'
 import { activeLoansWithEmi } from '@/lib/loans'
 import { getAedInr } from '@/lib/fx'
-import AccountsReportClient from '@/components/dashboard/AccountsReportClient'
+import CardsReportClient from '@/components/dashboard/CardsReportClient'
 
-// Accounts report: each bank account, cash wallet and card on its own — what
-// came in, where it went, and what was charged to each card
-export default async function AccountsReportPage() {
+// Card spending: what you bought on each credit card in a period, by card
+// and by category, and every charge
+export default async function CardSpendingPage() {
   const supabase = createClient()
   const user = await getSessionUser(supabase)
   const uid = user!.id
@@ -30,5 +30,5 @@ export default async function AccountsReportPage() {
   const liveById = new Map((live ?? []).map(a => [a.id, a]))
   const accounts = (all ?? []).map(a => liveById.get(a.id) ?? a)
 
-  return <AccountsReportClient transactions={txns} accounts={accounts} loans={loans ?? []} fx={rate} />
+  return <CardsReportClient transactions={txns} accounts={accounts} loans={loans ?? []} fx={rate} />
 }

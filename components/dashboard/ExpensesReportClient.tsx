@@ -4,6 +4,8 @@ import { useViewStore } from '@/store/viewStore'
 import { Download, ChevronLeft, ChevronRight, CalendarDays, CalendarRange, Target, CreditCard, Landmark, Wallet, Link2Off } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, Cell, Legend } from 'recharts'
 import TxnDrillModal from '@/components/dashboard/TxnDrillModal'
+import AccountGroupTable from '@/components/dashboard/AccountGroupTable'
+import { buildAccountGroups } from '@/lib/accountFlows'
 import { CC_BILL, classify, labelOf, catOf, prepareMoney, isIncome, isNreToNro, markUnitemisedCardBills, INDIA_INCOME, cashOut, cashLeft, type CashOut } from '@/lib/money'
 import { PageHeader, KpiTile, Segmented } from '@/components/ui/kit'
 import { useCategoryStore } from '@/store/categoryStore'
@@ -81,8 +83,8 @@ function csvExport(rows: string[][]): void {
 
 type Tab = 'monthly' | 'yearly' | 'budget'
 
-export default function ExpensesReportClient({ transactions: rawTxns, incomeTransactions: rawIncome = [], budgets = [] }:
-  { transactions: any[]; incomeTransactions?: any[]; budgets?: any[] }) {
+export default function ExpensesReportClient({ transactions: rawTxns, incomeTransactions: rawIncome = [], budgets = [], accounts = [] }:
+  { transactions: any[]; incomeTransactions?: any[]; budgets?: any[]; accounts?: any[] }) {
   const { view, fromMonth, toMonth, fxRate: FX } = useViewStore()
   // Card bills count only when that month's card purchases weren't imported
   const transactions = useMemo(() => markUnitemisedCardBills(rawTxns,
@@ -191,62 +193,20 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
   const savingsRate   = incomeGrand > 0 ? Math.round((netGrand + investGrand) / incomeGrand * 100) : 0   // investing counts as saved
   const leftGrand     = months.reduce((a, m) => a + leftCol(m), 0)
 
-  // "Where your income went": the months picked at the top (if in this year), or the whole year
-  const [flowPeriod, setFlowPeriod] = useState<'range' | 'year'>('range')
-  const rangeMonths = months.filter(m => m >= fromMonth && m <= toMonth)
-  const fMonths = flowPeriod === 'range' && rangeMonths.length ? rangeMonths : months
-  const fLabel = flowPeriod === 'range' && rangeMonths.length
-    ? (rangeMonths.length === 1 ? mLabel(rangeMonths[0]) : `${mLabel(rangeMonths[0])} – ${mLabel(rangeMonths[rangeMonths.length - 1])}`) : String(viewYear)
-  const fSides: Side[] = sideCurs.map(c => {
-    const xs = fMonths.map(m => sidesByMonth[m].find(x => x.cur === c)!)
-    return { cur: c, income: xs.reduce((a, x) => a + x.income, 0), received: xs.reduce((a, x) => a + x.received, 0), flow: sumFlows(xs.map(x => x.flow)) }
-  })
-  const F = sumFlows(fSides.map(x => x.flow))
-  const fIncome = fMonths.reduce((a, m) => a + incomeCol(m), 0)
-  const fToNro = fMonths.reduce((a, m) => a + toNro(m), 0)
-  const fExpenses = fMonths.reduce((a, m) => a + outflowCol(m), 0)
-  const fLeft = fSides.reduce((a, x) => a + sideLeft(x), 0) - fToNro
-  const fCharged = F.onCards + F.cardLoanEmis
+  // The grouped table (lib/accountFlows): every bank account (what came in,
+  // every rupee or dirham that left) and every card (what was bought on it),
+  // month by month in the view's currency. Phones show the month picked at the top.
+  const groups = useMemo(() => buildAccountGroups(accounts, [...rawIncome, ...transactions], { fx: FX, months, view, toView: conv }),
+    [accounts, rawIncome, transactions, FX, view, viewYear]) // eslint-disable-line react-hooks/exhaustive-deps
+  const focusMonth = months.includes(toMonth) ? toMonth : months.includes(fromMonth) ? fromMonth : months[months.length - 1]
+  const focus = months.indexOf(focusMonth)
+  const viewNote = (a: any) => [a.currency === 'AED' ? (view === 'consolidated' ? 'UAE · AED in ₹' : 'UAE') : 'India', a.is_active === false ? 'closed' : null].filter(Boolean).join(' · ')
 
   const activeExpense  = expenseCats.filter(c => rowTot(c) > 0).sort((a, b) => rowTot(b) - rowTot(a))
   const activeExcluded = excludedCats.filter(c => rowTot(c) > 0).sort((a, b) => rowTot(b) - rowTot(a))
   const ccBillGrand    = rowTot(CC_BILL)
   const hasMonthlyRows = activeExpense.length > 0 || activeExcluded.length > 0 || ccBillGrand > 0
 
-  // Spend (the same txns as Total Monthly Expenses) split by the account / card
-  // it was paid from. Card-bill payments aren't charged to the paying bank
-  // account — that spend already sits on the card.
-  // Rows merge by account NAME, not record id — the same account saved twice
-  // (e.g. Wio as both current & savings) or Cash kept per currency is one row.
-  const acctKey = (t: any) => !t.account_id ? '__none__'
-    : (t.accounts?.name || '').toLowerCase().replace(/\s+/g, ' ').trim() || t.account_id
-  const accountRows = useMemo(() => {
-    const map: Record<string, { key: string; name: string; sub: string; type: string; currencies: Set<string>; byMonth: Record<string, number>; total: number }> = {}
-    yearTxns.forEach(t => {
-      const m = t.txn_date?.slice(0, 7); if (!m || classify(catOf(t)) !== 'expense') return
-      const key = acctKey(t)
-      if (!map[key]) {
-        const a = t.accounts
-        const name: string = a?.name || (t.account_id ? 'Unknown account' : 'No account linked')
-        // Only show bank / last-4 when the name doesn't already carry them
-        const lower = name.toLowerCase()
-        map[key] = {
-          key, name,
-          sub: [a?.bank_name && !lower.includes(String(a.bank_name).toLowerCase()) ? a.bank_name : '',
-                a?.last_four && !name.includes(a.last_four) ? `••${a.last_four}` : ''].filter(Boolean).join(' · '),
-          type: t.account_id ? (a?.account_type || '') : 'none',
-          currencies: new Set(), byMonth: {}, total: 0,
-        }
-      }
-      const v = disp(t)
-      map[key].currencies.add(t.currency)
-      map[key].byMonth[m] = (map[key].byMonth[m] ?? 0) + v
-      map[key].total += v
-    })
-    return Object.values(map).filter(r => r.total > 0)
-      .map(r => r.currencies.size > 1 ? { ...r, sub: [r.sub, Array.from(r.currencies).sort().join(' + ')].filter(Boolean).join(' · ') } : r)
-      .sort((a, b) => (a.key === '__none__' ? 1 : 0) - (b.key === '__none__' ? 1 : 0) || b.total - a.total)
-  }, [yearTxns, view, FX])
 
   // Budget caps (current-month) in the view currency
   const budgetCapMap = useMemo(() => {
@@ -307,17 +267,20 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
 
   function handleExport() {
     const monthHeads = months.map(m => `${MONTH_NAMES[Number(m.slice(5)) - 1]} ${m.slice(0, 4)}`)
-    const catRow = (c: string, name: string) => [name, ...months.map(m => Math.round(pivot[c]?.[m] ?? 0).toString()), Math.round(rowTot(c)).toString()]
-    const rows = activeExpense.map(c => catRow(c, labelOf(c)))
-    activeExcluded.forEach(c => rows.push(catRow(c, `${labelOf(c)} (not in total)`)))
-    rows.push(catRow(CC_BILL, 'Credit Card Bill (not in total)'))
-    rows.push(['TOTAL MONTHLY EXPENSES', ...months.map(m => Math.round(outflowCol(m)).toString()), Math.round(outflowGrand).toString()])
-    rows.push(['INCOME', ...months.map(m => Math.round(incomeCol(m)).toString()), Math.round(incomeGrand).toString()])
-    rows.push(['NET (Income − Expenses)', ...months.map(m => Math.round(netCol(m)).toString()), Math.round(netGrand).toString()])
-    rows.push(['LEFT IN YOUR ACCOUNTS (Income − bank & cash out, card bills not card charges)', ...months.map(m => Math.round(leftCol(m)).toString()), Math.round(leftGrand).toString()])
-    rows.push([], ['Spend by Account / Card', ...monthHeads, 'Total'])
-    accountRows.forEach(r => rows.push([r.sub ? `${r.name} (${r.sub})` : r.name, ...months.map(m => Math.round(r.byMonth[m] ?? 0).toString()), Math.round(r.total).toString()]))
-    csvExport([['Category', ...monthHeads, 'Total'], ...rows])
+    const vals = (v: number[]) => [...v.map(x => Math.round(x).toString()), Math.round(v.reduce((a, b) => a + b, 0)).toString()]
+    const rows: string[][] = []
+    for (const [title, list] of [['BANK ACCOUNTS', groups.banks], ['CREDIT CARDS', groups.cards]] as const) {
+      if (!list.length) continue
+      rows.push([title, ...vals(title === 'BANK ACCOUNTS' ? groups.moneyOut : groups.charged)])
+      for (const g of list) {
+        rows.push([`${g.account.name} (${g.card ? 'charged' : 'net change'})`, ...vals(g.head)])
+        for (const l of g.lines) rows.push([`   ${g.card ? '' : l.dir === 'in' ? '+ ' : '− '}${l.label}`, ...vals(l.values)])
+      }
+    }
+    rows.push([], ['CAME IN', ...vals(groups.income)])
+    if (groups.otherIn.some(Boolean)) rows.push(['OTHER MONEY IN', ...vals(groups.otherIn)])
+    rows.push(['MONEY OUT OF YOUR BANK ACCOUNTS', ...vals(groups.moneyOut)], ['LEFT IN YOUR ACCOUNTS', ...vals(groups.left)], ['ALL SPENDING (bank + cards)', ...vals(groups.allSpend)])
+    csvExport([['', ...monthHeads, 'Total'], ...rows])
   }
 
   const TABS: { key: Tab; label: string; icon: any }[] = [
@@ -363,11 +326,23 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
       <div className="flex items-center justify-between flex-wrap gap-2">
         <Segmented label="Report view" value={tab} onChange={setTab}
           options={TABS.map(({ key, label, icon: Icon }) => ({ value: key, label: <span className="inline-flex items-center gap-1.5"><Icon size={13} />{label}</span> }))} />
-        <Segmented label="Account" value={scope} onChange={setScope}
-          options={[{ value: 'both' as Scope, label: 'NRE + NRO' }, { value: 'nre' as Scope, label: 'NRE' }, { value: 'nro' as Scope, label: 'NRO' }]} />
+        {tab !== 'monthly' && <Segmented label="Account" value={scope} onChange={setScope}
+          options={[{ value: 'both' as Scope, label: 'NRE + NRO' }, { value: 'nre' as Scope, label: 'NRE' }, { value: 'nro' as Scope, label: 'NRO' }]} />}
       </div>
 
-      {tab !== 'yearly' && (
+      {tab === 'monthly' && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
+          <KpiTile label={`Came in · ${mLabel(focusMonth)}`} value={money((groups.income[focus] ?? 0) + (groups.otherIn[focus] ?? 0))} tint={1} icon={Wallet}
+            delta={groups.otherIn[focus] ? `incl. ${money(groups.otherIn[focus])} from outside these accounts` : 'salary and other income'} />
+          <KpiTile label="Money out of your bank accounts" value={money(groups.moneyOut[focus] ?? 0)} tint={0} icon={Landmark}
+            delta="spending, EMIs, investing, card bills" />
+          <KpiTile label="Left in your accounts" value={`${(groups.left[focus] ?? 0) < 0 ? '−' : ''}${money(Math.abs(groups.left[focus] ?? 0))}`} tint={3} icon={Target}
+            tone={(groups.left[focus] ?? 0) >= 0 ? 'good' : 'bad'} delta="came in − money out" />
+          <KpiTile label="Charged to cards" value={money(groups.charged[focus] ?? 0)} tint={2} icon={CreditCard}
+            delta="paid through the card bills" />
+        </div>
+      )}
+      {tab === 'budget' && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
           <KpiTile label={`${viewYear} income`} value={money(incomeGrand)} tint={1} icon={Wallet} />
           <KpiTile label={`${viewYear} expenses`} value={money(outflowGrand)} tint={0} icon={CreditCard} />
@@ -381,88 +356,9 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
       {/* ─────────────── MONTHLY TAB ─────────────── */}
       {tab === 'monthly' && (
         <>
-          {/* Where the income went, in cash: each thing that left your bank & cash once.
-              All view: UAE and India side by side — sent to India leaves one, arrives in the other */}
-          {(fIncome > 0 || fExpenses > 0) && (() => {
-            const two = fSides.length > 1
-            const where = (x: Side) => two ? (x.cur === 'AED' ? 'UAE accounts' : 'India accounts') : 'your accounts'
-            const renderSide = (x: Side) => {
-              const lines = [
-                { k: 'Spent from bank & cash', sub: 'living costs and family support, paid directly', v: x.flow.direct, c: '#6A55E8' },
-                { k: 'Card bills paid', sub: x.flow.onCards + x.flow.cardLoanEmis > 0 ? `pays for what you charged to cards — ${money(x.flow.onCards + x.flow.cardLoanEmis)} in this period` : 'pays for what you charged to cards', v: x.flow.cardBills, c: '#9333EA' },
-                { k: 'Loan EMIs', sub: 'paid from the bank', v: x.flow.emis, c: '#F29A2E' },
-                { k: 'Invested', sub: 'still yours — counts as saving', v: x.flow.invested, c: '#2FB67C' },
-                { k: 'Sent to India', sub: 'from your UAE accounts to your NRE', v: x.flow.sentHome, c: '#0EA5E9' },
-                ...(x.cur === 'INR' ? [{ k: 'Moved to NRO', sub: 'left the NRE account for daily spending', v: fToNro, c: '#3B8EF0' }] : []),
-              ].filter(l => l.v > 0)
-              const left = sideLeft(x) - (x.cur === 'INR' ? fToNro : 0)
-              const base = Math.max(x.income + x.received, lines.reduce((a, l) => a + l.v, 0), 1)
-              return (
-                <div key={x.cur} className="min-w-0">
-                  {two && <div className="text-[11px] font-semibold uppercase tracking-[0.05em]" style={{ color: 'var(--text3)' }}>{where(x)}{x.cur === 'AED' && view === 'consolidated' ? ' · in ₹ at today’s rate' : ''}</div>}
-                  <div className="flex h-2.5 rounded-full overflow-hidden gap-[2px] mt-2" style={{ background: 'var(--track)' }} role="img"
-                    aria-label={`${lines.map(l => `${l.k} ${money(l.v)}`).join(', ')}, left ${money(Math.max(left, 0))}`}>
-                    {lines.map(l => <div key={l.k} style={{ width: `${l.v / base * 100}%`, background: l.c }} />)}
-                    {left > 0 && <div style={{ width: `${left / base * 100}%`, background: '#CBD5E1' }} />}
-                  </div>
-                  <div className="mt-2">
-                    <div className="flex justify-between gap-3 py-2 text-[13.5px]">
-                      <span className="font-semibold" style={{ color: 'var(--text)' }}>Came in</span>
-                      <span className="font-bold tabular-nums" style={{ color: '#1E8F5F' }}>{money(x.income)}</span>
-                    </div>
-                    {x.received > 0 && (
-                      <div className="flex justify-between gap-3 py-2" style={{ borderTop: '1px solid var(--track)' }}>
-                        <span className="min-w-0"><span className="block text-[13px]" style={{ color: 'var(--text2)' }}>+ Received from UAE</span>
-                          <span className="block text-[11.5px]" style={{ color: 'var(--text4)' }}>what you sent, as it landed in NRE</span></span>
-                        <span className="text-[13px] font-semibold tabular-nums" style={{ color: '#1E8F5F' }}>{money(x.received)}</span>
-                      </div>
-                    )}
-                    {lines.map(l => (
-                      <div key={l.k} className="flex justify-between gap-3 py-2" style={{ borderTop: '1px solid var(--track)' }}>
-                        <span className="flex items-start gap-2 min-w-0">
-                          <i className="w-2.5 h-2.5 rounded-sm flex-shrink-0 mt-1" style={{ background: l.c }} />
-                          <span className="min-w-0"><span className="block text-[13px]" style={{ color: 'var(--text2)' }}>− {l.k}</span>
-                            <span className="block text-[11.5px]" style={{ color: 'var(--text4)' }}>{l.sub}</span></span>
-                        </span>
-                        <span className="text-[13px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{money(l.v)}</span>
-                      </div>
-                    ))}
-                    <div className="flex justify-between gap-3 pt-2.5 mt-1" style={{ borderTop: '1.5px solid var(--line)' }}>
-                      <span className="flex items-center gap-2"><i className="w-2.5 h-2.5 rounded-sm" style={{ background: '#CBD5E1' }} />
-                        <span className="text-[13.5px] font-bold" style={{ color: 'var(--text)' }}>= Left in {where(x)}</span></span>
-                      <span className="text-[15px] font-bold tabular-nums" style={{ color: left >= 0 ? '#1E8F5F' : '#D9482F' }}>{left < 0 ? '−' : ''}{money(Math.abs(left))}</span>
-                    </div>
-                  </div>
-                </div>
-              )
-            }
-            const gap = fCharged - F.cardBills
-            return (
-              <section className="wl-card px-4 md:px-5 py-4 md:py-[18px]" aria-label="Where your income went">
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <h2 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Where your income went · {fLabel}</h2>
-                  {rangeMonths.length > 0 && rangeMonths.length < months.length && (
-                    <Segmented label="Period" value={flowPeriod} onChange={setFlowPeriod}
-                      options={[{ value: 'range' as const, label: rangeMonths.length === 1 ? mLabel(rangeMonths[0]) : 'Selected months' }, { value: 'year' as const, label: String(viewYear) }]} />
-                  )}
-                </div>
-                <div className={two ? 'grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5 mt-3' : 'mt-1'}>{fSides.map(renderSide)}</div>
-                {two && (
-                  <div className="flex justify-between gap-3 mt-4 rounded-xl px-3.5 py-3" style={{ background: 'var(--accent-bg)', border: '1px solid var(--accent-border)' }}>
-                    <span className="min-w-0"><span className="block text-[14px] font-bold" style={{ color: 'var(--text)' }}>Left in your accounts</span>
-                      <span className="block text-[11.5px]" style={{ color: 'var(--text3)' }}>UAE + India. What you sent home came off the UAE side and arrived on the India side, so it’s counted once.</span></span>
-                    <span className="text-[17px] font-bold tabular-nums flex-shrink-0" style={{ color: fLeft >= 0 ? '#1E8F5F' : '#D9482F' }}>{fLeft < 0 ? '−' : ''}{money(Math.abs(fLeft))}</span>
-                  </div>
-                )}
-                <div className="mt-3 rounded-xl px-3.5 py-3 text-[12px] leading-relaxed" style={{ background: '#FAFAFE', border: '1px solid var(--line)', color: 'var(--text3)' }}>
-                  <b style={{ color: 'var(--text2)' }}>Counted once.</b> Your expenses for {fLabel} ({money(fExpenses)}) = {money(F.direct)} paid from bank &amp; cash
-                  {F.onCards > 0 ? <> + {money(F.onCards)} charged to cards</> : null}{F.emis > 0 ? <> + {money(F.emis)} EMIs</> : null}{F.invested > 0 ? <> + {money(F.invested)} invested</> : null}.
-                  {' '}Card charges leave your bank only when you pay the card, so here the card bills come off instead
-                  {fCharged > 0 || F.cardBills > 0 ? <> — charged {money(fCharged)}{F.cardLoanEmis > 0 ? ` (incl. ${money(F.cardLoanEmis)} card-loan EMIs)` : ''}, paid {money(F.cardBills)}{Math.abs(gap) >= 1 ? (gap > 0 ? `; ${money(gap)} is still on the cards` : `; ${money(-gap)} of the bills paid for earlier charges`) : ''}</> : null}.
-                </div>
-              </section>
-            )
-          })()}
+          <AccountGroupTable groups={groups} months={months} focus={focus} cell={(n: number) => `${sym}${fmt(n)}`} money={money} viewNote={viewNote}
+            colorOf={(c?: string) => (c ? colorOf(c, 0) : '#6A55E8')} isHighlighted={(m: string) => m >= fromMonth && m <= toMonth}
+            onDrill={(title, subtitle, items) => setDrill({ title, subtitle, items })} />
 
           {/* Income vs Expense bar */}
           <div className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
@@ -486,194 +382,6 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
               </BarChart>
             </ResponsiveContainer>
           </div>
-
-          {/* One table: spend categories (summed) → transfers / card bill (shown, not summed) → totals */}
-          <div className="wl-card overflow-hidden">
-            {!hasMonthlyRows ? (
-              <div className="text-center py-16 text-[13px]" style={{ color: 'var(--text3)' }}>No expense data for {viewYear}</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-[11px] border-collapse">
-                  <thead>
-                    <tr style={{ background: '#FAFAFE', borderBottom: '2px solid var(--line)' }}>
-                      <th className="sticky left-0 px-4 py-3 text-left text-[10.5px] uppercase tracking-[0.05em] font-semibold min-w-[130px]"
-                        style={{ background: '#FAFAFE', color: 'var(--text3)', borderRight: '1px solid var(--line)' }}>Category</th>
-                      {months.map(m => (
-                        <th key={m} className="px-3 py-3 text-right text-[10.5px] uppercase tracking-[0.05em] font-semibold min-w-[64px]"
-                          style={{ color: 'var(--text3)', background: m >= fromMonth && m <= toMonth ? 'var(--rose-bg)' : 'var(--bg2)' }}>
-                          {MONTH_NAMES[Number(m.slice(5)) - 1]}
-                        </th>
-                      ))}
-                      <th className="px-4 py-3 text-right text-[10.5px] uppercase tracking-[0.05em] font-semibold"
-                        style={{ color: 'var(--expense)', background: '#FAFAFE', borderLeft: '2px solid var(--line)' }}>Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {activeExpense.map((cat, ci) => {
-                      const color = colorOf(cat, ci); const total = rowTot(cat)
-                      return (
-                        <tr key={cat} style={{ borderBottom: '1px solid var(--line)' }} className="hover:bg-stone-50 transition-colors">
-                          <td className="sticky left-0 px-4 py-2.5 font-semibold min-w-[130px]"
-                            style={{ background: ci % 2 === 0 ? '#fff' : 'var(--bg2)', borderRight: '1px solid var(--line)' }}>
-                            <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: color }} /><span style={{ color: 'var(--text)' }}>{labelOf(cat)}</span></div>
-                          </td>
-                          <MonthCells cat={cat} color={color} />
-                          <td className="px-4 py-2.5 text-right tabular-nums font-bold" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--line)' }}>
-                            <button onClick={() => setDrill({ title: labelOf(cat), subtitle: String(viewYear), items: yearTxns.filter((t: any) => catOf(t) === cat) })} className="hover:underline" style={{ color: 'inherit' }}>{sym}{fmt(total)}</button>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                    {/* Shown for tracking, NOT summed: own-account moves / money received, then the card bill */}
-                    <tr style={{ background: '#FAFAFE', borderTop: '2px solid var(--line)', borderBottom: '1px solid var(--line)' }}>
-                      <td className="sticky left-0 px-4 py-1.5 text-[10px] uppercase tracking-[0.05em] font-semibold" style={{ background: '#FAFAFE', color: 'var(--text3)', borderRight: '1px solid var(--line)' }}>Not in total ↓</td>
-                      <td colSpan={months.length + 1} />
-                    </tr>
-                    {activeExcluded.map((cat, ci) => {
-                      const color = colorOf(cat, ci)
-                      return (
-                        <tr key={cat} style={{ borderBottom: '1px solid var(--line)' }} className="hover:bg-stone-50 transition-colors">
-                          <td className="sticky left-0 px-4 py-2.5 font-medium min-w-[130px]" style={{ background: '#fff', borderRight: '1px solid var(--line)' }}>
-                            <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-sm flex-shrink-0 opacity-50" style={{ background: color }} /><span style={{ color: 'var(--text3)' }}>{labelOf(cat)}</span></div>
-                          </td>
-                          <MonthCells cat={cat} color={color} muted />
-                          <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: 'var(--text3)', borderLeft: '2px solid var(--line)' }}>
-                            <button onClick={() => setDrill({ title: labelOf(cat), subtitle: String(viewYear), items: yearTxns.filter((t: any) => catOf(t) === cat) })} className="hover:underline" style={{ color: 'inherit' }}>{sym}{fmt(rowTot(cat))}</button>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                    <tr style={{ background: `${CC_COLOR}08` }}>
-                      <td className="sticky left-0 px-4 py-2.5 font-semibold min-w-[130px]" style={{ background: '#FAF5FF', borderRight: '1px solid var(--line)' }}>
-                        <div className="flex items-center gap-2"><CreditCard size={12} style={{ color: CC_COLOR }} className="flex-shrink-0" /><span style={{ color: CC_COLOR }}>Credit Card Bill</span></div>
-                      </td>
-                      {months.map(m => { const val = pivot[CC_BILL]?.[m] ?? 0
-                        return (
-                          <td key={m} className="px-3 py-2.5 text-right tabular-nums" style={{ color: val > 0 ? CC_COLOR : 'var(--text3)', fontWeight: val > 0 ? 600 : 400 }}>
-                            {val > 0
-                              ? <button onClick={() => setDrill({ title: 'Credit Card Bill', subtitle: mLabel(m), items: yearTxns.filter((t: any) => catOf(t) === CC_BILL && t.txn_date?.slice(0, 7) === m) })} className="hover:underline" style={{ color: 'inherit' }}>{sym}{fmt(val)}</button>
-                              : '—'}
-                          </td>
-                        ) })}
-                      <td className="px-4 py-2.5 text-right tabular-nums font-bold" style={{ color: CC_COLOR, borderLeft: '2px solid var(--line)' }}>
-                        {ccBillGrand > 0
-                          ? <button onClick={() => setDrill({ title: 'Credit Card Bill', subtitle: String(viewYear), items: yearTxns.filter((t: any) => catOf(t) === CC_BILL) })} className="hover:underline" style={{ color: 'inherit' }}>{sym}{fmt(ccBillGrand)}</button>
-                          : '—'}
-                      </td>
-                    </tr>
-                  </tbody>
-                  <tfoot>
-                    {/* Total monthly expenses — spend categories only (card bill & moves excluded) */}
-                    <tr style={{ borderTop: '2px solid var(--line)', background: '#FAFAFE' }}>
-                      <td className="sticky left-0 px-4 py-2.5 font-bold text-[11px] uppercase tracking-wider" style={{ background: '#FAFAFE', color: 'var(--expense)', borderRight: '1px solid var(--line)' }}>Total Monthly Expenses</td>
-                      {months.map(m => (<td key={m} className="px-3 py-2.5 text-right tabular-nums font-bold" style={{ color: 'var(--expense)', background: m >= fromMonth && m <= toMonth ? 'var(--rose-bg)' : 'var(--bg2)' }}>{outflowCol(m) > 0 ? `${sym}${fmt(outflowCol(m))}` : '—'}</td>))}
-                      <td className="px-4 py-2.5 text-right tabular-nums font-bold text-[13px]" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--line)' }}>{money(outflowGrand)}</td>
-                    </tr>
-                    {/* Income */}
-                    <tr style={{ background: 'var(--income-bg)' }}>
-                      <td className="sticky left-0 px-4 py-2.5 font-bold text-[11px] uppercase tracking-wider" style={{ background: 'var(--income-bg)', color: 'var(--income)', borderRight: '1px solid var(--line)' }}>Income</td>
-                      {months.map(m => (<td key={m} className="px-3 py-2.5 text-right tabular-nums font-bold" style={{ color: 'var(--income)' }}>{incomeCol(m) > 0 ? `${sym}${fmt(incomeCol(m))}` : '—'}</td>))}
-                      <td className="px-4 py-2.5 text-right tabular-nums font-bold text-[13px]" style={{ color: 'var(--income)', borderLeft: '2px solid var(--line)' }}>{money(incomeGrand)}</td>
-                    </tr>
-                    {/* Net */}
-                    <tr style={{ background: '#FAFAFE', borderTop: '1px solid var(--line)' }}>
-                      <td className="sticky left-0 px-4 py-3 font-black text-[11px] uppercase tracking-wider" style={{ background: '#FAFAFE', color: 'var(--text)', borderRight: '1px solid var(--line)' }}>Income − expenses</td>
-                      {months.map(m => { const n = netCol(m); const has = incomeCol(m) > 0 || outflowCol(m) > 0
-                        return (<td key={m} className="px-3 py-3 text-right tabular-nums font-black" style={{ color: !has ? 'var(--text3)' : n >= 0 ? 'var(--income)' : 'var(--rose)' }}>{has ? `${n < 0 ? '-' : ''}${sym}${fmt(Math.abs(n))}` : '—'}</td>) })}
-                      <td className="px-4 py-3 text-right tabular-nums font-black text-[13px]" style={{ color: netGrand >= 0 ? 'var(--income)' : 'var(--rose)', borderLeft: '2px solid var(--line)' }}>{netGrand < 0 ? '-' : ''}{money(Math.abs(netGrand))}</td>
-                    </tr>
-                    {/* Left in your accounts: income − what left your bank & cash (card bills, not card charges) */}
-                    <tr style={{ background: '#F3F1FB', borderTop: '1px solid var(--line)' }}>
-                      <td className="sticky left-0 px-4 py-3 font-black text-[11px] uppercase tracking-wider" style={{ background: '#F3F1FB', color: 'var(--accent2)', borderRight: '1px solid var(--line)' }}>Left in your accounts</td>
-                      {months.map(m => { const n = leftCol(m), f = flowByMonth[m]; const has = incomeCol(m) > 0 || f.direct + f.cardBills + f.emis + f.invested + f.sentHome > 0
-                        return (<td key={m} className="px-3 py-3 text-right tabular-nums font-black" style={{ color: !has ? 'var(--text3)' : n >= 0 ? 'var(--income)' : 'var(--rose)' }}>{has ? `${n < 0 ? '-' : ''}${sym}${fmt(Math.abs(n))}` : '—'}</td>) })}
-                      <td className="px-4 py-3 text-right tabular-nums font-black text-[13px]" style={{ color: leftGrand >= 0 ? 'var(--income)' : 'var(--rose)', borderLeft: '2px solid var(--line)' }}>{leftGrand < 0 ? '-' : ''}{money(Math.abs(leftGrand))}</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
-            <div className="px-4 py-2 text-[10px]" style={{ color: 'var(--text3)', borderTop: '1px solid var(--line)' }}>
-              Total Monthly Expenses = every spend category, incl. money sent (Money Transfer, Transfer to India, Family), Investment &amp; EMI.
-              The credit card bill only settles card spend already counted above, and moves between your own accounts / money received are the same money — so those are shown but not summed.
-              Left in your accounts = income − what left your bank &amp; cash: spending paid directly, card bills paid (not the card charges), EMIs, investing{view === 'uae' ? ' and money sent to India' : ''}.
-            </div>
-          </div>
-
-          {/* Spend by account / card */}
-          {accountRows.length > 0 && (
-            <div className="wl-card overflow-hidden">
-              <div className="px-4 py-3" style={{ background: '#FAFAFE', borderBottom: '1px solid var(--line)' }}>
-                <div className="text-[12px] font-bold" style={{ color: 'var(--text)' }}>Spend by Account / Card — {viewYear}</div>
-                <div className="text-[10px] mt-0.5" style={{ color: 'var(--text3)' }}>Where your Total Monthly Expenses were paid from · click a cell to see the transactions</div>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-[11px] border-collapse">
-                  <thead>
-                    <tr style={{ background: '#FAFAFE', borderBottom: '2px solid var(--line)' }}>
-                      <th className="sticky left-0 px-4 py-3 text-left text-[10.5px] uppercase tracking-[0.05em] font-semibold min-w-[160px]"
-                        style={{ background: '#FAFAFE', color: 'var(--text3)', borderRight: '1px solid var(--line)' }}>Account / Card</th>
-                      {months.map(m => (
-                        <th key={m} className="px-3 py-3 text-right text-[10.5px] uppercase tracking-[0.05em] font-semibold min-w-[64px]"
-                          style={{ color: 'var(--text3)', background: m >= fromMonth && m <= toMonth ? 'var(--rose-bg)' : 'var(--bg2)' }}>
-                          {MONTH_NAMES[Number(m.slice(5)) - 1]}
-                        </th>
-                      ))}
-                      <th className="px-4 py-3 text-right text-[10.5px] uppercase tracking-[0.05em] font-semibold" style={{ color: 'var(--expense)', background: '#FAFAFE', borderLeft: '2px solid var(--line)' }}>Total</th>
-                      <th className="px-3 py-3 text-right text-[10.5px] uppercase tracking-[0.05em] font-semibold" style={{ color: 'var(--text3)', background: '#FAFAFE' }}>Share</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {accountRows.map((r, ri) => {
-                      const Icon = r.type === 'credit_card' ? CreditCard : r.type === 'wallet' || r.type === 'nol' ? Wallet : r.type === 'none' ? Link2Off : Landmark
-                      const iconColor = r.type === 'credit_card' ? CC_COLOR : r.type === 'none' ? 'var(--text3)' : 'var(--blue)'
-                      const acctItems = (m?: string) => yearTxns.filter((t: any) => acctKey(t) === r.key
-                        && classify(catOf(t)) === 'expense' && (!m || t.txn_date?.slice(0, 7) === m))
-                      return (
-                        <tr key={r.key} style={{ borderBottom: '1px solid var(--line)' }} className="hover:bg-stone-50 transition-colors">
-                          <td className="sticky left-0 px-4 py-2 min-w-[160px]" style={{ background: ri % 2 === 0 ? '#fff' : 'var(--bg2)', borderRight: '1px solid var(--line)' }}>
-                            <div className="flex items-center gap-2">
-                              <Icon size={13} className="flex-shrink-0" style={{ color: iconColor }} />
-                              <div className="min-w-0">
-                                <div className="font-semibold truncate" style={{ color: r.type === 'none' ? 'var(--text3)' : 'var(--text)' }}>{r.name}</div>
-                                {r.sub && <div className="text-[10.5px] truncate" style={{ color: 'var(--text3)' }}>{r.sub}</div>}
-                              </div>
-                            </div>
-                          </td>
-                          {months.map(m => { const val = r.byMonth[m] ?? 0
-                            return (
-                              <td key={m} className="px-3 py-2 text-right tabular-nums" style={{ color: val > 0 ? 'var(--text)' : 'var(--text3)', fontWeight: val > 0 ? 600 : 400 }}>
-                                {val > 0
-                                  ? <button onClick={() => setDrill({ title: r.name, subtitle: mLabel(m), items: acctItems(m) })} className="hover:underline" style={{ color: 'inherit' }}>{sym}{fmt(val)}</button>
-                                  : '—'}
-                              </td>
-                            ) })}
-                          <td className="px-4 py-2 text-right tabular-nums font-bold" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--line)' }}>
-                            <button onClick={() => setDrill({ title: r.name, subtitle: String(viewYear), items: acctItems() })} className="hover:underline" style={{ color: 'inherit' }}>{sym}{fmt(r.total)}</button>
-                          </td>
-                          <td className="px-3 py-2 text-right tabular-nums" style={{ color: 'var(--text3)' }}>
-                            {outflowGrand > 0 ? `${Math.round(r.total / outflowGrand * 100)}%` : '—'}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr style={{ borderTop: '2px solid var(--line)', background: '#FAFAFE' }}>
-                      <td className="sticky left-0 px-4 py-2.5 font-bold text-[11px] uppercase tracking-wider" style={{ background: '#FAFAFE', color: 'var(--expense)', borderRight: '1px solid var(--line)' }}>Total</td>
-                      {months.map(m => (<td key={m} className="px-3 py-2.5 text-right tabular-nums font-bold" style={{ color: 'var(--expense)' }}>{outflowCol(m) > 0 ? `${sym}${fmt(outflowCol(m))}` : '—'}</td>))}
-                      <td className="px-4 py-2.5 text-right tabular-nums font-bold text-[13px]" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--line)' }}>{money(outflowGrand)}</td>
-                      <td />
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-              <div className="px-4 py-2 text-[10px]" style={{ color: 'var(--text3)', borderTop: '1px solid var(--line)' }}>
-                Card bill payments aren’t counted against the bank account they were paid from — that spend is already on the card.
-                Link transactions to an account so they don’t land in “No account linked”.
-              </div>
-            </div>
-          )}
 
           {/* Category share */}
           {activeExpense.length > 0 && (
