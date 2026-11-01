@@ -214,6 +214,14 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
     if (existing) return existing.id
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('Please sign in again')
+    // Asked again, not from the list on screen (it may not have loaded yet, and
+    // only lists open accounts): one Cash wallet per currency, reopened if closed
+    const { data: found } = await supabase.from('accounts').select('id,is_active').eq('user_id', user.id)
+      .eq('account_type', 'wallet').eq('currency', form.currency).order('is_active', { ascending: false }).limit(1)
+    if (found?.[0]) {
+      if (found[0].is_active === false) await supabase.from('accounts').update({ is_active: true }).eq('id', found[0].id)
+      return found[0].id
+    }
     const { data, error: err } = await supabase.from('accounts').insert({
       user_id: user.id, name: 'Cash', bank_name: 'Cash', account_type: 'wallet',
       currency: form.currency, country: form.currency === 'AED' ? 'UAE' : 'India', outstanding_bal: 0,

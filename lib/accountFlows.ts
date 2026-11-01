@@ -242,9 +242,12 @@ export function buildAccountGroups(accounts: any[], txns: any[], opts: { fx: num
     // A bank: in adds, out takes off · a card: charges add to what's owed, payments take off
     const net = months.map((_, i) => lines.reduce((s, l) => s + (l.dir === 'in' ? 1 : -1) * (card ? -1 : 1) * l.values[i], 0))
     const cur = e.account.currency ?? 'INR'
-    // A month that hasn't started yet has no starting balance
+    // A month that hasn't started yet has no starting balance, and a closed
+    // account holds nothing (its old saved balance would count twice when it
+    // was deleted and added again)
     const thisMonth = (opts.today ?? new Date().toISOString()).slice(0, 7)
-    const start = months.map((m, i) => { const b = opening[e.account.id]?.[i]; return b == null || m > thisMonth ? null : opts.toView(b, cur) })
+    const closed = e.account.is_active === false
+    const start = months.map((m, i) => { const b = opening[e.account.id]?.[i]; return b == null || closed || m > thisMonth ? null : opts.toView(b, cur) })
     return { id: e.account.id, account: e.account, card, lines, head, headTotal: head.reduce((s, v) => s + v, 0),
       start, end: start.map((b, i) => b == null ? null : b + net[i]) }
   }
@@ -253,7 +256,7 @@ export function buildAccountGroups(accounts: any[], txns: any[], opts: { fx: num
   const banks = all.filter(g => !g.card).sort((x, y) => Number(!!x.account._unlinked) - Number(!!y.account._unlinked) || size(y) - size(x))
   const cards = all.filter(g => g.card).sort((x, y) => y.headTotal - x.headTotal)
   const cardSpend = months.map((_, i) => cards.reduce((s, g) => s + g.lines.filter(l => l.dir === 'out' && l.kind === 'spend').reduce((a, l) => a + l.values[i], 0), 0))
-  const realBanks = banks.filter(g => !g.account._unlinked)
+  const realBanks = banks.filter(g => !g.account._unlinked && g.account.is_active !== false)
   const startTotal = months.map((_, i) => realBanks.length && realBanks.every(g => g.start[i] != null) ? realBanks.reduce((s, g) => s + (g.start[i] ?? 0), 0) : null)
   return {
     banks, cards,

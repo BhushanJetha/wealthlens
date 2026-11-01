@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/client'
 import { X, Loader2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { nextCardDue, localToday } from '@/lib/insights'
+import { sameAccount } from '@/lib/accountMerge'
+import { toast } from '@/components/ui/toaster'
 
 interface Props {
   onClose: () => void
@@ -94,11 +96,17 @@ export default function AddAccountModal({ onClose, type = 'credit_card', initial
       payload.due_date = payload.due_day ? nextCardDue({ due_day: payload.due_day }, localToday()) : null
     }
 
-    let err
+    let err, reopened = ''
     const write = async (p: Record<string, any>) => {
       if (isEdit) return (await supabase.from('accounts').update(p).eq('id', cardId!)).error
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return { message: 'Not signed in' }
+      // Adding back an account you deleted (deleting only closes it): reopen
+      // that one with the new details, so its history stays with it instead
+      // of the account showing twice in reports
+      const { data: closed } = await supabase.from('accounts').select('id,name,currency,account_type,last_four').eq('user_id', user.id).eq('is_active', false)
+      const again = (closed ?? []).find((a: any) => sameAccount(a, { ...p, id: '__new__' }))
+      if (again) { reopened = again.name; return (await supabase.from('accounts').update({ ...p, is_active: true }).eq('id', again.id)).error }
       return (await supabase.from('accounts').insert({ ...p, user_id: user.id })).error
     }
     err = await write(payload)
@@ -109,6 +117,7 @@ export default function AddAccountModal({ onClose, type = 'credit_card', initial
 
     setSaving(false)
     if (err) { setError(err.message); return }
+    if (reopened) toast(`${reopened} was closed before — reopened it, so its history stays in one place`)
     router.refresh()
     onClose()
   }

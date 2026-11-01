@@ -2,10 +2,12 @@
 import { useMemo, useState, useEffect } from 'react'
 import { useViewStore } from '@/store/viewStore'
 import Link from 'next/link'
-import { Download, ChevronLeft, ChevronRight, CalendarDays, CalendarRange, Target, CreditCard, Landmark, Wallet, Link2Off, AlertTriangle, ArrowRight } from 'lucide-react'
+import { Download, ChevronLeft, ChevronRight, CalendarDays, CalendarRange, Target, CreditCard, Landmark, Wallet, Link2Off, AlertTriangle, ArrowRight, Copy } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, Cell, Legend } from 'recharts'
 import TxnDrillModal from '@/components/dashboard/TxnDrillModal'
 import AccountGroupTable from '@/components/dashboard/AccountGroupTable'
+import MergeAccountsSheet from '@/components/dashboard/MergeAccountsSheet'
+import { duplicateAccounts } from '@/lib/accountMerge'
 import { buildAccountGroups } from '@/lib/accountFlows'
 import { CC_BILL, classify, labelOf, catOf, prepareMoney, isIncome, isNreToNro, markUnitemisedCardBills, INDIA_INCOME, cashOut, cashLeft, type CashOut } from '@/lib/money'
 import { findReviewItems, type ReviewKind } from '@/lib/review'
@@ -231,6 +233,16 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
     ['remit', 'transfer to India', 'with no ₹ credit found'],
   ]
   const gapList = GAP_TEXT.filter(([k]) => gapN(k))
+
+  // The same account on file twice (usually deleted — which only closes it —
+  // and added again): its history is split over two rows. Shown when both
+  // records have transactions, or both are open.
+  const [merging, setMerging] = useState<any[] | null>(null)
+  const dups = useMemo(() => {
+    const used = new Set([...rawTxns, ...rawIncome].map((t: any) => t.account_id).filter(Boolean))
+    return duplicateAccounts(accounts.filter((a: any) => inView(a.currency ?? 'INR'))).map(d => [d.keep, ...d.dupes])
+      .filter(g => g.filter(a => used.has(a.id)).length > 1 || g.filter(a => a.is_active !== false).length > 1)
+  }, [accounts, rawTxns, rawIncome, view]) // eslint-disable-line react-hooks/exhaustive-deps
   function gapN(k: ReviewKind) { return gaps[k]?.n ?? 0 }
 
   const activeExpense  = expenseCats.filter(c => rowTot(c) > 0).sort((a, b) => rowTot(b) - rowTot(a))
@@ -386,6 +398,20 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
             delta="paid through the card bills" />}
         </div>
       )}
+      {tab === 'monthly' && dups.map(g => (
+        <div key={g[0].id} className="wl-card px-4 py-3 flex flex-col md:flex-row md:items-center gap-2.5 md:gap-4" style={{ background: '#F5F3FF', borderColor: '#DDD6FE' }}>
+          <div className="flex items-start gap-2.5 min-w-0 flex-1">
+            <Copy size={16} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--accent)' }} />
+            <div className="min-w-0">
+              <div className="text-[13px] font-semibold" style={{ color: 'var(--accent2)' }}>{g[0].name} is on file {g.length === 2 ? 'twice' : `${g.length} times`}</div>
+              <div className="text-[12.5px] mt-0.5" style={{ color: '#5B4BB7' }}>
+                {g.some(a => a.is_active === false) ? 'One was deleted and added again — its older transactions still sit on the closed one' : 'Two records for the same account'}, so it shows as {g.length} rows. Merge them into one.
+              </div>
+            </div>
+          </div>
+          <button onClick={() => setMerging(g)} className="wl-btn wl-btn-primary flex-shrink-0 self-start md:self-center" style={{ height: 36 }}>Merge</button>
+        </div>
+      ))}
       {tab === 'monthly' && gapList.length > 0 && (
         <div className="wl-card px-4 py-3 flex flex-col md:flex-row md:items-center gap-2.5 md:gap-4" style={{ background: '#FFF8EC', borderColor: '#F6DDB4' }}>
           <div className="flex items-start gap-2.5 min-w-0 flex-1">
@@ -604,6 +630,7 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
         </div>
       )}
 
+      {merging && <MergeAccountsSheet accounts={merging} onClose={() => setMerging(null)} />}
       {drill && <TxnDrillModal title={drill.title} subtitle={drill.subtitle} items={drill.items} amt={disp} money={money} onClose={() => setDrill(null)} />}
     </div>
   )
