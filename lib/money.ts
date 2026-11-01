@@ -85,7 +85,12 @@ export const labelOf = (cat: string) => ROW_LABEL[cat] ?? cat
 export const catOf = (t: any) => {
   if (t?._cardSpend) return CARD_UNITEMISED
   const c = canonCategory((t.category && String(t.category).trim()) || 'Other')
-  return c === 'Transfer' && TRANSFER_SUB_ROW[t.sub_category] ? TRANSFER_SUB_ROW[t.sub_category] : c
+  if (c !== 'Transfer') return c
+  if (TRANSFER_SUB_ROW[t.sub_category]) return TRANSFER_SUB_ROW[t.sub_category]
+  // A card statement's "payment received" line, which older imports saved as
+  // a plain transfer named "Credit Card Payment": it's the card bill (on the
+  // card it lowers what you owe — counted as a charge, it raised it)
+  return CARD_PAYMENT_NAME.test(String(t.merchant ?? '').trim()) ? CC_BILL : c
 }
 
 // Transaction types the Expense Report reads spend from
@@ -127,6 +132,7 @@ export const INDIA_INCOME = 'Received from UAE'
 // count only in the India view; earned income counts everywhere it's in view.
 export function isIncome(t: any, view: View): boolean {
   if (t?._remit) return view === 'india'
+  if (t?._ownIn) return false
   return t?.txn_type === 'income' && !NOT_INCOME.has(String(t.category ?? '').trim())
 }
 
@@ -134,6 +140,11 @@ export function isIncome(t: any, view: View): boolean {
 const REMIT_OUT = new Set(['International Transfer', 'Transfer to India', 'Remittance'])
 const REMIT_IN = new Set(['NRE Received', 'Received from UAE', 'Inward Remittance', 'NRI Transfer'])
 const NRO_MOVE = new Set(['NRE to NRO', 'NRE → NRO', 'NRO Settled'])
+// Credits a statement saved as plain income ("Other", "Transfer"): money from
+// UAE landing in NRE, or from NRE landing in NRO, arrives as one of these
+// when nobody marked it
+const PLAIN_IN = new Set(['Other', 'Transfer', ''])
+const isPlainCredit = (t: any) => !t?._remit && t?.txn_type === 'income' && PLAIN_IN.has(String(t.category ?? '').trim())
 export const isRemitOut = (t: any) => t?.currency === 'AED' && t?.txn_type !== 'income' && REMIT_OUT.has(catOf(t))
 export const isRemitIn = (t: any) => !t?._remit && t?.currency === 'INR' && t?.txn_type !== 'expense' && REMIT_IN.has(String(t.category ?? '').trim())
 // (an imported "Self Transfer" once carried the Internal kind — it's not NRE → NRO)
@@ -147,11 +158,14 @@ export interface Remittance {
 const dayNum = (d: string) => Math.floor(new Date(`${d.slice(0, 10)}T00:00:00Z`).getTime() / 864e5)
 
 // Pair each AED remittance with the ₹ that landed in India: the NRE credit
-// within a week (rate 15–35 ₹/AED), else the NRE → NRO move that followed,
-// else an estimate at `fx`. ₹ receipts with no AED side are kept as received.
+// within a week (rate 15–35 ₹/AED) — one marked as received from UAE, else a
+// plain ₹ credit the statement saved as "Other" — else the NRE → NRO move
+// that followed, else an estimate at `fx`. ₹ receipts with no AED side are
+// kept as received.
 export function pairRemittances(txns: any[], fx: number): Remittance[] {
   const outs = txns.filter(isRemitOut).sort((a, b) => a.txn_date.localeCompare(b.txn_date))
   const ins = txns.filter(isRemitIn), nros = txns.filter(isNreToNro)
+  const plain = txns.filter(t => t?.currency === 'INR' && isPlainCredit(t))
   const used = new Set<any>()
   const pick = (pool: any[], out: any) => {
     const d = dayNum(out.txn_date), aed = Number(out.amount) || 0
@@ -167,7 +181,7 @@ export function pairRemittances(txns: any[], fx: number): Remittance[] {
   }
   const out: Remittance[] = outs.map(o => {
     const aed = Number(o.amount) || 0
-    const hit = pick(ins, o), nro = hit ? null : pick(nros, o)
+    const hit = pick(ins, o) ?? pick(plain, o), nro = hit ? null : pick(nros, o)
     const inr = hit ? Number(hit.amount) : nro ? Number(nro.amount) : Math.round(aed * fx)
     return {
       id: `remit-${o.id ?? o.txn_date}`, sentOn: o.txn_date, landedOn: (hit ?? nro ?? o).txn_date, aed, inr,
@@ -227,12 +241,44 @@ export function markUnitemisedCardBills(txns: any[], cardIds: Set<string>): any[
   })
 }
 
-// Transactions ready for counting: card bills marked where needed, plus one
-// "Received from UAE" income row per remittance (₹, India view only).
+// The receiving side of a move between your own accounts that a statement
+// saved as plain income: the same amount (±0.5%) left another of your
+// accounts as a known move — NRE → NRO, "to my other account", or one that
+// names this account — the day before up to 3 days after. Each credit → the
+// row it came from. Not income (it would count the same money twice).
+export function ownCredits(txns: any[]): Map<any, any> {
+  const day = (d: string) => Math.floor(Date.parse(`${String(d).slice(0, 10)}T00:00:00Z`) / 864e5)
+  const outs = txns.filter(o => o.account_id && o.txn_type !== 'income' && !o._remit
+    && (isNreToNro(o) || catOf(o) === 'Self Transfer' || (!!o.counter_account_id && catOf(o) !== CC_BILL)))
+  const out = new Map<any, any>(), used = new Set<any>()
+  for (const i of txns) {
+    if (!i.account_id || !isPlainCredit(i)) continue
+    const amt = Number(i.amount) || 0
+    let best: any = null, gap = Infinity
+    for (const o of outs) {
+      if (used.has(o) || o.account_id === i.account_id || o.currency !== i.currency) continue
+      if (o.counter_account_id && o.counter_account_id !== i.account_id) continue
+      const g = day(i.txn_date) - day(o.txn_date)
+      if (g < -1 || g > 3 || Math.abs((Number(o.amount) || 0) - amt) > Math.max(1, amt * 0.005)) continue
+      if (Math.abs(g) < gap) { best = o; gap = Math.abs(g) }
+    }
+    if (best) { used.add(best); out.set(i, best) }
+  }
+  return out
+}
+
+// Transactions ready for counting: card bills marked where needed, credits
+// that are really your own money arriving (from UAE, from another of your
+// accounts) marked `_ownIn` so they're never income, plus one "Received
+// from UAE" income row per remittance (₹, India view only).
 export function prepareMoney(txns: any[], opts: { fx: number; cardIds?: Set<string> }): any[] {
   const raw = txns.filter(t => !t?._remit)          // safe to call twice
-  const base = opts.cardIds ? markUnitemisedCardBills(raw, opts.cardIds) : raw
-  const rows = pairRemittances(base, opts.fx).map(r => ({
+  const marked = opts.cardIds ? markUnitemisedCardBills(raw, opts.cardIds) : raw
+  const remits = pairRemittances(marked, opts.fx)
+  const landed = new Set(remits.map(r => r.in).filter(Boolean))
+  const own = ownCredits(marked.filter(t => !landed.has(t)))
+  const base = marked.map(t => t.txn_type === 'income' && (landed.has(t) || own.has(t)) ? { ...t, _ownIn: true } : t)
+  const rows = remits.map(r => ({
     id: r.id, txn_date: r.landedOn, amount: r.inr, currency: 'INR', country: 'India', txn_type: 'income',
     category: INDIA_INCOME, merchant: r.aed ? `From UAE · AED ${Math.round(r.aed).toLocaleString('en-US')}` : 'Received in NRE',
     account_id: r.in?.account_id ?? null, _remit: true, _aed: r.aed, _rate: r.rate, _source: r.source,

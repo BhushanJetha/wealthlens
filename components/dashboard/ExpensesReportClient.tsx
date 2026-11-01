@@ -13,6 +13,7 @@ import { CC_BILL, classify, labelOf, catOf, prepareMoney, isIncome, isNreToNro, 
 import { findReviewItems, type ReviewKind } from '@/lib/review'
 import { PageHeader, KpiTile, Segmented } from '@/components/ui/kit'
 import { useCategoryStore } from '@/store/categoryStore'
+import { nriKindOf } from '@/lib/ledger'
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 function momChange(curr: number, prev: number): number | null {
@@ -48,8 +49,7 @@ function acctScope(t: any): 'nre' | 'nro' {
   // Money that runs THROUGH the NRE account regardless of what row it's linked
   // to: received from UAE into NRE, or moved from NRE out to NRO.
   if (NRE_CATS.has(cat) || sub === 'Internal' || sub === 'International') return 'nre'
-  const s = `${t?.accounts?.name || ''} ${t?.accounts?.bank_name || ''}`.toLowerCase()
-  return /\bnre\b|non[-\s]?resident\s+external/.test(s) ? 'nre' : 'nro'
+  return nriKindOf(t?.accounts) === 'nre' ? 'nre' : 'nro'
 }
 
 // One country's money in a period: what came in (plus, for India, what
@@ -201,8 +201,10 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
   // The grouped table (lib/accountFlows): every bank account (what came in,
   // every rupee or dirham that left) and every card (what was bought on it),
   // month by month in the view's currency. Phones show the month picked at the top.
-  const groups = useMemo(() => buildAccountGroups(accounts, [...rawIncome, ...transactions], { fx: FX, months, view, toView: conv }),
-    [accounts, rawIncome, transactions, FX, view, viewYear]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Rows as saved: a card bill always lowers its card here, even in a month
+  // whose card purchases weren't imported
+  const groups = useMemo(() => buildAccountGroups(accounts, [...rawIncome, ...rawTxns], { fx: FX, months, view, toView: conv }),
+    [accounts, rawIncome, rawTxns, FX, view, viewYear]) // eslint-disable-line react-hooks/exhaustive-deps
   const focusMonth = months.includes(toMonth) ? toMonth : months.includes(fromMonth) ? fromMonth : months[months.length - 1]
   const focus = months.indexOf(focusMonth)
   const viewNote = (a: any) => [a.currency === 'AED' ? (view === 'consolidated' ? 'UAE · AED in ₹' : 'UAE') : 'India', a.is_active === false ? 'closed' : null].filter(Boolean).join(' · ')

@@ -159,8 +159,8 @@ export default function ReportClient({ transactions: raw, accounts = [], events 
   const leftOver = cashLeft(P.income, flow)
   // The period account by account (lib/accountFlows): what left each bank,
   // and what was bought on each card — the same figures as the Expense report
-  const G = useMemo(() => buildAccountGroups(accounts, transactions, { fx: FX, months, view, toView: conv }),
-    [accounts, transactions, FX, view, months.join()]) // eslint-disable-line react-hooks/exhaustive-deps
+  const G = useMemo(() => buildAccountGroups(accounts, raw, { fx: FX, months, view, toView: conv }),
+    [accounts, raw, FX, view, months.join()]) // eslint-disable-line react-hooks/exhaustive-deps
   const bankLines = G.banks.flatMap(g => g.lines.map(l => ({ l, g })))
   const pickB = (f: (l: any) => boolean) => bankLines.filter(x => f(x.l))
   const sumL = (xs: { l: any }[]) => xs.reduce((a, x) => a + x.l.total, 0)

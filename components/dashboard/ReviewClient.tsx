@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useCategoryStore } from '@/store/categoryStore'
 import { fmtMoney } from '@/lib/format'
 import { fmtDay, localToday } from '@/lib/insights'
-import { kindOf } from '@/lib/ledger'
+import { kindOf, isNre } from '@/lib/ledger'
 import { labelOf } from '@/lib/money'
 import { findReviewItems, reviewCount, type ReviewItem, type ReviewKind } from '@/lib/review'
 import { ruleTextFor, type TxnRule } from '@/lib/rules'
@@ -28,7 +28,6 @@ const KINDS: { key: ReviewKind; label: string; icon: typeof Landmark; c: string 
 const MIGRATION_HINT = 'Run migration 027 in Supabase to use this.'
 // What a transfer of unknown kind can be (the kinds in Add transaction)
 const TRANSFER_KIND_LABEL: Record<string, string> = { Own: 'My other account', International: 'UAE → India', Internal: 'NRE → NRO', 'NRO to NRE': 'NRO → NRE', Family: 'Family support' }
-const isNre = (a: any) => /\bnre\b/i.test(`${a?.name ?? ''}`)
 
 // Review inbox (design v2): each card fixes one problem — or a whole
 // merchant's worth — in one tap; "Always" turns the fix into a rule.

@@ -55,7 +55,8 @@ export function spendByCategory(txns: any[], month: string, cur: Cur, fromDay = 
     const d = Number(String(t.txn_date).slice(8, 10))
     if (d < fromDay || d > toDay) continue
     const v = Number(t.amount) || 0
-    if (canonCategory(String(t.category ?? '').trim()) === 'Credit Card Payment') {
+    // (a card statement's payment line saved as a plain transfer is a bill too — lib/money catOf)
+    if (canonCategory(String(t.category ?? '').trim()) === 'Credit Card Payment' || catOf(t) === 'Credit Card Payment') {
       const twin = bills.some(b => b.account_id !== t.account_id && Math.abs((Number(b.amount) || 0) - v) <= Math.max(1, v * 0.01)
         && Math.abs(Number(String(b.txn_date).slice(8, 10)) - d) <= 4)
       if (!twin) { add('Credit Card Payment', v); bills.push(t) }

@@ -393,9 +393,9 @@ function parseTransactions(text: string, inferredYear: number): any[] {
 
     if (isCr) {
       if (PAYMENT_PAT.test(line) || PAYMENT_PAT.test(cleaned)) {
-        // Bill payment made — treat as a transfer, not income
+        // Bill payment made: a card bill (a move, not income) — it lowers what's owed
         txn_type      = 'transfer'
-        category      = 'Transfer'
+        category      = 'Credit Card Payment'
         finalMerchant = 'Credit Card Payment'
       } else if (REFUND_PAT.test(line) || REFUND_PAT.test(cleaned)) {
         // Merchant refund or cashback

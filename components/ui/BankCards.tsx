@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Nfc, Wallet } from 'lucide-react'
 import { brandOf, networkOf, isPremium, type Brand, type Network } from '@/lib/banks'
+import { nriKindOf } from '@/lib/ledger'
 
 // The bank's logo on a white tile; the bank's initials when there's no logo
 export function BankLogo({ brand, size = 30 }: { brand: Brand; size?: number }) {
@@ -89,7 +90,8 @@ export function AccountCardFace({ account, details, balance, sub, className = ''
 }) {
   const isCash = account.account_type === 'wallet'
   const brand: Brand = isCash ? { key: 'cash', label: 'Cash', domain: null, c1: '#1E8F5F', c2: '#0B4A30' } : brandOf(account.bank_name, account.name)
-  const kind = /\bnre\b/i.test(account.name ?? '') ? 'NRE' : /\bnro\b/i.test(account.name ?? '') ? 'NRO' : TYPE_LABEL[account.account_type] ?? 'Account'
+  const nri = nriKindOf(account)
+  const kind = nri ? nri.toUpperCase() : TYPE_LABEL[account.account_type] ?? 'Account'
   const last4 = details?.account_number ? String(details.account_number).replace(/\s/g, '').slice(-4) : account.last_four
   return (
     <div className={`relative w-full aspect-[1.7] rounded-[18px] overflow-hidden text-white select-none ${className}`}

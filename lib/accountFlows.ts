@@ -3,7 +3,7 @@
 // a move between your accounts shows on both (a card bill as "card bill →
 // Axis" on the bank and "paid from HDFC" on the card; UAE → India as "sent to
 // India" on ENBD and "received from UAE" on NRE), and once per account.
-import { catOf, labelOf, CC_BILL, isNreToNro, isRemitOut, isIncome, spendGroup, pairRemittances, type View } from './money'
+import { catOf, labelOf, CC_BILL, isNreToNro, isRemitOut, isIncome, spendGroup, pairRemittances, ownCredits, type View } from './money'
 import { isCredit, counterOf, kindOf, balancesAt } from './ledger'
 
 export type FlowKind = 'income' | 'spend' | 'emi' | 'invest' | 'card' | 'move' | 'payment' | 'refund'
@@ -23,8 +23,10 @@ type Desc = { key: string; label: string; kind: FlowKind; category?: string; pee
 
 const name = (a: any) => a?.name ?? 'another account'
 
-// A row on its own account: which way, and what it was
-function describe(t: any, a: any, credit: boolean, cid: string | null, byId: Map<string, any>, peer: string | null): Desc {
+// A row on its own account: which way, and what it was. `arrived`: a credit
+// that is your own money arriving — from UAE ('remit') or from another of
+// your accounts ('own') — so never income, whatever the statement called it.
+function describe(t: any, a: any, credit: boolean, cid: string | null, byId: Map<string, any>, peer: string | null, arrived: 'remit' | 'own' | null = null): Desc {
   const c = catOf(t)
   if (kindOf(a) === 'card') {
     if (credit) {
@@ -36,9 +38,9 @@ function describe(t: any, a: any, credit: boolean, cid: string | null, byId: Map
     if (c === 'Loan on Card') return { key: 'card-loan', label: 'Card-loan EMIs', kind: 'emi' }
   }
   if (credit) {
-    if (isIncome(t, 'consolidated')) return { key: `income:${c}`, label: labelOf(c), kind: 'income' }
+    if (!arrived && isIncome(t, 'consolidated')) return { key: `income:${c}`, label: labelOf(c), kind: 'income' }
     if (/^Loan (Taken|Received|Disbursement)$/.test(c)) return { key: 'loan-in', label: 'Loan money received', kind: 'move', peer: null }
-    if (['NRE Received', 'Received from UAE', 'Inward Remittance', 'NRI Transfer'].includes(c))
+    if (arrived === 'remit' || ['NRE Received', 'Received from UAE', 'Inward Remittance', 'NRI Transfer'].includes(c))
       return { key: 'from-uae', label: peer ? `Received from UAE ← ${name(byId.get(peer))}` : 'Received from UAE', kind: 'move', peer }
     if (isNreToNro(t)) return { key: 'from-nre', label: `From NRE${cid ? ` ← ${name(byId.get(cid))}` : ''}`, kind: 'move', peer: cid }
     const from = cid ?? peer
@@ -104,6 +106,11 @@ export function accountFlows(accounts: any[], txns: any[], fx: number, inPeriod:
   const remitOf = new Map(remits.filter(r => r.out).map(r => [r.out, r]))
   // A ₹ credit paired with an AED remittance: where it came from
   const sentFrom = new Map(remits.filter(r => r.in && r.out?.account_id).map(r => [r.in, r.out.account_id as string]))
+  // Plain credits that are your own money arriving from another of your
+  // accounts (lib/money ownCredits), and for each move out, where it arrived
+  const landed = new Set(remits.map(r => r.in).filter(Boolean))
+  const ownIn = ownCredits(txns.filter(t => !landed.has(t)))
+  const ownOut = new Map(Array.from(ownIn.entries()).map(([i, o]) => [o, i.account_id as string]))
   // Moves recorded on the sending side, by the account they reached — to find
   // where an own-account credit (e.g. "Self Transfer") came from
   const movesTo = new Map<string, any[]>()
@@ -122,9 +129,11 @@ export function accountFlows(accounts: any[], txns: any[], fx: number, inPeriod:
     const credit = a ? isCredit(t, a) : t.txn_type === 'income'
     // No account: kept per currency so dirhams and rupees never add up together
     const own = a ?? { id: `__none__${t.currency}`, name: 'Not linked to an account', account_type: 'unlinked', currency: t.currency, _unlinked: true }
-    const peer = credit && a ? (sentFrom.get(t) ?? (movesTo.get(a.id) ?? []).find(x => x.account_id !== a.id && near(x, amt, t.txn_date))?.account_id ?? null) : null
+    const peer = credit && a ? (sentFrom.get(t) ?? ownIn.get(t)?.account_id ?? (movesTo.get(a.id) ?? []).find(x => x.account_id !== a.id && near(x, amt, t.txn_date))?.account_id ?? null) : null
+    const arrived = !credit ? null : landed.has(t) && t.currency === 'INR' && t.txn_type === 'income' ? 'remit' : ownIn.has(t) ? 'own' : null
     const r = isRemitOut(t) ? remitOf.get(t) : undefined
-    add(own, credit, describe(t, own, credit, cid, byId, peer), t, amt, t.merchant, r ? r.inr : undefined)
+    // A move out that arrived in another of your accounts names that account, even when it wasn't recorded
+    add(own, credit, describe(t, own, credit, credit ? cid : cid ?? ownOut.get(t) ?? null, byId, peer, arrived), t, amt, t.merchant, r ? r.inr : undefined)
     // The other side of a move between your accounts
     const c = cid ? byId.get(cid) : null
     if (!c || c.id === a?.id) continue

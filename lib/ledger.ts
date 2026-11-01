@@ -14,8 +14,16 @@ export const kindOf = (a: any): AccKind => a?.account_type === 'credit_card' ? '
 
 const IN_CATS = new Set(['NRE Received', 'Received from UAE', 'Received from NRE', 'Inward Remittance', 'NRI Transfer',
   'Loan Received', 'Loan Taken', 'Refund', 'Salary', 'Interest', 'Dividend'])
-const isNro = (a: any) => /\bnro\b/i.test(`${a?.name ?? ''}`)
-const isNre = (a: any) => /\bnre\b/i.test(`${a?.name ?? ''}`)
+// NRE / NRO: as marked (NRI accounts check — migration 032 — or the account
+// type), else from the name. "HDFC Savings" marked NRE is NRE.
+export function nriKindOf(a: any): 'nre' | 'nro' | 'fcnr' | null {
+  const k = String(a?.nri_kind ?? a?.account_type ?? '').toLowerCase()
+  if (k === 'nre' || k === 'nro' || k === 'fcnr') return k
+  const n = `${a?.name ?? ''} ${a?.bank_name ?? ''}`
+  return /\bnre\b|non[-\s]?resident\s+external/i.test(n) ? 'nre' : /\bnro\b|non[-\s]?resident\s+ordinary/i.test(n) ? 'nro' : /\bfcnr\b/i.test(n) ? 'fcnr' : null
+}
+export const isNre = (a: any) => nriKindOf(a) === 'nre'
+export const isNro = (a: any) => nriKindOf(a) === 'nro'
 
 // Does this transaction put money INTO its own account?
 export function isCredit(t: any, a: any): boolean {
@@ -35,7 +43,8 @@ export function counterOf(t: any, from: any, accounts: any[]): string | null {
   if (t.counter_account_id) return t.counter_account_id
   if (!from) return null
   const c = catOf(t), same = accounts.filter(a => a.id !== from.id && a.currency === t.currency)
-  const one = (xs: any[]) => (xs.length === 1 ? xs[0].id : null)
+  // Exactly one fits — or, of several, exactly one is still open
+  const one = (xs: any[]) => xs.length === 1 ? xs[0].id : (xs.filter(a => a.is_active !== false).length === 1 ? xs.find(a => a.is_active !== false).id : null)
   if (c === CC_BILL && kindOf(from) !== 'card') {
     const cards = same.filter(a => kindOf(a) === 'card')
     if (cards.length <= 1) return one(cards)
@@ -44,8 +53,16 @@ export function counterOf(t: any, from: any, accounts: any[]): string | null {
   }
   if (c === 'ATM Withdrawal') return kindOf(from) === 'cash'
     ? one(same.filter(a => kindOf(a) === 'bank')) : one(same.filter(a => kindOf(a) === 'cash'))
-  if (isNreToNro(t)) return one(same.filter(a => kindOf(a) === 'bank' && (isNro(from) ? isNre(a) : isNro(a))))
-  if (isRemitOut(t)) return one(accounts.filter(a => a.currency === 'INR' && kindOf(a) === 'bank' && isNre(a)))
+  if (isNreToNro(t)) {
+    // NRE → NRO goes to your NRO (from NRO, back to NRE); with none marked, your one other ₹ account
+    const banks = same.filter(a => kindOf(a) === 'bank'), marked = banks.filter(a => isNro(from) ? isNre(a) : isNro(a))
+    return marked.length ? one(marked) : one(banks)
+  }
+  if (isRemitOut(t)) {
+    // Money sent home lands in NRE; with none marked, your one ₹ account
+    const inr = accounts.filter(a => a.currency === 'INR' && kindOf(a) === 'bank'), nre = inr.filter(isNre)
+    return nre.length ? one(nre) : one(inr)
+  }
   return null
 }
 

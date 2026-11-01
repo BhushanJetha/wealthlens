@@ -13,6 +13,7 @@ import { fmtDay } from '@/lib/insights'
 import { PageHeader, InsightBar, KpiTile, EmptyState } from '@/components/ui/kit'
 import { ListCard, ListRow } from '@/components/ui/list'
 import AddTransactionModal from '@/components/forms/AddTransactionModal'
+import { isNre } from '@/lib/ledger'
 
 const sign = (n: number) => (n < 0 ? '−' : '')
 const aedFmt = (n: number) => `${sign(n)}AED ${Math.round(Math.abs(n)).toLocaleString('en-US')}`
@@ -87,7 +88,7 @@ export default function MoneyFlowClient({ transactions, accounts }: { transactio
   }
   const inR = (d?: string) => { const m = d?.slice(0, 7) ?? ''; return m >= fromMonth && m <= toMonth }
   const acc = (id?: string) => accounts.find(a => a.id === id)
-  const isNreAcc = (id?: string) => /\bnre\b/i.test(`${acc(id)?.name ?? ''}`)
+  const isNreAcc = (id?: string) => isNre(acc(id))
   const rangeLabel = fromMonth === toMonth
     ? new Date(`${fromMonth}-01`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
     : `${new Date(`${fromMonth}-01`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })} – ${new Date(`${toMonth}-01`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}`

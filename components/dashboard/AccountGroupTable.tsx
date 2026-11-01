@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { AccountGroups, GroupAccount, GroupLine } from '@/lib/accountFlows'
+import { isNre, isNro } from '@/lib/ledger'
 
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -32,8 +33,8 @@ function style(l: GroupLine, card: boolean, colorOf: (c?: string) => string) {
 const badgeOf = (a: any) => a._unlinked ? { t: '?', bg: '#F1F5F9', ink: '#64748B' }
   : a.account_type === 'credit_card' ? { t: 'CC', bg: '#F3E8FF', ink: '#7E22CE' }
   : a.account_type === 'wallet' ? { t: '₵', bg: '#E7F7EF', ink: '#1E7A50' }
-  : /\bnre\b/i.test(a.name ?? '') ? { t: 'NRE', bg: '#E7F1FE', ink: '#1D5FA8' }
-  : /\bnro\b/i.test(a.name ?? '') ? { t: 'NRO', bg: '#E7F1FE', ink: '#1D5FA8' }
+  : isNre(a) ? { t: 'NRE', bg: '#E7F1FE', ink: '#1D5FA8' }
+  : isNro(a) ? { t: 'NRO', bg: '#E7F1FE', ink: '#1D5FA8' }
   : a.currency === 'AED' ? { t: 'AE', bg: '#FFF2E2', ink: '#9A5A08' } : { t: 'IN', bg: '#E7F1FE', ink: '#1D5FA8' }
 
 // The Expense report's table, grouped: bank accounts (what came in, every
