@@ -4,7 +4,7 @@
 // bank statement shows the debit (or you've chosen "record it for me"), else
 // after a one-tap confirm. A month is never recorded twice (sip_last_month).
 import { ymOf, addMonths, daysBetween } from './insights'
-import { dateIn } from './recurring'
+import { dateIn, autoTag } from './recurring'
 import { catOf } from './money'
 
 export interface SipDue { fund: any; month: string; date: string; amount: number; nav: number; evidence?: any }
@@ -52,26 +52,28 @@ export async function claimSipMonth(supabase: any, fund: any, month: string): Pr
 
 // Record one instalment. `moneyRow` also adds the payment to your
 // transactions (when no bank statement has it).
-export async function recordSip(supabase: any, userId: string, d: SipDue, opts: { moneyRow: boolean }): Promise<string | null> {
+export async function recordSip(supabase: any, userId: string, d: SipDue, opts: { moneyRow: boolean; tag?: { review: boolean } }): Promise<string | null> {
   if (!(await claimSipMonth(supabase, d.fund, d.month))) return 'Already recorded'
   const f = d.fund, paidOn = d.evidence?.txn_date ?? d.date, amount = Number(d.evidence?.amount) || d.amount
   const units = d.nav > 0 ? amount / d.nav : 0
-  await Promise.all([
+  const inv = supabase.from('investment_transactions').insert({
+    user_id: userId, asset_type: 'mutual_fund', asset_id: f.id, asset_name: f.fund_name, folio_number: f.folio_number ?? null,
+    txn_date: paidOn, txn_type: 'sip', amount, units: units || null, nav: d.nav || null, currency: f.currency ?? 'INR', source: 'sip_auto',
+  })
+  const [, invRes] = await Promise.all([
     supabase.from('mutual_funds').update({ units: (Number(f.units) || 0) + units, invested_amount: (Number(f.invested_amount) || 0) + amount }).eq('id', f.id),
-    supabase.from('investment_transactions').insert({
-      user_id: userId, asset_type: 'mutual_fund', asset_id: f.id, asset_name: f.fund_name, folio_number: f.folio_number ?? null,
-      txn_date: paidOn, txn_type: 'sip', amount, units: units || null, nav: d.nav || null, currency: f.currency ?? 'INR', source: 'sip_auto',
-    }),
-    opts.moneyRow ? supabase.from('transactions').insert({
-      user_id: userId, txn_date: paidOn, merchant: f.fund_name, description: `Monthly SIP - ${f.fund_name}`, category: 'Investment', sub_category: 'SIP',
-      amount, currency: f.currency ?? 'INR', country: f.country ?? 'India', txn_type: 'expense', account_id: f.sip_account_id ?? null, source: 'manual', is_verified: true,
-    }) : Promise.resolve(),
+    opts.tag ? inv.select('id').single() : inv,
   ])
+  if (opts.moneyRow) await supabase.from('transactions').insert({
+    user_id: userId, txn_date: paidOn, merchant: f.fund_name, description: `Monthly SIP - ${f.fund_name}`, category: 'Investment', sub_category: 'SIP',
+    amount, currency: f.currency ?? 'INR', country: f.country ?? 'India', txn_type: 'expense', account_id: f.sip_account_id ?? null, source: 'manual', is_verified: true,
+    ...(opts.tag ? autoTag({ kind: 'sip', id: f.id, month: d.month, amount, units, nav: d.nav, inv_txn_id: invRes?.data?.id }, opts.tag.review) : {}),
+  })
   f.units = (Number(f.units) || 0) + units; f.invested_amount = (Number(f.invested_amount) || 0) + amount
   return null
 }
 
-export async function runSips(supabase: any, userId: string, today: string, funds: any[], txns: any[], invTxns: any[]) {
+export async function runSips(supabase: any, userId: string, today: string, funds: any[], txns: any[], invTxns: any[], review = false) {
   const pending: SipDue[] = []
   let writes = 0   // anything recorded or ticked off (the page re-reads its data)
   if (!funds.length || !('sip_last_month' in funds[0])) return { ready: funds.length === 0, pending, writes }
@@ -79,7 +81,7 @@ export async function runSips(supabase: any, userId: string, today: string, fund
     if (sipRecorded(d, invTxns)) { await claimSipMonth(supabase, d.fund, d.month); writes++; continue }
     const bank = sipInBank(d, txns)
     if (bank) { d.evidence = bank; await recordSip(supabase, userId, d, { moneyRow: false }); writes++ }
-    else if (d.fund.sip_auto) { await recordSip(supabase, userId, d, { moneyRow: true }); writes++ }
+    else if (d.fund.sip_auto || review) { await recordSip(supabase, userId, d, { moneyRow: true, ...(review ? { tag: { review: !d.fund.sip_auto } } : {}) }); writes++ }
     else pending.push(d)
   }
   return { ready: true, pending, writes }

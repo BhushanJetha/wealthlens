@@ -101,7 +101,7 @@ function last5Years() {
 export default function InvestmentsClient({
   stocks, mutualFunds, fixedDeposits, recurringDeposits, npsAccounts, licPolicies,
   goldInvestments = [], bondInvestments = [], etfInvestments = [], ppfEpf = [], invTxns = [], transactions = [],
-  goalInvestments = [], goals = [], familyMembers = [], pendingSips = [], today,
+  goalInvestments = [], goals = [], familyMembers = [], pendingSips = [], pendingDrafts = [], today,
 }: any) {
   const { view, fxRate: FX } = useViewStore()
   const { selectedHolder, setSelectedHolder } = useHolderStore()
@@ -580,7 +580,7 @@ export default function InvestmentsClient({
               </section>
 
               <InvestNeedsPanel className="max-md:order-7" funds={fMF} stocks={fSt} deposits={fFD} rds={fRD} invTxns={invTxns}
-                pendingSips={pendingSips} today={today} total={totalCurr} conv={conv} />
+                pendingSips={pendingSips} pendingDrafts={pendingDrafts} today={today} total={totalCurr} conv={conv} />
             </div>
           </div>
 

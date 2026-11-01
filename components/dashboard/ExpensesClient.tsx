@@ -19,8 +19,10 @@ import { colorOf as catColorOf } from '@/lib/categories'
 import { isSpending, spendGroup, catOf, labelOf, myShare } from '@/lib/money'
 import { toast } from '@/components/ui/toaster'
 
-import { Upload, Image, Mic, PenLine, BarChart2, X, CreditCard, Pencil, Trash2, ChevronDown, Plus, Copy, Wallet, Banknote, MessageSquareText, Landmark, TrendingUp, CalendarDays, Settings2, Paperclip, Users } from 'lucide-react'
+import { Upload, Image, Mic, PenLine, BarChart2, X, CreditCard, Pencil, Trash2, ChevronDown, Plus, Copy, Wallet, Banknote, MessageSquareText, Landmark, TrendingUp, CalendarDays, Settings2, Paperclip, Users, Check, Repeat } from 'lucide-react'
 import { openReceipt } from '@/lib/receipts'
+import { approveAuto } from '@/lib/autoEntries'
+import { repeatFrom } from '@/lib/recurring'
 import Link from 'next/link'
 import { PageHeader, InsightBar, AiActions, KpiTile, HeroStat, Bars, Donut, ProgressRow, LearnStrip, PALETTE } from '@/components/ui/kit'
 import { ListCard, ListRow, ListSearch, ChipFilter } from '@/components/ui/list'
@@ -112,6 +114,18 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
     const res = await fetch(`/api/transactions?id=${t.id}`, { method: 'DELETE' })
     setDeletingId(null)
     toast(res.ok ? 'Transaction deleted' : 'Couldn’t delete it. Try again.', res.ok ? 'success' : 'error')
+    router.refresh()
+  }
+
+  async function approve(t: any) {
+    const err = await approveAuto(supabase, t)
+    toast(err ?? `${t.merchant} approved`, err ? 'error' : 'success')
+    router.refresh()
+  }
+  async function makeRepeat(t: any) {
+    const { data: { user } } = await supabase.auth.getUser()
+    const err = user ? await repeatFrom(supabase, user.id, t) : 'Please sign in again.'
+    toast(err ?? `${t.merchant} will enter itself every month, for your approval`, err ? 'error' : 'success')
     router.refresh()
   }
 
@@ -534,16 +548,18 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
               tag={label} warn={bs && bs.pct >= 75 ? `${t.category}: ${Math.round(bs.pct)}% of this month's budget used` : null}
               meta={fmtDay(t.txn_date)} amount={`−${lSym}${Number(t.amount).toLocaleString('en-IN')}`}
               amountColor={isSpending(t) || spendGroup(t) ? '#DC2626' : 'var(--text3)'}
-              amountSub={Number(t.friend_share) > 0 ? `split · your share ${lSym}${myShare(t).toLocaleString('en-IN')}`
+              amountSub={t.auto_status === 'pending' ? 'auto entry · pending approval' : Number(t.friend_share) > 0 ? `split · your share ${lSym}${myShare(t).toLocaleString('en-IN')}`
                 : t.paid_by_friend_id ? 'a friend paid · you owe them' : inrEq ?? (!spendGroup(t) ? 'move · not spending' : undefined)}
               onOpen={() => openEdit(t)}
               actions={[
+                ...(t.auto_status === 'pending' ? [{ label: 'Approve', icon: Check, onClick: () => approve(t) }] : []),
                 { label: 'Edit', icon: Pencil, onClick: () => openEdit(t) },
+                ...(!t.recurring_id && !t.auto_ref && spendGroup(t) ? [{ label: 'Repeat every month', icon: Repeat, onClick: () => makeRepeat(t) }] : []),
                 { label: 'Duplicate', icon: Copy, onClick: () => openDuplicate(t) },
                 ...(t.txn_type === 'expense' && t.account_id && !t.paid_by_friend_id
                   ? [{ label: Number(t.friend_share) > 0 ? 'Change split' : 'Split with friends', icon: Users, onClick: () => setSplitting(t) }] : []),
                 ...(t.receipt_path ? [{ label: 'View receipt', icon: Paperclip, onClick: () => { openReceipt(supabase, t.receipt_path) } }] : []),
-                { label: 'Delete', icon: Trash2, onClick: () => deleteTxn(t), danger: true, disabled: deletingId === t.id },
+                { label: t.auto_status === 'pending' ? 'Not paid' : 'Delete', icon: Trash2, onClick: () => deleteTxn(t), danger: true, disabled: deletingId === t.id },
               ]} />
           )
         })}

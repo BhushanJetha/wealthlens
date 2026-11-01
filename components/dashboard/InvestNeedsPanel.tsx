@@ -17,8 +17,8 @@ const ELSS_LOCK_YEARS = 3
 // Investments › Needs you: SIPs to confirm and coming up, deposits maturing,
 // stale prices, a holding that's too big a share, ELSS units unlocking; plus
 // how each SIP is tracked (record automatically, or ask).
-export default function InvestNeedsPanel({ funds, stocks, deposits, rds, invTxns, pendingSips, today, total, conv, className = '' }: {
-  funds: any[]; stocks: any[]; deposits: any[]; rds: any[]; invTxns: any[]; pendingSips: SipDue[]
+export default function InvestNeedsPanel({ funds, stocks, deposits, rds, invTxns, pendingSips, pendingDrafts = [], today, total, conv, className = '' }: {
+  funds: any[]; stocks: any[]; deposits: any[]; rds: any[]; invTxns: any[]; pendingSips: SipDue[]; pendingDrafts?: any[]
   today: string; total: number; conv: (n: number, cur: string) => number; className?: string
 }) {
   const router = useRouter()
@@ -28,6 +28,7 @@ export default function InvestNeedsPanel({ funds, stocks, deposits, rds, invTxns
   const pending = pendingSips.filter(d => ids.has(d.fund.id))
   const sipFunds = funds.filter(f => f.has_sip && Number(f.sip_amount) > 0 && Number(f.sip_date) > 0)
   const ready = funds.length === 0 || 'sip_last_month' in funds[0]
+  const rdRows = rds.filter(r => 'rd_last_month' in r && r.is_active !== false)
   const month = ymOf(today)
 
   const needs: { id: string; sev: string; title: string; detail: string; href: string }[] = []
@@ -85,14 +86,22 @@ export default function InvestNeedsPanel({ funds, stocks, deposits, rds, invTxns
     if (error) setError(error.message); else router.refresh()
   }
 
+  async function setRdAuto(r: any, auto: boolean) {
+    setBusy(r.id); setError('')
+    const { error } = await createClient().from('recurring_deposits').update({ rd_auto: auto }).eq('id', r.id)
+    setBusy(null)
+    if (error) setError(error.message); else router.refresh()
+  }
+  const open = pending.length + pendingDrafts.length + needs.length
+
   return (
     <section className={`wl-card px-4 md:px-5 py-3.5 md:py-[18px] ${className}`} aria-labelledby="inv-needs">
       <div className="flex items-center justify-between gap-2">
         <h2 id="inv-needs" className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Needs you</h2>
-        {pending.length + needs.length > 0 && <span className="text-[11px] font-semibold px-2 py-[3px] rounded-full" style={{ background: '#FEF2F2', color: '#DC2626' }}>{pending.length + needs.length}</span>}
+        {open > 0 && <span className="text-[11px] font-semibold px-2 py-[3px] rounded-full" style={{ background: '#FEF2F2', color: '#DC2626' }}>{open}</span>}
       </div>
       <ul className="mt-1.5">
-        <PendingConfirms pending={{ sips: pending }} />
+        <PendingConfirms pending={{ sips: pending, drafts: pendingDrafts }} />
         {needs.map(n => (
           <li key={n.id} style={{ borderTop: '1px solid #F1F5F9' }}>
             <Link href={n.href} className="flex gap-2.5 items-start py-[9px] -mx-2 px-2 rounded-lg hover:bg-[#F5F3FE] transition-colors">
@@ -105,12 +114,12 @@ export default function InvestNeedsPanel({ funds, stocks, deposits, rds, invTxns
             </Link>
           </li>
         ))}
-        {pending.length + needs.length === 0 && <li className="text-[12.5px] py-3" style={{ color: 'var(--text3)' }}>All good — nothing due, maturing or out of date.</li>}
+        {open === 0 && <li className="text-[12.5px] py-3" style={{ color: 'var(--text3)' }}>All good — nothing due, maturing or out of date.</li>}
       </ul>
 
-      {sipFunds.length > 0 && (
+      {sipFunds.length + rdRows.length > 0 && (
         <div className="mt-2.5 pt-2.5" style={{ borderTop: '1px solid var(--track)' }}>
-          <div className="text-[11.5px] font-semibold mb-1" style={{ color: 'var(--text2)' }}>SIP tracking</div>
+          <div className="text-[11.5px] font-semibold mb-1" style={{ color: 'var(--text2)' }}>SIP &amp; RD entries</div>
           {!ready ? (
             <p className="text-[12px] leading-snug" style={{ color: 'var(--text3)' }}>Run migration 028 in Supabase: each SIP then gets recorded on its day — units, invested amount and the monthly chart.</p>
           ) : (<>
@@ -119,14 +128,26 @@ export default function InvestNeedsPanel({ funds, stocks, deposits, rds, invTxns
                 <span className="flex-1 min-w-0 truncate" style={{ color: 'var(--text)' }}>{f.fund_name}
                   <span style={{ color: 'var(--text4)' }}> · {fmtMoney(Number(f.sip_amount), f.currency ?? 'INR')} on the {f.sip_date}</span></span>
                 <button onClick={() => setAuto(f, !f.sip_auto)} disabled={busy === f.id}
-                  title={f.sip_auto ? 'Recorded on the SIP day — tap to be asked first' : 'You’re asked if it isn’t in your statement — tap to record it automatically'}
+                  title={f.sip_auto ? 'Recorded on the SIP day, no review — tap to review each one' : 'Entered on the SIP day, waiting for your approval — tap to skip the review'}
                   className="rounded-full px-2 h-[26px] text-[11px] font-semibold flex items-center gap-1 flex-shrink-0"
                   style={f.sip_auto ? { background: '#E7F7EF', color: '#1E7A50' } : { background: 'var(--accent-bg)', color: 'var(--accent2)' }}>
-                  {f.sip_auto ? <><Zap size={11} />Auto</> : <><Hand size={11} />Ask</>}
+                  {f.sip_auto ? <><Zap size={11} />Auto</> : <><Hand size={11} />Review</>}
                 </button>
               </div>
             ))}
-            <p className="text-[11.5px] mt-1 leading-snug" style={{ color: 'var(--text4)' }}>A SIP debit found in your bank statement is always recorded for you, at the latest NAV.</p>
+            {rdRows.map(r => (
+              <div key={r.id} className="flex items-center gap-2.5 py-1.5 text-[12.5px]">
+                <span className="flex-1 min-w-0 truncate" style={{ color: 'var(--text)' }}>{r.name} (RD)
+                  <span style={{ color: 'var(--text4)' }}> · {fmtMoney(Number(r.monthly_amount), r.currency ?? 'INR')} on the {Number(String(r.start_date).slice(8, 10))}</span></span>
+                <button onClick={() => setRdAuto(r, !r.rd_auto)} disabled={busy === r.id}
+                  title={r.rd_auto ? 'Entered on its day, no review — tap to review each one' : 'Entered on its day, waiting for your approval — tap to skip the review'}
+                  className="rounded-full px-2 h-[26px] text-[11px] font-semibold flex items-center gap-1 flex-shrink-0"
+                  style={r.rd_auto ? { background: '#E7F7EF', color: '#1E7A50' } : { background: 'var(--accent-bg)', color: 'var(--accent2)' }}>
+                  {r.rd_auto ? <><Zap size={11} />Auto</> : <><Hand size={11} />Review</>}
+                </button>
+              </div>
+            ))}
+            <p className="text-[11.5px] mt-1 leading-snug" style={{ color: 'var(--text4)' }}>Each one enters on its day and counts straight away. A debit found in your bank statement replaces it.</p>
           </>)}
           {error && <div className="mt-2 text-[12px]" style={{ color: '#B91C1C' }}>{error}</div>}
         </div>

@@ -34,8 +34,8 @@ function payoff(bal: number, rate: number, pay: number) {
   return { months, interest }
 }
 
-export default function LoansClient({ loans, pendingEmis = [], loanTxns = [], today }: {
-  loans: any[]; familyMembers?: any[]; pendingEmis?: EmiDue[]; loanTxns?: any[]; today: string
+export default function LoansClient({ loans, pendingEmis = [], pendingDrafts = [], loanTxns = [], today }: {
+  loans: any[]; familyMembers?: any[]; pendingEmis?: EmiDue[]; pendingDrafts?: any[]; loanTxns?: any[]; today: string
 }) {
   const { view, fxRate: FX } = useViewStore()
   const { selectedHolder } = useHolderStore()
@@ -189,7 +189,7 @@ export default function LoansClient({ loans, pendingEmis = [], loanTxns = [], to
         <KpiTile label="Debt-free by" value={filtered.length && path.clears ? path.freeBy : '—'} delta={filtered.length ? 'at current EMIs' : 'No loans'} tint={0} icon={Flag} />
       </div>
 
-      {filtered.length > 0 && <LoanNeedsPanel className="max-md:order-5" loans={filtered} pendingEmis={pendingEmis} loanTxns={loanTxns} today={today} />}
+      {filtered.length > 0 && <LoanNeedsPanel className="max-md:order-5" loans={filtered} pendingEmis={pendingEmis} pendingDrafts={pendingDrafts} loanTxns={loanTxns} today={today} />}
 
       {/* Active loans: one card each — tap a card to open its payoff plan */}
       <section className="max-md:order-7 flex flex-col gap-2.5 md:gap-3">

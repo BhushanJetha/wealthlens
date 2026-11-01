@@ -3,20 +3,25 @@
 // records anything (`changed`) the page reads again so it shows straight away:
 //   • repeating entries (lib/recurring, migration 027)
 //   • loan EMIs (lib/loanAuto, migration 028)
-//   • SIP instalments (lib/sipAuto, migration 028)
+//   • SIP instalments (lib/sipAuto, migration 028), RD instalments (lib/rdAuto, migration 037)
 //   • moves between your own accounts, matched from both statements (lib/ownTransfers)
-// Each is recorded when there's proof (it's in your statement) or you've
-// asked for it to happen by itself; everything else comes back to confirm.
+// With migration 037 everything due enters your transactions on its day, so a
+// forgotten one still counts: marked pending your approval unless you've set it
+// to Auto. A statement's real row replaces the entry (lib/autoEntries). Before
+// that migration, anything without proof comes back to confirm.
+
 import { fetchAllRows } from './supabase/fetchAll'
 import { addDaysTo } from './insights'
 import { runRecurring, type Occurrence, type RecurringTxn } from './recurring'
 import { runEmis, type EmiDue } from './loanAuto'
 import { runSips, type SipDue } from './sipAuto'
 import { matchOwnTransfers } from './ownTransfers'
+import { runRds } from './rdAuto'
+import { reconcileAuto, isAutoPending } from './autoEntries'
 
 export interface Automation {
   recurring: RecurringTxn[]; recurringReady: boolean
-  pending: { recurring: Occurrence[]; emis: EmiDue[]; sips: SipDue[] }
+  pending: { recurring: Occurrence[]; emis: EmiDue[]; sips: SipDue[]; drafts: any[] }
   count: number
   changed: boolean   // something was recorded or matched: the page's data is stale
 }
@@ -30,7 +35,7 @@ export async function withAutomation<T>(supabase: any, userId: string, today: st
 
 export async function runAutomation(supabase: any, userId: string, today: string): Promise<Automation> {
   const since = addDaysTo(today, -100)
-  const [txns, loansRes, ltRes, fundsRes, itRes, rulesRes] = await Promise.all([
+  const [read, loansRes, ltRes, fundsRes, itRes, rulesRes, rdsRes] = await Promise.all([
     fetchAllRows((a, b) => supabase.from('transactions').select('*').eq('user_id', userId).gte('txn_date', since)
       .order('txn_date', { ascending: false }).order('id').range(a, b), 5),
     supabase.from('home_loans').select('*').eq('user_id', userId).eq('is_active', true),
@@ -38,15 +43,26 @@ export async function runAutomation(supabase: any, userId: string, today: string
     supabase.from('mutual_funds').select('*').eq('user_id', userId).eq('has_sip', true),
     supabase.from('investment_transactions').select('asset_id,txn_type,txn_date,amount').eq('user_id', userId).eq('asset_type', 'mutual_fund').gte('txn_date', since),
     supabase.from('recurring_txns').select('*').eq('user_id', userId).order('created_at'),
+    supabase.from('recurring_deposits').select('*').eq('user_id', userId).eq('is_active', true),
   ])
-  const matched = await matchOwnTransfers(supabase, txns)
-  const rec = await runRecurring(supabase, userId, today, txns, rulesRes)
-  const all = [...rec.inserted, ...txns]
-  const [emis, sips] = await Promise.all([
-    runEmis(supabase, userId, today, loansRes.data ?? [], all, ltRes.data ?? []),
-    runSips(supabase, userId, today, fundsRes.data ?? [], all, itRes.data ?? []),
+  const matched = await matchOwnTransfers(supabase, read)
+  // Migration 037 is in when the rows carry its column
+  const review = read.some(t => 'auto_status' in t)
+  const replaced = review ? await reconcileAuto(supabase, read, { loans: loansRes.data ?? [], funds: fundsRes.data ?? [], rds: rdsRes.data ?? [] }) : new Set<string>()
+  const txns = replaced.size ? read.filter(t => !replaced.has(t.id)) : read
+  const rec = await runRecurring(supabase, userId, today, txns, rulesRes, review)
+  // Proof of a payment is a real row, never another entry the app made
+  const all = [...rec.inserted, ...txns].filter(t => !t.auto_ref)
+  const [emis, sips, rds] = await Promise.all([
+    runEmis(supabase, userId, today, loansRes.data ?? [], all, ltRes.data ?? [], review),
+    runSips(supabase, userId, today, fundsRes.data ?? [], all, itRes.data ?? [], review),
+    review ? runRds(supabase, userId, today, rdsRes.data ?? [], all) : Promise.resolve({ writes: 0 }),
   ])
-  const pending = { recurring: rec.pending, emis: emis.pending, sips: sips.pending }
-  return { recurring: rec.list, recurringReady: rec.ready, pending, count: pending.recurring.length + pending.emis.length + pending.sips.length,
-    changed: matched > 0 || rec.inserted.length > 0 || emis.writes > 0 || sips.writes > 0 }
+  const changed = matched > 0 || replaced.size > 0 || rec.inserted.length > 0 || emis.writes > 0 || sips.writes > 0 || rds.writes > 0
+  // Entries waiting for your approval
+  const drafts = !review ? [] : changed
+    ? (await supabase.from('transactions').select('*').eq('user_id', userId).eq('auto_status', 'pending').order('txn_date', { ascending: false })).data ?? []
+    : txns.filter(isAutoPending)
+  const pending = { recurring: rec.pending, emis: emis.pending, sips: sips.pending, drafts }
+  return { recurring: rec.list, recurringReady: rec.ready, pending, count: pending.recurring.length + pending.emis.length + pending.sips.length + drafts.length, changed }
 }

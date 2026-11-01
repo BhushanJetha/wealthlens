@@ -58,7 +58,7 @@ export function cardPayFrom(card: any, txns: any[], accounts: any[]): { id: stri
 export function buildDues(inp: {
   today: string; days: number; view: View
   txns: any[]; accounts: any[]; loans: any[]; insurance: any[]; mutualFunds: any[]
-  recurring?: RecurringTxn[]
+  recurring?: RecurringTxn[]; rds?: any[]
 }): Due[] {
   const { today, days, view } = inp
   const inView = (c: string) => view === 'consolidated' || (view === 'uae' ? c === 'AED' : c !== 'AED')
@@ -71,6 +71,7 @@ export function buildDues(inp: {
     if (l.loan_type === 'loan_on_card' && cardIds.has(l.pay_from_account_id)) continue
     const d = nextOccurrence(l.next_emi_date, today)
     if (!within(d) || !(Number(l.emi_amount) > 0)) continue
+    if (l.emi_last_month && ymOf(d!) <= l.emi_last_month) continue      // already off the balance
     const p = loanPayFrom(l, inp.txns, inp.accounts, inp.loans)
     out.push({ id: `emi-${l.id}`, date: d!, label: `${l.name} EMI`, sub: l.bank_name ?? 'Loan', amount: Number(l.emi_amount), currency: l.currency || 'INR',
       kind: 'emi', payFrom: p.id, payFromSource: p.source, owner: { table: 'home_loans', id: l.id }, href: `/dashboard/loans/detail/${l.id}` })
@@ -93,11 +94,21 @@ export function buildDues(inp: {
   for (const m of inp.mutualFunds.filter(m => m.has_sip && Number(m.sip_amount) > 0 && m.sip_date && inView(m.currency ?? 'INR'))) {
     for (const ym of [ymOf(today), addMonths(ymOf(today), 1)]) {
       const d = `${ym}-${String(Math.min(Number(m.sip_date), daysInMonth(ym))).padStart(2, '0')}`
-      if (!within(d)) continue
+      if (!within(d) || (m.sip_last_month && ym <= m.sip_last_month)) continue
       const words = String(m.fund_name ?? '').toLowerCase().split(/\s+/).filter(w => w.length >= 4).slice(0, 2)
       const t = latest(inp.txns.filter(t => catOf(t) === 'Investment' && words.length && words.every(w => `${t.merchant ?? ''} ${t.description ?? ''}`.toLowerCase().includes(w))))
       out.push({ id: `sip-${m.id}-${ym}`, date: d, label: `SIP · ${m.fund_name}`, sub: 'Mutual fund', amount: Number(m.sip_amount), currency: m.currency ?? 'INR',
         kind: 'sip', payFrom: t?.account_id ?? null, payFromSource: t ? 'history' : null, href: '/dashboard/investments/mutual-funds' })
+    }
+  }
+  for (const r of (inp.rds ?? []).filter(r => r.is_active !== false && Number(r.monthly_amount) > 0 && r.start_date && inView(r.currency ?? 'INR'))) {
+    const day = Number(String(r.start_date).slice(8, 10))
+    for (const ym of [ymOf(today), addMonths(ymOf(today), 1)]) {
+      const d = `${ym}-${String(Math.min(day, daysInMonth(ym))).padStart(2, '0')}`
+      if (!within(d) || (r.rd_last_month && ym <= r.rd_last_month) || d < String(r.start_date).slice(0, 10)) continue
+      if (r.maturity_date && d > String(r.maturity_date).slice(0, 10)) continue
+      out.push({ id: `rd-${r.id}-${ym}`, date: d, label: `RD · ${r.name}`, sub: r.bank_name ?? 'Recurring deposit', amount: Number(r.monthly_amount), currency: r.currency ?? 'INR',
+        kind: 'sip', payFrom: r.rd_account_id ?? null, payFromSource: r.rd_account_id ? 'set' : null, href: '/dashboard/investments/recurring-deposits' })
     }
   }
   // Repeating entries you've set up (money out only — not income or moves)
@@ -189,7 +200,7 @@ export function balanceWarnings(accounts: any[], dues: Due[], incoming: Expected
 // Bank & cash, minus what's due from them up to the day the next income lands
 // (a payment on payday itself counts — it may go out first). Card
 // spends aren't counted twice: a card's bill is the due, not each charge.
-export interface SafeToSpend { amount: number; cash: number; dueBefore: number; dueCount: number; until: string; payday: boolean; days: number; perDay: number | null }
+export interface SafeToSpend { amount: number; cash: number; dueBefore: number; dueCount: number; unlinked: number; until: string; payday: boolean; days: number; perDay: number | null }
 export function safeToSpend(inp: { today: string; view: View; fx: number; accounts: any[]; dues: Due[]; txns: any[] }): SafeToSpend {
   const { today, view, fx } = inp
   const isIncome = (t: any) => isIncomeIn(t, view)
@@ -213,7 +224,10 @@ export function safeToSpend(inp: { today: string; view: View; fx: number; accoun
     .reduce((s, a) => s + Math.max(0, viewAmount(Number(a.current_balance) || 0, a.currency, view, fx)), 0)
   const before = inp.dues.filter(d => d.date <= until && !(d.payFrom && cardIds.has(d.payFrom)))
   const dueBefore = before.reduce((s, d) => s + viewAmount(d.amount, d.currency, view, fx), 0)
-  const amount = cash - dueBefore
+  // Auto entries with no account yet: no balance has moved for them, so they come off here
+  const unlinked = inp.txns.filter(t => t.auto_status === 'pending' && !t.account_id && !t.paid_by_friend_id && inView(t.currency))
+    .reduce((s, t) => s + viewAmount(Number(t.amount) || 0, t.currency, view, fx), 0)
+  const amount = cash - dueBefore - unlinked
   const n = Math.max(1, daysBetween(today, until))
-  return { amount, cash, dueBefore, dueCount: before.length, until, payday: !!payDay, days: n, perDay: amount > 0 ? amount / n : null }
+  return { amount, cash, dueBefore, dueCount: before.length, unlinked, until, payday: !!payDay, days: n, perDay: amount > 0 ? amount / n : null }
 }

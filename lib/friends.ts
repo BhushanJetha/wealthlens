@@ -89,3 +89,8 @@ export function settleCandidates(txns: any[], opts: { theyPaid: boolean; currenc
     .sort((a, b) => Math.abs(Number(a.amount) - opts.amount) - Math.abs(Number(b.amount) - opts.amount) || Math.abs(day(a.txn_date) - day(opts.date)) - Math.abs(day(b.txn_date) - day(opts.date)))
     .slice(0, 6)
 }
+
+// Split by %: each friend's percent of the amount (2 decimals)
+export function percentShares(amount: number, percents: number[]): number[] {
+  return percents.map(p => Math.round(amount * (p || 0)) / 100)
+}

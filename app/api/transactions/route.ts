@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { loadRules, applyRules } from '@/lib/rules'
+import { rejectAuto } from '@/lib/autoEntries'
 
 // Columns added by later migrations (026, 027, 034): a save still works before
 // they're run — the missing one is dropped and the save retried
@@ -122,6 +123,13 @@ export async function DELETE(req: Request) {
   const id = searchParams.get('id')
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
 
+  // An entry the app made (SIP, EMI…): the units or loan payment go with it
+  const { data: row } = await supabase.from('transactions').select('*').eq('id', id).eq('user_id', user.id).maybeSingle()
+  if (row?.auto_ref) {
+    const err = await rejectAuto(supabase, row)
+    if (err) return NextResponse.json({ error: err }, { status: 500 })
+    return NextResponse.json({ success: true })
+  }
   const { error } = await supabase.from('transactions').delete().eq('id', id).eq('user_id', user.id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ success: true })

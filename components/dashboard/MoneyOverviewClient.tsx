@@ -19,13 +19,15 @@ import { findReviewItems, reviewCount } from '@/lib/review'
 import { rankCards } from '@/lib/cardCycle'
 import type { RecurringTxn } from '@/lib/recurring'
 import PendingConfirms, { pendingCount, type Pending } from './PendingConfirms'
+import SpendRoomPanel from './SpendRoomPanel'
+import { spendRoom } from '@/lib/spendRoom'
 import { PageHeader, InsightBar, KpiTile, KpiGrid, Panel, MoreLink } from '@/components/ui/kit'
 import { BankLogo } from '@/components/ui/BankCards'
 
 interface Props {
   today: string
   transactions: any[]; accounts: any[]; loans: any[]; insurance: any[]
-  mutualFunds: any[]; fixedDeposits: any[]; budgets: any[]
+  mutualFunds: any[]; fixedDeposits: any[]; budgets: any[]; rds?: any[]
   pending: Pending               // repeating entries, EMIs and SIPs waiting for a confirm
   recurring: RecurringTxn[]
 }
@@ -63,11 +65,19 @@ export default function MoneyOverviewClient(p: Props) {
     cash: 0, invested: { value: 0, cost: 0 },
   }), [view, FX, today, p])
 
-  const dues = useMemo(() => buildDues({ today, days: 35, view, txns: p.transactions, accounts: p.accounts, loans: p.loans, insurance: p.insurance, mutualFunds: p.mutualFunds, recurring: p.recurring }),
+  const dues = useMemo(() => buildDues({ today, days: 35, view, txns: p.transactions, accounts: p.accounts, loans: p.loans, insurance: p.insurance, mutualFunds: p.mutualFunds, recurring: p.recurring, rds: p.rds }),
     [today, view, p])
   const incoming = useMemo(() => expectedIncome(p.transactions, accounts, today, 35), [p.transactions, accounts, today])
   const warnings = useMemo(() => balanceWarnings(accounts, dues, incoming, today, 14), [accounts, dues, incoming, today])
   const sts = useMemo(() => safeToSpend({ today, view, fx: FX, accounts, dues, txns: p.transactions }), [today, view, FX, accounts, dues, p.transactions])
+
+  // How much more you can spend, in each currency on its own (dirhams can't pay in India)
+  const rooms = useMemo(() => (view === 'uae' ? ['AED'] as const : view === 'india' ? ['INR'] as const : ['AED', 'INR'] as const).map(c => {
+    const v = c === 'AED' ? 'uae' as const : 'india' as const
+    const ds = buildDues({ today, days: 35, view: v, txns: p.transactions, accounts: p.accounts, loans: p.loans, insurance: p.insurance, mutualFunds: p.mutualFunds, recurring: p.recurring, rds: p.rds })
+    const s = safeToSpend({ today, view: v, fx: FX, accounts: p.accounts.filter(a => a.currency === c), dues: ds, txns: p.transactions })
+    return { ...spendRoom({ today, cur: c, budgets: p.budgets, txns: p.transactions, safe: s.amount }), until: s.until, perDay: s.perDay }
+  }), [today, view, FX, p])
 
   const week = dues.filter(d => daysBetween(today, d.date) <= 7)
   const weekIn = incoming.filter(i => daysBetween(today, i.date) <= 7)
@@ -139,6 +149,12 @@ export default function MoneyOverviewClient(p: Props) {
               <dt style={{ color: 'var(--text3)' }}>Due by {fmtDay(sts.until)} <span style={{ color: 'var(--text4)' }}>· {sts.dueCount} payment{sts.dueCount === 1 ? '' : 's'}</span></dt>
               <dd className="tabular-nums font-semibold" style={{ color: 'var(--text)' }}>− {money(sts.dueBefore)}</dd>
             </div>
+            {sts.unlinked > 0 && (
+              <div className="flex justify-between py-1.5" style={{ borderTop: '1px solid var(--track)' }}>
+                <dt style={{ color: 'var(--text3)' }}>Auto entries with no account</dt>
+                <dd className="tabular-nums font-semibold" style={{ color: 'var(--text)' }}>− {money(sts.unlinked)}</dd>
+              </div>
+            )}
           </dl>
           <p className="mt-auto pt-3 text-[11.5px] leading-snug" style={{ color: 'var(--text4)' }}>
             {sts.payday ? 'Payday is the day your biggest income usually lands.' : 'No regular income found yet, so this looks 30 days ahead.'} Card spends count once, through the card’s bill.
@@ -189,6 +205,8 @@ export default function MoneyOverviewClient(p: Props) {
           )}
         </Panel>
       </div>
+
+      <SpendRoomPanel rooms={rooms} />
 
       <KpiGrid>
         <KpiTile label="Bank & cash" value={short(sts.cash)} tint={0} icon={Landmark} href="/dashboard/accounts"

@@ -618,7 +618,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
               </label>
               {repeatOn && (
                 <Segmented label="When it repeats" value={repeatAuto} onChange={setRepeatAuto} full
-                  options={[{ value: 'ask', label: 'Ask me first' }, { value: 'auto', label: 'Add it for me' }]} />
+                  options={[{ value: 'ask', label: 'Add, I’ll approve' }, { value: 'auto', label: 'Add, no review' }]} />
               )}
             </div>
           )}

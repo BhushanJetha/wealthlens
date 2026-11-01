@@ -24,8 +24,8 @@ function monthsLeft(bal: number, rate: number, emi: number) {
 // Loans › Needs you: EMIs to confirm, EMIs this week, balances that have gone
 // stale, rates worth questioning, loans about to end; plus how EMIs are
 // tracked per loan (record automatically, or ask), and this year so far.
-export default function LoanNeedsPanel({ loans, pendingEmis, loanTxns, today, className = '' }: {
-  loans: any[]; pendingEmis: EmiDue[]; loanTxns: any[]; today: string; className?: string
+export default function LoanNeedsPanel({ loans, pendingEmis, pendingDrafts = [], loanTxns, today, className = '' }: {
+  loans: any[]; pendingEmis: EmiDue[]; pendingDrafts?: any[]; loanTxns: any[]; today: string; className?: string
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState<string | null>(null)
@@ -75,10 +75,10 @@ export default function LoanNeedsPanel({ loans, pendingEmis, loanTxns, today, cl
     <section className={`wl-card px-4 md:px-5 py-4 md:py-[18px] ${className}`} aria-labelledby="loan-needs">
       <div className="flex items-center justify-between gap-2">
         <h2 id="loan-needs" className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Needs you</h2>
-        {pending.length + needs.length > 0 && <span className="text-[11px] font-semibold px-2 py-[3px] rounded-full" style={{ background: '#FEF2F2', color: '#DC2626' }}>{pending.length + needs.length}</span>}
+        {pending.length + pendingDrafts.length + needs.length > 0 && <span className="text-[11px] font-semibold px-2 py-[3px] rounded-full" style={{ background: '#FEF2F2', color: '#DC2626' }}>{pending.length + pendingDrafts.length + needs.length}</span>}
       </div>
       <ul className="mt-2">
-        <PendingConfirms pending={{ emis: pending }} />
+        <PendingConfirms pending={{ emis: pending, drafts: pendingDrafts }} />
         {needs.map(n => (
           <li key={n.id} style={{ borderTop: '1px solid #F1F5F9' }}>
             <Link href={n.href ?? '/dashboard/loans'} className="flex gap-2.5 items-start py-[9px] -mx-2 px-2 rounded-lg hover:bg-[#F5F3FE] transition-colors">
@@ -91,7 +91,7 @@ export default function LoanNeedsPanel({ loans, pendingEmis, loanTxns, today, cl
             </Link>
           </li>
         ))}
-        {pending.length + needs.length === 0 && <li className="text-[12.5px] py-4" style={{ color: 'var(--text3)' }}>Nothing needs you — no EMIs due this week.</li>}
+        {pending.length + pendingDrafts.length + needs.length === 0 && <li className="text-[12.5px] py-4" style={{ color: 'var(--text3)' }}>Nothing needs you — no EMIs due this week.</li>}
       </ul>
 
       {Object.keys(byCur).length > 0 && (

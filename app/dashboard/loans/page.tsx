@@ -13,5 +13,5 @@ export default async function LoansPage() {
     activeLoansWithEmi(supabase, user!.id),
     supabase.from('loan_transactions').select('loan_id,kind,txn_date,amount,principal,interest').eq('user_id', user!.id),
   ]))
-  return <LoansClient loans={loans ?? []} pendingEmis={auto.pending.emis} loanTxns={lt.data ?? []} today={today} />
+  return <LoansClient loans={loans ?? []} pendingEmis={auto.pending.emis} pendingDrafts={auto.pending.drafts.filter((t: any) => t.auto_ref?.kind === 'emi')} loanTxns={lt.data ?? []} today={today} />
 }

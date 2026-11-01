@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Plus, Check } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { isMissingTable } from '@/lib/supabase/missingTable'
-import { equalShares } from '@/lib/friends'
+import { equalShares, percentShares } from '@/lib/friends'
 import { Segmented } from '@/components/ui/kit'
 
 export const NEEDS_MIGRATION = 'Splitting with friends needs migration 036 (supabase/migrations/036_friends_and_splits.sql). Run it in Supabase, then try again.'
@@ -64,7 +64,8 @@ export default function SplitEditor({ amount, currency, txnId, disabled, onChang
   const supabase = createClient()
   const { friends, error: loadError, add } = useFriends()
   const [picked, setPicked] = useState<string[]>([])
-  const [mode, setMode] = useState<'equal' | 'amounts'>('equal')
+  const [mode, setMode] = useState<'equal' | 'amounts' | 'percent'>('equal')
+  const [percents, setPercents] = useState<Record<string, string>>({})
   const [withMe, setWithMe] = useState(true)
   const [amounts, setAmounts] = useState<Record<string, string>>({})
   const [newName, setNewName] = useState('')
@@ -92,8 +93,12 @@ export default function SplitEditor({ amount, currency, txnId, disabled, onChang
       const { each } = equalShares(amount, picked.length, withMe)
       return Object.fromEntries(picked.map((id, i) => [id, each[i]])) as Record<string, number>
     }
+    if (mode === 'percent') {
+      const each = percentShares(amount, picked.map(id => Number(percents[id]) || 0))
+      return Object.fromEntries(picked.map((id, i) => [id, each[i]])) as Record<string, number>
+    }
     return Object.fromEntries(picked.map(id => [id, r2(Number(amounts[id]) || 0)])) as Record<string, number>
-  }, [mode, picked, amounts, amount, withMe])
+  }, [mode, picked, amounts, percents, amount, withMe])
   const total = r2(Object.values(shares).reduce((s, v) => s + v, 0))
   const mine = r2(amount - total)
   const over = total > amount + 0.004
@@ -140,7 +145,7 @@ export default function SplitEditor({ amount, currency, txnId, disabled, onChang
         <>
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <Segmented label="How to split" value={mode} onChange={setMode}
-              options={[{ value: 'equal' as const, label: 'Equally' }, { value: 'amounts' as const, label: 'By amount' }]} />
+              options={[{ value: 'equal' as const, label: 'Equally' }, { value: 'amounts' as const, label: 'Amount' }, { value: 'percent' as const, label: '%' }]} />
             {mode === 'equal' && (
               <label className="inline-flex items-center gap-2 text-[12.5px] cursor-pointer" style={{ color: 'var(--text2)' }}>
                 <input type="checkbox" checked={withMe} onChange={e => setWithMe(e.target.checked)} disabled={disabled} className="accent-[var(--accent)]" />
@@ -154,6 +159,15 @@ export default function SplitEditor({ amount, currency, txnId, disabled, onChang
                 <span className="text-[13.5px] font-medium truncate" style={{ color: 'var(--text)' }}>{nameOf(id)} <span className="font-normal" style={{ color: 'var(--text3)' }}>owes you</span></span>
                 {mode === 'equal' ? (
                   <span className="text-[13.5px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{money(shares[id] ?? 0)}</span>
+                ) : mode === 'percent' ? (
+                  <span className="inline-flex items-center gap-2 flex-shrink-0">
+                    <span className="text-[12.5px] tabular-nums" style={{ color: 'var(--text3)' }}>{money(shares[id] ?? 0)}</span>
+                    <span className="inline-flex items-center gap-1 h-9 px-2.5 rounded-[10px] w-[78px]" style={{ background: 'var(--bg2)', border: '1px solid var(--line)' }}>
+                      <input inputMode="decimal" value={percents[id] ?? ''} onChange={e => setPercents(a => ({ ...a, [id]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                        aria-label={`${nameOf(id)}'s percent`} disabled={disabled} className="w-full bg-transparent outline-none text-right text-[14px] font-semibold tabular-nums" />
+                      <span className="text-[12px]" style={{ color: 'var(--text3)' }}>%</span>
+                    </span>
+                  </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 h-9 px-2.5 rounded-[10px] w-[130px]" style={{ background: 'var(--bg2)', border: '1px solid var(--line)' }}>
                     <span className="text-[12px]" style={{ color: 'var(--text3)' }}>{sym.trim()}</span>
@@ -164,7 +178,7 @@ export default function SplitEditor({ amount, currency, txnId, disabled, onChang
               </div>
             ))}
             <div className="flex items-center justify-between gap-3 px-3.5 py-2.5" style={{ background: over ? '#FDECEC' : '#F5F3FF' }}>
-              <span className="text-[13.5px] font-semibold" style={{ color: over ? '#B42318' : 'var(--accent2)' }}>Your share · counts as your spending</span>
+              <span className="text-[13.5px] font-semibold" style={{ color: over ? '#B42318' : 'var(--accent2)' }}>Your share{mode === 'percent' && amount > 0 ? ` · ${Math.round(Math.max(0, mine) / amount * 1000) / 10}%` : ''} · counts as your spending</span>
               <span className="text-[14px] font-bold tabular-nums" style={{ color: over ? '#B42318' : 'var(--accent2)' }}>{money(Math.max(0, mine))}</span>
             </div>
           </div>

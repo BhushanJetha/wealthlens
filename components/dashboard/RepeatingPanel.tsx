@@ -68,7 +68,7 @@ export default function RepeatingPanel({ list, ready, transactions, accounts, to
       <button onClick={() => setAdding(true)} className="wl-btn" style={{ height: 30, fontSize: 12 }}><Plus size={13} />New</button>}>
       {rows.length === 0 && suggestions.length === 0 && (
         <p className="text-[12.5px] mt-1.5 leading-normal" style={{ color: 'var(--text3)' }}>
-          Rent, SIPs, family support — anything you record by hand every month. Tick <b>Repeat every month</b> when you add one, and it’s added for you (or you’re asked first) on its day.
+          Rent, SIPs, family support — anything you record by hand every month. Tick <b>Repeat every month</b> when you add one (or choose it on an expense), and it enters itself on its day, marked pending your approval. Set it to <b>Auto</b> to skip the review.
         </p>
       )}
       {rows.length > 0 && (
@@ -87,10 +87,10 @@ export default function RepeatingPanel({ list, ready, transactions, accounts, to
                 </div>
                 <div className="text-[13px] font-semibold tabular-nums whitespace-nowrap" style={{ color: 'var(--text)' }}>{fmtMoney(Number(r.amount), r.currency)}</div>
                 <button onClick={() => patch(r, { auto_add: !r.auto_add })} disabled={busy === r.id}
-                  title={r.auto_add ? 'Adds itself on the day — tap to ask first' : 'Asks you first — tap to add it automatically'}
+                  title={r.auto_add ? 'Enters itself, no review — tap to review each one' : 'Enters itself, waiting for your approval — tap to skip the review'}
                   className="rounded-full px-2 h-[26px] text-[11px] font-semibold flex items-center gap-1 flex-shrink-0"
                   style={r.auto_add ? { background: '#E7F7EF', color: '#1E7A50' } : { background: 'var(--accent-bg)', color: 'var(--accent2)' }}>
-                  {r.auto_add ? <><Zap size={11} />Auto</> : <><Hand size={11} />Ask</>}
+                  {r.auto_add ? <><Zap size={11} />Auto</> : <><Hand size={11} />Review</>}
                 </button>
                 <button onClick={() => patch(r, { is_active: !r.is_active })} disabled={busy === r.id} aria-label={r.is_active ? `Pause ${r.merchant}` : `Resume ${r.merchant}`}
                   className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[var(--accent-bg)] flex-shrink-0" style={{ color: 'var(--text3)' }}>

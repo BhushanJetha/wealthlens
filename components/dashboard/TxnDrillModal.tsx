@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useCategoryStore } from '@/store/categoryStore'
 import { MOVEMENT_CATS, CC_BILL, labelOf } from '@/lib/money'
 import { toast } from '@/components/ui/toaster'
+import { approveAuto } from '@/lib/autoEntries'
 
 // Popup behind an amount in a report: the transactions that make it up. Each
 // can be moved to another category in a tap, edited or deleted right here —
@@ -33,6 +34,7 @@ export default function TxnDrillModal({
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
   const [editing, setEditing] = useState<any | null>(null)
   const [splitting, setSplitting] = useState<any | null>(null)
+  const [approved, setApproved] = useState<Set<string>>(new Set())
   useEffect(() => {
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !editing && !splitting) onClose() }
     window.addEventListener('keydown', esc); return () => window.removeEventListener('keydown', esc)
@@ -65,6 +67,12 @@ export default function TxnDrillModal({
     if (!res.ok) { toast('Couldn’t change the category. Try again.', 'error'); return }
     refresh(t.id, { category }, 'moved')
     toast(`${t.merchant || 'Transaction'} moved to ${labelOf(category)}`)
+  }
+  async function approve(t: any) {
+    const err = await approveAuto(supabase, whole(t))
+    if (err) { toast(err, 'error'); return }
+    setApproved(a => new Set(a).add(whole(t).id))
+    router.refresh()
   }
   async function remove(t: any) {
     setBusy(t.id)
@@ -147,6 +155,9 @@ export default function TxnDrillModal({
                       )}
                       {saved && <span className="text-[11px] font-semibold" style={{ color: '#1E8F5F' }}>{changed ? 'moved · saved' : 'saved'}</span>}
                       {t._whole && <span className="text-[11px] font-semibold" style={{ color: 'var(--accent2)' }}>{t._friendShare ? 'friends’ share' : 'your share'} of {money(amt(t._whole))}</span>}
+                      {whole(t).auto_status === 'pending' && !approved.has(whole(t).id) && (
+                        <button onClick={() => approve(t)} className="inline-flex items-center h-[26px] px-2.5 rounded-full text-[11.5px] font-semibold" style={{ background: 'var(--accent-bg)', color: 'var(--accent2)' }}>Auto · approve</button>
+                      )}
                       {t.paid_by_friend_id && <span className="text-[11px] font-semibold" style={{ color: '#B45309' }}>a friend paid</span>}
                       <span className="ml-auto flex items-center gap-0.5">
                         {whole(t).txn_type === 'expense' && whole(t).account_id && !whole(t).paid_by_friend_id && (

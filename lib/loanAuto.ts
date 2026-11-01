@@ -3,7 +3,7 @@
 // it (or you've chosen "record it for me"), else after a one-tap "Paid?".
 // Recorded EMIs bring the live outstanding down (lib/loans liveOutstanding).
 import { ymOf, addMonths, daysBetween } from './insights'
-import { dateIn } from './recurring'
+import { dateIn, autoTag } from './recurring'
 import { catOf } from './money'
 import { matchScore, liveOutstanding } from './loans'
 
@@ -63,14 +63,15 @@ export async function claimEmiMonth(supabase: any, loan: any, month: string): Pr
 
 // Record one month's EMI. `moneyRow` also adds the payment to your
 // transactions (when no bank statement has it).
-export async function recordEmi(supabase: any, userId: string, d: EmiDue, opts: { moneyRow: boolean; note: string }): Promise<string | null> {
+export async function recordEmi(supabase: any, userId: string, d: EmiDue, opts: { moneyRow: boolean; note: string; tag?: { review: boolean } }): Promise<string | null> {
   const before = d.loan.emi_last_month ?? null
   if (!(await claimEmiMonth(supabase, d.loan, d.month))) return 'Already recorded'
   const paidOn = d.evidence?.txn_date ?? d.date, amount = Number(d.evidence?.amount) || d.amount
-  const { error } = await supabase.from('loan_transactions').insert({
+  const ins = supabase.from('loan_transactions').insert({
     user_id: userId, loan_id: d.loan.id, kind: 'emi', txn_date: paidOn, amount,
     principal: Math.max(amount - d.interest, 0), interest: Math.min(d.interest, amount), note: opts.note,
   })
+  const { data: lt, error } = opts.tag ? await ins.select('id').single() : await ins
   if (error) {
     await supabase.from('home_loans').update({ emi_last_month: before }).eq('id', d.loan.id)
     d.loan.emi_last_month = before
@@ -83,13 +84,14 @@ export async function recordEmi(supabase: any, userId: string, d: EmiDue, opts: 
     user_id: userId, txn_date: paidOn, merchant: `${d.loan.name} EMI`, category: onCard ? 'Loan on Card' : 'EMI/Loan', txn_type: 'loan', amount,
     currency: d.loan.currency || 'INR', country: (d.loan.currency || 'INR') === 'AED' ? 'UAE' : 'India',
     account_id: d.loan.pay_from_account_id ?? null, source: 'manual', is_verified: true,
+    ...(opts.tag ? autoTag({ kind: 'emi', id: d.loan.id, month: d.month, amount, loan_txn_id: lt?.id }, opts.tag.review) : {}),
   })
   return null
 }
 
 // On page load: record what the bank shows (or auto loans), tick off months
 // already recorded, and return the rest for a confirm.
-export async function runEmis(supabase: any, userId: string, today: string, loans: any[], txns: any[], loanTxns: any[]) {
+export async function runEmis(supabase: any, userId: string, today: string, loans: any[], txns: any[], loanTxns: any[], review = false) {
   const pending: EmiDue[] = []
   let writes = 0   // anything recorded or ticked off (the page re-reads its data)
   if (!loans.length || !('emi_last_month' in loans[0])) return { ready: loans.length === 0, pending, writes }
@@ -97,7 +99,7 @@ export async function runEmis(supabase: any, userId: string, today: string, loan
     if (emiRecorded(d, loanTxns)) { await claimEmiMonth(supabase, d.loan, d.month); writes++; continue }
     const bank = emiInBank(d, txns, loans)
     if (bank) { d.evidence = bank; await recordEmi(supabase, userId, d, { moneyRow: false, note: 'Found in your bank statement' }); writes++ }
-    else if (d.loan.emi_auto) { await recordEmi(supabase, userId, d, { moneyRow: true, note: 'Recorded on the EMI day' }); writes++ }
+    else if (d.loan.emi_auto || review) { await recordEmi(supabase, userId, d, { moneyRow: true, note: 'Recorded on the EMI day', ...(review ? { tag: { review: !d.loan.emi_auto } } : {}) }); writes++ }
     else pending.push(d)
   }
   return { ready: true, pending, writes }

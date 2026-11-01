@@ -62,6 +62,7 @@ export default async function InvestmentsPage() {
       goals={goalsRes.data ?? []}
       familyMembers={familyRes.data ?? []}
       pendingSips={auto.pending.sips}
+      pendingDrafts={auto.pending.drafts.filter((t: any) => ['sip', 'rd'].includes(t.auto_ref?.kind))}
       today={today}
     />
   )

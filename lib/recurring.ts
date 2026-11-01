@@ -59,6 +59,9 @@ export function alreadyRecorded(o: Occurrence, txns: any[]): any | null {
     ?? null
 }
 
+// Marks a row the app made: what made it, and whether it waits for your approval
+export const autoTag = (ref: Record<string, any>, review: boolean) => ({ auto_status: review ? 'pending' : null, auto_ref: ref })
+
 export function rowFor(o: Occurrence, userId: string) {
   const r = o.r
   return {
@@ -78,10 +81,12 @@ export async function claimMonth(supabase: any, r: RecurringTxn, month: string):
 }
 
 // Add one month's entry (confirm button or auto-add). Returns the new row.
-export async function addOccurrence(supabase: any, userId: string, o: Occurrence): Promise<{ row: any | null; error: string | null }> {
+// `tag`: migration 037 is in — `review` says whether it waits for your approval.
+export async function addOccurrence(supabase: any, userId: string, o: Occurrence, tag?: { review: boolean }): Promise<{ row: any | null; error: string | null }> {
   const before = o.r.last_done_month
   if (!(await claimMonth(supabase, o.r, o.month))) return { row: null, error: 'Already added' }
-  const { data, error } = await supabase.from('transactions').insert(rowFor(o, userId)).select().single()
+  const row = { ...rowFor(o, userId), ...(tag ? autoTag({ kind: 'repeat', id: o.r.id, month: o.month, amount: Number(o.r.amount) }, tag.review) : {}) }
+  const { data, error } = await supabase.from('transactions').insert(row).select().single()
   if (error) {
     await supabase.from('recurring_txns').update({ last_done_month: before }).eq('id', o.r.id)
     return { row: null, error: error.message }
@@ -90,11 +95,25 @@ export async function addOccurrence(supabase: any, userId: string, o: Occurrence
   return { row: data, error: null }
 }
 
-// Run when Home or Money opens: auto entries are added, months already in
-// your transactions are ticked off, and the rest wait for a confirm.
+// Make an existing entry repeat every month from the next one, on the same day
+export async function repeatFrom(supabase: any, userId: string, t: any): Promise<string | null> {
+  const month = ymOf(t.txn_date)
+  const { data, error } = await supabase.from('recurring_txns').insert({
+    user_id: userId, merchant: t.merchant, description: t.description ?? null, category: t.category, sub_category: t.sub_category ?? null, txn_type: t.txn_type,
+    amount: Number(t.amount), currency: t.currency, account_id: t.account_id ?? null, counter_account_id: t.counter_account_id ?? null,
+    day_of_month: Number(String(t.txn_date).slice(8, 10)), every_months: 1, start_month: month, last_done_month: month, auto_add: false,
+  }).select('id').single()
+  if (error || !data) return isMissingTable(error) ? 'Repeating entries need migration 027.' : error?.message ?? 'Couldn’t set it to repeat.'
+  await supabase.from('transactions').update({ recurring_id: data.id }).eq('id', t.id)
+  return null
+}
+
+// Run when Home or Money opens: months already in your transactions are ticked
+// off; the rest are added on their day — straight in (auto_add) or marked
+// pending your approval (`review`: migration 037). Without it they wait for a confirm.
 // `rules` = the recurring_txns read already done (lib/automation reads it with
 // everything else, saving a round trip); read here when not given.
-export async function runRecurring(supabase: any, userId: string, today: string, txns: any[], rules?: { data: any; error: any }):
+export async function runRecurring(supabase: any, userId: string, today: string, txns: any[], rules?: { data: any; error: any }, review = false):
   Promise<{ ready: boolean; list: RecurringTxn[]; pending: Occurrence[]; inserted: any[] }> {
   const { data, error } = rules ?? await supabase.from('recurring_txns').select('*').eq('user_id', userId).order('created_at')
   if (error) return { ready: !isMissingTable(error), list: [], pending: [], inserted: [] }
@@ -103,8 +122,8 @@ export async function runRecurring(supabase: any, userId: string, today: string,
   for (const r of list) for (const o of dueOccurrences(r, today)) {
     if (alreadyRecorded(o, [...txns, ...inserted])) {
       if (await claimMonth(supabase, r, o.month)) r.last_done_month = o.month
-    } else if (r.auto_add) {
-      const { row } = await addOccurrence(supabase, userId, o)
+    } else if (r.auto_add || review) {
+      const { row } = await addOccurrence(supabase, userId, o, review ? { review: !r.auto_add } : undefined)
       if (row) inserted.push(row)
     } else pending.push(o)
   }
@@ -124,7 +143,7 @@ export function suggestRepeats(txns: any[], existing: RecurringTxn[], today: str
   const groups: Record<string, any[]> = {}
   for (const t of txns) {
     if (t.source && t.source !== 'manual') continue
-    if (t.recurring_id || t._remit || !t.txn_date || !months.includes(ymOf(t.txn_date))) continue
+    if (t.recurring_id || t.auto_ref || t._remit || !t.txn_date || !months.includes(ymOf(t.txn_date))) continue
     if (t.category === CC_BILL || t.category === 'ATM Withdrawal') continue
     const key = ruleTextFor(t.merchant)
     if (!key) continue
