@@ -42,7 +42,7 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()
-  const { txn_date, merchant, description, category, sub_category, amount, currency, account_id, txn_type, counter_account_id, payment_mode, holder_name, tax_tag, event_id } = body
+  const { txn_date, merchant, description, category, sub_category, amount, currency, account_id, txn_type, counter_account_id, payment_mode, holder_name, tax_tag, event_id, paid_by_friend_id } = body
 
   if (!txn_date || !merchant || !category || !amount || !currency) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -69,9 +69,12 @@ export async function POST(req: Request) {
     holder_name: holder_name || null,
     tax_tag: tax_tag || null,
     event_id: event_id || null,              // the trip or event it belongs to (migration 034)
+    paid_by_friend_id: paid_by_friend_id || null,   // a friend paid for you (migration 036)
   }
   // "Always do this" rules fill a vague category or a missing account (migration 027)
   applyRules(await loadRules(supabase, user.id), row)
+  // A friend paid: nothing left any of your accounts, whatever a rule says
+  if (row.paid_by_friend_id) row.account_id = null
   const insert = () => supabase.from('transactions').insert(row).select().single()
   let { data, error } = await insert()
   for (let c; error && (c = missingCol(error, row)); ) { delete row[c]; ({ data, error } = await insert()) }
@@ -90,14 +93,15 @@ export async function PATCH(req: Request) {
   const { id } = body
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
   // Only the transaction's own fields can change (never user_id, source…)
-  const EDITABLE = ['txn_date', 'merchant', 'description', 'category', 'sub_category', 'amount', 'currency', 'account_id', 'txn_type', 'counter_account_id', 'payment_mode', 'holder_name', 'tax_tag', 'receipt_path', 'event_id']
+  const EDITABLE = ['txn_date', 'merchant', 'description', 'category', 'sub_category', 'amount', 'currency', 'account_id', 'txn_type', 'counter_account_id', 'payment_mode', 'holder_name', 'tax_tag', 'receipt_path', 'event_id', 'paid_by_friend_id']
   const updates: Record<string, any> = Object.fromEntries(EDITABLE.filter(k => k in body).map(k => [k, body[k]]))
   if ('amount' in updates) updates.amount = Math.abs(Number(updates.amount))
   if ('account_id' in updates) updates.account_id = updates.account_id || null
   if ('sub_category' in updates) updates.sub_category = updates.sub_category || null
   if ('counter_account_id' in updates) updates.counter_account_id = updates.counter_account_id || null
   if ('payment_mode' in updates) updates.payment_mode = updates.payment_mode || null
-  for (const k of ['holder_name', 'tax_tag', 'receipt_path', 'event_id']) if (k in updates) updates[k] = updates[k] || null
+  for (const k of ['holder_name', 'tax_tag', 'receipt_path', 'event_id', 'paid_by_friend_id']) if (k in updates) updates[k] = updates[k] || null
+  if (updates.paid_by_friend_id) updates.account_id = null
   if (updates.currency) updates.country = updates.currency === 'AED' ? 'UAE' : 'India'
 
   const run = () => supabase.from('transactions').update(updates).eq('id', id).eq('user_id', user.id).select().single()

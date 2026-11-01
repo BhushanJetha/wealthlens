@@ -15,6 +15,7 @@ import { toast } from '@/components/ui/toaster'
 import ManageCategoriesSheet from './ManageCategoriesSheet'
 import { useFamily, holderOptions } from '@/hooks/useFamily'
 import { RECEIPT_TYPES, uploadReceipt, openReceipt, removeReceipt } from '@/lib/receipts'
+import SplitEditor, { saveSplits, useFriends, type SplitValue } from '@/components/dashboard/SplitEditor'
 
 type TxnType = 'expense' | 'income' | 'transfer' | 'loan'
 
@@ -88,6 +89,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
       holder_name:  t0?.holder_name ?? '',      // family member it was for ('' = household)
       event_id:     t0?.event_id ?? defaults?.event_id ?? '',   // the trip or event it belongs to ('' = none)
       tax_tag:      t0?.tax_tag ?? '',          // India tax section (Plan › Tax planner)
+      paid_by_friend_id: t0?.paid_by_friend_id ?? '',   // a friend paid ('__new__' = someone not on the list yet)
     }
   })
   const [accounts,    setAccounts]    = useState<any[]>([])
@@ -103,6 +105,12 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
   const [receiptFile, setReceiptFile] = useState<File | null>(null)
   const [receiptPath, setReceiptPath] = useState<string | null>(t0?.receipt_path ?? null)
   const [receiptMsg,  setReceiptMsg]  = useState('')
+  // Splitting with friends: you paid for them too, or a friend paid for you
+  const friendsList = useFriends()
+  const [splitOn,     setSplitOn]     = useState(Number(t0?.friend_share) > 0 && mode === 'edit')
+  const [split,       setSplit]       = useState<SplitValue>({ shares: {}, total: 0, error: null })
+  const [splitHad,    setSplitHad]    = useState(false)
+  const [friendName,  setFriendName]  = useState('')
   const { members } = useFamily()
   // You, then each family member (you're always there, even if not in the family list)
   const forOpts = holderOptions(members)
@@ -153,6 +161,8 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
       payment_mode: PAY_MODES.some(([k, , only]) => k === p.payment_mode && only && only !== c) ? '' : p.payment_mode }))
   }
   const isTransfer = form.txn_type === 'transfer'
+  const friendPaid = form.txn_type === 'expense' && !!form.paid_by_friend_id
+  const splitting  = form.txn_type === 'expense' && !friendPaid && splitOn && Number(form.amount) > 0
   const isIncome   = form.txn_type === 'income'
   const showTax    = form.txn_type === 'expense' && form.currency === 'INR'
   const catKind    = isIncome ? 'income' : 'expense'
@@ -209,6 +219,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
 
   // Resolve the Cash sentinel to the wallet account, creating it (per currency) the first time
   async function resolveAccountId(): Promise<string | null> {
+    if (friendPaid) return null                     // nothing left any of your accounts
     if (form.account_id !== '__cash__') return form.account_id || null
     const existing = accounts.find(a => a.account_type === 'wallet' && a.currency === form.currency)
     if (existing) return existing.id
@@ -243,14 +254,24 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
       setError(transferKind === 'International' ? 'UAE → India is for amounts in AED. Pick another kind, or change the currency if it really was AED.'
         : 'NRE → NRO is for amounts in ₹. Pick another kind, or change the currency if it really was ₹.'); return
     }
+    if (friendPaid && form.paid_by_friend_id === '__new__' && !friendName.trim()) { setError('Who paid? Add their name.'); return }
+    if (splitting && split.error) { setError(split.error); return }
     setSaving(true); setError('')
     let account_id: string | null
     try { account_id = await resolveAccountId() } catch (e: any) { setSaving(false); setError(e.message ?? 'Could not save'); return }
+    // A friend paid: the friend (added now if new)
+    let paidBy: string | null = null
+    if (friendPaid) {
+      const r = form.paid_by_friend_id === '__new__' ? await friendsList.add(friendName) : { id: form.paid_by_friend_id }
+      if (!r.id) { setSaving(false); setError(('error' in r && r.error) || 'Couldn’t add the friend.'); return }
+      paidBy = r.id
+    }
     const body = { ...form, merchant: form.merchant.trim(), description: form.description.trim() || null, amount: Math.abs(Number(form.amount)), account_id,
       counter_account_id: isTransfer ? form.counter_account_id || null : null,
       payment_mode: !isTransfer && form.payment_mode ? form.payment_mode : null,
       holder_name: form.holder_name || null, tax_tag: showTax ? form.tax_tag || null : null,
-      event_id: form.txn_type === 'expense' ? form.event_id || null : null }
+      event_id: form.txn_type === 'expense' ? form.event_id || null : null,
+      paid_by_friend_id: paidBy }
     const res = await fetch('/api/transactions', {
       method: mode === 'edit' ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -261,6 +282,13 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
     if (!res.ok) { setError(data.error ?? 'Could not save. Try again.'); return }
     const noun = isTransfer ? 'Transfer' : isIncome ? 'Income' : form.txn_type === 'loan' ? 'Loan payment' : 'Expense'
     let repeatNote = ''
+    // Who owes you what (or clear a split that was turned off)
+    const savedId = mode === 'edit' ? t0.id : data.transaction?.id
+    if (savedId && (splitting || splitHad)) {
+      const err = await saveSplits(savedId, splitting ? split.shares : {})
+      repeatNote += err ? ` · split not saved (${err})` : splitting ? ` · friends owe you ${sym} ${split.total.toLocaleString('en-IN')}` : ''
+    }
+    if (friendPaid) repeatNote += ' · you owe your friend'
     if (mode !== 'edit' && repeatOn) {
       // This month is the one just saved; the next one is added on its day
       const { data: { user } } = await supabase.auth.getUser()
@@ -394,9 +422,13 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
                   const banks = opts.filter(a => a.account_type !== 'credit_card'), cards = isTransfer ? [] : opts.filter(a => a.account_type === 'credit_card')
                   const label = (a: any) => `${a.name}${a.bank_name && a.bank_name !== a.name ? ` · ${a.bank_name}` : ''}${a.currency !== form.currency ? ` (${a.currency})` : ''}`
                   return (
-                    <select value={form.account_id === '__cash__' ? cashId : form.account_id} onChange={e => set({ account_id: e.target.value })} className="wl-input" style={FIELD}>
+                    <select value={friendPaid ? '__friend__' : form.account_id === '__cash__' ? cashId : form.account_id} className="wl-input" style={FIELD}
+                      onChange={e => e.target.value === '__friend__'
+                        ? (set({ account_id: '', paid_by_friend_id: friendsList.friends?.[0]?.id ?? '__new__' }), setSplitOn(false))
+                        : set({ account_id: e.target.value, paid_by_friend_id: '' })}>
                       <option value="">Not linked</option>
                       {!isTransfer && <option value={cashId}>Cash wallet</option>}
+                      {form.txn_type === 'expense' && <option value="__friend__">A friend paid</option>}
                       {banks.length > 0 && <optgroup label="Bank accounts">{banks.map(a => <option key={a.id} value={a.id}>{label(a)}</option>)}</optgroup>}
                       {cards.length > 0 && <optgroup label="Credit cards">{cards.map(a => <option key={a.id} value={a.id}>{label(a)}</option>)}</optgroup>}
                     </select>
@@ -452,6 +484,44 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
               </div>
             )
           })()}
+
+          {/* A friend paid for you: nothing leaves your accounts; the amount is your share */}
+          {friendPaid && (
+            <div className="rounded-[12px] px-3.5 py-3 flex flex-col gap-2.5" style={{ background: '#FFFBF5', border: '1px solid #F6DDB4' }}>
+              <div>
+                <Label>Who paid</Label>
+                <select value={form.paid_by_friend_id} onChange={e => set({ paid_by_friend_id: e.target.value })} className="wl-input" style={FIELD} aria-label="Who paid">
+                  {(friendsList.friends ?? []).map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                  <option value="__new__">+ Someone new…</option>
+                </select>
+              </div>
+              {form.paid_by_friend_id === '__new__' && <input value={friendName} onChange={e => setFriendName(e.target.value)} placeholder="Their name" aria-label="Friend's name" className="wl-input" style={FIELD} />}
+              {friendsList.error && <div className="text-[12px]" style={{ color: '#B42318' }}>{friendsList.error}</div>}
+              <div className="text-[12px] leading-[1.45]" style={{ color: '#8A5A12' }}>
+                Enter <b>your share</b> as the amount. Nothing comes off your accounts — it counts as your spending, and you owe them until you pay them back.
+              </div>
+            </div>
+          )}
+
+          {/* You paid for friends too: only your share is your spending */}
+          {form.txn_type === 'expense' && !friendPaid && (
+            <div className="rounded-[12px] px-3.5 py-3" style={{ background: splitOn ? '#F5F3FF' : 'var(--bg2)', border: `1px solid ${splitOn ? '#DDD6FE' : 'var(--line)'}` }}>
+              <label className="flex items-center justify-between gap-3 cursor-pointer">
+                <span className="min-w-0">
+                  <span className="flex items-center gap-1.5 text-[13.5px] font-semibold" style={{ color: 'var(--text)' }}><Users size={15} style={{ color: 'var(--accent)' }} />Split with friends</span>
+                  <span className="block text-[11.5px] mt-0.5" style={{ color: 'var(--text3)' }}>{splitOn ? 'Only your share counts as your spending' : 'Paid for friends too? They’ll owe you their share'}</span>
+                </span>
+                <input type="checkbox" role="switch" checked={splitOn} onChange={e => setSplitOn(e.target.checked)} className="w-5 h-5 accent-[var(--accent)] flex-shrink-0" aria-label="Split with friends" />
+              </label>
+              {splitOn && (
+                <div className="mt-3">
+                  {Number(form.amount) > 0
+                    ? <SplitEditor amount={Number(form.amount)} currency={form.currency} txnId={mode === 'edit' ? t0?.id : undefined} onChange={setSplit} onLoaded={setSplitHad} />
+                    : <div className="text-[12.5px]" style={{ color: 'var(--text3)' }}>Enter the full amount you paid first.</div>}
+                </div>
+              )}
+            </div>
+          )}
 
           {!isTransfer && (
             <div>
