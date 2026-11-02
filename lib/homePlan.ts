@@ -14,7 +14,7 @@ import type { Due, ExpectedIn, BalanceWarning } from './moneyOverview'
 import type { RecurringTxn } from './recurring'
 import { policyEvery, type Bill } from './bigBills'
 import { datesAhead } from './recurringGoals'
-import { isCounted, sameMoney } from './regular'
+import { isCounted, sameMoney, sameName } from './regular'
 
 const FREQ: Record<string, number> = { monthly: 1, quarterly: 3, semi_annual: 6, annual: 12 }
 
@@ -102,7 +102,7 @@ export function monthCommitments(inp: { ym: string; today: string; view: View; t
   }
   // Your own big bills, in the months they fall (a policy's date is above)
   for (const b of inp.bills ?? []) {
-    if (b.goal && !b.policy && inView(b.currency) && datesAhead({ ...b.goal, target_date: b.due }, today, 14).some(d => ymOf(d) === ym)) out.push({ id: `big-${b.key}`, label: b.name, amount: b.amount, currency: b.currency, kind: 'repeat', why: 'A big bill you added' })
+    if (b.goal && !b.policy && inView(b.currency) && !inp.recurring.some(r => r.is_active && r.currency === b.currency && sameName(r.merchant, b.name)) && datesAhead({ ...b.goal, target_date: b.due }, today, 14).some(d => ymOf(d) === ym)) out.push({ id: `big-${b.key}`, label: b.name, amount: b.amount, currency: b.currency, kind: 'repeat', why: 'A big bill you added' })
   }
   // Regular bills paid from the bank, found from your history (a card's are in its bill)
   const spends = expandSplits(inp.txns).filter(t => isSpend(t) && inView(t.currency))
@@ -110,7 +110,7 @@ export function monthCommitments(inp: { ym: string; today: string; view: View; t
     if (repeatKeys.has(ruleTextFor(b.name))) continue
     const last = spends.filter(t => String(t.merchant ?? '').trim() === b.name).sort((x, y) => String(y.txn_date).localeCompare(String(x.txn_date)))[0]
     if (!last || (last.account_id && cardIds.has(last.account_id))) continue
-    if (!isCounted(b, last.currency, inp.recurring, inp.answers)) continue
+    if (!isCounted(b, last.currency, inp.recurring, inp.answers, inp.bills)) continue
     out.push({ id: `bill-${b.key}`, label: b.name, amount: b.med, currency: last.currency ?? 'INR', kind: 'repeat', why: `Found in your spending: about this amount in ${b.n} of the last 4 months`, seen: seenPayments(spends, b.name) })
   }
   return out.sort((a, b) => b.amount - a.amount)

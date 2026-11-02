@@ -12,7 +12,7 @@ import { nextDate, type RecurringTxn } from './recurring'
 import { nextExpected, type IncomePlan } from './incomePlans'
 import { ruleTextFor } from './rules'
 import { policyEvery, reservedFor, type Bill } from './bigBills'
-import { isCounted } from './regular'
+import { isCounted, sameName } from './regular'
 
 export type DueKind = 'emi' | 'card' | 'premium' | 'sip' | 'bill' | 'repeat'
 export interface Due {
@@ -106,11 +106,11 @@ export function buildDues(inp: {
     const per = (Number(p.annual_premium) || 0) * every / 12
     if (!within(d) || !(per > 0) || (p.maturity_date && d! > String(p.maturity_date).slice(0, 10))) continue
     out.push({ id: `lic-${p.id}`, date: d!, label: `LIC ${p.name || p.plan_name || 'policy'} premium`, sub: 'LIC', amount: per, currency: p.currency || 'INR',
-      kind: 'premium', payFrom: null, payFromSource: null, href: '/dashboard/big-bills', why: 'From your LIC policy' })
+      kind: 'premium', payFrom: null, payFromSource: null, href: '/dashboard/bills', why: 'From your LIC policy' })
   }
   // Your own big bills (a policy's date is already above)
-  for (const b of (inp.bills ?? []).filter(b => b.goal && !b.policy && inView(b.currency) && within(b.due))) {
-    out.push({ id: `big-${b.key}`, date: b.due, label: b.name, sub: 'Big bill', amount: b.amount, currency: b.currency, kind: 'bill', payFrom: null, payFromSource: null, href: '/dashboard/big-bills', category: b.category, why: 'A big bill you added' })
+  for (const b of (inp.bills ?? []).filter(b => b.goal && !b.policy && inView(b.currency) && within(b.due) && !(inp.recurring ?? []).some(r => r.is_active && r.currency === b.currency && sameName(r.merchant, b.name)))) {
+    out.push({ id: `big-${b.key}`, date: b.due, label: b.name, sub: 'Big bill', amount: b.amount, currency: b.currency, kind: 'bill', payFrom: null, payFromSource: null, href: '/dashboard/bills', category: b.category, why: 'A big bill you added' })
   }
   for (const m of inp.mutualFunds.filter(m => m.has_sip && Number(m.sip_amount) > 0 && m.sip_date && inView(m.currency ?? 'INR'))) {
     for (const ym of [ymOf(today), addMonths(ymOf(today), 1)]) {
@@ -157,7 +157,7 @@ export function buildDues(inp: {
     const d = `${ym}-${String(Math.min(r.day, daysInMonth(ym))).padStart(2, '0')}`
     if (!within(d)) continue
     const last = latest(spends.filter(t => String(t.merchant ?? '').trim() === r.name))
-    if (!isCounted(r, last?.currency, repeats, inp.answers)) continue          // already one of your entries, or you said it isn't regular
+    if (!isCounted(r, last?.currency, repeats, inp.answers, inp.bills)) continue          // already one of your entries, or you said it isn't regular
     const acc = inp.accounts.find(a => a.id === last?.account_id)
     out.push({ id: `bill-${r.key}`, date: d, label: r.name, sub: acc ? `Usually on ${acc.name}` : 'Bill or subscription', amount: r.med, currency: last?.currency ?? 'INR',
       kind: 'bill', payFrom: acc?.id ?? null, payFromSource: acc ? 'history' : null, href: '/dashboard/bills', category: r.category,

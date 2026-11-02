@@ -48,7 +48,8 @@ type SheetState =
 // is converted. The All view switches between the two. Spending follows
 // lib/money; caps adjust themselves or stay fixed (lib/budgets). Yearly
 // costs are the recurring goals from Goals (fundsSource 'goals').
-export default function BudgetsClient({ today: serverToday, budgets: initial, transactions, funds: initialFunds, fundsReady, fundsSource = 'funds' }: {
+export default function BudgetsClient({ today: serverToday, budgets: initial, transactions, funds: initialFunds, fundsReady, fundsSource = 'funds', committed }: {
+  committed?: Record<string, { bills: number; income: number | null }>
   today: string; budgets: any[]; transactions: any[]; funds: Fund[]; fundsReady: boolean; fundsSource?: 'goals' | 'funds'
 }) {
   const router = useRouter()
@@ -275,6 +276,12 @@ export default function BudgetsClient({ today: serverToday, budgets: initial, tr
       )}
 
       <InsightBar text={insight} prompt={`Explain my budget in plain language and tell me what to change. ${ctx}`} />
+      {(committed?.[cur]?.bills ?? 0) > 0 && (
+        <a href="/dashboard/bills" className="wl-card flex items-center justify-between gap-3 px-4 py-3 text-[13px]" style={{ color: 'var(--text)' }}>
+          <span>Bills take about <b>{short(committed![cur].bills)}</b> a month{committed![cur].income ? <>, leaving <b>{short(committed![cur].income! - committed![cur].bills)}</b> of your {short(committed![cur].income!)} income for everything else</> : ''}.</span>
+          <span className="font-semibold flex-shrink-0" style={{ color: 'var(--accent)' }}>See bills →</span>
+        </a>
+      )}
       <AiActions actions={['Where can I cut back?', `Plan ${nextName}’s budget`]} context={ctx} />
 
       {/* Month-end review prompt */}

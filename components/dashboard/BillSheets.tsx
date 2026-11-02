@@ -11,6 +11,7 @@ import { Segmented } from '@/components/ui/kit'
 import { toast } from '@/components/ui/toaster'
 import { billGoalRow, payBill, setAsideBill, skipBill, takeBack, type Bill } from '@/lib/bigBills'
 import { nextDueDate } from '@/lib/occasions'
+import { repeatRow, type RecurringTxn } from '@/lib/recurring'
 
 const label = 'block text-[12px] font-semibold mb-1'
 const FIELD = { height: 44 }
@@ -120,8 +121,10 @@ export function AsideSheet({ bill, today, onClose }: { bill: Bill; today: string
 }
 
 // ── Add or change a bill ─────────────────────────────────────────────────────
-export interface BillDraft { name: string; amount: string; currency: 'AED' | 'INR'; due: string; every: number; category: string; detectKey?: string }
+// One form: every month makes a monthly entry, a longer gap a big bill with a set-aside
+export interface BillDraft { name: string; amount: string; currency: 'AED' | 'INR'; due: string; every: number; category: string; accountId: string; found?: boolean }
 export const TEMPLATES: { name: string; every: number; category: string; currency?: 'AED' | 'INR' }[] = [
+  { name: 'Rent', every: 1, category: 'Rent' },
   { name: 'Internet', every: 6, category: 'Utilities' },
   { name: 'TV', every: 12, category: 'Utilities' },
   { name: 'School fees', every: 3, category: 'Education' },
@@ -132,16 +135,19 @@ export const TEMPLATES: { name: string; every: number; category: string; currenc
   { name: 'Property tax', every: 12, category: 'Other', currency: 'INR' },
   { name: 'Flights home', every: 12, category: 'Flights' },
 ]
-const EVERY = [3, 6, 12]
+const EVERY = [1, 3, 6, 12]
 
-export function BillFormSheet({ draft, bill, categories, onClose }: { draft: BillDraft; bill: Bill | null; categories: string[]; onClose: () => void }) {
+export function BillFormSheet({ draft, bill, repeat, accounts, categories, onClose }: { draft: BillDraft; bill: Bill | null; repeat: RecurringTxn | null; accounts: any[]; categories: string[]; onClose: () => void }) {
   const router = useRouter()
   const [f, setF] = useState<BillDraft>(draft)
   const [busy, setBusy] = useState(false)
   const [sure, setSure] = useState(false)
   const set = (p: Partial<BillDraft>) => setF(x => ({ ...x, ...p }))
-  const custom = !EVERY.includes(f.every)
-  const fromPolicy = !!bill?.policy
+  const fromPolicy = !!bill?.policy, editing = !!bill || !!repeat
+  // A big bill's pot and a monthly entry are different things: what it is stays when you edit
+  const chips = bill ? EVERY.filter(n => n > 1) : EVERY
+  const custom = !chips.includes(f.every)
+  const monthlyEntry = !!repeat || (!bill && f.every === 1)
   const cats = Array.from(new Set([...(f.category ? [f.category] : []), ...categories, ...TEMPLATES.map(t => t.category)]))
   const finish = (note: string) => { toast(note); onClose(); router.refresh() }
 
@@ -151,17 +157,25 @@ export function BillFormSheet({ draft, bill, categories, onClose }: { draft: Bil
     if (!(amount > 0)) { toast('Enter the amount.', 'error'); return }
     if (!f.due) { toast('Pick the next date.', 'error'); return }
     if (!(f.every >= 1 && f.every <= 120)) { toast('How many months between payments?', 'error'); return }
+    if (bill && f.every < 2) { toast('A big bill comes every 2 months or more.', 'error'); return }
     setBusy(true)
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setBusy(false); toast('Please sign in again.', 'error'); return }
-    const row = billGoalRow(user.id, { name: f.name, amount, currency: f.currency, due: f.due, every: f.every, category: f.category || null })
-    const { error } = bill?.goal
-      ? await supabase.from('goals').update({ name: row.name, target_amount: amount, target_date: f.due, repeat_months: f.every, spend_category: row.spend_category, updated_at: new Date().toISOString() }).eq('id', bill.goal.id)
-      : await supabase.from('goals').insert(row)
+    let error: { message: string } | null = null
+    if (repeat) {
+      error = (await supabase.from('recurring_txns').update({ merchant: f.name.trim(), amount, category: f.category || repeat.category, day_of_month: Number(f.due.slice(8, 10)), every_months: f.every, account_id: f.accountId || null }).eq('id', repeat.id)).error
+    } else if (monthlyEntry) {
+      error = (await supabase.from('recurring_txns').insert(repeatRow(user.id, { name: f.name, amount, currency: f.currency, due: f.due, every: f.every, category: f.category, accountId: f.accountId }))).error
+    } else {
+      const row = billGoalRow(user.id, { name: f.name, amount, currency: f.currency, due: f.due, every: f.every, category: f.category || null })
+      error = (bill?.goal
+        ? await supabase.from('goals').update({ name: row.name, target_amount: amount, target_date: f.due, repeat_months: f.every, spend_category: row.spend_category, updated_at: new Date().toISOString() }).eq('id', bill.goal.id)
+        : await supabase.from('goals').insert(row)).error
+    }
     setBusy(false)
     if (error) { toast(error.message, 'error'); return }
-    finish(bill ? 'Saved' : `${row.name} added`)
+    finish(editing ? 'Saved' : `${f.name.trim()} added`)
   }
   // Stops tracking it. A policy stays yours: it's only hidden from this page
   async function remove() {
@@ -174,43 +188,52 @@ export function BillFormSheet({ draft, bill, categories, onClose }: { draft: Bil
     if (!err && bill?.policy) err = await skipBill(supabase, user!.id, `hide:${bill.policy.table === 'lic_policies' ? 'lic' : 'ins'}:${bill.policy.id}`)
     setBusy(false)
     if (err) { toast(err, 'error'); return }
-    finish(`${bill?.name} removed from Big bills`)
+    finish(`${bill?.name} removed from your bills`)
   }
   return (
-    <Sheet title={bill ? `Change ${bill.name}` : 'Add a big bill'} onClose={onClose}>
+    <Sheet title={editing ? `Change ${bill?.name ?? repeat?.merchant}` : 'Add a bill'} onClose={onClose}>
       {fromPolicy && <p className="text-[12.5px] leading-snug" style={{ color: 'var(--text3)' }}>This comes from your policy. Change the premium or date on the policy itself.</p>}
       {!fromPolicy && <>
-        {!bill && !f.detectKey && (
-          <div className="flex flex-wrap gap-1.5" aria-label="Common big bills">
+        {!editing && !f.found && (
+          <div className="flex flex-wrap gap-1.5" aria-label="Common bills">
             {TEMPLATES.map(t => <button key={t.name} type="button" onClick={() => set({ name: t.name, every: t.every, category: t.category, currency: t.currency ?? f.currency })} aria-pressed={f.name === t.name} className="wl-chip" style={{ height: 34, ...(f.name === t.name ? { background: 'var(--accent-bg)', color: 'var(--accent2)', borderColor: 'var(--accent)' } : {}) }}>{t.name}</button>)}
           </div>
         )}
         <Field name="Name"><input value={f.name} onChange={e => set({ name: e.target.value })} className="wl-input w-full" style={FIELD} /></Field>
         <div className="flex gap-2 items-end">
           <div className="flex-1 min-w-0"><Field name="Amount"><input inputMode="decimal" value={f.amount} onChange={e => set({ amount: digits(e.target.value) })} className="wl-input w-full" style={FIELD} /></Field></div>
-          {!bill && <Segmented label="Currency" value={f.currency} onChange={(c: 'AED' | 'INR') => set({ currency: c })} options={[{ value: 'INR', label: '₹ INR' }, { value: 'AED', label: 'AED' }]} />}
+          {!editing && <Segmented label="Currency" value={f.currency} onChange={(c: 'AED' | 'INR') => set({ currency: c, accountId: '' })} options={[{ value: 'INR', label: '₹ INR' }, { value: 'AED', label: 'AED' }]} />}
         </div>
         <Field name="Next date"><input type="date" value={f.due} onChange={e => set({ due: e.target.value })} className="wl-input w-full" style={FIELD} /></Field>
         <div>
           <span className={label} style={{ color: 'var(--text2)' }}>Comes every</span>
           <div className="flex flex-wrap gap-1.5 items-center">
-            {EVERY.map(n => <button key={n} type="button" onClick={() => set({ every: n })} aria-pressed={f.every === n} className="wl-chip" style={{ height: 36, ...(f.every === n ? { background: 'var(--accent-bg)', color: 'var(--accent2)', borderColor: 'var(--accent)' } : {}) }}>{n === 12 ? '12 months' : `${n} months`}</button>)}
+            {chips.map(n => <button key={n} type="button" onClick={() => set({ every: n })} aria-pressed={f.every === n} className="wl-chip" style={{ height: 36, ...(f.every === n ? { background: 'var(--accent-bg)', color: 'var(--accent2)', borderColor: 'var(--accent)' } : {}) }}>{n === 1 ? 'Month' : `${n} months`}</button>)}
             <span className="inline-flex items-center gap-1.5 text-[12.5px]" style={{ color: 'var(--text3)' }}>or
               <input inputMode="numeric" value={custom && f.every ? f.every : ''} onChange={e => set({ every: Number(e.target.value.replace(/\D/g, '')) })} aria-label="Months between payments" placeholder="24" className="wl-input" style={{ height: 36, width: 62 }} /> months
             </span>
           </div>
+          {!editing && <p className="text-[12px] mt-1 leading-snug" style={{ color: 'var(--text3)' }}>{f.every === 1 ? 'It will enter itself each month and ask for your approval.' : 'We’ll work out how much to set aside each month.'}</p>}
         </div>
+        {monthlyEntry && (
+          <Field name="Paid from">
+            <select value={f.accountId} onChange={e => set({ accountId: e.target.value })} className="wl-input w-full" style={FIELD}>
+              <option value="">Choose account</option>
+              {accounts.filter(a => a.currency === f.currency).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </Field>
+        )}
         <Field name="Category">
           <select value={f.category} onChange={e => set({ category: e.target.value })} className="wl-input w-full" style={FIELD}>
             <option value="">Choose category</option>
             {cats.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </Field>
-        <button onClick={save} disabled={busy} className="wl-btn wl-btn-primary disabled:opacity-60" style={FIELD}>{busy ? 'Saving…' : bill ? 'Save' : 'Add bill'}</button>
+        <button onClick={save} disabled={busy} className="wl-btn wl-btn-primary disabled:opacity-60" style={FIELD}>{busy ? 'Saving…' : editing ? 'Save' : 'Add bill'}</button>
       </>}
       {bill && (
         <button onClick={remove} disabled={busy} className="wl-btn disabled:opacity-60" style={{ ...FIELD, color: sure ? '#DC2626' : undefined }}>
-          {sure ? (bill.saved > 0 ? `Yes, remove it and free ${fmtMoney(bill.saved, bill.currency)}` : 'Yes, remove it') : 'Remove from Big bills'}
+          {sure ? (bill.saved > 0 ? `Yes, remove it and free ${fmtMoney(bill.saved, bill.currency)}` : 'Yes, remove it') : 'Remove from your bills'}
         </button>
       )}
     </Sheet>

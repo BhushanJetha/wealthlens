@@ -13,7 +13,7 @@ export const billReminderCount = (bills: Bill[], txns: any[], today: string, ski
 const DOT: Record<BillReminder['kind'], string> = { paid: '#2FB67C', due: '#DC2626', soon: '#D97706', month: '#6A55E8', group: '#6A55E8' }
 
 // Rows for Needs you: set aside this month, 30 days out, 7 days out and on the day
-export default function BillReminders({ bills, skips, txns, today, accounts }: { bills: Bill[]; skips: string[]; txns: any[]; today: string; accounts: any[] }) {
+export default function BillReminders({ bills, skips, txns, today, accounts, foundCount = 0 }: { bills: Bill[]; skips: string[]; txns: any[]; today: string; accounts: any[]; foundCount?: number }) {
   const router = useRouter()
   const [done, setDone] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState<string | null>(null)
@@ -42,6 +42,16 @@ export default function BillReminders({ bills, skips, txns, today, accounts }: {
   const btn = 'wl-btn disabled:opacity-60', st = { height: 30, fontSize: 12 }
 
   return (<>
+    {foundCount > 0 && (
+      <li className="flex gap-2.5 items-center py-[9px] flex-wrap md:flex-nowrap wl-hide-viewing" style={{ borderTop: '1px solid #F1F5F9' }}>
+        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#6A55E8' }} />
+        <span className="flex-1 min-w-0 max-md:basis-[calc(100%-18px)]">
+          <span className="block text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{foundCount} repeating charge{foundCount === 1 ? '' : 's'} found in your statements</span>
+          <span className="block text-[12px] mt-px" style={{ color: 'var(--text3)' }}>Tell us if {foundCount === 1 ? 'it’s a bill' : 'they’re bills'}, so nothing counts twice</span>
+        </span>
+        <a href="/dashboard/bills" className={`${btn} wl-btn-primary`} style={st}>Review</a>
+      </li>
+    )}
     {rows.map(r => {
       const b = busy === r.id, money = (n: number) => fmtMoney(n, r.currency)
       return (
@@ -71,7 +81,7 @@ export default function BillReminders({ bills, skips, txns, today, accounts }: {
             </>)}
             {r.kind === 'group' && (<>
               <button onClick={() => aside(r)} disabled={b} className={`${btn} wl-btn-primary`} style={st}>Set aside all</button>
-              <a href="/dashboard/big-bills" className={btn} style={st}>See them</a>
+              <a href="/dashboard/bills" className={btn} style={st}>See them</a>
             </>)}
           </span>
         </li>

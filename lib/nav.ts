@@ -24,7 +24,6 @@ export const SECTIONS: NavSection[] = [
       { label: 'Transfers',    href: '/dashboard/transfers' },
       { label: 'FX optimizer', href: '/dashboard/fx' },
     ] },
-    { label: 'Bills',      href: '/dashboard/bills' },
     { label: 'Friends',    href: '/dashboard/money/friends' },
     { label: 'Reports',    href: '/dashboard/reports', subs: [
       { label: 'Money report',   href: '/dashboard/reports' },
@@ -81,8 +80,8 @@ export const SECTIONS: NavSection[] = [
   ] },
   { key: 'plan', label: 'Plan', desc: 'Budgets, goals and forecasts', icon: Target, href: '/dashboard/budgets', tabs: [
     { label: 'Budgets',            href: '/dashboard/budgets' },
+    { label: 'Bills',              href: '/dashboard/bills' },
     { label: 'Goals',              href: '/dashboard/goals' },
-    { label: 'Big bills',          href: '/dashboard/big-bills' },
     { label: 'Events & trips',     href: '/dashboard/events' },
     { label: 'Cash-flow forecast', href: '/dashboard/cashflow' },
     { label: 'Tax planner',        href: '/dashboard/tax' },

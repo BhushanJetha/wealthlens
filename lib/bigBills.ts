@@ -3,13 +3,12 @@
 // set-aside and the Budgets cover are the ones Goals already uses; a policy with
 // no pot yet shows as a bill and gets its goal the first time you act on it.
 // Set-aside money stays in your bank: it's only reserved inside the app.
-import { fundPlan, NOT_PLANABLE } from './budgets'
+import { fundPlan } from './budgets'
 import { catOf, isSpend } from './money'
 import { nextDueDate } from './occasions'
 import { isRecurring, kindInfo, type Cur } from './goals'
-import { addMonthsTo, daysUntil, datesAhead, normName, POLICY_FREQ, rollForward, rollRecurring, setAside, titleCase } from './recurringGoals'
+import { addMonthsTo, daysUntil, datesAhead, normName, POLICY_FREQ, rollForward, rollRecurring, setAside } from './recurringGoals'
 import { autoTag } from './recurring'
-import { ruleTextFor } from './rules'
 import { fmtMoney } from './format'
 
 const day = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })
@@ -184,40 +183,6 @@ export function billReminders(bills: Bill[], txns: any[], today: string, skipLis
       bill: null, bills: mine.map(r => r.bill!), amount: total, currency: cur, skip: null, txn: null })
   }
   return out
-}
-
-// ── From your history: same payee every 3, 6 or 12 months ────────────────────
-export interface FoundBill { key: string; name: string; currency: Cur; amount: number; every: number; next: string; category: string; why: string }
-const GAP: [number, number, number][] = [[3, 80, 100], [6, 165, 200], [12, 335, 395]]
-export function detectBills(txns: any[], bills: Bill[], recurring: any[], today: string, skipList: string[]): FoundBill[] {
-  const skips = new Set(skipList), groups: Record<string, any[]> = {}
-  for (const t of txns) {
-    if (!isSpend(t) || NOT_PLANABLE.has(catOf(t)) || ['Investment', 'EMI/Loan', 'Family Transfer', 'Credit Card Payment'].includes(catOf(t)) || (t.currency !== 'AED' && t.currency !== 'INR')) continue
-    const k = normName(t.merchant || t.description)
-    if (k.length >= 3) (groups[`${t.currency}|${k}`] ??= []).push(t)
-  }
-  const repeats = new Set(recurring.filter(r => r.is_active !== false).map(r => ruleTextFor(r.merchant)))
-  const out: FoundBill[] = []
-  for (const [key, rows] of Object.entries(groups)) {
-    if (rows.length < 2 || rows.length > 8 || skips.has(`detect:${key}`)) continue
-    const s = [...rows].sort((a, b) => String(a.txn_date).localeCompare(String(b.txn_date)))
-    const gaps = s.slice(1).map((t, i) => daysUntil(String(s[i].txn_date).slice(0, 10), String(t.txn_date).slice(0, 10)))
-    const fit = GAP.find(([, lo, hi]) => gaps.every(g => g >= lo && g <= hi))
-    if (!fit || (fit[0] === 3 && rows.length < 3)) continue
-    const b = s[s.length - 1], a = s[s.length - 2], cur = curOf(b.currency), amt = Number(b.amount) || 0, prev = Number(a.amount) || 0
-    if (amt < MIN_BILL[cur] || Math.abs(amt - prev) > Math.max(amt, prev) * 0.25) continue
-    const every = fit[0], last = String(b.txn_date).slice(0, 10)
-    const expected = addMonthsTo(last, every)
-    if (daysUntil(expected, today) > 45) continue                   // stopped: it didn't come when it should have
-    const next = expected >= today ? expected : addMonthsTo(expected, every)
-    const name = titleCase(String(b.merchant || b.description))
-    const norm = normName(name)
-    if (repeats.has(ruleTextFor(b.merchant))) continue
-    if (bills.some(x => x.currency === cur && (normName(x.name).includes(norm.slice(0, 8)) || norm.includes(normName(x.name).slice(0, 8)) || (x.policy && Math.abs(x.amount - amt) <= amt * 0.1)))) continue
-    out.push({ key, name, currency: cur, amount: Math.round(amt), every, next, category: catOf(b),
-      why: `You paid ${fmtMoney(prev, cur)} on ${day(String(a.txn_date).slice(0, 10))} and ${fmtMoney(amt, cur)} on ${day(last)}.` })
-  }
-  return out.sort((a, b) => b.amount - a.amount).slice(0, 6)
 }
 
 // ── The year ahead ───────────────────────────────────────────────────────────

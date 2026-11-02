@@ -15,6 +15,11 @@ export interface RecurringTxn {
   auto_add: boolean; is_active: boolean
 }
 export interface Occurrence { r: RecurringTxn; month: string; date: string }
+// A monthly bill from the one add form: it starts in the month of its next date
+export function repeatRow(userId: string, f: { name: string; amount: number; currency: string; due: string; every: number; category?: string | null; accountId?: string | null }) {
+  return { user_id: userId, merchant: f.name.trim(), category: f.category || 'Other', sub_category: null, txn_type: 'expense', amount: f.amount, currency: f.currency, account_id: f.accountId || null, counter_account_id: null,
+    day_of_month: Number(f.due.slice(8, 10)), every_months: f.every || 1, start_month: f.due.slice(0, 7), last_done_month: null, auto_add: false }
+}
 
 const monthsBetween = (a: string, b: string) => {
   const [ya, ma] = a.split('-').map(Number), [yb, mb] = b.split('-').map(Number)

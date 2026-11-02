@@ -23,6 +23,7 @@ import SpendRoomPanel from './SpendRoomPanel'
 import IncomeChecks, { incomeCheckCount } from './IncomeChecks'
 import BillReminders, { billReminderCount } from './BillReminders'
 import type { Bill } from '@/lib/bigBills'
+import { foundRegular, pendingCharges } from '@/lib/regular'
 import { declaredPayday, type IncomePlan } from '@/lib/incomePlans'
 import { spendRoom } from '@/lib/spendRoom'
 import { PageHeader, InsightBar, KpiTile, KpiGrid, Panel, MoreLink } from '@/components/ui/kit'
@@ -58,7 +59,9 @@ export default function MoneyOverviewClient(p: Props) {
   const [picking, setPicking] = useState<Due | null>(null)
   const plans = p.plans ?? []
   const bills = (p.bills ?? []).filter(b => view === 'consolidated' || (view === 'uae' ? b.currency === 'AED' : b.currency === 'INR')), billSkips = p.billSkips ?? []
-  const confirms = pendingCount(p.pending) + incomeCheckCount(plans, p.transactions, today, FX) + billReminderCount(bills, p.transactions, today, billSkips)
+  const foundCount = useMemo(() => pendingCharges(foundRegular(p.transactions, p.recurring, today, billSkips, p.bills ?? []), billSkips)
+    .filter(f => view === 'consolidated' || (view === 'uae' ? f.currency === 'AED' : f.currency === 'INR')).length, [p.transactions, p.recurring, today, billSkips, p.bills, view])
+  const confirms = pendingCount(p.pending) + incomeCheckCount(plans, p.transactions, today, FX) + billReminderCount(bills, p.transactions, today, billSkips) + (foundCount > 0 ? 1 : 0)
 
   const inView = (c: string) => view === 'consolidated' || (view === 'uae' ? c === 'AED' : c !== 'AED')
   const accounts = useMemo(() => p.accounts.filter(a => inView(a.currency)), [p.accounts, view])
@@ -158,7 +161,7 @@ export default function MoneyOverviewClient(p: Props) {
             </div>
             {sts.reserved > 0 && (
               <div className="flex justify-between py-1.5" style={{ borderTop: '1px solid var(--track)' }}>
-                <dt style={{ color: 'var(--text3)' }}>Set aside for <Link href="/dashboard/big-bills" className="underline">big bills</Link></dt>
+                <dt style={{ color: 'var(--text3)' }}>Set aside for <Link href="/dashboard/bills" className="underline">big bills</Link></dt>
                 <dd className="tabular-nums font-semibold" style={{ color: 'var(--text)' }}>− {money(sts.reserved)}</dd>
               </div>
             )}
@@ -183,7 +186,7 @@ export default function MoneyOverviewClient(p: Props) {
             </div>
           ) : (
             <ul className="mt-2">
-              <BillReminders bills={bills} skips={billSkips} txns={p.transactions} today={today} accounts={p.accounts} />
+              <BillReminders bills={bills} skips={billSkips} txns={p.transactions} today={today} accounts={p.accounts} foundCount={foundCount} />
               <IncomeChecks plans={plans} txns={p.transactions} today={today} fx={FX} />
               <PendingConfirms pending={p.pending} accName={accName} />
               {needs.slice(0, 6).map(it => {

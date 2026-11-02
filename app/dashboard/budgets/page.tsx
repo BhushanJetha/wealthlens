@@ -5,7 +5,9 @@ import { isMissingTable } from '@/lib/supabase/missingTable'
 import { activeAccountsWithLedger } from '@/lib/ledger'
 import { getAedInr } from '@/lib/fx'
 import type { Fund } from '@/lib/budgets'
-import { TAKEN_BACK } from '@/lib/bigBills'
+import { TAKEN_BACK, buildBills } from '@/lib/bigBills'
+import { foundRegular, monthlyCommitted } from '@/lib/regular'
+import { declaredIncome } from '@/lib/incomePlans'
 import BudgetsClient from '@/components/dashboard/BudgetsClient'
 
 // Budgets: 13 months of transactions (this month, last year's history, and
@@ -25,7 +27,7 @@ export default async function BudgetsPage() {
   // (read as soon as the goals arrive, alongside everything else)
   const accountsP: Promise<any[]> = recP.then(r => !r.error && (r.data ?? []).some((g: any) => g.account_id)
     ? getAedInr().then(({ rate }) => activeAccountsWithLedger(supabase, uid, rate)).then(a => a.data ?? []) : [])
-  const [txns, budgetsRes, cardsRes, recRes, contribRes, accounts] = await Promise.all([
+  const [txns, budgetsRes, cardsRes, recRes, contribRes, accounts, repeatsRes, insRes, licRes, plansRes, skipsRes, fx] = await Promise.all([
     fetchAllRows((a, b) => supabase.from('transactions').select('*')
       .eq('user_id', uid).gte('txn_date', fromDate)
       .order('txn_date', { ascending: false }).order('id').range(a, b)),
@@ -34,7 +36,19 @@ export default async function BudgetsPage() {
     recP,
     supabase.from('goal_contributions').select('goal_id,amount,contrib_date,note').eq('user_id', uid),
     accountsP,
+    supabase.from('recurring_txns').select('*').eq('user_id', uid),
+    supabase.from('insurance_policies').select('*').eq('user_id', uid).eq('is_active', true),
+    supabase.from('lic_policies').select('*').eq('user_id', uid).eq('is_active', true),
+    supabase.from('income_plans').select('*').eq('user_id', uid),
+    supabase.from('big_bill_skips').select('key').eq('user_id', uid),
+    getAedInr(),
   ])
+  // What bills take each month, for the line at the top
+  const answers = (skipsRes.data ?? []).map((s: any) => s.key)
+  const repeats = repeatsRes.data ?? []
+  const bills = buildBills({ goals: recRes.data ?? [], contributions: contribRes.data ?? [], insurance: insRes.data ?? [], lic: licRes.data ?? [], accounts, skips: answers }, today)
+  const found = foundRegular(txns, repeats, today, answers, bills)
+  const committed = Object.fromEntries((['AED', 'INR'] as const).map(c => [c, { bills: monthlyCommitted(c, repeats, bills, found).total, income: declaredIncome(plansRes.data ?? [], c === 'AED' ? 'uae' : 'india', fx.rate, txns) }]))
 
   let funds: Fund[] = [], fundsReady = true, fundsSource: 'goals' | 'funds' = 'goals'
   if (!recRes.error) {
@@ -60,5 +74,5 @@ export default async function BudgetsPage() {
   // A card bill counts only when that month's card purchases weren't imported
   const cardIds = new Set((cardsRes.data ?? []).map((c: any) => c.id))
   return <BudgetsClient today={today} budgets={budgetsRes.data ?? []} transactions={markUnitemisedCardBills(txns, cardIds)}
-    funds={funds} fundsReady={fundsReady} fundsSource={fundsSource} />
+    funds={funds} fundsReady={fundsReady} fundsSource={fundsSource} committed={committed} />
 }

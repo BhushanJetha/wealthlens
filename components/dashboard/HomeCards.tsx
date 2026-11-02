@@ -48,7 +48,7 @@ export function BigBillsStrip({ bills }: { bills: Bill[] }) {
   if (!bills.length) return null
   const lines = (['INR', 'AED'] as const).map(c => ({ c, t: billTotals(bills, c) })).filter(x => x.t.count > 0)
   return (
-    <Link href="/dashboard/big-bills" aria-label="Big bills, open the detail" className="wl-card flex items-center gap-3 px-4 py-3.5 md:px-5">
+    <Link href="/dashboard/bills" aria-label="Big bills, open the detail" className="wl-card flex items-center gap-3 px-4 py-3.5 md:px-5">
       <span className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}><Receipt size={17} /></span>
       <span className="flex-1 min-w-0 flex flex-col gap-0.5">
         {lines.map(({ c, t }) => (
@@ -173,7 +173,7 @@ const Column = ({ title, sub, children }: { title: string; sub?: string; childre
 export function PlanCard({ plan, money, className = '' }: { plan: HomePlan; money: (n: number) => string; className?: string }) {
   const { rest, next } = plan
   const [detail, setDetail] = useState<PlanDetail | null>(null)
-  const BILLS_FOOT = { text: 'Repeating entries can be changed on', href: '/dashboard/bills', link: 'Money › Bills' }
+  const BILLS_FOOT = { text: 'You can change these on', href: '/dashboard/bills', link: 'Plan › Bills' }
   const group = (g: { label: string; amount: number; items: PlanRow[] }, when: string) => setDetail({ title: g.label, intro: when, rows: g.items, total: money(g.amount), foot: /Rent/.test(g.label) ? BILLS_FOOT : undefined })
   const thisName = MON[(Number(next.ym.slice(5)) + 10) % 12], nextName = MON[Number(next.ym.slice(5)) - 1]
   const signed = (n: number) => `${n < 0 ? '−' : ''}${money(Math.abs(n))}`

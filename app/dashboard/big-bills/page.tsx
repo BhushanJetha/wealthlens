@@ -1,43 +1,6 @@
-import { createClient, getSessionUser } from '@/lib/supabase/server'
-import { fetchAllRows } from '@/lib/supabase/fetchAll'
-import { activeAccountsWithLedger } from '@/lib/ledger'
-import { activeLoansWithEmi } from '@/lib/loans'
-import { getAedInr } from '@/lib/fx'
-import { withAutomation } from '@/lib/automation'
-import { isMissingTable } from '@/lib/supabase/missingTable'
-import { buildBills, loadBillReads } from '@/lib/bigBills'
-import BigBillsClient from '@/components/dashboard/BigBillsClient'
+import { redirect } from 'next/navigation'
 
-// Big bills: 25 months of transactions (a yearly bill shows up as two payments
-// a year apart), and what Free to spend needs to say if each bill can be covered.
-export default async function BigBillsPage() {
-  const supabase = createClient()
-  const user = await getSessionUser(supabase)
-  const uid = user!.id
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' })
-  const start = new Date(); start.setUTCMonth(start.getUTCMonth() - 25)
-  const fromDate = `${start.toISOString().slice(0, 7)}-01`
-  const [auto, [txns, accsRes, loansRes, insRes, mfRes, rdRes, plansRes, goalsRes, licRes, [contribRes, skipsRes]]] = await withAutomation(supabase, uid, today, () => Promise.all([
-    fetchAllRows((a, b) => supabase.from('transactions').select('*')
-      .eq('user_id', uid).gte('txn_date', fromDate)
-      .order('txn_date', { ascending: false }).order('id').range(a, b)),
-    getAedInr().then(async ({ rate }) => ({ rate, res: await activeAccountsWithLedger(supabase, uid, rate) })),
-    activeLoansWithEmi(supabase, uid),
-    supabase.from('insurance_policies').select('*').eq('user_id', uid).eq('is_active', true),
-    supabase.from('mutual_funds').select('*').eq('user_id', uid),
-    supabase.from('recurring_deposits').select('*').eq('user_id', uid).eq('is_active', true),
-    supabase.from('income_plans').select('*').eq('user_id', uid),
-    supabase.from('goals').select('*').eq('user_id', uid).not('repeat_months', 'is', null).eq('status', 'active'),
-    supabase.from('lic_policies').select('*').eq('user_id', uid).eq('is_active', true),
-    loadBillReads(supabase, uid),
-  ]))
-  const accounts = accsRes.res.data ?? []
-  const skips = (skipsRes.data ?? []).map((s: any) => s.key)
-  const bills = buildBills({ goals: goalsRes.data ?? [], contributions: contribRes.data ?? [], insurance: insRes.data ?? [], lic: licRes.data ?? [], accounts, skips }, today)
-
-  return (
-    <BigBillsClient today={today} fx={accsRes.rate} bills={bills} skips={skips} ready={!isMissingTable(skipsRes.error)}
-      transactions={txns} accounts={accounts} loans={loansRes.data ?? []} insurance={insRes.data ?? []} lic={licRes.data ?? []}
-      mutualFunds={mfRes.data ?? []} rds={rdRes.data ?? []} plans={plansRes.data ?? []} recurring={auto.recurring} />
-  )
+// Big bills are now part of the one Bills page
+export default function BigBillsPage() {
+  redirect('/dashboard/bills')
 }

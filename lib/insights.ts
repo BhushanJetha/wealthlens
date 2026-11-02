@@ -83,7 +83,7 @@ export interface HomeInsights {
 }
 
 const SEV_RANK = { high: 0, medium: 1, low: 2 }
-export const normMerchant = (s: string) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 24)
+export const normMerchant = (s: string) => { const x = String(s || '').toLowerCase(); return (x.replace(/[^a-z]/g, '') || x.replace(/[^0-9]/g, '')).slice(0, 24) }
 // The payments behind a regular charge, latest first
 export function seenPayments(txns: any[], name: string, n = 4): { date: string; amount: number }[] {
   const key = normMerchant(name)
