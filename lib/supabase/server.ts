@@ -7,9 +7,13 @@ import { VIEW_AS_COOKIE, VIEW_AS_HEADER, UUID } from './viewAs'
 // agrees if there's an active link, migration 038), and the code's "current
 // user" is that member, so each page reads their data as written. Writes are
 // refused by the database. `__viewAs` says it's happening.
-export const createClient = () => {
+export const createClient = () => createClientAs(cookies().get(VIEW_AS_COOKIE)?.value)
+// A client for one person, whatever the cookie says (null: the signed-in person's
+// own data). The database still decides whether they may read it.
+export const createClientFor = (id: string | null) => createClientAs(id ?? undefined)
+
+const createClientAs = (viewAs: string | undefined) => {
   const cookieStore = cookies()
-  const viewAs = cookieStore.get(VIEW_AS_COOKIE)?.value
   const valid = viewAs && UUID.test(viewAs) ? viewAs : null
   const client = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

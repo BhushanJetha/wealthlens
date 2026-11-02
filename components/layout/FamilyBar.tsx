@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { Eye, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { VIEW_AS_COOKIE } from '@/lib/supabase/viewAs'
@@ -8,17 +8,18 @@ import { Segmented } from '@/components/ui/kit'
 
 // Whose money to show, for someone with family members. A full reload on
 // switching: every screen, store and cache then starts fresh for that person.
-export function switchView(id: string | null) {
+export function switchView(id: string | null, to = '/dashboard') {
   document.cookie = id
     ? `${VIEW_AS_COOKIE}=${id}; path=/; max-age=${60 * 60 * 24 * 30}; samesite=lax`
     : `${VIEW_AS_COOKIE}=; path=/; max-age=0; samesite=lax`
-  window.location.assign('/dashboard')
+  window.location.assign(to)
 }
 
 export default function FamilyBar({ members, viewing, stale, left }: {
   members: { id: string; name: string }[]; viewing: string | null; stale: boolean; left: { id: string; name: string }[]
 }) {
   const router = useRouter()
+  const family = usePathname().startsWith('/dashboard/family')
   const [cleared, setCleared] = useState<string[]>([])
   // They left or were removed while being viewed: back to your own money
   useEffect(() => { if (stale) switchView(null) }, [stale])
@@ -41,10 +42,11 @@ export default function FamilyBar({ members, viewing, stale, left }: {
         </div>
       ))}
       {members.length > 0 && (
-        <Segmented full label="Whose money to show" violet value={viewing ?? 'me'} onChange={v => switchView(v === 'me' ? null : v)}
-          options={[{ value: 'me', label: 'Me' }, ...members.map(m => ({ value: m.id, label: m.name }))]} />
+        <Segmented full label="Whose money to show" violet value={family ? 'all' : viewing ?? 'me'}
+          onChange={v => v === 'all' ? switchView(null, '/dashboard/family') : switchView(v === 'me' ? null : v)}
+          options={[{ value: 'me', label: 'Me' }, ...members.map(m => ({ value: m.id, label: m.name })), { value: 'all', label: 'Whole family' }]} />
       )}
-      {name && (
+      {name && !family && (
         <div className="flex items-center gap-2.5 rounded-[12px] px-3 py-2 text-[12.5px]" style={{ background: '#FFF8EC', border: '1px solid #F6DDB4', color: '#7A4A06' }}>
           <Eye size={16} className="flex-shrink-0" />
           <span><b>Viewing {name}. View only.</b> Only {name} can add or change their entries.</span>
