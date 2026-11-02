@@ -185,10 +185,12 @@ export function pairRemittances(txns: any[], fx: number): Remittance[] {
   const out: Remittance[] = outs.map(o => {
     const aed = Number(o.amount) || 0
     const hit = pick(ins, o) ?? pick(plain, o)
-    const entered = !hit && Number(o.counter_amount) > 0 ? Number(o.counter_amount) : 0
+    const kept = Number(o.counter_amount) > 0 ? Number(o.counter_amount) : 0
+    const entered = !hit && kept && !o.counter_estimated ? kept : 0
     // What you moved on to NRO is what landed only if it's all of it: moving part
-    // of it says nothing about the rest, which is still in NRE
-    const est = Math.round(aed * fx)
+    // of it says nothing about the rest, which is still in NRE. An estimate is the
+    // one kept when it was made, so it doesn't move with the rate
+    const est = kept || Math.round(aed * fx)
     const nro = hit || entered ? null : pick(nros.filter(t => Math.abs((Number(t.amount) || 0) - est) <= est * 0.04), o)
     const inr = hit ? Number(hit.amount) : entered || (nro ? Number(nro.amount) : est)
     return {

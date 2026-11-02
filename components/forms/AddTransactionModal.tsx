@@ -86,7 +86,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
       account_id:   t0?.account_id ?? defaults?.account_id ?? '',
       // The other account in a move (card bill → card, ATM → bank it came from…)
       counter_account_id: t0?.counter_account_id ?? '',
-      counter_amount: t0?.counter_amount ? String(t0.counter_amount) : '',   // UAE → India: the rupees that landed
+      counter_amount: t0?.counter_amount && !t0?.counter_estimated ? String(t0.counter_amount) : '',   // UAE → India: the rupees that landed
       payment_mode: t0?.payment_mode ?? '',
       holder_name:  t0?.holder_name ?? '',      // family member it was for ('' = household)
       event_id:     t0?.event_id ?? defaults?.event_id ?? '',   // the trip or event it belongs to ('' = none)
@@ -277,7 +277,9 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
     }
     const body = { ...form, merchant: form.merchant.trim(), description: form.description.trim() || null, amount: Math.abs(Number(form.amount)), account_id,
       counter_account_id: isTransfer ? form.counter_account_id || null : null,
-      counter_amount: isTransfer && transferKind === 'International' && Number(form.counter_amount) > 0 ? Number(form.counter_amount) : null,
+      // What you say landed, else today's estimate, kept so the balance doesn't move with the rate
+      counter_amount: !(isTransfer && transferKind === 'International') ? null : Number(form.counter_amount) > 0 ? Number(form.counter_amount) : liveRate ? Math.round(Math.abs(Number(form.amount)) * liveRate) : null,
+      counter_estimated: isTransfer && transferKind === 'International' && !(Number(form.counter_amount) > 0) && !!liveRate,
       payment_mode: !isTransfer && form.payment_mode ? form.payment_mode : null,
       holder_name: form.holder_name || null, tax_tag: showTax ? form.tax_tag || null : null,
       event_id: form.txn_type === 'expense' ? form.event_id || null : null,
@@ -316,7 +318,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
       const err = id ? await uploadReceipt(supabase, id, receiptFile) : 'Could not attach the receipt'
       repeatNote += err ? ` · receipt not saved (${err})` : ' · receipt attached'
     }
-    if (body.counter_amount && data.transaction && !('counter_amount' in data.transaction)) toast('Rupees received wasn’t saved: run migration 042 in Supabase.', 'error')
+    if (Number(form.counter_amount) > 0 && data.transaction && !('counter_amount' in data.transaction)) toast('Rupees received wasn’t saved: run migration 043 in Supabase.', 'error')
     toast((mode === 'edit' ? 'Changes saved' : `${noun} saved · ${form.merchant.trim()}`) + repeatNote)
     router.refresh()
     onAdded?.()

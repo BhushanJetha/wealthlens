@@ -191,15 +191,15 @@ export function applyLedgers(accounts: any[], ledgers: Record<string, Ledger>) {
 export async function withLedgerBalances(supabase: any, userId: string, accounts: any[], fx: number) {
   if (!accounts?.length) return accounts ?? []
   const since = accounts.map(asOfOf).filter(Boolean).sort()[0] ?? null
-  const cols = 'id,account_id,counter_account_id,txn_date,amount,currency,txn_type,category,sub_category,merchant,description,source,created_at,counter_amount'
+  const cols = 'id,account_id,counter_account_id,txn_date,amount,currency,txn_type,category,sub_category,merchant,description,source,created_at,counter_amount,counter_estimated'
   const read = (sel: string) => fetchAll((a, b) => {
     let q = supabase.from('transactions').select(sel).eq('user_id', userId)
     if (since) q = q.gte('txn_date', since)
     return q.order('txn_date', { ascending: true }).order('id').range(a, b)
   }, 10)
   let res = await read(cols)
-  if (res.error) res = await read(cols.replace(',counter_amount', ''))      // before migration 042
-  if (res.error) res = await read(cols.replace(',counter_amount', '').replace('counter_account_id,', ''))
+  if (res.error) res = await read(cols.replace(',counter_amount,counter_estimated', ''))      // before migration 043
+  if (res.error) res = await read(cols.replace(',counter_amount,counter_estimated', '').replace('counter_account_id,', ''))
   return applyLedgers(accounts, computeLedgers(accounts, res.data, fx))
 }
 

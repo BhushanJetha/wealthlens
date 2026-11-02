@@ -19,6 +19,7 @@ import { matchOwnTransfers } from './ownTransfers'
 import { runRds } from './rdAuto'
 import { reconcileAuto, isAutoPending } from './autoEntries'
 import { aliasesOf } from './regular'
+import { getAedInr } from './fx'
 
 export interface Automation {
   recurring: RecurringTxn[]; recurringReady: boolean
@@ -39,6 +40,26 @@ export async function withAutomation<T>(supabase: any, userId: string, today: st
   return [auto, auto.changed ? await load() : data]
 }
 
+// A transfer to India with no rupees yet gets its estimate now and keeps it, so a
+// balance doesn't move with the exchange rate. Needs migration 043: without it
+// nothing is written, and the estimate stays at the current rate.
+async function keepEstimates(supabase: any, userId: string): Promise<number> {
+  try {
+    const { data, error } = await supabase.from('transactions').select('id,amount').eq('user_id', userId).eq('currency', 'AED').is('counter_amount', null)
+      .or('sub_category.eq.International,category.in.("International Transfer","Transfer to India","Remittance")')
+    if (error || !data?.length) return 0
+    const { rate } = await getAedInr()
+    if (!(rate > 1)) return 0
+    let n = 0
+    for (const t of data) {
+      const { error: e } = await supabase.from('transactions').update({ counter_amount: Math.round((Number(t.amount) || 0) * rate), counter_estimated: true }).eq('id', t.id)
+      if (e) break
+      n++
+    }
+    return n
+  } catch { return 0 }
+}
+
 export async function runAutomation(supabase: any, userId: string, today: string): Promise<Automation> {
   const since = addDaysTo(today, -100)
   const [read, loansRes, ltRes, fundsRes, itRes, rulesRes, rdsRes, answersRes] = await Promise.all([
@@ -52,7 +73,7 @@ export async function runAutomation(supabase: any, userId: string, today: string
     supabase.from('recurring_deposits').select('*').eq('user_id', userId).eq('is_active', true),
     supabase.from('big_bill_skips').select('key').eq('user_id', userId),
   ])
-  const matched = await matchOwnTransfers(supabase, read)
+  const [matched, kept] = await Promise.all([matchOwnTransfers(supabase, read), keepEstimates(supabase, userId)])
   // Migration 037 is in when the rows carry its column
   const review = read.some(t => 'auto_status' in t)
   const replaced = review ? await reconcileAuto(supabase, read, { loans: loansRes.data ?? [], funds: fundsRes.data ?? [], rds: rdsRes.data ?? [], aliases: aliasesOf((answersRes.data ?? []).map((a: any) => a.key)) }) : new Set<string>()
@@ -65,7 +86,7 @@ export async function runAutomation(supabase: any, userId: string, today: string
     runSips(supabase, userId, today, fundsRes.data ?? [], all, itRes.data ?? [], review),
     review ? runRds(supabase, userId, today, rdsRes.data ?? [], all) : Promise.resolve({ writes: 0 }),
   ])
-  const changed = matched > 0 || replaced.size > 0 || rec.inserted.length > 0 || emis.writes > 0 || sips.writes > 0 || rds.writes > 0
+  const changed = kept > 0 || matched > 0 || replaced.size > 0 || rec.inserted.length > 0 || emis.writes > 0 || sips.writes > 0 || rds.writes > 0
   // Entries waiting for your approval
   const drafts = !review ? [] : changed
     ? (await supabase.from('transactions').select('*').eq('user_id', userId).eq('auto_status', 'pending').order('txn_date', { ascending: false })).data ?? []

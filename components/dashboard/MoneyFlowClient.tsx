@@ -14,6 +14,7 @@ import { PageHeader, InsightBar, KpiTile, EmptyState } from '@/components/ui/kit
 import { ListCard, ListRow } from '@/components/ui/list'
 import AddTransactionModal from '@/components/forms/AddTransactionModal'
 import { LandedSheet } from './LandedChecks'
+import NreBalanceCheck from './NreBalanceCheck'
 import { isNre } from '@/lib/ledger'
 
 const sign = (n: number) => (n < 0 ? '−' : '')
@@ -24,7 +25,7 @@ const STATUS: Record<Remittance['source'], { label: string; color: string; note:
   matched:   { label: 'Matched',   color: '#16A34A', note: 'paired with the NRE credit' },
   entered:   { label: 'You entered', color: '#16A34A', note: 'the ₹ you entered on the transfer' },
   'via NRO': { label: 'Via NRO',   color: '#3B8EF0', note: '₹ taken from the NRE → NRO move that followed' },
-  estimated: { label: 'Estimated', color: '#D97706', note: 'estimated at today’s rate. Tap to enter what you got' },
+  estimated: { label: 'Estimated', color: '#D97706', note: 'an estimate. Tap to enter what you got' },
   received:  { label: 'Received',  color: '#6A55E8', note: 'landed in India with no matching UAE debit' },
 }
 
@@ -73,8 +74,8 @@ const Flow = () => (
 // Money flow (replaces Transfers): how UAE earnings reach India and where they
 // end up, counted once. UAE → India and NRE → NRO are moves, never income or
 // spending; India income is what lands in NRE (lib/money).
-export default function MoneyFlowClient({ transactions, accounts }: { transactions: any[]; accounts: any[] }) {
-  const { fromMonth, toMonth, fxRate: FX } = useViewStore()
+export default function MoneyFlowClient({ transactions, accounts, fx: FX, nreAccounts }: { transactions: any[]; accounts: any[]; fx: number; nreAccounts: any[] }) {
+  const { fromMonth, toMonth } = useViewStore()
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<any>(null)
   const [landed, setLanded] = useState<Remittance | null>(null)
@@ -200,6 +201,8 @@ export default function MoneyFlowClient({ transactions, accounts }: { transactio
               { label: nroLeft >= 0 ? 'Left over' : 'Drawn from savings', value: inrShort(nroLeft), amount: Math.max(nroLeft, 0), color: '#CBD5E1' },
             ]} />
         </div>
+
+        <NreBalanceCheck accounts={nreAccounts} />
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
           <KpiTile label="Sent to India" value={aedFmt(f.sentAed)} delta={`${remits.length} transfer${remits.length === 1 ? '' : 's'} · a move, not spending`} tint={2} icon={ArrowRightLeft} />

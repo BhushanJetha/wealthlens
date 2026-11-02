@@ -5,7 +5,7 @@ import { rejectAuto } from '@/lib/autoEntries'
 
 // Columns added by later migrations (026, 027, 034): a save still works before
 // they're run — the missing one is dropped and the save retried
-const OPTIONAL = ['counter_amount', 'counter_account_id', 'payment_mode', 'holder_name', 'tax_tag', 'receipt_path', 'event_id']
+const OPTIONAL = ['counter_estimated', 'counter_amount', 'counter_account_id', 'payment_mode', 'holder_name', 'tax_tag', 'receipt_path', 'event_id']
 const missingCol = (error: any, row: Record<string, any>) => OPTIONAL.find(c => c in row && String(error?.message ?? '').includes(c))
 
 // GET /api/transactions — list user transactions with optional filters
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()
-  const { txn_date, merchant, description, category, sub_category, amount, currency, account_id, txn_type, counter_account_id, counter_amount, payment_mode, holder_name, tax_tag, event_id, paid_by_friend_id } = body
+  const { txn_date, merchant, description, category, sub_category, amount, currency, account_id, txn_type, counter_account_id, counter_amount, counter_estimated, payment_mode, holder_name, tax_tag, event_id, paid_by_friend_id } = body
 
   if (!txn_date || !merchant || !category || !amount || !currency) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -66,7 +66,8 @@ export async function POST(req: Request) {
     source: 'manual',
     is_verified: true,
     counter_account_id: counter_account_id || null,
-    counter_amount: Number(counter_amount) > 0 ? Number(counter_amount) : null,   // the rupees that landed (migration 042)
+    counter_amount: Number(counter_amount) > 0 ? Number(counter_amount) : null,   // the rupees that landed (migration 043)
+    counter_estimated: Number(counter_amount) > 0 ? !!counter_estimated : null,   // the app's estimate, not what you told it
     payment_mode: payment_mode || null,
     holder_name: holder_name || null,
     tax_tag: tax_tag || null,
@@ -79,7 +80,8 @@ export async function POST(req: Request) {
   if (row.paid_by_friend_id) row.account_id = null
   const insert = () => supabase.from('transactions').insert(row).select().single()
   let { data, error } = await insert()
-  for (let c; error && (c = missingCol(error, row)); ) { delete row[c]; ({ data, error } = await insert()) }
+  // (an estimate with no way to mark it as one would read as what you entered)
+  for (let c; error && (c = missingCol(error, row)); ) { if (c === 'counter_estimated' && row[c]) delete row.counter_amount; delete row[c]; ({ data, error } = await insert()) }
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ transaction: data })
@@ -95,7 +97,7 @@ export async function PATCH(req: Request) {
   const { id } = body
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
   // Only the transaction's own fields can change (never user_id, source…)
-  const EDITABLE = ['txn_date', 'merchant', 'description', 'category', 'sub_category', 'amount', 'currency', 'account_id', 'txn_type', 'counter_account_id', 'counter_amount', 'payment_mode', 'holder_name', 'tax_tag', 'receipt_path', 'event_id', 'paid_by_friend_id']
+  const EDITABLE = ['txn_date', 'merchant', 'description', 'category', 'sub_category', 'amount', 'currency', 'account_id', 'txn_type', 'counter_account_id', 'counter_amount', 'counter_estimated', 'payment_mode', 'holder_name', 'tax_tag', 'receipt_path', 'event_id', 'paid_by_friend_id']
   const updates: Record<string, any> = Object.fromEntries(EDITABLE.filter(k => k in body).map(k => [k, body[k]]))
   if ('amount' in updates) updates.amount = Math.abs(Number(updates.amount))
   if ('account_id' in updates) updates.account_id = updates.account_id || null
@@ -109,7 +111,7 @@ export async function PATCH(req: Request) {
 
   const run = () => supabase.from('transactions').update(updates).eq('id', id).eq('user_id', user.id).select().single()
   let { data, error } = await run()
-  for (let c; error && (c = missingCol(error, updates)); ) { delete updates[c]; ({ data, error } = await run()) }
+  for (let c; error && (c = missingCol(error, updates)); ) { if (c === 'counter_estimated' && updates[c]) delete updates.counter_amount; delete updates[c]; ({ data, error } = await run()) }
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ transaction: data })

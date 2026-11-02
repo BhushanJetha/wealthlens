@@ -10,10 +10,10 @@ import { Sheet } from './BillSheets'
 
 export const landedCheckCount = (txns: any[], today: string, fx: number) => landedToAsk(txns, today, fx).length
 
-// The rupees that landed, as you saw them (null goes back to today's rate)
+// The rupees that landed, as you saw them (null: a new estimate is kept on the next load)
 async function saveLanded(id: string, value: number | null): Promise<string | null> {
-  const { error } = await createClient().from('transactions').update({ counter_amount: value }).eq('id', id)
-  return error ? (/counter_amount/.test(error.message) ? 'Run migration 042 in Supabase to save this.' : error.message) : null
+  const { error } = await createClient().from('transactions').update({ counter_amount: value, counter_estimated: value == null ? null : false }).eq('id', id)
+  return error ? (/counter_/.test(error.message) ? 'Run migration 043 in Supabase to save this.' : error.message) : null
 }
 const digits = (s: string) => s.replace(/[^0-9.]/g, '')
 // A rate this far off is almost always a typing slip
@@ -49,7 +49,7 @@ export default function LandedChecks({ txns, today, fx }: { txns: any[]; today: 
           <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#D97706' }} />
           <span className="flex-1 min-w-0 max-md:basis-[calc(100%-18px)]">
             <span className="block text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{fmtMoney(r.aed ?? 0, 'AED')} sent on {fmtDay(r.sentOn!)}: how many rupees landed?</span>
-            <span className="block text-[12px] mt-px" style={{ color: note?.odd ? '#B91C1C' : 'var(--text3)' }}>{note ? `${note.text}${note.odd ? '. Please check the amount' : ''}` : `We estimated ${fmtMoney(r.inr, 'INR')} at today's rate`}</span>
+            <span className="block text-[12px] mt-px" style={{ color: note?.odd ? '#B91C1C' : 'var(--text3)' }}>{note ? `${note.text}${note.odd ? '. Please check the amount' : ''}` : `We estimated ${fmtMoney(r.inr, 'INR')}`}</span>
           </span>
           <span className="flex gap-1.5 flex-wrap items-center max-md:w-full max-md:pl-[18px] md:flex-shrink-0 md:justify-end">
             <input inputMode="decimal" value={v} onChange={e => setValues(x => ({ ...x, [r.id]: digits(e.target.value) }))} placeholder="₹ received" aria-label={`Rupees received for ${fmtMoney(r.aed ?? 0, 'AED')}`} className="wl-input" style={{ height: 30, fontSize: 12.5, width: 110 }} />
