@@ -20,7 +20,11 @@ export interface Due {
   owner?: { table: 'home_loans' | 'accounts'; id: string }   // where "paid from" can be saved
   href?: string
 }
-export interface ExpectedIn { id: string; accountId: string; date: string; amount: number; currency: string; label: string }
+export interface ExpectedIn {
+  id: string; accountId: string; date: string; amount: number; currency: string; label: string
+  // Why it's expected
+  accountName?: string; usual?: number; day?: number; months?: number; got?: number; late?: boolean
+}
 export interface BalanceWarning { id: string; severity: 'high' | 'medium' | 'low'; title: string; detail: string; accountId: string; date?: string; href?: string }
 
 const FREQ: Record<string, number> = { monthly: 1, quarterly: 3, semi_annual: 6, annual: 12 }
@@ -137,24 +141,43 @@ export function buildDues(inp: {
   return out.sort((a, b) => a.date.localeCompare(b.date) || b.amount - a.amount)
 }
 
-// Income that usually lands in an account (≥2 of the last 3 months), on its
-// usual day, if it hasn't landed yet this month.
-export function expectedIncome(txns: any[], accounts: any[], today: string, days: number): ExpectedIn[] {
-  const month = ymOf(today), months = [1, 2, 3].map(i => addMonths(month, -i))
+// Regular income still to land in each account: each source on its own (salary,
+// rent, interest, a named payer), seen in at least 2 of the last 3 months, on its
+// usual day, less what's already arrived this month. One-offs (refunds, gifts,
+// bonuses, deposits maturing) are never expected. A plain "Other" credit counts
+// only when the same payer pays about the same amount each time.
+const ONE_OFF_INCOME = new Set(['Refund', 'Gift', 'Tax Refund', 'Bonus', 'FD/RD Maturity', 'Freelance'])
+export function expectedIncome(txns: any[], accounts: any[], today: string, days: number, opts: { late?: boolean } = {}): ExpectedIn[] {
+  const month = ymOf(today), months = [1, 2, 3].map(i => addMonths(month, -i)), dayNow = Number(today.slice(8, 10))
   const out: ExpectedIn[] = []
   for (const a of accounts.filter(a => kindOf(a) !== 'card')) {
-    const inc = txns.filter(t => t.account_id === a.id && t.txn_type === 'income')
-    const per = months.map(m => inc.filter(t => ymOf(t.txn_date) === m)).filter(xs => xs.length)
-    if (per.length < 2) continue
-    const amount = median(per.map(xs => xs.reduce((s, t) => s + (Number(t.amount) || 0), 0)))
-    const day = median(per.map(xs => Number(xs.reduce((b, t) => (Number(t.amount) > Number(b.amount) ? t : b)).txn_date.slice(8, 10))))
-    const got = inc.filter(t => ymOf(t.txn_date) === month).reduce((s, t) => s + (Number(t.amount) || 0), 0)
-    const ym = got >= amount * 0.8 ? addMonths(month, 1) : day >= Number(today.slice(8, 10)) ? month : null
-    if (!ym || !(amount > 0)) continue
-    const date = `${ym}-${String(Math.min(day, daysInMonth(ym))).padStart(2, '0')}`
-    if (daysBetween(today, date) > days) continue
-    const top = latest(inc)
-    out.push({ id: `in-${a.id}-${ym}`, accountId: a.id, date, amount, currency: a.currency, label: top?.merchant || top?.category || 'Usual income' })
+    const groups: Record<string, any[]> = {}
+    for (const t of txns) {
+      if (t.account_id !== a.id || t.txn_type !== 'income' || ONE_OFF_INCOME.has(String(t.category ?? '').trim())) continue
+      const c = String(t.category ?? '').trim()
+      const plain = !c || c === 'Other' || c === 'Transfer'
+      const key = plain ? `payer:${ruleTextFor(t.merchant) || t.id}` : `cat:${c}`
+      ;(groups[key] ||= []).push(t)
+    }
+    for (const [key, inc] of Object.entries(groups)) {
+      const per = months.map(m => inc.filter(t => ymOf(t.txn_date) === m)).filter(xs => xs.length)
+      if (per.length < 2) continue
+      const totals = per.map(xs => xs.reduce((s, t) => s + (Number(t.amount) || 0), 0))
+      const usual = median(totals)
+      if (!(usual > 0)) continue
+      if (key.startsWith('payer:') && totals.some(v => Math.abs(v - usual) > usual * 0.25)) continue
+      const day = median(per.map(xs => Number(xs.reduce((b, t) => (Number(t.amount) > Number(b.amount) ? t : b)).txn_date.slice(8, 10))))
+      const got = inc.filter(t => ymOf(t.txn_date) === month).reduce((s, t) => s + (Number(t.amount) || 0), 0)
+      const top = latest(inc)
+      const row = (ym: string, amount: number, date: string, late: boolean): ExpectedIn => ({ id: `in-${a.id}-${key}-${ym}`, accountId: a.id, date, amount, currency: a.currency,
+        label: top?.merchant || top?.category || 'Usual income', accountName: a.name, usual, day, months: per.length, got, late })
+      const dated = (ym: string) => `${ym}-${String(Math.min(day, daysInMonth(ym))).padStart(2, '0')}`
+      let found: ExpectedIn | null = null
+      if (got >= usual * 0.8) found = row(addMonths(month, 1), usual, dated(addMonths(month, 1)), false)      // this month's has arrived: next month's
+      else if (day >= dayNow) found = row(month, usual - got, dated(month), false)
+      else if (opts.late) found = row(month, usual - got, today, true)                                        // its day has passed and it isn't recorded yet
+      if (found && daysBetween(today, found.date) <= days) out.push(found)
+    }
   }
   return out.sort((x, y) => x.date.localeCompare(y.date))
 }

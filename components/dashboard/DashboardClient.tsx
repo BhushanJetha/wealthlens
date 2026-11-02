@@ -156,7 +156,7 @@ export default function DashboardClient(p: Props) {
   const viewAccounts = useMemo(() => h.accounts.filter((a: any) => view === 'consolidated' || (view === 'uae' ? a.currency === 'AED' : a.currency !== 'AED')), [h.accounts, view])
   // Each account's warning counts any money reaching it; the totals count only real income
   const reachingAccounts = useMemo(() => expectedIncome(p.transactions, viewAccounts, today, 45), [p.transactions, viewAccounts, today])
-  const incoming = useMemo(() => expectedIncome(earnedIncoming(p.transactions, view, FX), viewAccounts, today, 45), [p.transactions, view, FX, viewAccounts, today])
+  const incoming = useMemo(() => expectedIncome(earnedIncoming(p.transactions, view, FX), viewAccounts, today, 45, { late: true }), [p.transactions, view, FX, viewAccounts, today])
   const warnings = useMemo(() => balanceWarnings(viewAccounts, dues, reachingAccounts, today, 7).filter(w => w.severity !== 'low'), [viewAccounts, dues, reachingAccounts, today])
 
   // Per currency on its own: dirhams can't pay in India

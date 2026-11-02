@@ -134,7 +134,25 @@ export function PlanCard({ plan, money, className = '' }: { plan: HomePlan; mone
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-2.5">
         <Column title={`Rest of ${thisName}`} sub={`${rest.days} day${rest.days === 1 ? '' : 's'} left`}>
           <Line label="Bank & cash now" value={money(rest.cash)} />
-          <Line label="+ Should come in" value={money(rest.comingIn)} ink="#1E8F5F" />
+          <details className="group">
+            <summary className="list-none cursor-pointer flex justify-between gap-3 py-[7px] text-[12.5px]">
+              <span className="flex items-center gap-1" style={{ color: 'var(--text3)' }}>+ Should come in <ChevronRight size={13} className="transition-transform group-open:rotate-90" /></span>
+              <span className="tabular-nums font-semibold flex-shrink-0" style={{ color: '#1E8F5F' }}>{money(rest.comingIn)}</span>
+            </summary>
+            <div className="rounded-[10px] px-2.5 py-1.5 mb-1 text-[11.5px] leading-[1.45]" style={{ background: '#EEF9F3', color: '#14603F' }}>
+              {rest.incoming.length === 0 && 'Nothing regular is expected for the rest of this month.'}
+              {rest.incoming.map(i => (
+                <div key={i.id} className="py-1">
+                  <div className="flex justify-between gap-2 font-semibold"><span className="min-w-0 truncate">{i.label}</span><span className="tabular-nums flex-shrink-0">{fmtCompact(i.amount, i.currency)}</span></div>
+                  <div>
+                    {i.accountName} · {i.late ? `usually by the ${i.day}, not recorded yet` : `usually on the ${i.day}`} · seen in {i.months} of the last 3 months
+                    {i.got ? ` · ${fmtCompact(i.got, i.currency)} already in, usual ${fmtCompact(i.usual ?? 0, i.currency)}` : ''}
+                  </div>
+                </div>
+              ))}
+              {rest.incoming.length > 0 && <div className="pt-1" style={{ color: '#3F7A5E' }}>Your own transfers shouldn’t be here. If one is, mark it in Review.</div>}
+            </div>
+          </details>
           {rest.dueGroups.map(g => <Line key={g.label} label={`− ${g.label}`} value={money(g.amount)} />)}
           {rest.sentHome > 0 && <Line label="− Usually sent to India" value={money(rest.sentHome)} />}
           <div className="mt-auto">

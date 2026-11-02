@@ -106,7 +106,7 @@ export function sentHome(txns: any[], today: string): { usual: number; left: num
 
 // ── The plan ────────────────────────────────────────────────────────────────
 export interface HomePlan {
-  rest: { cash: number; comingIn: number; dueOut: number; dueGroups: { label: string; amount: number }[]; sentHome: number; budgetsLeft: number; endOfMonth: number; afterBudgets: number; days: number }
+  rest: { cash: number; comingIn: number; incoming: ExpectedIn[]; dueOut: number; dueGroups: { label: string; amount: number }[]; sentHome: number; budgetsLeft: number; endOfMonth: number; afterBudgets: number; days: number }
   next: { ym: string; income: number; committed: number; sentHome: number; toPlan: number; items: Commitment[]; groups: { label: string; amount: number }[]; events: any[] }
 }
 export function homePlan(inp: { today: string; view: View; fx: number; cash: number; dues: Due[]; incoming: ExpectedIn[]; budgetsLeft: number; avgIncome: number
@@ -115,7 +115,8 @@ export function homePlan(inp: { today: string; view: View; fx: number; cash: num
   const v = (n: number, c: string) => viewAmount(n, c, view, fx)
   const month = ymOf(today), next = addMonths(month, 1)
   const inMonth = (d: string) => ymOf(d) === month
-  const comingIn = inp.incoming.filter(i => inMonth(i.date)).reduce((s, i) => s + v(i.amount, i.currency), 0)
+  const incoming = inp.incoming.filter(i => inMonth(i.date))
+  const comingIn = incoming.reduce((s, i) => s + v(i.amount, i.currency), 0)
   const fromBank = cashDues(inp.dues, inp.accounts).filter(d => inMonth(d.date))
   const dueOut = fromBank.reduce((s, d) => s + v(d.amount, d.currency), 0)
   const dueGroups = ([['Card bills', ['card']], ['EMIs', ['emi']], ['SIPs & RDs', ['sip']], ['Rent & bills', ['repeat', 'bill', 'premium']]] as [string, string[]][])
@@ -125,7 +126,7 @@ export function homePlan(inp: { today: string; view: View; fx: number; cash: num
   const items = monthCommitments({ ym: next, today, view, txns: inp.txns, accounts: inp.accounts, loans: inp.loans, insurance: inp.insurance, mutualFunds: inp.mutualFunds, rds: inp.rds, recurring: inp.recurring })
   const committed = items.reduce((s, c) => s + v(c.amount, c.currency), 0)
   return {
-    rest: { cash: inp.cash, comingIn, dueOut, dueGroups, sentHome: home.left, budgetsLeft: inp.budgetsLeft, endOfMonth, afterBudgets: endOfMonth - inp.budgetsLeft, days: daysInMonth(month) - Number(today.slice(8, 10)) },
+    rest: { cash: inp.cash, comingIn, incoming, dueOut, dueGroups, sentHome: home.left, budgetsLeft: inp.budgetsLeft, endOfMonth, afterBudgets: endOfMonth - inp.budgetsLeft, days: daysInMonth(month) - Number(today.slice(8, 10)) },
     next: { ym: next, income: inp.avgIncome, committed, sentHome: home.usual, toPlan: inp.avgIncome - committed - home.usual, items,
       groups: ([['EMIs', ['emi']], ['SIPs & RDs', ['sip', 'rd']], ['Rent & bills', ['repeat']], ['Card bills', ['card']], ['Insurance', ['premium']]] as [string, string[]][])
         .map(([label, kinds]) => ({ label, amount: items.filter(i => kinds.includes(i.kind)).reduce((s, i) => s + v(i.amount, i.currency), 0) })).filter(g => g.amount > 0),
