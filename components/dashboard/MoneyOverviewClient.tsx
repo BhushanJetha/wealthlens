@@ -21,6 +21,8 @@ import type { RecurringTxn } from '@/lib/recurring'
 import PendingConfirms, { pendingCount, type Pending } from './PendingConfirms'
 import SpendRoomPanel from './SpendRoomPanel'
 import IncomeChecks, { incomeCheckCount } from './IncomeChecks'
+import BillReminders, { billReminderCount } from './BillReminders'
+import type { Bill } from '@/lib/bigBills'
 import { declaredPayday, type IncomePlan } from '@/lib/incomePlans'
 import { spendRoom } from '@/lib/spendRoom'
 import { PageHeader, InsightBar, KpiTile, KpiGrid, Panel, MoreLink } from '@/components/ui/kit'
@@ -32,6 +34,7 @@ interface Props {
   mutualFunds: any[]; fixedDeposits: any[]; budgets: any[]; rds?: any[]; plans?: IncomePlan[]
   pending: Pending               // repeating entries, EMIs and SIPs waiting for a confirm
   recurring: RecurringTxn[]
+  lic?: any[]; bills?: Bill[]; billSkips?: string[]
 }
 
 const SEV_DOT: Record<Attention['severity'], string> = { high: '#DC2626', medium: '#D97706', low: '#6A55E8' }
@@ -54,7 +57,8 @@ export default function MoneyOverviewClient(p: Props) {
   useEffect(() => { setToday(localToday()) }, [])
   const [picking, setPicking] = useState<Due | null>(null)
   const plans = p.plans ?? []
-  const confirms = pendingCount(p.pending) + incomeCheckCount(plans, p.transactions, today, FX)
+  const bills = p.bills ?? [], billSkips = p.billSkips ?? []
+  const confirms = pendingCount(p.pending) + incomeCheckCount(plans, p.transactions, today, FX) + billReminderCount(bills, p.transactions, today, billSkips)
 
   const inView = (c: string) => view === 'consolidated' || (view === 'uae' ? c === 'AED' : c !== 'AED')
   const accounts = useMemo(() => p.accounts.filter(a => inView(a.currency)), [p.accounts, view])
@@ -68,17 +72,17 @@ export default function MoneyOverviewClient(p: Props) {
     cash: 0, invested: { value: 0, cost: 0 },
   }), [view, FX, today, p])
 
-  const dues = useMemo(() => buildDues({ today, days: 35, view, txns: p.transactions, accounts: p.accounts, loans: p.loans, insurance: p.insurance, mutualFunds: p.mutualFunds, recurring: p.recurring, rds: p.rds, plans }),
+  const dues = useMemo(() => buildDues({ today, days: 35, view, txns: p.transactions, accounts: p.accounts, loans: p.loans, insurance: p.insurance, mutualFunds: p.mutualFunds, recurring: p.recurring, rds: p.rds, plans, lic: p.lic, bills: p.bills }),
     [today, view, p])
   const incoming = useMemo(() => expectedIncome(p.transactions, accounts, today, 35), [p.transactions, accounts, today])
   const warnings = useMemo(() => balanceWarnings(accounts, dues, incoming, today, 14), [accounts, dues, incoming, today])
-  const sts = useMemo(() => safeToSpend({ today, view, fx: FX, accounts, dues, txns: p.transactions, payday: declaredPayday(plans, today, view, p.transactions) }), [today, view, FX, accounts, dues, p.transactions]) // eslint-disable-line react-hooks/exhaustive-deps
+  const sts = useMemo(() => safeToSpend({ today, view, fx: FX, accounts, dues, txns: p.transactions, payday: declaredPayday(plans, today, view, p.transactions), bills: p.bills }), [today, view, FX, accounts, dues, p.transactions]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // How much more you can spend, in each currency on its own (dirhams can't pay in India)
   const rooms = useMemo(() => (view === 'uae' ? ['AED'] as const : view === 'india' ? ['INR'] as const : ['AED', 'INR'] as const).map(c => {
     const v = c === 'AED' ? 'uae' as const : 'india' as const
-    const ds = buildDues({ today, days: 35, view: v, txns: p.transactions, accounts: p.accounts, loans: p.loans, insurance: p.insurance, mutualFunds: p.mutualFunds, recurring: p.recurring, rds: p.rds, plans })
-    const s = safeToSpend({ today, view: v, fx: FX, accounts: p.accounts.filter(a => a.currency === c), dues: ds, txns: p.transactions, payday: declaredPayday(plans, today, v, p.transactions) })
+    const ds = buildDues({ today, days: 35, view: v, txns: p.transactions, accounts: p.accounts, loans: p.loans, insurance: p.insurance, mutualFunds: p.mutualFunds, recurring: p.recurring, rds: p.rds, plans, lic: p.lic, bills: p.bills })
+    const s = safeToSpend({ today, view: v, fx: FX, accounts: p.accounts.filter(a => a.currency === c), dues: ds, txns: p.transactions, payday: declaredPayday(plans, today, v, p.transactions), bills: p.bills })
     return { ...spendRoom({ today, cur: c, budgets: p.budgets, txns: p.transactions, safe: s.amount }), until: s.until, perDay: s.perDay }
   }), [today, view, FX, p])
 
@@ -152,6 +156,12 @@ export default function MoneyOverviewClient(p: Props) {
               <dt style={{ color: 'var(--text3)' }}>Due by {fmtDay(sts.until)} <span style={{ color: 'var(--text4)' }}>· {sts.dueCount} payment{sts.dueCount === 1 ? '' : 's'}</span></dt>
               <dd className="tabular-nums font-semibold" style={{ color: 'var(--text)' }}>− {money(sts.dueBefore)}</dd>
             </div>
+            {sts.reserved > 0 && (
+              <div className="flex justify-between py-1.5" style={{ borderTop: '1px solid var(--track)' }}>
+                <dt style={{ color: 'var(--text3)' }}>Set aside for <Link href="/dashboard/big-bills" className="underline">big bills</Link></dt>
+                <dd className="tabular-nums font-semibold" style={{ color: 'var(--text)' }}>− {money(sts.reserved)}</dd>
+              </div>
+            )}
             {sts.unlinked > 0 && (
               <div className="flex justify-between py-1.5" style={{ borderTop: '1px solid var(--track)' }}>
                 <dt style={{ color: 'var(--text3)' }}>Auto entries with no account</dt>
@@ -173,6 +183,7 @@ export default function MoneyOverviewClient(p: Props) {
             </div>
           ) : (
             <ul className="mt-2">
+              <BillReminders bills={bills} skips={billSkips} txns={p.transactions} today={today} accounts={p.accounts} />
               <IncomeChecks plans={plans} txns={p.transactions} today={today} fx={FX} />
               <PendingConfirms pending={p.pending} accName={accName} />
               {needs.slice(0, 6).map(it => {

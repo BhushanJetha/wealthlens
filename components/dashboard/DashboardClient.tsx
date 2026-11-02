@@ -28,7 +28,9 @@ import PendingConfirms, { pendingCount, type Pending } from './PendingConfirms'
 import IncomeChecks, { incomeCheckCount } from './IncomeChecks'
 import { plannedIncoming, mergeExpected, declaredIncome, declaredPayday, type IncomePlan } from '@/lib/incomePlans'
 import SpendRoomPanel from './SpendRoomPanel'
-import { FreeToSpendCard, NextWeekCard, PlanCard } from './HomeCards'
+import { FreeToSpendCard, NextWeekCard, PlanCard, BigBillsStrip } from './HomeCards'
+import BillReminders, { billReminderCount } from './BillReminders'
+import type { Bill } from '@/lib/bigBills'
 
 interface Props {
   firstName: string | null
@@ -44,6 +46,8 @@ interface Props {
   goalInterests: string[]
   pending: Pending              // auto entries waiting for approval, and anything to confirm
   recurring: RecurringTxn[]
+  bills: Bill[]
+  billSkips: string[]
   events: any[]; friends: any[]; splits: any[]; friendTxns: any[]
   plans: IncomePlan[]; plansReady: boolean; fx: number
 }
@@ -154,7 +158,7 @@ export default function DashboardClient(p: Props) {
 
   // ── What matters now: free to spend, reminders, the plan ahead ──
   const reviewOk = useMemo(() => ({ today, view, FX }), [today, view, FX])
-  const dueInp = { today, txns: p.transactions, accounts: h.accounts, loans: h.loans, insurance: p.insurance, mutualFunds: h.mutualFunds, recurring: p.recurring, rds: h.recurringDeposits, plans: p.plans }
+  const dueInp = { today, txns: p.transactions, accounts: h.accounts, loans: h.loans, insurance: p.insurance, mutualFunds: h.mutualFunds, recurring: p.recurring, rds: h.recurringDeposits, plans: p.plans, lic: h.lic, bills: p.bills }
   const dues = useMemo(() => buildDues({ ...dueInp, days: 45, view }), [reviewOk, p, h]) // eslint-disable-line react-hooks/exhaustive-deps
   const viewAccounts = useMemo(() => h.accounts.filter((a: any) => view === 'consolidated' || (view === 'uae' ? a.currency === 'AED' : a.currency !== 'AED')), [h.accounts, view])
   // Each account's warning counts any money reaching it; the totals count only real income
@@ -167,14 +171,14 @@ export default function DashboardClient(p: Props) {
   // Per currency on its own: dirhams can't pay in India
   const rooms = useMemo(() => (view === 'uae' ? ['AED'] as const : view === 'india' ? ['INR'] as const : ['AED', 'INR'] as const).map(c => {
     const v = c === 'AED' ? 'uae' as const : 'india' as const
-    const s = safeToSpend({ today, view: v, fx: FX, accounts: h.accounts.filter((a: any) => a.currency === c), dues: buildDues({ ...dueInp, days: 35, view: v }), txns: p.transactions, payday: declaredPayday(p.plans, today, v, p.transactions) })
+    const s = safeToSpend({ today, view: v, fx: FX, accounts: h.accounts.filter((a: any) => a.currency === c), dues: buildDues({ ...dueInp, days: 35, view: v }), txns: p.transactions, payday: declaredPayday(p.plans, today, v, p.transactions), bills: p.bills })
     return { ...spendRoom({ today, cur: c, budgets: p.budgets, txns: p.transactions, safe: s.amount }), until: s.until, perDay: s.perDay, sts: s }
   }), [reviewOk, p, h]) // eslint-disable-line react-hooks/exhaustive-deps
   const toView = (n: number, c: string) => viewAmount(n, c, view, FX)
   const week = useMemo(() => nextWeek(today, dues, incoming, p.events), [today, dues, incoming, p.events])
   const budgetsLeft = rooms.reduce((s, r) => s + toView(r.totalLeft, r.cur), 0)
   const plan = useMemo(() => homePlan({ today, view, fx: FX, cash: nw.cash, dues, incoming, budgetsLeft, avgIncome: declaredIncome(p.plans, view, FX, p.transactions) ?? ins.trend.avgIncome, plans: p.plans,
-    txns: p.transactions, accounts: h.accounts, loans: h.loans, insurance: p.insurance, mutualFunds: h.mutualFunds, rds: h.recurringDeposits ?? [], recurring: p.recurring, events: p.events }),
+    txns: p.transactions, accounts: h.accounts, loans: h.loans, insurance: p.insurance, mutualFunds: h.mutualFunds, rds: h.recurringDeposits ?? [], recurring: p.recurring, events: p.events, lic: h.lic, bills: p.bills }),
     [today, view, FX, nw.cash, dues, incoming, budgetsLeft, ins.trend.avgIncome, p, h]) // eslint-disable-line react-hooks/exhaustive-deps
   const friendPair = useMemo(() => {
     const t = friendTotals(friendBalances(p.friends, p.splits, p.friendTxns))
@@ -248,10 +252,10 @@ export default function DashboardClient(p: Props) {
       {/* 1 · What's free, and what needs you now */}
       <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_1fr] gap-3.5 md:gap-4">
         <div className="flex flex-col gap-3.5 md:gap-4 min-w-0">
-          <FreeToSpendCard className="lg:flex-1" cards={rooms.map(r => ({ cur: r.cur, amount: r.sts.amount, cash: r.sts.cash, due: r.sts.dueBefore + r.sts.unlinked, until: r.sts.until, perDay: r.sts.perDay, payday: r.sts.payday }))} />
+          <FreeToSpendCard className="lg:flex-1" cards={rooms.map(r => ({ cur: r.cur, amount: r.sts.amount, cash: r.sts.cash, due: r.sts.dueBefore + r.sts.unlinked, reserved: r.sts.reserved, until: r.sts.until, perDay: r.sts.perDay, payday: r.sts.payday }))} />
           <QuickActions openAdd={openAdd} upload={() => setUploadOpen(true)} voice={() => setModal('voice')} advisor={() => openAdvisor()} />
         </div>
-        <AttentionCard items={ins.attention} pending={p.pending} accName={accName} onImport={() => setUploadOpen(true)} plans={p.plans} txns={p.transactions} today={today} fx={FX} />
+        <AttentionCard items={ins.attention} pending={p.pending} accName={accName} onImport={() => setUploadOpen(true)} plans={p.plans} txns={p.transactions} today={today} fx={FX} bills={p.bills} billSkips={p.billSkips} accounts={h.accounts} />
       </div>
       {p.plansReady && p.plans.length === 0 && (
         <Link href="/dashboard/settings/income" className="wl-card px-4 py-3 flex items-center gap-3 wl-hide-viewing" style={{ background: '#F0EDFF', borderColor: '#DAD3FF' }}>
@@ -270,6 +274,7 @@ export default function DashboardClient(p: Props) {
       <NextWeekCard today={today} items={week.items} later={week.later} warnings={warnings} money={money} friends={friendPair}
         dueTotal={cashDues(week.out, h.accounts).reduce((s, d) => s + toView(d.amount, d.currency), 0)} inTotal={week.in.reduce((s, i) => s + toView(i.amount, i.currency), 0)} />
       <PlanCard plan={plan} money={money} />
+      <BigBillsStrip bills={p.bills} />
       <SpendRoomPanel rooms={rooms} flat more={<MoreLink href="/dashboard/money">All</MoreLink>} />
 
       {/* 4 · Progress */}
@@ -449,10 +454,10 @@ function NetWorthCard({ nw, hist, est, historyReady, holderLabel, savingsRate, m
   )
 }
 
-function AttentionCard({ items, pending, accName, onImport, plans, txns, today, fx, className = '' }: { items: Attention[]; pending: Pending; accName: (id: string | null) => string | null; onImport: () => void; plans: IncomePlan[]; txns: any[]; today: string; fx: number; className?: string }) {
+function AttentionCard({ items, pending, accName, onImport, plans, txns, today, fx, bills, billSkips, accounts, className = '' }: { bills: Bill[]; billSkips: string[]; accounts: any[]; items: Attention[]; pending: Pending; accName: (id: string | null) => string | null; onImport: () => void; plans: IncomePlan[]; txns: any[]; today: string; fx: number; className?: string }) {
   const [all, setAll] = useState(false)
   const shown = all ? items : items.slice(0, 4)
-  const waiting = pendingCount(pending) + incomeCheckCount(plans, txns, today, fx)
+  const waiting = pendingCount(pending) + incomeCheckCount(plans, txns, today, fx) + billReminderCount(bills, txns, today, billSkips)
   return (
     <Card aria-labelledby="att-title" className={`flex flex-col ${className}`}>
       <CardTitle id="att-title" right={items.length + waiting > 0 && (
@@ -466,6 +471,7 @@ function AttentionCard({ items, pending, accName, onImport, plans, txns, today, 
         </div>
       ) : (
         <ul className="mt-2.5">
+          <BillReminders bills={bills} skips={billSkips} txns={txns} today={today} accounts={accounts} />
           <IncomeChecks plans={plans} txns={txns} today={today} fx={fx} />
           <PendingConfirms pending={pending} accName={accName} />
           {shown.map(it => {

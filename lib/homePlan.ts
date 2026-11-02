@@ -9,6 +9,8 @@ import { viewAmount, type View } from './netWorth'
 import { addMonths, daysBetween, daysInMonth, findRecurring, nextCardDue, nextOccurrence, ymOf } from './insights'
 import type { Due, ExpectedIn, BalanceWarning } from './moneyOverview'
 import type { RecurringTxn } from './recurring'
+import { policyEvery, type Bill } from './bigBills'
+import { datesAhead } from './recurringGoals'
 
 const FREQ: Record<string, number> = { monthly: 1, quarterly: 3, semi_annual: 6, annual: 12 }
 
@@ -45,7 +47,7 @@ export function nextWeek(today: string, dues: Due[], incoming: ExpectedIn[], eve
 
 // ── A month's commitments ───────────────────────────────────────────────────
 export interface Commitment { id: string; label: string; amount: number; currency: string; kind: 'emi' | 'card' | 'sip' | 'rd' | 'repeat' | 'premium' }
-export function monthCommitments(inp: { ym: string; today: string; view: View; txns: any[]; accounts: any[]; loans: any[]; insurance: any[]; mutualFunds: any[]; rds: any[]; recurring: RecurringTxn[] }): Commitment[] {
+export function monthCommitments(inp: { ym: string; today: string; view: View; txns: any[]; accounts: any[]; loans: any[]; insurance: any[]; mutualFunds: any[]; rds: any[]; recurring: RecurringTxn[]; lic?: any[]; bills?: Bill[] }): Commitment[] {
   const { ym, today, view } = inp
   const inView = (c: string) => view === 'consolidated' || (view === 'uae' ? c === 'AED' : c !== 'AED')
   const out: Commitment[] = []
@@ -86,6 +88,15 @@ export function monthCommitments(inp: { ym: string; today: string; view: View; t
     const d = nextOccurrence(p.next_premium_date, `${ym}-01`, every)
     if (per > 0 && d && ymOf(d) === ym && inView(p.currency || 'INR')) out.push({ id: `prem-${p.id}`, label: `${p.policy_name} premium`, amount: per, currency: p.currency || 'INR', kind: 'premium' })
   }
+  for (const p of inp.lic ?? []) {
+    const every = policyEvery(p.premium_frequency), per = (Number(p.annual_premium) || 0) * every / 12
+    const d = nextOccurrence(p.next_premium_date, `${ym}-01`, every)
+    if (per > 0 && d && ymOf(d) === ym && inView(p.currency || 'INR') && !(p.maturity_date && d > String(p.maturity_date).slice(0, 10))) out.push({ id: `lic-${p.id}`, label: `LIC ${p.name || p.plan_name || 'policy'} premium`, amount: per, currency: p.currency || 'INR', kind: 'premium' })
+  }
+  // Your own big bills, in the months they fall (a policy's date is above)
+  for (const b of inp.bills ?? []) {
+    if (b.goal && !b.policy && inView(b.currency) && datesAhead({ ...b.goal, target_date: b.due }, today, 14).some(d => ymOf(d) === ym)) out.push({ id: `big-${b.key}`, label: b.name, amount: b.amount, currency: b.currency, kind: 'repeat' })
+  }
   // Regular bills paid from the bank, found from your history (a card's are in its bill)
   const spends = expandSplits(inp.txns).filter(t => isSpend(t) && inView(t.currency))
   for (const b of findRecurring(spends, ymOf(today), t => Number(t.amount) || 0)) {
@@ -111,7 +122,7 @@ export interface HomePlan {
   next: { ym: string; income: number; committed: number; sentHome: number; toPlan: number; items: Commitment[]; groups: { label: string; amount: number }[]; events: any[] }
 }
 export function homePlan(inp: { today: string; view: View; fx: number; cash: number; dues: Due[]; incoming: ExpectedIn[]; budgetsLeft: number; avgIncome: number
-  txns: any[]; accounts: any[]; loans: any[]; insurance: any[]; mutualFunds: any[]; rds: any[]; recurring: RecurringTxn[]; events: any[]; plans?: IncomePlan[] }): HomePlan {
+  txns: any[]; accounts: any[]; loans: any[]; insurance: any[]; mutualFunds: any[]; rds: any[]; recurring: RecurringTxn[]; events: any[]; plans?: IncomePlan[]; lic?: any[]; bills?: Bill[] }): HomePlan {
   const { today, view, fx } = inp
   const v = (n: number, c: string) => viewAmount(n, c, view, fx)
   const month = ymOf(today), next = addMonths(month, 1)
@@ -126,7 +137,7 @@ export function homePlan(inp: { today: string; view: View; fx: number; cash: num
   const declaredHome = (inp.plans ?? []).filter(p => p.is_active && p.kind === 'remit').reduce((s, p) => s + Number(p.amount), 0)
   const home = view !== 'uae' ? { usual: 0, left: 0 } : declaredHome > 0 ? { usual: declaredHome, left: 0 } : sentHome(inp.txns, today)
   const endOfMonth = inp.cash + comingIn - dueOut - home.left
-  const items = monthCommitments({ ym: next, today, view, txns: inp.txns, accounts: inp.accounts, loans: inp.loans, insurance: inp.insurance, mutualFunds: inp.mutualFunds, rds: inp.rds, recurring: inp.recurring })
+  const items = monthCommitments({ ym: next, today, view, txns: inp.txns, accounts: inp.accounts, loans: inp.loans, insurance: inp.insurance, mutualFunds: inp.mutualFunds, rds: inp.rds, recurring: inp.recurring, lic: inp.lic, bills: inp.bills })
   const committed = items.reduce((s, c) => s + v(c.amount, c.currency), 0)
   return {
     rest: { cash: inp.cash, comingIn, incoming, dueOut, dueGroups, sentHome: home.left, budgetsLeft: inp.budgetsLeft, endOfMonth, afterBudgets: endOfMonth - inp.budgetsLeft, days: daysInMonth(month) - Number(today.slice(8, 10)) },

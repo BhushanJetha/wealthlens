@@ -11,6 +11,7 @@ import { findRecurring, nextOccurrence, nextCardDue, addDaysTo, daysBetween, ymO
 import { nextDate, type RecurringTxn } from './recurring'
 import { nextExpected, type IncomePlan } from './incomePlans'
 import { ruleTextFor } from './rules'
+import { policyEvery, reservedFor, type Bill } from './bigBills'
 
 export type DueKind = 'emi' | 'card' | 'premium' | 'sip' | 'bill' | 'repeat'
 export interface Due {
@@ -64,7 +65,7 @@ export function cardPayFrom(card: any, txns: any[], accounts: any[]): { id: stri
 export function buildDues(inp: {
   today: string; days: number; view: View
   txns: any[]; accounts: any[]; loans: any[]; insurance: any[]; mutualFunds: any[]
-  recurring?: RecurringTxn[]; rds?: any[]; plans?: IncomePlan[]
+  recurring?: RecurringTxn[]; rds?: any[]; plans?: IncomePlan[]; lic?: any[]; bills?: Bill[]
 }): Due[] {
   const { today, days, view } = inp
   const inView = (c: string) => view === 'consolidated' || (view === 'uae' ? c === 'AED' : c !== 'AED')
@@ -96,6 +97,17 @@ export function buildDues(inp: {
     const per = (Number(p.annual_premium) || 0) * (FREQ[p.premium_frequency] ?? 12) / 12
     if (per > 0) out.push({ id: `prem-${p.id}`, date: d!, label: `${p.policy_name} premium`, sub: p.provider ?? 'Insurance', amount: per, currency: p.currency || 'INR',
       kind: 'premium', payFrom: null, payFromSource: null, href: '/dashboard/insurance' })
+  }
+  for (const p of (inp.lic ?? []).filter(p => p.is_active !== false && inView(p.currency || 'INR'))) {
+    const every = policyEvery(p.premium_frequency), d = nextOccurrence(p.next_premium_date, today, every)
+    const per = (Number(p.annual_premium) || 0) * every / 12
+    if (!within(d) || !(per > 0) || (p.maturity_date && d! > String(p.maturity_date).slice(0, 10))) continue
+    out.push({ id: `lic-${p.id}`, date: d!, label: `LIC ${p.name || p.plan_name || 'policy'} premium`, sub: 'LIC', amount: per, currency: p.currency || 'INR',
+      kind: 'premium', payFrom: null, payFromSource: null, href: '/dashboard/big-bills' })
+  }
+  // Your own big bills (a policy's date is already above)
+  for (const b of (inp.bills ?? []).filter(b => b.goal && !b.policy && inView(b.currency) && within(b.due))) {
+    out.push({ id: `big-${b.key}`, date: b.due, label: b.name, sub: 'Big bill', amount: b.amount, currency: b.currency, kind: 'bill', payFrom: null, payFromSource: null, href: '/dashboard/big-bills' })
   }
   for (const m of inp.mutualFunds.filter(m => m.has_sip && Number(m.sip_amount) > 0 && m.sip_date && inView(m.currency ?? 'INR'))) {
     for (const ym of [ymOf(today), addMonths(ymOf(today), 1)]) {
@@ -231,8 +243,8 @@ export function balanceWarnings(accounts: any[], dues: Due[], incoming: Expected
 // Bank & cash, minus what's due from them up to the day the next income lands
 // (a payment on payday itself counts — it may go out first). Card
 // spends aren't counted twice: a card's bill is the due, not each charge.
-export interface SafeToSpend { amount: number; cash: number; dueBefore: number; dueCount: number; unlinked: number; until: string; payday: boolean; days: number; perDay: number | null }
-export function safeToSpend(inp: { today: string; view: View; fx: number; accounts: any[]; dues: Due[]; txns: any[]; payday?: string | null }): SafeToSpend {
+export interface SafeToSpend { amount: number; cash: number; dueBefore: number; dueCount: number; unlinked: number; reserved: number; until: string; payday: boolean; days: number; perDay: number | null }
+export function safeToSpend(inp: { today: string; view: View; fx: number; accounts: any[]; dues: Due[]; txns: any[]; payday?: string | null; bills?: Bill[] }): SafeToSpend {
   const { today, view, fx } = inp
   const isIncome = (t: any) => isIncomeIn(t, view)
   const inView = (c: string) => view === 'consolidated' || (view === 'uae' ? c === 'AED' : c !== 'AED')
@@ -261,7 +273,9 @@ export function safeToSpend(inp: { today: string; view: View; fx: number; accoun
   // Auto entries with no account yet: no balance has moved for them, so they come off here
   const unlinked = inp.txns.filter(t => t.auto_status === 'pending' && !t.account_id && !t.paid_by_friend_id && inView(t.currency))
     .reduce((s, t) => s + viewAmount(Number(t.amount) || 0, t.currency, view, fx), 0)
-  const amount = cash - dueBefore - unlinked
+  // Set aside for big bills: still in the bank, but not free to spend
+  const reserved = (['AED', 'INR'] as const).filter(inView).reduce((s, c) => s + viewAmount(reservedFor(inp.bills ?? [], c, until, today), c, view, fx), 0)
+  const amount = cash - dueBefore - unlinked - reserved
   const n = Math.max(1, daysBetween(today, until))
-  return { amount, cash, dueBefore, dueCount: before.length, unlinked, until, payday: !!payDay || !!inp.payday, days: n, perDay: amount > 0 ? amount / n : null }
+  return { amount, cash, dueBefore, dueCount: before.length, unlinked, reserved, until, payday: !!payDay || !!inp.payday, days: n, perDay: amount > 0 ? amount / n : null }
 }

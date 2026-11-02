@@ -82,6 +82,7 @@ export const SECTIONS: NavSection[] = [
   { key: 'plan', label: 'Plan', desc: 'Budgets, goals and forecasts', icon: Target, href: '/dashboard/budgets', tabs: [
     { label: 'Budgets',            href: '/dashboard/budgets' },
     { label: 'Goals',              href: '/dashboard/goals' },
+    { label: 'Big bills',          href: '/dashboard/big-bills' },
     { label: 'Events & trips',     href: '/dashboard/events' },
     { label: 'Cash-flow forecast', href: '/dashboard/cashflow' },
     { label: 'Tax planner',        href: '/dashboard/tax' },

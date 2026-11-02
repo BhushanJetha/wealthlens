@@ -1,7 +1,8 @@
 'use client'
 import Link from 'next/link'
-import { ArrowDownLeft, ArrowUpRight, CalendarDays, ChevronRight, HandCoins } from 'lucide-react'
-import { fmtCompact } from '@/lib/format'
+import { ArrowDownLeft, ArrowUpRight, CalendarDays, ChevronRight, HandCoins, Receipt } from 'lucide-react'
+import { billTotals, type Bill } from '@/lib/bigBills'
+import { fmtCompact, fmtMoney } from '@/lib/format'
 import { fmtDay, daysBetween } from '@/lib/insights'
 import type { Reminder, HomePlan } from '@/lib/homePlan'
 import type { BalanceWarning } from '@/lib/moneyOverview'
@@ -10,7 +11,7 @@ const MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'Au
 
 // The first thing on Home: what's actually free to spend, per currency
 // (dirhams can't pay in India). Tap for the detail on Money.
-export interface FreeCard { cur: 'AED' | 'INR'; amount: number; cash: number; due: number; until: string; perDay: number | null; payday: boolean }
+export interface FreeCard { cur: 'AED' | 'INR'; amount: number; cash: number; due: number; reserved: number; until: string; perDay: number | null; payday: boolean }
 export function FreeToSpendCard({ cards, className = '' }: { cards: FreeCard[]; className?: string }) {
   return (
     <Link href="/dashboard/money" aria-label="Free to spend, open the detail" className={`flex flex-col rounded-[18px] md:rounded-[20px] bg-review text-white px-4 md:px-[22px] py-4 md:py-5 ${className}`}>
@@ -26,7 +27,7 @@ export function FreeToSpendCard({ cards, className = '' }: { cards: FreeCard[]; 
               <div className="text-[12.5px] mt-0.5" style={{ color: '#E6E0FF' }}>{cards.length > 1 && <>{c.cur === 'AED' ? 'UAE' : 'India'} · </>}{c.amount < 0 ? 'short' : 'until'} {fmtDay(c.until)}</div>
             </div>
             <dl className="flex flex-col gap-1 rounded-xl px-3 py-2.5" style={{ background: 'rgba(255,255,255,.1)' }}>
-              {([['Bank & cash', fmtCompact(c.cash, c.cur)], ['Due first', fmtCompact(c.due, c.cur)], ['Per day', c.perDay ? fmtCompact(c.perDay, c.cur) : '—']] as [string, string][]).map(([k, v]) => (
+              {([['Bank & cash', fmtCompact(c.cash, c.cur)], ['Due first', fmtCompact(c.due, c.cur)], ...(c.reserved > 0 ? [['Set aside', fmtCompact(c.reserved, c.cur)] as [string, string]] : []), ['Per day', c.perDay ? fmtCompact(c.perDay, c.cur) : '—']] as [string, string][]).map(([k, v]) => (
                 <div key={k} className="flex justify-between gap-2 min-w-0">
                   <dt className="text-[11px] md:text-[12.5px] whitespace-nowrap" style={{ color: '#CFC6FF' }}>{k}</dt>
                   <dd className="text-[12px] md:text-[14px] font-semibold tabular-nums whitespace-nowrap">{v}</dd>
@@ -36,6 +37,25 @@ export function FreeToSpendCard({ cards, className = '' }: { cards: FreeCard[]; 
           </div>
         ))}
       </div>
+    </Link>
+  )
+}
+
+// One line for Home: what the big bills ask of you each month, and what's next
+export function BigBillsStrip({ bills }: { bills: Bill[] }) {
+  if (!bills.length) return null
+  const lines = (['INR', 'AED'] as const).map(c => ({ c, t: billTotals(bills, c) })).filter(x => x.t.count > 0)
+  return (
+    <Link href="/dashboard/big-bills" aria-label="Big bills, open the detail" className="wl-card flex items-center gap-3 px-4 py-3.5 md:px-5">
+      <span className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}><Receipt size={17} /></span>
+      <span className="flex-1 min-w-0 flex flex-col gap-0.5">
+        {lines.map(({ c, t }) => (
+          <span key={c} className="text-[13px]" style={{ color: 'var(--text)' }}>
+            <b>Big bills:</b> {t.monthly > 0 ? `${fmtMoney(t.monthly, c)} a month to set aside` : 'all set aside'}{t.next ? ` · next is ${t.next.name} on ${fmtDay(t.next.due)}` : ''}
+          </span>
+        ))}
+      </span>
+      <ChevronRight size={17} className="flex-shrink-0" style={{ color: 'var(--text4)' }} />
     </Link>
   )
 }

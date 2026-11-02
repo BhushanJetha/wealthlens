@@ -60,7 +60,7 @@ export async function reconcileAuto(sb: any, txns: any[], src: { loans: any[]; f
   for (const a of txns.filter(t => t.auto_ref)) {
     const ref = a.auto_ref, pool = real.filter(t => !used.has(t)), date = a.txn_date, amount = Number(a.amount) || 0
     let hit: any = null
-    if (ref.kind === 'plan') {
+    if (ref.kind === 'plan' || ref.kind === 'bill') {
       // Something you added from Expected income: the statement's row, same account
       // and direction, within 5 days and 1%, is the same money. Anything less sure is left for Review.
       hit = txns.find(t => !t.auto_ref && !used.has(t) && t.id !== a.id && t.account_id === a.account_id && t.currency === a.currency

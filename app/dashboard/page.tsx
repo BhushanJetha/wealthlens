@@ -10,6 +10,7 @@ import { isMissingTable } from '@/lib/supabase/missingTable'
 import { goalInterestsOf } from '@/lib/goalInterests'
 import { withAutomation } from '@/lib/automation'
 import { loadWealthExtras } from '@/lib/wealthExtras'
+import { buildBills, loadBillReads } from '@/lib/bigBills'
 
 // Today's stored snapshot already says this (fx is stored to 4 decimals;
 // jsonb key order differs, so compare by key)
@@ -69,10 +70,11 @@ export default async function DashboardPage() {
     supabase.from('txn_splits').select('id,friend_id,amount,transaction_id,transactions(id,txn_date,merchant,category,amount,currency)').eq('user_id', uid),
     supabase.from('transactions').select('id,txn_date,merchant,category,amount,currency,txn_type,friend_id,paid_by_friend_id').eq('user_id', uid).or('paid_by_friend_id.not.is.null,friend_id.not.is.null'),
     supabase.from('income_plans').select('*').eq('user_id', uid),
+    loadBillReads(supabase, uid),
   ])
   // Goal interests live in user_metadata — read fresh (the session copy is as of sign-in)
   const [[auto, [txns, loansRes, ledger, stocksRes, mfRes, fdRes, insRes, goalsRes, giRes, budgetsRes,
-    rdRes, npsRes, licRes, goldRes, bondRes, etfRes, ppfRes, profileRes, extras, snapsRes, eventsRes, friendsRes, splitsRes, friendTxnsRes, plansRes]], { data: fresh }] = await Promise.all([
+    rdRes, npsRes, licRes, goldRes, bondRes, etfRes, ppfRes, profileRes, extras, snapsRes, eventsRes, friendsRes, splitsRes, friendTxnsRes, plansRes, [contribRes, skipsRes]]], { data: fresh }] = await Promise.all([
     withAutomation(supabase, uid, today, load), supabase.auth.getUser(),
   ])
 
@@ -93,6 +95,8 @@ export default async function DashboardPage() {
   // written only when the numbers moved). Needs migration 023; until it's run
   // Home shows a "history starts once…" note.
   const fx = ledger.fx
+  const billSkips = (skipsRes.data ?? []).map((s: any) => s.key)
+  const bills = buildBills({ goals: goalsRes.data ?? [], contributions: contribRes.data ?? [], insurance: insRes.data ?? [], lic: licRes.data ?? [], accounts: ledger.accounts, skips: billSkips }, today)
   const uae = computeNetWorth(holdings, 'uae', fx)
   const india = computeNetWorth(holdings, 'india', fx)
   let historyReady = !isMissingTable(snapsRes.error)
@@ -127,6 +131,8 @@ export default async function DashboardPage() {
       splits={splitsRes.data ?? []}
       friendTxns={friendTxnsRes.data ?? []}
       plans={plansRes.data ?? []}
+      bills={bills}
+      billSkips={billSkips}
       plansReady={!isMissingTable(plansRes.error)}
       fx={fx}
       insurance={insRes.data ?? []}

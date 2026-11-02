@@ -5,6 +5,7 @@ import { isMissingTable } from '@/lib/supabase/missingTable'
 import { activeAccountsWithLedger } from '@/lib/ledger'
 import { getAedInr } from '@/lib/fx'
 import type { Fund } from '@/lib/budgets'
+import { TAKEN_BACK } from '@/lib/bigBills'
 import BudgetsClient from '@/components/dashboard/BudgetsClient'
 
 // Budgets: 13 months of transactions (this month, last year's history, and
@@ -31,7 +32,7 @@ export default async function BudgetsPage() {
     supabase.from('budgets').select('*').eq('user_id', uid).gte('month_year', fromDate.slice(0, 7)),
     supabase.from('accounts').select('id').eq('user_id', uid).eq('account_type', 'credit_card'),
     recP,
-    supabase.from('goal_contributions').select('goal_id,amount,contrib_date').eq('user_id', uid),
+    supabase.from('goal_contributions').select('goal_id,amount,contrib_date,note').eq('user_id', uid),
     accountsP,
   ])
 
@@ -44,7 +45,7 @@ export default async function BudgetsPage() {
       const acc = g.account_id ? accounts.find((a: any) => a.id === g.account_id && a.currency === cur) : null
       const saved = Math.max(0, mine.reduce((s, c) => s + (Number(c.amount) || 0), 0) + (acc ? Math.max(0, Number(acc.current_balance) || 0) : 0))
       const used: Record<string, number> = {}
-      for (const c of mine) if (Number(c.amount) < 0) used[String(c.contrib_date).slice(0, 7)] = (used[String(c.contrib_date).slice(0, 7)] ?? 0) - Number(c.amount)
+      for (const c of mine) if (Number(c.amount) < 0 && c.note !== TAKEN_BACK) used[String(c.contrib_date).slice(0, 7)] = (used[String(c.contrib_date).slice(0, 7)] ?? 0) - Number(c.amount)
       return {
         id: g.id, name: g.name, category: g.spend_category ?? null, currency: cur, target: Number(g.target_amount) || 0, due_date: String(g.target_date).slice(0, 10), saved,
         last_saved_month: mine.filter(c => Number(c.amount) > 0 && String(c.contrib_date) <= today).map(c => String(c.contrib_date).slice(0, 7)).sort().pop() ?? null,

@@ -12,7 +12,7 @@ import type { Idea } from './goalIdeas'
 const utc = (d: string) => Date.parse(`${String(d).slice(0, 10)}T00:00:00Z`)
 export const daysUntil = (from: string, to: string) => Math.round((utc(to) - utc(from)) / 864e5)
 const addDays = (d: string, n: number) => new Date(utc(d) + n * 864e5).toISOString().slice(0, 10)
-function addMonthsTo(d: string, n: number) {
+export function addMonthsTo(d: string, n: number) {
   const [y, m, day] = d.slice(0, 10).split('-').map(Number)
   const first = new Date(Date.UTC(y, m - 1 + n, 1))
   const dim = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate()
@@ -110,17 +110,17 @@ export interface RecIdeaInput {
   lic: any[]; insurance: any[]; gold: any[]
   members: { name: string; relationship: string }[]
 }
-const FREQ: Record<string, number> = { annually: 12, annual: 12, yearly: 12, 'half-yearly': 6, half_yearly: 6, semi_annual: 6, 'semi-annual': 6, quarterly: 3, monthly: 1 }
+export const POLICY_FREQ: Record<string, number> = { annually: 12, annual: 12, yearly: 12, 'half-yearly': 6, half_yearly: 6, semi_annual: 6, 'semi-annual': 6, quarterly: 3, monthly: 1 }
 // A date that repeats every `every` months, moved forward to today or later
-function rollForward(d: string | null | undefined, every: number, today: string) {
+export function rollForward(d: string | null | undefined, every: number, today: string) {
   if (!d) return null
   let x = String(d).slice(0, 10), guard = 0
   while (x < today && guard++ < 200) x = addMonthsTo(x, every)
   return x >= today ? x : null
 }
-const normName = (s: unknown) => String(s ?? '').toLowerCase()
+export const normName = (s: unknown) => String(s ?? '').toLowerCase()
   .replace(/\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}/g, ' ').replace(/[^a-z]/g, '').slice(0, 24)
-const titleCase = (s: string) => s.trim().replace(/\s+/g, ' ').slice(0, 32).toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase())
+export const titleCase = (s: string) => s.trim().replace(/\s+/g, ' ').slice(0, 32).toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase())
 
 export function recurringIdeas(p: RecIdeaInput): Idea[] {
   const live = p.goals.filter(g => g.status !== 'cancelled' && isRecurring(g))
@@ -140,7 +140,7 @@ export function recurringIdeas(p: RecIdeaInput): Idea[] {
   ]
   const policyAmounts: { cur: Cur; amount: number }[] = []
   for (const pol of policies) {
-    const every = FREQ[String(pol.freq ?? 'annual').toLowerCase()] ?? 12
+    const every = POLICY_FREQ[String(pol.freq ?? 'annual').toLowerCase()] ?? 12
     const prem = (Number(pol.annual) || 0) * every / 12
     if (every < 3 || !(prem > 0)) continue
     policyAmounts.push({ cur: pol.cur, amount: prem })
