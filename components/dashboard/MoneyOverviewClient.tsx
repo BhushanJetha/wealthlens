@@ -20,6 +20,8 @@ import { rankCards } from '@/lib/cardCycle'
 import type { RecurringTxn } from '@/lib/recurring'
 import PendingConfirms, { pendingCount, type Pending } from './PendingConfirms'
 import SpendRoomPanel from './SpendRoomPanel'
+import IncomeChecks, { incomeCheckCount } from './IncomeChecks'
+import { declaredPayday, type IncomePlan } from '@/lib/incomePlans'
 import { spendRoom } from '@/lib/spendRoom'
 import { PageHeader, InsightBar, KpiTile, KpiGrid, Panel, MoreLink } from '@/components/ui/kit'
 import { BankLogo } from '@/components/ui/BankCards'
@@ -27,7 +29,7 @@ import { BankLogo } from '@/components/ui/BankCards'
 interface Props {
   today: string
   transactions: any[]; accounts: any[]; loans: any[]; insurance: any[]
-  mutualFunds: any[]; fixedDeposits: any[]; budgets: any[]; rds?: any[]
+  mutualFunds: any[]; fixedDeposits: any[]; budgets: any[]; rds?: any[]; plans?: IncomePlan[]
   pending: Pending               // repeating entries, EMIs and SIPs waiting for a confirm
   recurring: RecurringTxn[]
 }
@@ -51,7 +53,8 @@ export default function MoneyOverviewClient(p: Props) {
   const [today, setToday] = useState(p.today)
   useEffect(() => { setToday(localToday()) }, [])
   const [picking, setPicking] = useState<Due | null>(null)
-  const confirms = pendingCount(p.pending)
+  const plans = p.plans ?? []
+  const confirms = pendingCount(p.pending) + incomeCheckCount(plans, p.transactions, today, FX)
 
   const inView = (c: string) => view === 'consolidated' || (view === 'uae' ? c === 'AED' : c !== 'AED')
   const accounts = useMemo(() => p.accounts.filter(a => inView(a.currency)), [p.accounts, view])
@@ -65,17 +68,17 @@ export default function MoneyOverviewClient(p: Props) {
     cash: 0, invested: { value: 0, cost: 0 },
   }), [view, FX, today, p])
 
-  const dues = useMemo(() => buildDues({ today, days: 35, view, txns: p.transactions, accounts: p.accounts, loans: p.loans, insurance: p.insurance, mutualFunds: p.mutualFunds, recurring: p.recurring, rds: p.rds }),
+  const dues = useMemo(() => buildDues({ today, days: 35, view, txns: p.transactions, accounts: p.accounts, loans: p.loans, insurance: p.insurance, mutualFunds: p.mutualFunds, recurring: p.recurring, rds: p.rds, plans }),
     [today, view, p])
   const incoming = useMemo(() => expectedIncome(p.transactions, accounts, today, 35), [p.transactions, accounts, today])
   const warnings = useMemo(() => balanceWarnings(accounts, dues, incoming, today, 14), [accounts, dues, incoming, today])
-  const sts = useMemo(() => safeToSpend({ today, view, fx: FX, accounts, dues, txns: p.transactions }), [today, view, FX, accounts, dues, p.transactions])
+  const sts = useMemo(() => safeToSpend({ today, view, fx: FX, accounts, dues, txns: p.transactions, payday: declaredPayday(plans, today, view, p.transactions) }), [today, view, FX, accounts, dues, p.transactions]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // How much more you can spend, in each currency on its own (dirhams can't pay in India)
   const rooms = useMemo(() => (view === 'uae' ? ['AED'] as const : view === 'india' ? ['INR'] as const : ['AED', 'INR'] as const).map(c => {
     const v = c === 'AED' ? 'uae' as const : 'india' as const
-    const ds = buildDues({ today, days: 35, view: v, txns: p.transactions, accounts: p.accounts, loans: p.loans, insurance: p.insurance, mutualFunds: p.mutualFunds, recurring: p.recurring, rds: p.rds })
-    const s = safeToSpend({ today, view: v, fx: FX, accounts: p.accounts.filter(a => a.currency === c), dues: ds, txns: p.transactions })
+    const ds = buildDues({ today, days: 35, view: v, txns: p.transactions, accounts: p.accounts, loans: p.loans, insurance: p.insurance, mutualFunds: p.mutualFunds, recurring: p.recurring, rds: p.rds, plans })
+    const s = safeToSpend({ today, view: v, fx: FX, accounts: p.accounts.filter(a => a.currency === c), dues: ds, txns: p.transactions, payday: declaredPayday(plans, today, v, p.transactions) })
     return { ...spendRoom({ today, cur: c, budgets: p.budgets, txns: p.transactions, safe: s.amount }), until: s.until, perDay: s.perDay }
   }), [today, view, FX, p])
 
@@ -170,6 +173,7 @@ export default function MoneyOverviewClient(p: Props) {
             </div>
           ) : (
             <ul className="mt-2">
+              <IncomeChecks plans={plans} txns={p.transactions} today={today} fx={FX} />
               <PendingConfirms pending={p.pending} accName={accName} />
               {needs.slice(0, 6).map(it => {
                 const body = (<>

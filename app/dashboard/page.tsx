@@ -68,10 +68,11 @@ export default async function DashboardPage() {
     supabase.from('friends').select('id,name').eq('user_id', uid),
     supabase.from('txn_splits').select('id,friend_id,amount,transaction_id,transactions(id,txn_date,merchant,category,amount,currency)').eq('user_id', uid),
     supabase.from('transactions').select('id,txn_date,merchant,category,amount,currency,txn_type,friend_id,paid_by_friend_id').eq('user_id', uid).or('paid_by_friend_id.not.is.null,friend_id.not.is.null'),
+    supabase.from('income_plans').select('*').eq('user_id', uid),
   ])
   // Goal interests live in user_metadata — read fresh (the session copy is as of sign-in)
   const [[auto, [txns, loansRes, ledger, stocksRes, mfRes, fdRes, insRes, goalsRes, giRes, budgetsRes,
-    rdRes, npsRes, licRes, goldRes, bondRes, etfRes, ppfRes, profileRes, extras, snapsRes, eventsRes, friendsRes, splitsRes, friendTxnsRes]], { data: fresh }] = await Promise.all([
+    rdRes, npsRes, licRes, goldRes, bondRes, etfRes, ppfRes, profileRes, extras, snapsRes, eventsRes, friendsRes, splitsRes, friendTxnsRes, plansRes]], { data: fresh }] = await Promise.all([
     withAutomation(supabase, uid, today, load), supabase.auth.getUser(),
   ])
 
@@ -125,6 +126,9 @@ export default async function DashboardPage() {
       friends={friendsRes.data ?? []}
       splits={splitsRes.data ?? []}
       friendTxns={friendTxnsRes.data ?? []}
+      plans={plansRes.data ?? []}
+      plansReady={!isMissingTable(plansRes.error)}
+      fx={fx}
       insurance={insRes.data ?? []}
       budgets={budgetsRes.data ?? []}
       goals={goalsRes.data ?? []}

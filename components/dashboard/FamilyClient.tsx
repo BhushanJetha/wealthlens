@@ -7,10 +7,11 @@ import { toast } from '@/components/ui/toaster'
 import { PageHeader } from '@/components/ui/kit'
 import { localToday, fmtDay } from '@/lib/insights'
 import { SHARED_TEXT, PRIVATE_TEXT } from './JoinClient'
+import { setFamilyMode } from '@/components/layout/FamilyBar'
 
 const daysLeft = (iso: string) => Math.max(0, Math.ceil((Date.parse(iso) - Date.now()) / 864e5))
 
-export default function FamilyClient({ ready, viewing, joined, ownerName, links }: { ready: boolean; viewing: boolean; joined: any | null; ownerName: string | null; links: any[] }) {
+export default function FamilyClient({ familyOn = false, ready, viewing, joined, ownerName, links }: { familyOn?: boolean; ready: boolean; viewing: boolean; joined: any | null; ownerName: string | null; links: any[] }) {
   const router = useRouter()
   const supabase = createClient()
   const [name, setName] = useState('')
@@ -95,6 +96,18 @@ export default function FamilyClient({ ready, viewing, joined, ownerName, links 
   const ended = links.filter(l => l.status === 'invited' && l.expires_at <= new Date().toISOString())
   const initial = (n: string) => n.trim().charAt(0).toUpperCase()
   return frame(<>
+    {active.length > 0 && (
+      <label className="wl-card px-4 md:px-5 py-4 flex items-center gap-3 cursor-pointer">
+        <span className="flex-1 min-w-0">
+          <span className="block text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Family view</span>
+          <span className="block text-[12.5px] mt-0.5" style={{ color: 'var(--text3)' }}>{familyOn ? 'On: the Me, member and Whole family switcher shows at the top of every page.' : 'Off: nothing extra on your screens. Turn it on to see your family’s money.'}</span>
+        </span>
+        <input type="checkbox" role="switch" checked={familyOn} onChange={e => setFamilyMode(e.target.checked)} aria-label="Family view" className="sr-only peer" />
+        <span aria-hidden="true" className="relative w-12 h-7 rounded-full flex-shrink-0 transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-offset-2" style={{ background: familyOn ? 'var(--accent)' : '#CBD5E1' }}>
+          <span className="absolute top-[3px] w-[22px] h-[22px] rounded-full bg-white transition-all" style={{ left: familyOn ? 23 : 3, boxShadow: '0 1px 3px rgba(0,0,0,.25)' }} />
+        </span>
+      </label>
+    )}
     {(active.length > 0 || waiting.length > 0 || ended.length > 0) && (
       <section className="wl-card px-4 md:px-5 py-4">
         <h2 className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Members</h2>

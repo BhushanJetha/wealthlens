@@ -16,7 +16,7 @@ export default async function MoneyPage() {
   const fromDate = `${start.toISOString().slice(0, 7)}-01`
   // Repeating entries, EMIs and SIPs whose day has come are recorded
   // alongside these reads; the rest wait here
-  const [auto, [txns, accsRes, loansRes, insRes, mfRes, fdRes, budgetsRes, rdRes]] = await withAutomation(supabase, uid, today, () => Promise.all([
+  const [auto, [txns, accsRes, loansRes, insRes, mfRes, fdRes, budgetsRes, rdRes, plansRes]] = await withAutomation(supabase, uid, today, () => Promise.all([
     fetchAllRows((a, b) => supabase.from('transactions').select('*')
       .eq('user_id', uid).gte('txn_date', fromDate)
       .order('txn_date', { ascending: false }).order('id').range(a, b)),
@@ -27,6 +27,7 @@ export default async function MoneyPage() {
     supabase.from('fixed_deposits').select('*').eq('user_id', uid).eq('is_active', true),
     supabase.from('budgets').select('*').eq('user_id', uid).gte('month_year', fromDate.slice(0, 7)),
     supabase.from('recurring_deposits').select('*').eq('user_id', uid).eq('is_active', true),
+    supabase.from('income_plans').select('*').eq('user_id', uid),
   ]))
 
   return (
@@ -42,6 +43,7 @@ export default async function MoneyPage() {
       fixedDeposits={fdRes.data ?? []}
       budgets={budgetsRes.data ?? []}
       rds={rdRes.data ?? []}
+      plans={plansRes.data ?? []}
     />
   )
 }

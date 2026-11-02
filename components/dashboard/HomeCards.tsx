@@ -145,12 +145,14 @@ export function PlanCard({ plan, money, className = '' }: { plan: HomePlan; mone
                 <div key={i.id} className="py-1">
                   <div className="flex justify-between gap-2 font-semibold"><span className="min-w-0 truncate">{i.label}</span><span className="tabular-nums flex-shrink-0">{fmtCompact(i.amount, i.currency)}</span></div>
                   <div>
-                    {i.accountName} · {i.late ? `usually by the ${i.day}, not recorded yet` : `usually on the ${i.day}`} · seen in {i.months} of the last 3 months
-                    {i.got ? ` · ${fmtCompact(i.got, i.currency)} already in, usual ${fmtCompact(i.usual ?? 0, i.currency)}` : ''}
+                    {i.declared
+                      ? <>Declared by you · {i.late ? `expected ${i.whenText}, not recorded yet` : `on ${i.whenText}`}</>
+                      : <>Estimate · {i.accountName} · {i.late ? `usually by the ${i.day}, not recorded yet` : `usually on the ${i.day}`} · seen in {i.months} of the last 3 months
+                        {i.got ? ` · ${fmtCompact(i.got, i.currency)} already in, usual ${fmtCompact(i.usual ?? 0, i.currency)}` : ''}</>}
                   </div>
                 </div>
               ))}
-              {rest.incoming.length > 0 && <div className="pt-1" style={{ color: '#3F7A5E' }}>Your own transfers shouldn’t be here. If one is, mark it in Review.</div>}
+              {rest.incoming.length > 0 && <div className="pt-1" style={{ color: '#3F7A5E' }}>Not right? <Link href="/dashboard/settings/income" className="font-semibold underline">Set your expected income</Link>.</div>}
             </div>
           </details>
           {rest.dueGroups.map(g => <Line key={g.label} label={`− ${g.label}`} value={money(g.amount)} />)}

@@ -1,4 +1,6 @@
+import { cookies } from 'next/headers'
 import { createClient, getRealSessionUser } from '@/lib/supabase/server'
+import { FAMILY_MODE_COOKIE } from '@/lib/supabase/viewAs'
 import { isMissingTable } from '@/lib/supabase/missingTable'
 import FamilyClient from '@/components/dashboard/FamilyClient'
 
@@ -17,7 +19,7 @@ export default async function FamilyPage() {
     ownerName = info?.[0]?.owner_name ?? null
   }
   return (
-    <FamilyClient ready={!isMissingTable(error)} viewing={!!(supabase as any).__viewAs} joined={joined} ownerName={ownerName}
+    <FamilyClient familyOn={cookies().get(FAMILY_MODE_COOKIE)?.value === 'on'} ready={!isMissingTable(error)} viewing={!!(supabase as any).__viewAs} joined={joined} ownerName={ownerName}
       links={rows.filter((l: any) => l.owner_id === uid)} />
   )
 }

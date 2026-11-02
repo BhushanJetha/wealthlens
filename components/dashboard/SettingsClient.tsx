@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { User, Lock, Bell, Save, Loader2, CheckCircle, Shield, Trash2, Users, ChevronRight } from 'lucide-react'
+import { User, Lock, Bell, Save, Loader2, CheckCircle, Shield, Trash2, Users, ChevronRight, Wallet } from 'lucide-react'
 import { removeDuplicateTransactions } from '@/lib/dedupeTransactions'
 
 type Tab = 'profile' | 'security' | 'preferences'
@@ -54,7 +54,16 @@ export default function SettingsClient({ profile, userId }: any) {
         <span className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}><Users size={17} /></span>
         <span className="flex-1 min-w-0">
           <span className="block text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Family</span>
-          <span className="block text-[12px]" style={{ color: 'var(--text3)' }}>Invite family members, or see who can view your money</span>
+          <span className="block text-[12px]" style={{ color: 'var(--text3)' }}>Family view on or off, invite members, or see who can view your money</span>
+        </span>
+        <ChevronRight size={17} style={{ color: 'var(--text4)' }} />
+      </Link>
+
+      <Link href="/dashboard/settings/income" className="wl-card px-4 py-3.5 flex items-center gap-3 hover:bg-[#F5F3FE] transition-colors">
+        <span className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}><Wallet size={17} /></span>
+        <span className="flex-1 min-w-0">
+          <span className="block text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Expected income</span>
+          <span className="block text-[12px]" style={{ color: 'var(--text3)' }}>Your salary, other income and monthly transfers</span>
         </span>
         <ChevronRight size={17} style={{ color: 'var(--text4)' }} />
       </Link>

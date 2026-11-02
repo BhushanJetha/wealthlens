@@ -9,6 +9,7 @@ import { catOf, CC_BILL, isIncome as isIncomeIn, isSpend, expandSplits, prepareM
 import { matchScore } from './loans'
 import { findRecurring, nextOccurrence, nextCardDue, addDaysTo, daysBetween, ymOf, addMonths, daysInMonth, fmtDay } from './insights'
 import { nextDate, type RecurringTxn } from './recurring'
+import { nextExpected, type IncomePlan } from './incomePlans'
 import { ruleTextFor } from './rules'
 
 export type DueKind = 'emi' | 'card' | 'premium' | 'sip' | 'bill' | 'repeat'
@@ -24,6 +25,7 @@ export interface ExpectedIn {
   id: string; accountId: string; date: string; amount: number; currency: string; label: string
   // Why it's expected
   accountName?: string; usual?: number; day?: number; months?: number; got?: number; late?: boolean
+  declared?: boolean; whenText?: string      // from what you declared, not detected
 }
 export interface BalanceWarning { id: string; severity: 'high' | 'medium' | 'low'; title: string; detail: string; accountId: string; date?: string; href?: string }
 
@@ -62,7 +64,7 @@ export function cardPayFrom(card: any, txns: any[], accounts: any[]): { id: stri
 export function buildDues(inp: {
   today: string; days: number; view: View
   txns: any[]; accounts: any[]; loans: any[]; insurance: any[]; mutualFunds: any[]
-  recurring?: RecurringTxn[]; rds?: any[]
+  recurring?: RecurringTxn[]; rds?: any[]; plans?: IncomePlan[]
 }): Due[] {
   const { today, days, view } = inp
   const inView = (c: string) => view === 'consolidated' || (view === 'uae' ? c === 'AED' : c !== 'AED')
@@ -115,6 +117,12 @@ export function buildDues(inp: {
         kind: 'sip', payFrom: r.rd_account_id ?? null, payFromSource: r.rd_account_id ? 'set' : null, href: '/dashboard/investments/recurring-deposits' })
     }
   }
+  // What you declared you send to India leaves the UAE side (in the All view it's a move)
+  if (view === 'uae') for (const p of (inp.plans ?? []).filter(x => x.is_active && x.kind === 'remit')) {
+    const n = nextExpected(p, today, inp.txns)
+    if (within(n.date)) out.push({ id: `plan-${p.id}-${n.ym}`, date: n.date, label: p.name, sub: 'Your monthly transfer', amount: Number(p.amount), currency: p.currency,
+      kind: 'repeat', payFrom: p.account_id, payFromSource: 'set', href: '/dashboard/settings/income' })
+  }
   // Repeating entries you've set up (money out only — not income or moves)
   const repeats = (inp.recurring ?? []).filter(r => r.is_active && isSpend(r) && inView(r.currency))
   for (const r of repeats) {
@@ -146,7 +154,7 @@ export function buildDues(inp: {
 // usual day, less what's already arrived this month. One-offs (refunds, gifts,
 // bonuses, deposits maturing) are never expected. A plain "Other" credit counts
 // only when the same payer pays about the same amount each time.
-const ONE_OFF_INCOME = new Set(['Refund', 'Gift', 'Tax Refund', 'Bonus', 'FD/RD Maturity', 'Freelance'])
+const ONE_OFF_INCOME = new Set(['Refund', 'Gift', 'Tax Refund', 'Bonus', 'FD/RD Maturity', 'Freelance', 'One-off income'])
 export function expectedIncome(txns: any[], accounts: any[], today: string, days: number, opts: { late?: boolean } = {}): ExpectedIn[] {
   const month = ymOf(today), months = [1, 2, 3].map(i => addMonths(month, -i)), dayNow = Number(today.slice(8, 10))
   const out: ExpectedIn[] = []
@@ -224,7 +232,7 @@ export function balanceWarnings(accounts: any[], dues: Due[], incoming: Expected
 // (a payment on payday itself counts — it may go out first). Card
 // spends aren't counted twice: a card's bill is the due, not each charge.
 export interface SafeToSpend { amount: number; cash: number; dueBefore: number; dueCount: number; unlinked: number; until: string; payday: boolean; days: number; perDay: number | null }
-export function safeToSpend(inp: { today: string; view: View; fx: number; accounts: any[]; dues: Due[]; txns: any[] }): SafeToSpend {
+export function safeToSpend(inp: { today: string; view: View; fx: number; accounts: any[]; dues: Due[]; txns: any[]; payday?: string | null }): SafeToSpend {
   const { today, view, fx } = inp
   const isIncome = (t: any) => isIncomeIn(t, view)
   const inView = (c: string) => view === 'consolidated' || (view === 'uae' ? c === 'AED' : c !== 'AED')
@@ -244,6 +252,7 @@ export function safeToSpend(inp: { today: string; view: View; fx: number; accoun
     const ym = payDay > Number(today.slice(8, 10)) ? month : addMonths(month, 1)
     until = `${ym}-${String(Math.min(payDay, daysInMonth(ym))).padStart(2, '0')}`
   }
+  if (inp.payday) until = inp.payday                  // the day you declared
   const cardIds = new Set(inp.accounts.filter(a => kindOf(a) === 'card').map(a => a.id))
   const cash = inp.accounts.filter(a => kindOf(a) !== 'card' && inView(a.currency))
     .reduce((s, a) => s + Math.max(0, viewAmount(Number(a.current_balance) || 0, a.currency, view, fx)), 0)
@@ -254,5 +263,5 @@ export function safeToSpend(inp: { today: string; view: View; fx: number; accoun
     .reduce((s, t) => s + viewAmount(Number(t.amount) || 0, t.currency, view, fx), 0)
   const amount = cash - dueBefore - unlinked
   const n = Math.max(1, daysBetween(today, until))
-  return { amount, cash, dueBefore, dueCount: before.length, unlinked, until, payday: !!payDay, days: n, perDay: amount > 0 ? amount / n : null }
+  return { amount, cash, dueBefore, dueCount: before.length, unlinked, until, payday: !!payDay || !!inp.payday, days: n, perDay: amount > 0 ? amount / n : null }
 }

@@ -4,6 +4,7 @@
 import { kindOf } from './ledger'
 import { isSpend, isRemitOut, isIncome, prepareMoney, expandSplits } from './money'
 import { ruleTextFor } from './rules'
+import type { IncomePlan } from './incomePlans'
 import { viewAmount, type View } from './netWorth'
 import { addMonths, daysBetween, daysInMonth, findRecurring, nextCardDue, nextOccurrence, ymOf } from './insights'
 import type { Due, ExpectedIn, BalanceWarning } from './moneyOverview'
@@ -110,7 +111,7 @@ export interface HomePlan {
   next: { ym: string; income: number; committed: number; sentHome: number; toPlan: number; items: Commitment[]; groups: { label: string; amount: number }[]; events: any[] }
 }
 export function homePlan(inp: { today: string; view: View; fx: number; cash: number; dues: Due[]; incoming: ExpectedIn[]; budgetsLeft: number; avgIncome: number
-  txns: any[]; accounts: any[]; loans: any[]; insurance: any[]; mutualFunds: any[]; rds: any[]; recurring: RecurringTxn[]; events: any[] }): HomePlan {
+  txns: any[]; accounts: any[]; loans: any[]; insurance: any[]; mutualFunds: any[]; rds: any[]; recurring: RecurringTxn[]; events: any[]; plans?: IncomePlan[] }): HomePlan {
   const { today, view, fx } = inp
   const v = (n: number, c: string) => viewAmount(n, c, view, fx)
   const month = ymOf(today), next = addMonths(month, 1)
@@ -121,7 +122,9 @@ export function homePlan(inp: { today: string; view: View; fx: number; cash: num
   const dueOut = fromBank.reduce((s, d) => s + v(d.amount, d.currency), 0)
   const dueGroups = ([['Card bills', ['card']], ['EMIs', ['emi']], ['SIPs & RDs', ['sip']], ['Rent & bills', ['repeat', 'bill', 'premium']]] as [string, string[]][])
     .map(([label, kinds]) => ({ label, amount: fromBank.filter(d => kinds.includes(d.kind)).reduce((s, d) => s + v(d.amount, d.currency), 0) })).filter(g => g.amount > 0)
-  const home = view === 'uae' ? sentHome(inp.txns, today) : { usual: 0, left: 0 }
+  // What you declared you send is already in the dues this month; else your history
+  const declaredHome = (inp.plans ?? []).filter(p => p.is_active && p.kind === 'remit').reduce((s, p) => s + Number(p.amount), 0)
+  const home = view !== 'uae' ? { usual: 0, left: 0 } : declaredHome > 0 ? { usual: declaredHome, left: 0 } : sentHome(inp.txns, today)
   const endOfMonth = inp.cash + comingIn - dueOut - home.left
   const items = monthCommitments({ ym: next, today, view, txns: inp.txns, accounts: inp.accounts, loans: inp.loans, insurance: inp.insurance, mutualFunds: inp.mutualFunds, rds: inp.rds, recurring: inp.recurring })
   const committed = items.reduce((s, c) => s + v(c.amount, c.currency), 0)

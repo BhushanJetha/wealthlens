@@ -8,7 +8,7 @@ import { sipInBank } from './sipAuto'
 import { rdInBank } from './rdAuto'
 
 export const isAutoPending = (t: any) => t?.auto_status === 'pending'
-export const AUTO_KIND_TEXT: Record<string, string> = { repeat: 'Repeating expense', emi: 'Loan EMI', sip: 'SIP', rd: 'RD instalment' }
+export const AUTO_KIND_TEXT: Record<string, string> = { repeat: 'Repeating expense', emi: 'Loan EMI', sip: 'SIP', rd: 'RD instalment', plan: 'Added by you' }
 
 async function adjustFund(sb: any, ref: any, units: number, invested: number) {
   const { data: f } = await sb.from('mutual_funds').select('units,invested_amount').eq('id', ref.id).single()
@@ -60,7 +60,13 @@ export async function reconcileAuto(sb: any, txns: any[], src: { loans: any[]; f
   for (const a of txns.filter(t => t.auto_ref)) {
     const ref = a.auto_ref, pool = real.filter(t => !used.has(t)), date = a.txn_date, amount = Number(a.amount) || 0
     let hit: any = null
-    if (ref.kind === 'repeat') {
+    if (ref.kind === 'plan') {
+      // Something you added from Expected income: the statement's row, same account
+      // and direction, within 5 days and 1%, is the same money. Anything less sure is left for Review.
+      hit = txns.find(t => !t.auto_ref && !used.has(t) && t.id !== a.id && t.account_id === a.account_id && t.currency === a.currency
+        && (t.txn_type === 'income') === (a.txn_type === 'income') && Math.abs(daysBetween(date, t.txn_date)) <= 5
+        && Math.abs((Number(t.amount) || 0) - amount) <= amount * 0.01) ?? null
+    } else if (ref.kind === 'repeat') {
       const key = ruleTextFor(a.merchant)
       hit = pool.find(t => t.currency === a.currency && Math.abs(daysBetween(date, t.txn_date)) <= 7 && (
         (!!key && ruleTextFor(t.merchant) === key && Math.abs((Number(t.amount) || 0) - amount) <= amount * 0.1)

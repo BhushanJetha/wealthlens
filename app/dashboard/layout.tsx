@@ -1,4 +1,6 @@
 import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
+import { FAMILY_MODE_COOKIE } from '@/lib/supabase/viewAs'
 import { createClient, getRealSessionUser } from '@/lib/supabase/server'
 import Sidebar from '@/components/layout/Sidebar'
 import Topbar from '@/components/layout/Topbar'
@@ -24,7 +26,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const viewAs = (supabase as any).__viewAs as string | undefined
   const mine = (links ?? []).filter((l: any) => l.owner_id === user.id)
   const members = mine.filter((l: any) => l.status === 'active' && l.member_id).map((l: any) => ({ id: l.member_id as string, name: l.name as string }))
-  const viewing = viewAs && members.some(m => m.id === viewAs) ? viewAs : null
+  // Family view is off unless you turn it on (Settings › Family): no switcher, no space taken
+  const familyOn = cookies().get(FAMILY_MODE_COOKIE)?.value === 'on'
+  const viewing = familyOn && viewAs && members.some(m => m.id === viewAs) ? viewAs : null
 
   // Guarantee profile row exists — handles cases where the DB trigger
   // failed silently on signup (e.g. after a full data reset). Only then:
@@ -49,7 +53,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           {/* Lavender canvas (v2). Phones: no app bar, content starts under the status bar */}
           <main className="flex-1 min-w-0 overflow-y-auto px-4 md:px-7 pt-[calc(10px+env(safe-area-inset-top))] md:pt-6 pb-24 md:pb-8 bg-canvas-m md:bg-canvas">
             <MobileHeader firstName={(profile?.full_name ?? '').split(' ')[0] || null} />
-            <FamilyBar members={members} viewing={viewing} stale={!!viewAs && !viewing} left={mine.filter((l: any) => l.status === 'left').map((l: any) => ({ id: l.id, name: l.name }))} />
+            <FamilyBar members={familyOn ? members : []} viewing={viewing} stale={!!viewAs && !viewing} left={mine.filter((l: any) => l.status === 'left').map((l: any) => ({ id: l.id, name: l.name }))} />
             <SectionTabs />
             {children}
           </main>

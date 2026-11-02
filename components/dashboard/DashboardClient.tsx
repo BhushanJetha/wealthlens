@@ -25,6 +25,8 @@ import { nextWeek, homePlan, earnedIncoming, cashDues } from '@/lib/homePlan'
 import { friendBalances, friendTotals } from '@/lib/friends'
 import type { RecurringTxn } from '@/lib/recurring'
 import PendingConfirms, { pendingCount, type Pending } from './PendingConfirms'
+import IncomeChecks, { incomeCheckCount } from './IncomeChecks'
+import { plannedIncoming, mergeExpected, declaredIncome, declaredPayday, type IncomePlan } from '@/lib/incomePlans'
 import SpendRoomPanel from './SpendRoomPanel'
 import { FreeToSpendCard, NextWeekCard, PlanCard } from './HomeCards'
 
@@ -43,6 +45,7 @@ interface Props {
   pending: Pending              // auto entries waiting for approval, and anything to confirm
   recurring: RecurringTxn[]
   events: any[]; friends: any[]; splits: any[]; friendTxns: any[]
+  plans: IncomePlan[]; plansReady: boolean; fx: number
 }
 
 const MONTHS_LONG = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -151,24 +154,26 @@ export default function DashboardClient(p: Props) {
 
   // ── What matters now: free to spend, reminders, the plan ahead ──
   const reviewOk = useMemo(() => ({ today, view, FX }), [today, view, FX])
-  const dueInp = { today, txns: p.transactions, accounts: h.accounts, loans: h.loans, insurance: p.insurance, mutualFunds: h.mutualFunds, recurring: p.recurring, rds: h.recurringDeposits }
+  const dueInp = { today, txns: p.transactions, accounts: h.accounts, loans: h.loans, insurance: p.insurance, mutualFunds: h.mutualFunds, recurring: p.recurring, rds: h.recurringDeposits, plans: p.plans }
   const dues = useMemo(() => buildDues({ ...dueInp, days: 45, view }), [reviewOk, p, h]) // eslint-disable-line react-hooks/exhaustive-deps
   const viewAccounts = useMemo(() => h.accounts.filter((a: any) => view === 'consolidated' || (view === 'uae' ? a.currency === 'AED' : a.currency !== 'AED')), [h.accounts, view])
   // Each account's warning counts any money reaching it; the totals count only real income
   const reachingAccounts = useMemo(() => expectedIncome(p.transactions, viewAccounts, today, 45), [p.transactions, viewAccounts, today])
-  const incoming = useMemo(() => expectedIncome(earnedIncoming(p.transactions, view, FX), viewAccounts, today, 45, { late: true }), [p.transactions, view, FX, viewAccounts, today])
+  // What you declared, and the app's estimate for anything you haven't
+  const incoming = useMemo(() => mergeExpected(plannedIncoming(p.plans, { today, view, fx: FX, txns: p.transactions, days: 45 }),
+    expectedIncome(earnedIncoming(p.transactions, view, FX), viewAccounts, today, 45, { late: true }), p.plans), [p.plans, p.transactions, view, FX, viewAccounts, today])
   const warnings = useMemo(() => balanceWarnings(viewAccounts, dues, reachingAccounts, today, 7).filter(w => w.severity !== 'low'), [viewAccounts, dues, reachingAccounts, today])
 
   // Per currency on its own: dirhams can't pay in India
   const rooms = useMemo(() => (view === 'uae' ? ['AED'] as const : view === 'india' ? ['INR'] as const : ['AED', 'INR'] as const).map(c => {
     const v = c === 'AED' ? 'uae' as const : 'india' as const
-    const s = safeToSpend({ today, view: v, fx: FX, accounts: h.accounts.filter((a: any) => a.currency === c), dues: buildDues({ ...dueInp, days: 35, view: v }), txns: p.transactions })
+    const s = safeToSpend({ today, view: v, fx: FX, accounts: h.accounts.filter((a: any) => a.currency === c), dues: buildDues({ ...dueInp, days: 35, view: v }), txns: p.transactions, payday: declaredPayday(p.plans, today, v, p.transactions) })
     return { ...spendRoom({ today, cur: c, budgets: p.budgets, txns: p.transactions, safe: s.amount }), until: s.until, perDay: s.perDay, sts: s }
   }), [reviewOk, p, h]) // eslint-disable-line react-hooks/exhaustive-deps
   const toView = (n: number, c: string) => viewAmount(n, c, view, FX)
   const week = useMemo(() => nextWeek(today, dues, incoming, p.events), [today, dues, incoming, p.events])
   const budgetsLeft = rooms.reduce((s, r) => s + toView(r.totalLeft, r.cur), 0)
-  const plan = useMemo(() => homePlan({ today, view, fx: FX, cash: nw.cash, dues, incoming, budgetsLeft, avgIncome: ins.trend.avgIncome,
+  const plan = useMemo(() => homePlan({ today, view, fx: FX, cash: nw.cash, dues, incoming, budgetsLeft, avgIncome: declaredIncome(p.plans, view, FX, p.transactions) ?? ins.trend.avgIncome, plans: p.plans,
     txns: p.transactions, accounts: h.accounts, loans: h.loans, insurance: p.insurance, mutualFunds: h.mutualFunds, rds: h.recurringDeposits ?? [], recurring: p.recurring, events: p.events }),
     [today, view, FX, nw.cash, dues, incoming, budgetsLeft, ins.trend.avgIncome, p, h]) // eslint-disable-line react-hooks/exhaustive-deps
   const friendPair = useMemo(() => {
@@ -246,8 +251,15 @@ export default function DashboardClient(p: Props) {
           <FreeToSpendCard className="lg:flex-1" cards={rooms.map(r => ({ cur: r.cur, amount: r.sts.amount, cash: r.sts.cash, due: r.sts.dueBefore + r.sts.unlinked, until: r.sts.until, perDay: r.sts.perDay, payday: r.sts.payday }))} />
           <QuickActions openAdd={openAdd} upload={() => setUploadOpen(true)} voice={() => setModal('voice')} advisor={() => openAdvisor()} />
         </div>
-        <AttentionCard items={ins.attention} pending={p.pending} accName={accName} onImport={() => setUploadOpen(true)} />
+        <AttentionCard items={ins.attention} pending={p.pending} accName={accName} onImport={() => setUploadOpen(true)} plans={p.plans} txns={p.transactions} today={today} fx={FX} />
       </div>
+      {p.plansReady && p.plans.length === 0 && (
+        <Link href="/dashboard/settings/income" className="wl-card px-4 py-3 flex items-center gap-3 wl-hide-viewing" style={{ background: '#F0EDFF', borderColor: '#DAD3FF' }}>
+          <Wallet size={17} className="flex-shrink-0" style={{ color: 'var(--accent)' }} />
+          <span className="flex-1 min-w-0 text-[13px]" style={{ color: 'var(--text)' }}><b>Tell us your income</b> so your plan is accurate. It takes a minute.</span>
+          <ChevronRight size={16} className="flex-shrink-0" style={{ color: 'var(--accent)' }} />
+        </Link>
+      )}
 
       {/* 2 · The numbers: tap any for its detail */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
@@ -437,10 +449,10 @@ function NetWorthCard({ nw, hist, est, historyReady, holderLabel, savingsRate, m
   )
 }
 
-function AttentionCard({ items, pending, accName, onImport, className = '' }: { items: Attention[]; pending: Pending; accName: (id: string | null) => string | null; onImport: () => void; className?: string }) {
+function AttentionCard({ items, pending, accName, onImport, plans, txns, today, fx, className = '' }: { items: Attention[]; pending: Pending; accName: (id: string | null) => string | null; onImport: () => void; plans: IncomePlan[]; txns: any[]; today: string; fx: number; className?: string }) {
   const [all, setAll] = useState(false)
   const shown = all ? items : items.slice(0, 4)
-  const waiting = pendingCount(pending)
+  const waiting = pendingCount(pending) + incomeCheckCount(plans, txns, today, fx)
   return (
     <Card aria-labelledby="att-title" className={`flex flex-col ${className}`}>
       <CardTitle id="att-title" right={items.length + waiting > 0 && (
@@ -454,6 +466,7 @@ function AttentionCard({ items, pending, accName, onImport, className = '' }: { 
         </div>
       ) : (
         <ul className="mt-2.5">
+          <IncomeChecks plans={plans} txns={txns} today={today} fx={fx} />
           <PendingConfirms pending={pending} accName={accName} />
           {shown.map(it => {
             const body = (<>
