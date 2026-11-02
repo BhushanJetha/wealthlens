@@ -158,7 +158,7 @@ export default function DashboardClient(p: Props) {
 
   // ── What matters now: free to spend, reminders, the plan ahead ──
   const reviewOk = useMemo(() => ({ today, view, FX }), [today, view, FX])
-  const dueInp = { today, txns: p.transactions, accounts: h.accounts, loans: h.loans, insurance: p.insurance, mutualFunds: h.mutualFunds, recurring: p.recurring, rds: h.recurringDeposits, plans: p.plans, lic: h.lic, bills: p.bills }
+  const dueInp = { today, txns: p.transactions, accounts: h.accounts, loans: h.loans, insurance: p.insurance, mutualFunds: h.mutualFunds, recurring: p.recurring, rds: h.recurringDeposits, plans: p.plans, lic: h.lic, bills: p.bills, answers: p.billSkips }
   const dues = useMemo(() => buildDues({ ...dueInp, days: 45, view }), [reviewOk, p, h]) // eslint-disable-line react-hooks/exhaustive-deps
   const viewAccounts = useMemo(() => h.accounts.filter((a: any) => view === 'consolidated' || (view === 'uae' ? a.currency === 'AED' : a.currency !== 'AED')), [h.accounts, view])
   // Each account's warning counts any money reaching it; the totals count only real income
@@ -177,12 +177,12 @@ export default function DashboardClient(p: Props) {
   const toView = (n: number, c: string) => viewAmount(n, c, view, FX)
   const week = useMemo(() => nextWeek(today, dues, incoming, p.events), [today, dues, incoming, p.events])
   // What usual spending will still take from the bank this month
-  const usual = useMemo(() => rooms.flatMap(r => usualSpendLeft({ today, cur: r.cur, lines: r.lines, txns: p.transactions, accounts: h.accounts, dues })), [rooms, today, p.transactions, h.accounts, dues])
+  const usual = useMemo(() => rooms.flatMap(r => usualSpendLeft({ today, cur: r.cur, lines: r.lines, txns: p.transactions, accounts: h.accounts, dues, recurring: p.recurring, answers: p.billSkips })), [rooms, today, p.transactions, h.accounts, dues, p.recurring, p.billSkips])
   const budgetsLeft = usual.reduce((s, u) => s + toView(u.amount, u.currency), 0)
   // Reminders and the total follow the country you're looking at
   const billsHere = useMemo(() => p.bills.filter(b => view === 'consolidated' || (view === 'uae' ? b.currency === 'AED' : b.currency === 'INR')), [p.bills, view])
   const plan = useMemo(() => homePlan({ today, view, fx: FX, cash: nw.cash, dues, incoming, budgetsLeft, avgIncome: declaredIncome(p.plans, view, FX, p.transactions) ?? ins.trend.avgIncome, plans: p.plans,
-    txns: p.transactions, accounts: h.accounts, loans: h.loans, insurance: p.insurance, mutualFunds: h.mutualFunds, rds: h.recurringDeposits ?? [], recurring: p.recurring, events: p.events, lic: h.lic, bills: p.bills, usual }),
+    txns: p.transactions, accounts: h.accounts, loans: h.loans, insurance: p.insurance, mutualFunds: h.mutualFunds, rds: h.recurringDeposits ?? [], recurring: p.recurring, events: p.events, lic: h.lic, bills: p.bills, usual, answers: p.billSkips }),
     [today, view, FX, nw.cash, dues, incoming, budgetsLeft, ins.trend.avgIncome, p, h]) // eslint-disable-line react-hooks/exhaustive-deps
   const friendPair = useMemo(() => {
     const t = friendTotals(friendBalances(p.friends, p.splits, p.friendTxns))

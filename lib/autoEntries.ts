@@ -1,7 +1,7 @@
 // Entries the app made for you (auto_ref): approve them, undo them ("Not
 // paid" also takes back the SIP units or the loan payment), and let the real
 // row from a statement replace them, so the same money is never counted twice.
-import { daysBetween } from './insights'
+import { daysBetween, normMerchant } from './insights'
 import { ruleTextFor } from './rules'
 import { emiInBank } from './loanAuto'
 import { sipInBank } from './sipAuto'
@@ -54,7 +54,7 @@ export async function rejectAuto(sb: any, t: any): Promise<string | null> {
 
 // A statement (or you) recorded the real payment: it replaces the auto entry,
 // and its real amount wins. Each real row replaces one entry. Returns the ids removed.
-export async function reconcileAuto(sb: any, txns: any[], src: { loans: any[]; funds: any[]; rds: any[] }): Promise<Set<string>> {
+export async function reconcileAuto(sb: any, txns: any[], src: { loans: any[]; funds: any[]; rds: any[]; aliases?: Record<string, string[]> }): Promise<Set<string>> {
   const removed = new Set<string>(), used = new Set<any>()
   const real = txns.filter(t => !t.auto_ref && !t.recurring_id && !t._remit && t.txn_type !== 'income')
   for (const a of txns.filter(t => t.auto_ref)) {
@@ -71,6 +71,10 @@ export async function reconcileAuto(sb: any, txns: any[], src: { loans: any[]; f
       hit = pool.find(t => t.currency === a.currency && Math.abs(daysBetween(date, t.txn_date)) <= 7 && (
         (!!key && ruleTextFor(t.merchant) === key && Math.abs((Number(t.amount) || 0) - amount) <= amount * 0.1)
         || (t.category === a.category && Math.abs((Number(t.amount) || 0) - amount) <= amount * 0.02))) ?? null
+      // The bank's name for this entry, as you told us
+      const names = src.aliases?.[ref.id] ?? []
+      if (!hit && names.length) hit = pool.find(t => t.currency === a.currency && names.includes(normMerchant(t.merchant)) && Math.abs(daysBetween(date, t.txn_date)) <= 15
+        && Math.abs((Number(t.amount) || 0) - amount) <= amount * 0.15) ?? null
     } else if (ref.kind === 'emi') {
       const loan = src.loans.find(l => l.id === ref.id)
       if (loan) hit = emiInBank({ loan, month: ref.month, date, amount, principal: 0, interest: 0 }, pool, src.loans)

@@ -10,6 +10,7 @@ import { fmtMoney, fmtCompact } from '@/lib/format'
 import { nextDate, type RecurringTxn } from '@/lib/recurring'
 import { ruleTextFor } from '@/lib/rules'
 import RepeatingPanel from './RepeatingPanel'
+import { foundRegular } from '@/lib/regular'
 import { PageHeader, InsightBar, AiActions, LearnStrip, KpiTile, Panel, Donut, ProgressRow, Segmented, EmptyState, PALETTE, PALETTE_BG } from '@/components/ui/kit'
 
 const ordinal = (n: number) => `${n}${n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th'}`
@@ -17,8 +18,8 @@ const ordinal = (n: number) => `${n}${n % 10 === 1 && n !== 11 ? 'st' : n % 10 =
 // Bills & subscriptions (design v2). Regular charges are detected from
 // statements with the same rule as Home's insight (lib/insights findRecurring);
 // card bills, EMIs and premiums come from the records you've added.
-export default function BillsClient({ transactions, cards, accounts, loans, insurance, recurring, recurringReady }: {
-  transactions: any[]; cards: any[]; accounts: any[]; loans: any[]; insurance: any[]; recurring: RecurringTxn[]; recurringReady: boolean
+export default function BillsClient({ transactions, cards, accounts, loans, insurance, recurring, recurringReady, answers }: {
+  transactions: any[]; cards: any[]; accounts: any[]; loans: any[]; insurance: any[]; recurring: RecurringTxn[]; recurringReady: boolean; answers: string[]
 }) {
   const router = useRouter()
   const { view, fxRate: FX } = useViewStore()
@@ -34,9 +35,14 @@ export default function BillsClient({ transactions, cards, accounts, loans, insu
   const repeatsHere = useMemo(() => recurring.filter(r => inView(r.currency)), [recurring, view]) // eslint-disable-line react-hooks/exhaustive-deps
   const txnsHere = useMemo(() => transactions.filter(t => inView(t.currency)), [transactions, view]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const bills = useMemo(() => !today ? [] : findRecurring(
-    transactions.filter(t => t.txn_date && inView(t.currency)), thisMonth,
-    t => viewAmount(Number(t.amount) || 0, t.currency, view, FX)), [transactions, view, FX, today])
+  // What's found in your history; only what's counted is a regular charge below
+  const found = useMemo(() => !today ? [] : foundRegular(txnsHere, repeatsHere, today, answers), [txnsHere, repeatsHere, today, answers])
+  const bills = useMemo(() => {
+    if (!today) return []
+    const left = new Set(found.filter(f => f.state !== 'counted').map(f => f.key))
+    return findRecurring(transactions.filter(t => t.txn_date && inView(t.currency)), thisMonth,
+      t => viewAmount(Number(t.amount) || 0, t.currency, view, FX)).filter(r => !left.has(r.key))
+  }, [transactions, view, FX, today, found]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Card bills, loan EMIs and premiums due in the next 30 days
   const scheduled = useMemo(() => !today ? [] : buildHomeInsights({
@@ -106,7 +112,7 @@ export default function BillsClient({ transactions, cards, accounts, loans, insu
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-3.5 md:gap-4 items-start">
         <div className="flex flex-col gap-3.5 md:gap-4 min-w-0">
-          <RepeatingPanel list={repeatsHere} ready={recurringReady} transactions={txnsHere} accounts={accounts} today={today} />
+          <RepeatingPanel list={repeatsHere} ready={recurringReady} transactions={txnsHere} accounts={accounts} today={today} found={found} answers={answers} />
           <Panel title="Coming up · next 30 days">
             {comingUp.length === 0
               ? <p className="text-[12.5px] mt-2" style={{ color: 'var(--text3)' }}>Nothing due in the next 30 days.</p>
@@ -175,7 +181,7 @@ export default function BillsClient({ transactions, cards, accounts, loans, insu
           )}
           <Panel title="How we find them">
             <p className="text-[12.5px] leading-normal mt-1.5" style={{ color: 'var(--text3)' }}>
-              The same merchant, a steady amount (within 15%), in at least 3 of the last 4 complete months, and no more than twice a month.
+              The same merchant, a steady amount (within 15%), in at least 3 of the last 4 complete months, and no more than twice a month. If one is already a repeating entry, it isn&apos;t counted again.
               Transfers to family, investments and card bill payments aren&apos;t counted. Card bills, EMIs and premiums come from the cards, loans and policies you&apos;ve added.
             </p>
           </Panel>

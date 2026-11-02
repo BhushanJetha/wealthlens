@@ -18,6 +18,7 @@ import { runSips, type SipDue } from './sipAuto'
 import { matchOwnTransfers } from './ownTransfers'
 import { runRds } from './rdAuto'
 import { reconcileAuto, isAutoPending } from './autoEntries'
+import { aliasesOf } from './regular'
 
 export interface Automation {
   recurring: RecurringTxn[]; recurringReady: boolean
@@ -40,7 +41,7 @@ export async function withAutomation<T>(supabase: any, userId: string, today: st
 
 export async function runAutomation(supabase: any, userId: string, today: string): Promise<Automation> {
   const since = addDaysTo(today, -100)
-  const [read, loansRes, ltRes, fundsRes, itRes, rulesRes, rdsRes] = await Promise.all([
+  const [read, loansRes, ltRes, fundsRes, itRes, rulesRes, rdsRes, answersRes] = await Promise.all([
     fetchAllRows((a, b) => supabase.from('transactions').select('*').eq('user_id', userId).gte('txn_date', since)
       .order('txn_date', { ascending: false }).order('id').range(a, b), 5),
     supabase.from('home_loans').select('*').eq('user_id', userId).eq('is_active', true),
@@ -49,11 +50,12 @@ export async function runAutomation(supabase: any, userId: string, today: string
     supabase.from('investment_transactions').select('asset_id,txn_type,txn_date,amount').eq('user_id', userId).eq('asset_type', 'mutual_fund').gte('txn_date', since),
     supabase.from('recurring_txns').select('*').eq('user_id', userId).order('created_at'),
     supabase.from('recurring_deposits').select('*').eq('user_id', userId).eq('is_active', true),
+    supabase.from('big_bill_skips').select('key').eq('user_id', userId),
   ])
   const matched = await matchOwnTransfers(supabase, read)
   // Migration 037 is in when the rows carry its column
   const review = read.some(t => 'auto_status' in t)
-  const replaced = review ? await reconcileAuto(supabase, read, { loans: loansRes.data ?? [], funds: fundsRes.data ?? [], rds: rdsRes.data ?? [] }) : new Set<string>()
+  const replaced = review ? await reconcileAuto(supabase, read, { loans: loansRes.data ?? [], funds: fundsRes.data ?? [], rds: rdsRes.data ?? [], aliases: aliasesOf((answersRes.data ?? []).map((a: any) => a.key)) }) : new Set<string>()
   const txns = replaced.size ? read.filter(t => !replaced.has(t.id)) : read
   const rec = await runRecurring(supabase, userId, today, txns, rulesRes, review)
   // Proof of a payment is a real row, never another entry the app made

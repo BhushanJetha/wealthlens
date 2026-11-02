@@ -9,13 +9,15 @@ import { labelOf } from '@/lib/money'
 import { nextDate, suggestRepeats, type RecurringTxn } from '@/lib/recurring'
 import { Panel } from '@/components/ui/kit'
 import AddTransactionModal from '@/components/forms/AddTransactionModal'
+import { answerCharge, answerNo, answerSame, answerSeparate, type FoundCharge } from '@/lib/regular'
+import { ruleTextFor } from '@/lib/rules'
 
 const ordinal = (n: number) => `${n}${n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th'}`
 
 // Repeating entries (Money › Bills): what's set to repeat, whether it adds
 // itself or asks first, and things you add by hand every month that could.
-export default function RepeatingPanel({ list, ready, transactions, accounts, today }: {
-  list: RecurringTxn[]; ready: boolean; transactions: any[]; accounts: any[]; today: string
+export default function RepeatingPanel({ list, ready, transactions, accounts, today, found = [], answers = [] }: {
+  list: RecurringTxn[]; ready: boolean; transactions: any[]; accounts: any[]; today: string; found?: FoundCharge[]; answers?: string[]
 }) {
   const router = useRouter()
   const supabase = createClient()
@@ -25,7 +27,31 @@ export default function RepeatingPanel({ list, ready, transactions, accounts, to
   const [error, setError] = useState('')
   const [adding, setAdding] = useState(false)
   const accName = (id: string | null) => accounts.find(a => a.id === id)?.name ?? null
-  const suggestions = useMemo(() => today ? suggestRepeats(transactions, rows, today).slice(0, 4) : [], [transactions, rows, today])
+  // (what's in the found list below is asked about there)
+  const foundNames = useMemo(() => new Set(found.map(f => ruleTextFor(f.name))), [found])
+  const suggestions = useMemo(() => today ? suggestRepeats(transactions, rows, today).filter(s => !foundNames.has(s.key)).slice(0, 4) : [], [transactions, rows, today, foundNames])
+  async function answer(f: FoundCharge, next: string | null) {
+    setBusy(f.key); setError('')
+    const { data: { user } } = await supabase.auth.getUser()
+    const err = user ? await answerCharge(supabase, user.id, f.key, answers, next) : 'Please sign in again.'
+    setBusy(null)
+    if (err) { setError(err); return }
+    router.refresh()
+  }
+  async function repeatIt(f: FoundCharge) {
+    setBusy(f.key); setError('')
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setBusy(null); return }
+    const lastMonth = f.seen[0]?.date.slice(0, 7) ?? today.slice(0, 7)
+    const { data, error } = await supabase.from('recurring_txns').insert({
+      user_id: user.id, merchant: f.name, category: f.category, sub_category: f.sub_category, txn_type: 'expense',
+      amount: Math.round(f.med * 100) / 100, currency: f.currency, account_id: f.account_id, counter_account_id: null,
+      day_of_month: f.day, every_months: 1, start_month: lastMonth, last_done_month: lastMonth, auto_add: false,
+    }).select().single()
+    setBusy(null)
+    if (error) { setError(error.message); return }
+    setRows(rs => [...rs, data as RecurringTxn]); router.refresh()
+  }
 
   async function patch(r: RecurringTxn, change: Partial<RecurringTxn>) {
     setBusy(r.id); setError('')
@@ -116,6 +142,50 @@ export default function RepeatingPanel({ list, ready, transactions, accounts, to
               <button onClick={() => adopt(s)} disabled={busy === s.key} className="wl-btn flex-shrink-0 disabled:opacity-60" style={{ height: 28, fontSize: 12 }}><Repeat size={12} />Repeat</button>
             </div>
           ))}
+        </div>
+      )}
+      {found.length > 0 && (
+        <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--line)' }}>
+          <div className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Found in your last 6 months</div>
+          <p className="text-[12px] mt-0.5 leading-snug" style={{ color: 'var(--text3)' }}>Charges that repeat in your statements. Tell us which are already an entry above, so nothing counts twice.</p>
+          <ul className="mt-1">
+            {found.map(f => {
+              const b = busy === f.key, money = (n: number) => fmtMoney(n, f.currency)
+              const st = { height: 28, fontSize: 12 }, btn = 'wl-btn disabled:opacity-60'
+              const same = rows.filter(r => r.is_active && r.currency === f.currency && r.txn_type !== 'income')
+              const note = f.state === 'looks' ? `Not counted: looks like your ${f.repeat.merchant} (${money(Number(f.repeat.amount))})`
+                : f.state === 'same' ? `Not counted: the same as your ${f.repeat.merchant}`
+                : f.state === 'no' ? 'Not counted: you said it isn’t regular' : 'Counted in your plan'
+              return (
+                <li key={f.key} className="py-2.5" style={{ borderTop: '1px solid var(--track)', opacity: f.state === 'no' || f.state === 'same' ? 0.7 : 1 }}>
+                  <div className="flex justify-between gap-3 text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
+                    <span className="min-w-0 truncate">{f.name}</span><span className="tabular-nums flex-shrink-0">{money(f.med)}<span className="font-normal text-[11px]" style={{ color: 'var(--text4)' }}>/mo</span></span>
+                  </div>
+                  <div className="text-[11.5px] mt-0.5 leading-snug" style={{ color: 'var(--text3)' }}>
+                    {labelOf(f.category)} · around the {ordinal(f.day)} · {f.seen.slice(0, 3).map(s => `${fmtDay(s.date)} ${money(s.amount)}`).join(', ')}
+                  </div>
+                  <div className="text-[11.5px] font-semibold mt-0.5" style={{ color: f.state === 'looks' ? 'var(--amber-text)' : f.state === 'counted' ? 'var(--pos-text)' : 'var(--text3)' }}>{note}</div>
+                  <div className="flex gap-1.5 flex-wrap mt-1.5 wl-hide-viewing">
+                    {f.state === 'looks' && (<>
+                      <button onClick={() => answer(f, answerSame(f.key, f.repeat.id))} disabled={b} className={`${btn} wl-btn-primary`} style={st}>Yes, it’s my {f.repeat.merchant}</button>
+                      <button onClick={() => answer(f, answerSeparate(f.key))} disabled={b} className={btn} style={st}>No, it’s separate</button>
+                    </>)}
+                    {f.state === 'counted' && (<>
+                      {same.length > 0 && (
+                        <select value="" disabled={b} onChange={e => e.target.value && answer(f, answerSame(f.key, e.target.value))} aria-label={`${f.name} is the same as`} className="wl-input" style={{ height: 28, fontSize: 12, width: 'auto', padding: '0 8px' }}>
+                          <option value="">Same as…</option>
+                          {same.map(r => <option key={r.id} value={r.id}>{r.merchant}</option>)}
+                        </select>
+                      )}
+                      <button onClick={() => repeatIt(f)} disabled={b} className={btn} style={st}><Repeat size={12} />Make it an entry</button>
+                      <button onClick={() => answer(f, answerNo(f.key))} disabled={b} className={btn} style={st}>Not regular</button>
+                    </>)}
+                    {(f.state === 'same' || f.state === 'no') && <button onClick={() => answer(f, null)} disabled={b} className={btn} style={st}>Undo</button>}
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
         </div>
       )}
       {error && <div className="mt-2 rounded-lg px-3 py-2 text-[12px]" style={{ background: '#FEF2F2', color: '#B91C1C' }}>{error}</div>}

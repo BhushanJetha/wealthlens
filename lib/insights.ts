@@ -83,7 +83,7 @@ export interface HomeInsights {
 }
 
 const SEV_RANK = { high: 0, medium: 1, low: 2 }
-const normMerchant = (s: string) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 24)
+export const normMerchant = (s: string) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 24)
 // The payments behind a regular charge, latest first
 export function seenPayments(txns: any[], name: string, n = 4): { date: string; amount: number }[] {
   const key = normMerchant(name)
@@ -104,8 +104,8 @@ export interface Recurring {
   paidThisMonth: boolean
   rose: number | null  // % the latest month is above usual (≥5%), else null
 }
-export function findRecurring(txns: any[], thisMonth: string, amt: (t: any) => number): Recurring[] {
-  const recentMonths = [1, 2, 3, 4].map(i => addMonths(thisMonth, -i))
+export function findRecurring(txns: any[], thisMonth: string, amt: (t: any) => number, back = 4): Recurring[] {
+  const recentMonths = Array.from({ length: back }, (_, i) => addMonths(thisMonth, -(i + 1)))
   const NOT_BILLS = new Set(['Family Transfer', 'Investment', 'Credit Card Payment'])
   const per: Record<string, { name: string; cats: Record<string, number>; months: Record<string, number>; counts: Record<string, number>; days: number[]; thisMonth: boolean }> = {}
   for (const t of txns) {

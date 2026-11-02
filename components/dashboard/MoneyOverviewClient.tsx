@@ -72,7 +72,7 @@ export default function MoneyOverviewClient(p: Props) {
     cash: 0, invested: { value: 0, cost: 0 },
   }), [view, FX, today, p])
 
-  const dues = useMemo(() => buildDues({ today, days: 35, view, txns: p.transactions, accounts: p.accounts, loans: p.loans, insurance: p.insurance, mutualFunds: p.mutualFunds, recurring: p.recurring, rds: p.rds, plans, lic: p.lic, bills: p.bills }),
+  const dues = useMemo(() => buildDues({ today, days: 35, view, txns: p.transactions, accounts: p.accounts, loans: p.loans, insurance: p.insurance, mutualFunds: p.mutualFunds, recurring: p.recurring, rds: p.rds, plans, lic: p.lic, bills: p.bills, answers: p.billSkips }),
     [today, view, p])
   const incoming = useMemo(() => expectedIncome(p.transactions, accounts, today, 35), [p.transactions, accounts, today])
   const warnings = useMemo(() => balanceWarnings(accounts, dues, incoming, today, 14), [accounts, dues, incoming, today])
@@ -81,7 +81,7 @@ export default function MoneyOverviewClient(p: Props) {
   // How much more you can spend, in each currency on its own (dirhams can't pay in India)
   const rooms = useMemo(() => (view === 'uae' ? ['AED'] as const : view === 'india' ? ['INR'] as const : ['AED', 'INR'] as const).map(c => {
     const v = c === 'AED' ? 'uae' as const : 'india' as const
-    const ds = buildDues({ today, days: 35, view: v, txns: p.transactions, accounts: p.accounts, loans: p.loans, insurance: p.insurance, mutualFunds: p.mutualFunds, recurring: p.recurring, rds: p.rds, plans, lic: p.lic, bills: p.bills })
+    const ds = buildDues({ today, days: 35, view: v, txns: p.transactions, accounts: p.accounts, loans: p.loans, insurance: p.insurance, mutualFunds: p.mutualFunds, recurring: p.recurring, rds: p.rds, plans, lic: p.lic, bills: p.bills, answers: p.billSkips })
     const s = safeToSpend({ today, view: v, fx: FX, accounts: p.accounts.filter(a => a.currency === c), dues: ds, txns: p.transactions, payday: declaredPayday(plans, today, v, p.transactions), bills: p.bills })
     return { ...spendRoom({ today, cur: c, budgets: p.budgets, txns: p.transactions, safe: s.amount }), until: s.until, perDay: s.perDay }
   }), [today, view, FX, p])

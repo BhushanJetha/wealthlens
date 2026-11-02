@@ -8,26 +8,27 @@ export default async function BillsPage() {
   const supabase = createClient()
   const user = await getSessionUser(supabase)
   const uid = user!.id
-  // This month + the 4 complete months the recurring rule looks at
-  const start = new Date(); start.setUTCMonth(start.getUTCMonth() - 5)
+  // This month + the 6 complete months the found charges look at
+  const start = new Date(); start.setUTCMonth(start.getUTCMonth() - 7)
   const fromDate = `${start.toISOString().slice(0, 7)}-01`
 
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' })
   // All kinds: bills come from expenses; repeating-entry suggestions also
   // look at transfers (money home) and income. Repeating entries due today
   // are recorded alongside.
-  const [auto, [txns, accsRes, loansRes, insRes]] = await withAutomation(supabase, uid, today, () => Promise.all([
+  const [auto, [txns, accsRes, loansRes, insRes, answersRes]] = await withAutomation(supabase, uid, today, () => Promise.all([
     fetchAllRows((a, b) => supabase.from('transactions').select('*')
       .eq('user_id', uid).gte('txn_date', fromDate)
       .order('txn_date', { ascending: false }).order('id').range(a, b)),
     supabase.from('accounts').select('*').eq('user_id', uid).eq('is_active', true),
     activeLoansWithEmi(supabase, uid),
     supabase.from('insurance_policies').select('*').eq('user_id', uid).eq('is_active', true),
+    supabase.from('big_bill_skips').select('key').eq('user_id', uid),
   ]))
 
   const accounts = accsRes.data ?? []
 
   return <BillsClient transactions={txns}
     cards={accounts.filter(a => a.account_type === 'credit_card')} accounts={accounts}
-    loans={loansRes.data ?? []} insurance={insRes.data ?? []} recurring={auto.recurring} recurringReady={auto.recurringReady} />
+    loans={loansRes.data ?? []} insurance={insRes.data ?? []} recurring={auto.recurring} recurringReady={auto.recurringReady} answers={(answersRes.data ?? []).map((a: any) => a.key)} />
 }

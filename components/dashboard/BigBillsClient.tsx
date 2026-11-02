@@ -48,7 +48,7 @@ export default function BigBillsClient(p: Props) {
   const spare = useMemo(() => {
     const free = (c: Cur) => {
       const v = c === 'AED' ? 'uae' as const : 'india' as const
-      const dues = buildDues({ today, days: 35, view: v, txns: p.transactions, accounts: p.accounts, loans: p.loans, insurance: p.insurance, mutualFunds: p.mutualFunds, recurring: p.recurring, rds: p.rds, plans: p.plans, lic: p.lic, bills })
+      const dues = buildDues({ today, days: 35, view: v, txns: p.transactions, accounts: p.accounts, loans: p.loans, insurance: p.insurance, mutualFunds: p.mutualFunds, recurring: p.recurring, rds: p.rds, plans: p.plans, lic: p.lic, bills, answers: p.skips })
       return safeToSpend({ today, view: v, fx, accounts: p.accounts.filter(a => a.currency === c), dues, txns: p.transactions, payday: declaredPayday(p.plans, today, v, p.transactions), bills }).amount
     }
     return { AED: free('AED'), INR: free('INR') }

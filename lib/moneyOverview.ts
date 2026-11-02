@@ -12,6 +12,7 @@ import { nextDate, type RecurringTxn } from './recurring'
 import { nextExpected, type IncomePlan } from './incomePlans'
 import { ruleTextFor } from './rules'
 import { policyEvery, reservedFor, type Bill } from './bigBills'
+import { isCounted } from './regular'
 
 export type DueKind = 'emi' | 'card' | 'premium' | 'sip' | 'bill' | 'repeat'
 export interface Due {
@@ -67,7 +68,7 @@ export function cardPayFrom(card: any, txns: any[], accounts: any[]): { id: stri
 export function buildDues(inp: {
   today: string; days: number; view: View
   txns: any[]; accounts: any[]; loans: any[]; insurance: any[]; mutualFunds: any[]
-  recurring?: RecurringTxn[]; rds?: any[]; plans?: IncomePlan[]; lic?: any[]; bills?: Bill[]
+  recurring?: RecurringTxn[]; rds?: any[]; plans?: IncomePlan[]; lic?: any[]; bills?: Bill[]; answers?: string[]
 }): Due[] {
   const { today, days, view } = inp
   const inView = (c: string) => view === 'consolidated' || (view === 'uae' ? c === 'AED' : c !== 'AED')
@@ -156,6 +157,7 @@ export function buildDues(inp: {
     const d = `${ym}-${String(Math.min(r.day, daysInMonth(ym))).padStart(2, '0')}`
     if (!within(d)) continue
     const last = latest(spends.filter(t => String(t.merchant ?? '').trim() === r.name))
+    if (!isCounted(r, last?.currency, repeats, inp.answers)) continue          // already one of your entries, or you said it isn't regular
     const acc = inp.accounts.find(a => a.id === last?.account_id)
     out.push({ id: `bill-${r.key}`, date: d, label: r.name, sub: acc ? `Usually on ${acc.name}` : 'Bill or subscription', amount: r.med, currency: last?.currency ?? 'INR',
       kind: 'bill', payFrom: acc?.id ?? null, payFromSource: acc ? 'history' : null, href: '/dashboard/bills', category: r.category,
