@@ -21,7 +21,7 @@ import { MobileControls, SearchButton, AskAiButton } from '@/components/layout/M
 import { KpiTile, PALETTE, type Tone as KTone } from '@/components/ui/kit'
 import { buildDues, expectedIncome, balanceWarnings, safeToSpend } from '@/lib/moneyOverview'
 import { spendRoom } from '@/lib/spendRoom'
-import { nextWeek, homePlan, earnedIncoming, cashDues } from '@/lib/homePlan'
+import { nextWeek, homePlan, earnedIncoming, cashDues, usualSpendLeft } from '@/lib/homePlan'
 import { friendBalances, friendTotals } from '@/lib/friends'
 import type { RecurringTxn } from '@/lib/recurring'
 import PendingConfirms, { pendingCount, type Pending } from './PendingConfirms'
@@ -165,7 +165,7 @@ export default function DashboardClient(p: Props) {
   const reachingAccounts = useMemo(() => expectedIncome(p.transactions, viewAccounts, today, 45), [p.transactions, viewAccounts, today])
   // What you declared, and the app's estimate for anything you haven't
   const incoming = useMemo(() => mergeExpected(plannedIncoming(p.plans, { today, view, fx: FX, txns: p.transactions, days: 45 }),
-    expectedIncome(earnedIncoming(p.transactions, view, FX), viewAccounts, today, 45, { late: true }), p.plans), [p.plans, p.transactions, view, FX, viewAccounts, today])
+    expectedIncome(earnedIncoming(p.transactions, view, FX), viewAccounts, today, 45, { late: true }), p.plans, view), [p.plans, p.transactions, view, FX, viewAccounts, today])
   const warnings = useMemo(() => balanceWarnings(viewAccounts, dues, reachingAccounts, today, 7).filter(w => w.severity !== 'low'), [viewAccounts, dues, reachingAccounts, today])
 
   // Per currency on its own: dirhams can't pay in India
@@ -176,9 +176,13 @@ export default function DashboardClient(p: Props) {
   }), [reviewOk, p, h]) // eslint-disable-line react-hooks/exhaustive-deps
   const toView = (n: number, c: string) => viewAmount(n, c, view, FX)
   const week = useMemo(() => nextWeek(today, dues, incoming, p.events), [today, dues, incoming, p.events])
-  const budgetsLeft = rooms.reduce((s, r) => s + toView(r.totalLeft, r.cur), 0)
+  // What usual spending will still take from the bank this month
+  const usual = useMemo(() => rooms.flatMap(r => usualSpendLeft({ today, cur: r.cur, lines: r.lines, txns: p.transactions, accounts: h.accounts, dues })), [rooms, today, p.transactions, h.accounts, dues])
+  const budgetsLeft = usual.reduce((s, u) => s + toView(u.amount, u.currency), 0)
+  // Reminders and the total follow the country you're looking at
+  const billsHere = useMemo(() => p.bills.filter(b => view === 'consolidated' || (view === 'uae' ? b.currency === 'AED' : b.currency === 'INR')), [p.bills, view])
   const plan = useMemo(() => homePlan({ today, view, fx: FX, cash: nw.cash, dues, incoming, budgetsLeft, avgIncome: declaredIncome(p.plans, view, FX, p.transactions) ?? ins.trend.avgIncome, plans: p.plans,
-    txns: p.transactions, accounts: h.accounts, loans: h.loans, insurance: p.insurance, mutualFunds: h.mutualFunds, rds: h.recurringDeposits ?? [], recurring: p.recurring, events: p.events, lic: h.lic, bills: p.bills }),
+    txns: p.transactions, accounts: h.accounts, loans: h.loans, insurance: p.insurance, mutualFunds: h.mutualFunds, rds: h.recurringDeposits ?? [], recurring: p.recurring, events: p.events, lic: h.lic, bills: p.bills, usual }),
     [today, view, FX, nw.cash, dues, incoming, budgetsLeft, ins.trend.avgIncome, p, h]) // eslint-disable-line react-hooks/exhaustive-deps
   const friendPair = useMemo(() => {
     const t = friendTotals(friendBalances(p.friends, p.splits, p.friendTxns))
@@ -255,7 +259,7 @@ export default function DashboardClient(p: Props) {
           <FreeToSpendCard className="lg:flex-1" cards={rooms.map(r => ({ cur: r.cur, amount: r.sts.amount, cash: r.sts.cash, due: r.sts.dueBefore + r.sts.unlinked, reserved: r.sts.reserved, until: r.sts.until, perDay: r.sts.perDay, payday: r.sts.payday }))} />
           <QuickActions openAdd={openAdd} upload={() => setUploadOpen(true)} voice={() => setModal('voice')} advisor={() => openAdvisor()} />
         </div>
-        <AttentionCard items={ins.attention} pending={p.pending} accName={accName} onImport={() => setUploadOpen(true)} plans={p.plans} txns={p.transactions} today={today} fx={FX} bills={p.bills} billSkips={p.billSkips} accounts={h.accounts} />
+        <AttentionCard items={ins.attention} pending={p.pending} accName={accName} onImport={() => setUploadOpen(true)} plans={p.plans} txns={p.transactions} today={today} fx={FX} bills={billsHere} billSkips={p.billSkips} accounts={h.accounts} />
       </div>
       {p.plansReady && p.plans.length === 0 && (
         <Link href="/dashboard/settings/income" className="wl-card px-4 py-3 flex items-center gap-3 wl-hide-viewing" style={{ background: '#F0EDFF', borderColor: '#DAD3FF' }}>
@@ -274,7 +278,7 @@ export default function DashboardClient(p: Props) {
       <NextWeekCard today={today} items={week.items} later={week.later} warnings={warnings} money={money} friends={friendPair}
         dueTotal={cashDues(week.out, h.accounts).reduce((s, d) => s + toView(d.amount, d.currency), 0)} inTotal={week.in.reduce((s, i) => s + toView(i.amount, i.currency), 0)} />
       <PlanCard plan={plan} money={money} />
-      <BigBillsStrip bills={p.bills} />
+      <BigBillsStrip bills={billsHere} />
       <SpendRoomPanel rooms={rooms} flat more={<MoreLink href="/dashboard/money">All</MoreLink>} />
 
       {/* 4 · Progress */}

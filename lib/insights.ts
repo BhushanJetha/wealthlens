@@ -84,6 +84,12 @@ export interface HomeInsights {
 
 const SEV_RANK = { high: 0, medium: 1, low: 2 }
 const normMerchant = (s: string) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 24)
+// The payments behind a regular charge, latest first
+export function seenPayments(txns: any[], name: string, n = 4): { date: string; amount: number }[] {
+  const key = normMerchant(name)
+  return txns.filter(t => normMerchant(t.merchant) === key).sort((a, b) => String(b.txn_date).localeCompare(String(a.txn_date))).slice(0, n)
+    .map(t => ({ date: String(t.txn_date).slice(0, 10), amount: Number(t.amount) || 0 }))
+}
 
 // Bills & subscriptions: same merchant in ≥3 of the last 4 complete months, a
 // steady amount (±15%), and charged at most twice a month (not a supermarket
@@ -248,7 +254,7 @@ export function buildHomeInsights(inp: InsightInput): HomeInsights {
     const due = nextOccurrence(p.next_premium_date, today, FREQ[p.premium_frequency] ?? 12)
     if (!due) continue
     const d = daysBetween(today, due)
-    if (d <= 14) attention.push({ id: `prem-${p.id}`, severity: d <= 3 ? 'high' : 'low', title: `${p.policy_name} premium due ${inDays(d)}`, detail: nativeMoney(Number(p.annual_premium) || 0, p.currency), href: '/dashboard/insurance', actionLabel: 'View', date: due })
+    if (d <= 14) attention.push({ id: `prem-${p.id}`, severity: d <= 3 ? 'high' : 'low', title: `${p.policy_name} premium due ${inDays(d)}`, detail: nativeMoney((Number(p.annual_premium) || 0) * (FREQ[p.premium_frequency] ?? 12) / 12, p.currency), href: '/dashboard/insurance', actionLabel: 'View', date: due })
   }
   // Fixed deposits maturing / matured
   for (const f of (inp.fixedDeposits ?? []).filter(f => inView(f.currency) && f.maturity_date)) {
@@ -397,7 +403,7 @@ export function buildHomeInsights(inp: InsightInput): HomeInsights {
   }
   for (const p of (inp.insurance ?? []).filter(p => inView(p.currency))) {
     const d = nextOccurrence(p.next_premium_date, today, FREQ[p.premium_frequency] ?? 12)
-    if (within(d)) upcoming.push({ id: `u-prem-${p.id}`, date: d!, label: `${p.policy_name} premium`, sub: p.provider ?? 'Insurance', amount: Number(p.annual_premium) || 0, currency: p.currency, kind: 'premium' })
+    if (within(d)) upcoming.push({ id: `u-prem-${p.id}`, date: d!, label: `${p.policy_name} premium`, sub: p.provider ?? 'Insurance', amount: (Number(p.annual_premium) || 0) * (FREQ[p.premium_frequency] ?? 12) / 12, currency: p.currency, kind: 'premium' })
   }
   for (const f of (inp.fixedDeposits ?? []).filter(f => inView(f.currency))) {
     if (within(f.maturity_date)) upcoming.push({ id: `u-fd-${f.id}`, date: f.maturity_date, label: `${f.name} matures`, sub: f.bank_name ?? 'Fixed deposit', amount: Number(f.maturity_amt) || Number(f.principal) || 0, currency: f.currency, kind: 'fd' })

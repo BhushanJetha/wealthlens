@@ -7,7 +7,7 @@ import { viewAmount, type View } from './netWorth'
 import { kindOf, counterOf } from './ledger'
 import { catOf, CC_BILL, isIncome as isIncomeIn, isSpend, expandSplits, prepareMoney } from './money'
 import { matchScore } from './loans'
-import { findRecurring, nextOccurrence, nextCardDue, addDaysTo, daysBetween, ymOf, addMonths, daysInMonth, fmtDay } from './insights'
+import { findRecurring, seenPayments, nextOccurrence, nextCardDue, addDaysTo, daysBetween, ymOf, addMonths, daysInMonth, fmtDay } from './insights'
 import { nextDate, type RecurringTxn } from './recurring'
 import { nextExpected, type IncomePlan } from './incomePlans'
 import { ruleTextFor } from './rules'
@@ -21,6 +21,8 @@ export interface Due {
   payFromSource: 'set' | 'history' | null
   owner?: { table: 'home_loans' | 'accounts'; id: string }   // where "paid from" can be saved
   href?: string
+  category?: string | null; why?: string     // where the amount comes from
+  seen?: { date: string; amount: number }[]
 }
 export interface ExpectedIn {
   id: string; accountId: string; date: string; amount: number; currency: string; label: string
@@ -96,18 +98,18 @@ export function buildDues(inp: {
     if (!within(d)) continue
     const per = (Number(p.annual_premium) || 0) * (FREQ[p.premium_frequency] ?? 12) / 12
     if (per > 0) out.push({ id: `prem-${p.id}`, date: d!, label: `${p.policy_name} premium`, sub: p.provider ?? 'Insurance', amount: per, currency: p.currency || 'INR',
-      kind: 'premium', payFrom: null, payFromSource: null, href: '/dashboard/insurance' })
+      kind: 'premium', payFrom: null, payFromSource: null, href: '/dashboard/insurance', why: 'From your policy' })
   }
   for (const p of (inp.lic ?? []).filter(p => p.is_active !== false && inView(p.currency || 'INR'))) {
     const every = policyEvery(p.premium_frequency), d = nextOccurrence(p.next_premium_date, today, every)
     const per = (Number(p.annual_premium) || 0) * every / 12
     if (!within(d) || !(per > 0) || (p.maturity_date && d! > String(p.maturity_date).slice(0, 10))) continue
     out.push({ id: `lic-${p.id}`, date: d!, label: `LIC ${p.name || p.plan_name || 'policy'} premium`, sub: 'LIC', amount: per, currency: p.currency || 'INR',
-      kind: 'premium', payFrom: null, payFromSource: null, href: '/dashboard/big-bills' })
+      kind: 'premium', payFrom: null, payFromSource: null, href: '/dashboard/big-bills', why: 'From your LIC policy' })
   }
   // Your own big bills (a policy's date is already above)
   for (const b of (inp.bills ?? []).filter(b => b.goal && !b.policy && inView(b.currency) && within(b.due))) {
-    out.push({ id: `big-${b.key}`, date: b.due, label: b.name, sub: 'Big bill', amount: b.amount, currency: b.currency, kind: 'bill', payFrom: null, payFromSource: null, href: '/dashboard/big-bills' })
+    out.push({ id: `big-${b.key}`, date: b.due, label: b.name, sub: 'Big bill', amount: b.amount, currency: b.currency, kind: 'bill', payFrom: null, payFromSource: null, href: '/dashboard/big-bills', category: b.category, why: 'A big bill you added' })
   }
   for (const m of inp.mutualFunds.filter(m => m.has_sip && Number(m.sip_amount) > 0 && m.sip_date && inView(m.currency ?? 'INR'))) {
     for (const ym of [ymOf(today), addMonths(ymOf(today), 1)]) {
@@ -141,7 +143,7 @@ export function buildDues(inp: {
     const d = nextDate(r, today)
     if (!within(d)) continue
     out.push({ id: `rep-${r.id}`, date: d, label: r.merchant, sub: `Repeats monthly${r.auto_add ? ' · adds itself' : ''}`, amount: Number(r.amount), currency: r.currency,
-      kind: 'repeat', payFrom: r.account_id, payFromSource: r.account_id ? 'set' : null, href: '/dashboard/bills' })
+      kind: 'repeat', payFrom: r.account_id, payFromSource: r.account_id ? 'set' : null, href: '/dashboard/bills', category: r.category, why: 'A repeating entry you set up' })
   }
   const repeatKeys = new Set(repeats.map(r => ruleTextFor(r.merchant)))
   // Bills & subscriptions not yet charged this month, on their usual day
@@ -156,7 +158,8 @@ export function buildDues(inp: {
     const last = latest(spends.filter(t => String(t.merchant ?? '').trim() === r.name))
     const acc = inp.accounts.find(a => a.id === last?.account_id)
     out.push({ id: `bill-${r.key}`, date: d, label: r.name, sub: acc ? `Usually on ${acc.name}` : 'Bill or subscription', amount: r.med, currency: last?.currency ?? 'INR',
-      kind: 'bill', payFrom: acc?.id ?? null, payFromSource: acc ? 'history' : null, href: '/dashboard/bills' })
+      kind: 'bill', payFrom: acc?.id ?? null, payFromSource: acc ? 'history' : null, href: '/dashboard/bills', category: r.category,
+      why: `Found in your spending: about this amount in ${r.n} of the last 4 months`, seen: seenPayments(spends, r.name) })
   }
   return out.sort((a, b) => a.date.localeCompare(b.date) || b.amount - a.amount)
 }

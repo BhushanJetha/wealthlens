@@ -1,10 +1,12 @@
 'use client'
+import { useState } from 'react'
 import Link from 'next/link'
+import { Sheet } from './BillSheets'
 import { ArrowDownLeft, ArrowUpRight, CalendarDays, ChevronRight, HandCoins, Receipt } from 'lucide-react'
 import { billTotals, type Bill } from '@/lib/bigBills'
 import { fmtCompact, fmtMoney } from '@/lib/format'
 import { fmtDay, daysBetween } from '@/lib/insights'
-import type { Reminder, HomePlan } from '@/lib/homePlan'
+import type { Reminder, HomePlan, PlanRow } from '@/lib/homePlan'
 import type { BalanceWarning } from '@/lib/moneyOverview'
 
 const MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -126,12 +128,39 @@ export function NextWeekCard({ today, items, later, warnings, dueTotal, inTotal,
   )
 }
 
-const Line = ({ label, value, strong, ink }: { label: string; value: string; strong?: boolean; ink?: string }) => (
-  <div className="flex justify-between gap-3 py-[7px] text-[12.5px]" style={{ borderTop: strong ? '1px solid var(--line)' : undefined }}>
-    <span style={{ color: strong ? 'var(--text)' : 'var(--text3)', fontWeight: strong ? 600 : 400 }}>{label}</span>
+const Line = ({ label, value, strong, ink, onOpen }: { label: string; value: string; strong?: boolean; ink?: string; onOpen?: () => void }) => {
+  const body = (<>
+    <span className={onOpen ? 'flex items-center gap-1 underline decoration-dotted underline-offset-2' : undefined} style={{ color: strong ? 'var(--text)' : 'var(--text3)', fontWeight: strong ? 600 : 400 }}>{label}{onOpen && <ChevronRight size={13} className="flex-shrink-0" />}</span>
     <span className="tabular-nums font-semibold flex-shrink-0" style={{ color: ink ?? 'var(--text)' }}>{value}</span>
-  </div>
-)
+  </>)
+  const cls = 'flex justify-between gap-3 py-[7px] text-[12.5px] w-full text-left', st = { borderTop: strong ? '1px solid var(--line)' : undefined }
+  return onOpen
+    ? <button type="button" onClick={onOpen} aria-label={`${label}: ${value}. See what's in it`} className={cls} style={st}>{body}</button>
+    : <div className={cls} style={st}>{body}</div>
+}
+
+// What's behind one of the plan's numbers
+interface PlanDetail { title: string; intro: string; rows: PlanRow[]; total: string; foot?: { text: string; href: string; link: string } }
+function PlanDetailSheet({ d, onClose }: { d: PlanDetail; onClose: () => void }) {
+  return (
+    <Sheet title={d.title} onClose={onClose}>
+      <p className="text-[12.5px] leading-snug" style={{ color: 'var(--text3)' }}>{d.intro}</p>
+      <ul>
+        {d.rows.map((r, i) => (
+          <li key={r.id} className="py-2.5" style={{ borderTop: i ? '1px solid var(--track)' : undefined }}>
+            <div className="flex justify-between gap-3 text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
+              <span className="min-w-0">{r.label}</span><span className="tabular-nums flex-shrink-0">{fmtMoney(r.amount, r.currency)}</span>
+            </div>
+            <div className="text-[12px] leading-snug mt-0.5" style={{ color: 'var(--text3)' }}>{[r.date && fmtDay(r.date), r.why ?? r.sub].filter(Boolean).join(' · ')}</div>
+            {r.seen && r.seen.length > 0 && <div className="text-[12px] leading-snug mt-0.5" style={{ color: 'var(--text3)' }}>Paid: {r.seen.map(s => `${fmtDay(s.date)} ${fmtMoney(s.amount, r.currency)}`).join(', ')}</div>}
+          </li>
+        ))}
+      </ul>
+      <div className="flex justify-between gap-3 text-[13.5px] font-bold pt-2.5" style={{ color: 'var(--text)', borderTop: '1px solid var(--line)' }}><span>Total</span><span className="tabular-nums">{d.total}</span></div>
+      {d.foot && <p className="text-[12.5px] leading-snug" style={{ color: 'var(--text3)' }}>{d.foot.text} <Link href={d.foot.href} className="font-semibold underline" style={{ color: 'var(--accent)' }}>{d.foot.link}</Link></p>}
+    </Sheet>
+  )
+}
 const Column = ({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) => (
   <div className="min-w-0 rounded-[14px] px-3.5 py-3 flex flex-col" style={{ background: '#FAFAFE', border: '1px solid var(--line)' }}>
     <div className="text-[12.5px] font-semibold mb-1" style={{ color: 'var(--text)' }}>{title}{sub && <span className="font-normal" style={{ color: 'var(--text3)' }}> · {sub}</span>}</div>
@@ -143,6 +172,9 @@ const Column = ({ title, sub, children }: { title: string; sub?: string; childre
 // month leaves to plan, and what's already committed.
 export function PlanCard({ plan, money, className = '' }: { plan: HomePlan; money: (n: number) => string; className?: string }) {
   const { rest, next } = plan
+  const [detail, setDetail] = useState<PlanDetail | null>(null)
+  const BILLS_FOOT = { text: 'Repeating entries can be changed on', href: '/dashboard/bills', link: 'Money › Bills' }
+  const group = (g: { label: string; amount: number; items: PlanRow[] }, when: string) => setDetail({ title: g.label, intro: when, rows: g.items, total: money(g.amount), foot: /Rent/.test(g.label) ? BILLS_FOOT : undefined })
   const thisName = MON[(Number(next.ym.slice(5)) + 10) % 12], nextName = MON[Number(next.ym.slice(5)) - 1]
   const signed = (n: number) => `${n < 0 ? '−' : ''}${money(Math.abs(n))}`
   return (
@@ -160,7 +192,7 @@ export function PlanCard({ plan, money, className = '' }: { plan: HomePlan; mone
               <span className="tabular-nums font-semibold flex-shrink-0" style={{ color: '#1E8F5F' }}>{money(rest.comingIn)}</span>
             </summary>
             <div className="rounded-[10px] px-2.5 py-1.5 mb-1 text-[11.5px] leading-[1.45]" style={{ background: '#EEF9F3', color: '#14603F' }}>
-              {rest.incoming.length === 0 && 'Nothing regular is expected for the rest of this month.'}
+              {rest.incoming.length === 0 && 'Nothing more is expected for the rest of this month.'}
               {rest.incoming.map(i => (
                 <div key={i.id} className="py-1">
                   <div className="flex justify-between gap-2 font-semibold"><span className="min-w-0 truncate">{i.label}</span><span className="tabular-nums flex-shrink-0">{fmtCompact(i.amount, i.currency)}</span></div>
@@ -175,16 +207,18 @@ export function PlanCard({ plan, money, className = '' }: { plan: HomePlan; mone
               {rest.incoming.length > 0 && <div className="pt-1" style={{ color: '#3F7A5E' }}>Not right? <Link href="/dashboard/settings/income" className="font-semibold underline">Set your expected income</Link>.</div>}
             </div>
           </details>
-          {rest.dueGroups.map(g => <Line key={g.label} label={`− ${g.label}`} value={money(g.amount)} />)}
+          {rest.dueGroups.map(g => <Line key={g.label} label={`− ${g.label}`} value={money(g.amount)} onOpen={() => group(g, `What's still due from your bank by the end of ${thisName}.`)} />)}
           {rest.sentHome > 0 && <Line label="− Usually sent to India" value={money(rest.sentHome)} />}
           <div className="mt-auto">
             <Line label="= Month end" value={signed(rest.endOfMonth)} strong ink={rest.endOfMonth < 0 ? '#DC2626' : undefined} />
-            {rest.budgetsLeft > 0 && <Line label="After your usual spending" value={signed(rest.afterBudgets)} ink={rest.afterBudgets < 0 ? '#DC2626' : '#1E8F5F'} />}
+            {rest.budgetsLeft > 0 && <Line label="After your usual spending" value={signed(rest.afterBudgets)} ink={rest.afterBudgets < 0 ? '#DC2626' : '#1E8F5F'}
+              onOpen={() => setDetail({ title: 'Your usual spending', intro: `Month end ${signed(rest.endOfMonth)}, less ${money(rest.budgetsLeft)} your usual spending will still take from your bank in ${thisName}, leaves ${signed(rest.afterBudgets)}.`, rows: rest.usual, total: money(rest.budgetsLeft),
+                foot: { text: 'From your budgets, or your last 3 months where there is no budget. Spending on a card isn’t here: it leaves through the card’s bill.', href: '/dashboard/budgets', link: 'Set a budget' } })} />}
           </div>
         </Column>
         <Column title={nextName} sub="estimate">
           <Line label="Usual income" value={money(next.income)} ink="#1E8F5F" />
-          {next.groups.map(g => <Line key={g.label} label={`− ${g.label}`} value={money(g.amount)} />)}
+          {next.groups.map(g => <Line key={g.label} label={`− ${g.label}`} value={money(g.amount)} onOpen={() => group(g, `What's expected from your bank in ${nextName}. Amounts are estimates.`)} />)}
           {next.sentHome > 0 && <Line label="− Usually sent to India" value={money(next.sentHome)} />}
           <div className="mt-auto">
             <Line label="= Left to plan" value={signed(next.toPlan)} strong ink={next.toPlan < 0 ? '#DC2626' : undefined} />
@@ -194,9 +228,10 @@ export function PlanCard({ plan, money, className = '' }: { plan: HomePlan; mone
         <Column title={`Committed in ${nextName}`}>
           {next.items.length === 0 && <div className="text-[12.5px] py-2" style={{ color: 'var(--text3)' }}>Nothing fixed yet. EMIs, SIPs, RDs, rent and card bills show here.</div>}
           {next.items.slice(0, 5).map(i => <Line key={i.id} label={i.label} value={fmtCompact(i.amount, i.currency)} />)}
-          {next.items.length > 5 && <div className="text-[11.5px] mt-auto pt-1" style={{ color: 'var(--text3)' }}>and {next.items.length - 5} more</div>}
+          {next.items.length > 5 && <button type="button" onClick={() => setDetail({ title: `Committed in ${nextName}`, intro: `Everything ${nextName} is already committed to.`, rows: next.items, total: money(next.committed), foot: BILLS_FOOT })} className="text-[11.5px] mt-auto pt-1 text-left font-semibold underline" style={{ color: 'var(--accent)' }}>and {next.items.length - 5} more</button>}
         </Column>
       </div>
+      {detail && <PlanDetailSheet d={detail} onClose={() => setDetail(null)} />}
     </section>
   )
 }

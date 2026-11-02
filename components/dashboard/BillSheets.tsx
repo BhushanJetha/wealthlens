@@ -15,7 +15,7 @@ import { nextDueDate } from '@/lib/occasions'
 const label = 'block text-[12px] font-semibold mb-1'
 const FIELD = { height: 44 }
 
-function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   // Portalled: these open from inside lists and cards
   return createPortal(
     <div className="fixed inset-0 wl-sheet z-[60] flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,.4)' }} onClick={onClose}>

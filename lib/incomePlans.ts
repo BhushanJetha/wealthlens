@@ -124,13 +124,12 @@ export function plannedIncoming(plans: IncomePlan[], o: { today: string; view: V
   return out
 }
 
-// Declared plans replace the app's guess for the same money
-export function mergeExpected(planned: any[], detected: any[], plans: IncomePlan[]) {
-  const income = plans.filter(p => p.is_active && p.kind === 'income')
-  const hasRemit = plans.some(p => p.is_active && p.kind === 'remit')
-  const covered = (d: any) => (hasRemit && /Received from UAE/.test(d.id))
-    || income.some(p => p.currency === d.currency && (!p.account_id || p.account_id === d.accountId) && Math.abs(Number(d.usual ?? d.amount) - Number(p.amount)) <= Number(p.amount) * 0.3)
-  return [...planned, ...detected.filter(d => !covered(d))].sort((a, b) => a.date.localeCompare(b.date))
+// Once you've declared what comes in for a view, that's all that counts: the
+// app's guesses are only for a view you've told it nothing about
+export function mergeExpected(planned: any[], detected: any[], plans: IncomePlan[], view: View) {
+  const inView = (c: string) => view === 'consolidated' || (view === 'uae' ? c === 'AED' : c !== 'AED')
+  const declared = plans.some(p => p.is_active && ((p.kind === 'income' && inView(p.currency)) || (p.kind === 'remit' && view === 'india')))
+  return (declared ? planned : [...planned, ...detected]).sort((a, b) => a.date.localeCompare(b.date))
 }
 
 // Monthly income you declared, in a view (null: none declared, so use the average)

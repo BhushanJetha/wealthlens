@@ -2,17 +2,23 @@
 // month looks like, and what next month is already committed to. Estimates are
 // built only from what's on file; nothing here writes anything.
 import { kindOf } from './ledger'
-import { isSpend, isRemitOut, isIncome, prepareMoney, expandSplits } from './money'
+import { catOf, isSpend, isRemitOut, isIncome, labelOf, prepareMoney, expandSplits } from './money'
+import { suggestCaps } from './budgets'
+import { fmtMoney } from './format'
+import type { RoomLine } from './spendRoom'
 import { ruleTextFor } from './rules'
 import type { IncomePlan } from './incomePlans'
 import { viewAmount, type View } from './netWorth'
-import { addMonths, daysBetween, daysInMonth, findRecurring, nextCardDue, nextOccurrence, ymOf } from './insights'
+import { addMonths, daysBetween, daysInMonth, findRecurring, nextCardDue, nextOccurrence, seenPayments, ymOf } from './insights'
 import type { Due, ExpectedIn, BalanceWarning } from './moneyOverview'
 import type { RecurringTxn } from './recurring'
 import { policyEvery, type Bill } from './bigBills'
 import { datesAhead } from './recurringGoals'
 
 const FREQ: Record<string, number> = { monthly: 1, quarterly: 3, semi_annual: 6, annual: 12 }
+
+// A line behind one of the plan's totals, and where its amount comes from
+export interface PlanRow { id: string; label: string; amount: number; currency: string; date?: string; sub?: string; why?: string; seen?: { date: string; amount: number }[] }
 
 // ── Next 7 days ─────────────────────────────────────────────────────────────
 export interface Reminder { id: string; date: string; label: string; sub: string; amount: number | null; currency: string; dir: 'out' | 'in' | 'event'; href: string }
@@ -46,7 +52,7 @@ export function nextWeek(today: string, dues: Due[], incoming: ExpectedIn[], eve
 }
 
 // ── A month's commitments ───────────────────────────────────────────────────
-export interface Commitment { id: string; label: string; amount: number; currency: string; kind: 'emi' | 'card' | 'sip' | 'rd' | 'repeat' | 'premium' }
+export interface Commitment extends PlanRow { kind: 'emi' | 'card' | 'sip' | 'rd' | 'repeat' | 'premium' }
 export function monthCommitments(inp: { ym: string; today: string; view: View; txns: any[]; accounts: any[]; loans: any[]; insurance: any[]; mutualFunds: any[]; rds: any[]; recurring: RecurringTxn[]; lic?: any[]; bills?: Bill[] }): Commitment[] {
   const { ym, today, view } = inp
   const inView = (c: string) => view === 'consolidated' || (view === 'uae' ? c === 'AED' : c !== 'AED')
@@ -81,21 +87,21 @@ export function monthCommitments(inp: { ym: string; today: string; view: View; t
     if (r.account_id && cardIds.has(r.account_id)) continue      // in the card's bill
     const [ya, ma] = r.start_month.split('-').map(Number), [yb, mb] = ym.split('-').map(Number)
     if (((yb - ya) * 12 + (mb - ma)) % (r.every_months || 1)) continue
-    out.push({ id: `rep-${r.id}`, label: r.merchant, amount: Number(r.amount), currency: r.currency, kind: 'repeat' })
+    out.push({ id: `rep-${r.id}`, label: r.merchant, amount: Number(r.amount), currency: r.currency, kind: 'repeat', why: 'A repeating entry you set up' })
   }
   for (const p of inp.insurance) {
     const every = FREQ[p.premium_frequency] ?? 12, per = (Number(p.annual_premium) || 0) * every / 12
     const d = nextOccurrence(p.next_premium_date, `${ym}-01`, every)
-    if (per > 0 && d && ymOf(d) === ym && inView(p.currency || 'INR')) out.push({ id: `prem-${p.id}`, label: `${p.policy_name} premium`, amount: per, currency: p.currency || 'INR', kind: 'premium' })
+    if (per > 0 && d && ymOf(d) === ym && inView(p.currency || 'INR')) out.push({ id: `prem-${p.id}`, label: `${p.policy_name} premium`, amount: per, currency: p.currency || 'INR', kind: 'premium', why: 'From your policy' })
   }
   for (const p of inp.lic ?? []) {
     const every = policyEvery(p.premium_frequency), per = (Number(p.annual_premium) || 0) * every / 12
     const d = nextOccurrence(p.next_premium_date, `${ym}-01`, every)
-    if (per > 0 && d && ymOf(d) === ym && inView(p.currency || 'INR') && !(p.maturity_date && d > String(p.maturity_date).slice(0, 10))) out.push({ id: `lic-${p.id}`, label: `LIC ${p.name || p.plan_name || 'policy'} premium`, amount: per, currency: p.currency || 'INR', kind: 'premium' })
+    if (per > 0 && d && ymOf(d) === ym && inView(p.currency || 'INR') && !(p.maturity_date && d > String(p.maturity_date).slice(0, 10))) out.push({ id: `lic-${p.id}`, label: `LIC ${p.name || p.plan_name || 'policy'} premium`, amount: per, currency: p.currency || 'INR', kind: 'premium', why: 'From your LIC policy' })
   }
   // Your own big bills, in the months they fall (a policy's date is above)
   for (const b of inp.bills ?? []) {
-    if (b.goal && !b.policy && inView(b.currency) && datesAhead({ ...b.goal, target_date: b.due }, today, 14).some(d => ymOf(d) === ym)) out.push({ id: `big-${b.key}`, label: b.name, amount: b.amount, currency: b.currency, kind: 'repeat' })
+    if (b.goal && !b.policy && inView(b.currency) && datesAhead({ ...b.goal, target_date: b.due }, today, 14).some(d => ymOf(d) === ym)) out.push({ id: `big-${b.key}`, label: b.name, amount: b.amount, currency: b.currency, kind: 'repeat', why: 'A big bill you added' })
   }
   // Regular bills paid from the bank, found from your history (a card's are in its bill)
   const spends = expandSplits(inp.txns).filter(t => isSpend(t) && inView(t.currency))
@@ -103,7 +109,7 @@ export function monthCommitments(inp: { ym: string; today: string; view: View; t
     if (repeatKeys.has(ruleTextFor(b.name))) continue
     const last = spends.filter(t => String(t.merchant ?? '').trim() === b.name).sort((x, y) => String(y.txn_date).localeCompare(String(x.txn_date)))[0]
     if (!last || (last.account_id && cardIds.has(last.account_id))) continue
-    out.push({ id: `bill-${b.key}`, label: b.name, amount: b.med, currency: last.currency ?? 'INR', kind: 'repeat' })
+    out.push({ id: `bill-${b.key}`, label: b.name, amount: b.med, currency: last.currency ?? 'INR', kind: 'repeat', why: `Found in your spending: about this amount in ${b.n} of the last 4 months`, seen: seenPayments(spends, b.name) })
   }
   return out.sort((a, b) => b.amount - a.amount)
 }
@@ -116,13 +122,43 @@ export function sentHome(txns: any[], today: string): { usual: number; left: num
   return { usual, left: Math.max(0, usual - sum(month)) }
 }
 
+// What your usual spending will still take from your bank this month, category by
+// category. It's not the whole allowance: what goes on a card leaves only as the
+// card's bill (already in the dues), and a bill already listed isn't counted again.
+export interface UsualLine extends PlanRow { category: string; estimated: boolean }
+export function usualSpendLeft(inp: { today: string; cur: 'AED' | 'INR'; lines: RoomLine[]; txns: any[]; accounts: any[]; dues: Due[] }): UsualLine[] {
+  const { today, cur } = inp
+  const month = ymOf(today), months = [1, 2, 3].map(i => addMonths(month, -i))
+  const money = (n: number) => fmtMoney(n, cur)
+  const cards = new Set(inp.accounts.filter(a => kindOf(a) === 'card').map(a => a.id))
+  const past = expandSplits(inp.txns).filter(t => t.currency === cur && isSpend(t) && months.includes(ymOf(t.txn_date)))
+  const avgs = suggestCaps(inp.txns, cur, month)
+  const dues = cashDues(inp.dues, inp.accounts).filter(d => d.currency === cur && ymOf(d.date) === month && d.category)
+  const out: UsualLine[] = []
+  for (const l of inp.lines) {
+    // An estimate uses your plain average, not the budget suggestion's 10% cushion
+    const usual = l.estimated ? Math.min(l.cap, avgs[l.category]?.avg ?? l.cap) : l.cap
+    const left = Math.max(0, usual - l.spent)
+    const rows = past.filter(t => catOf(t) === l.category), all = rows.reduce((s, t) => s + (Number(t.amount) || 0), 0)
+    const bank = rows.filter(t => !cards.has(t.account_id)).reduce((s, t) => s + (Number(t.amount) || 0), 0)
+    const share = all > 0 ? bank / all : 1
+    const listed = dues.filter(d => d.category === l.category).reduce((s, d) => s + d.amount, 0)
+    const amount = Math.max(0, Math.round(left * share - listed))
+    if (amount <= 0) continue
+    out.push({ id: `usual-${cur}-${l.category}`, category: l.category, estimated: l.estimated, label: labelOf(l.category), amount, currency: cur,
+      why: [`${l.estimated ? 'You usually spend' : 'Your budget is'} ${money(usual)}`, `${money(l.spent)} spent so far`,
+        share < 0.995 ? `${Math.round(share * 100)}% of it is usually paid from your bank, the rest on cards` : '', listed > 0 ? `${money(listed)} is already in your bills` : ''].filter(Boolean).join(' · ') })
+  }
+  return out.sort((a, b) => b.amount - a.amount)
+}
+
 // ── The plan ────────────────────────────────────────────────────────────────
 export interface HomePlan {
-  rest: { cash: number; comingIn: number; incoming: ExpectedIn[]; dueOut: number; dueGroups: { label: string; amount: number }[]; sentHome: number; budgetsLeft: number; endOfMonth: number; afterBudgets: number; days: number }
-  next: { ym: string; income: number; committed: number; sentHome: number; toPlan: number; items: Commitment[]; groups: { label: string; amount: number }[]; events: any[] }
+  rest: { cash: number; comingIn: number; incoming: ExpectedIn[]; dueOut: number; dueGroups: { label: string; amount: number; items: PlanRow[] }[]; usual: UsualLine[]; sentHome: number; budgetsLeft: number; endOfMonth: number; afterBudgets: number; days: number }
+  next: { ym: string; income: number; committed: number; sentHome: number; toPlan: number; items: Commitment[]; groups: { label: string; amount: number; items: PlanRow[] }[]; events: any[] }
 }
 export function homePlan(inp: { today: string; view: View; fx: number; cash: number; dues: Due[]; incoming: ExpectedIn[]; budgetsLeft: number; avgIncome: number
-  txns: any[]; accounts: any[]; loans: any[]; insurance: any[]; mutualFunds: any[]; rds: any[]; recurring: RecurringTxn[]; events: any[]; plans?: IncomePlan[]; lic?: any[]; bills?: Bill[] }): HomePlan {
+  txns: any[]; accounts: any[]; loans: any[]; insurance: any[]; mutualFunds: any[]; rds: any[]; recurring: RecurringTxn[]; events: any[]; plans?: IncomePlan[]; lic?: any[]; bills?: Bill[]; usual?: UsualLine[] }): HomePlan {
   const { today, view, fx } = inp
   const v = (n: number, c: string) => viewAmount(n, c, view, fx)
   const month = ymOf(today), next = addMonths(month, 1)
@@ -132,7 +168,7 @@ export function homePlan(inp: { today: string; view: View; fx: number; cash: num
   const fromBank = cashDues(inp.dues, inp.accounts).filter(d => inMonth(d.date))
   const dueOut = fromBank.reduce((s, d) => s + v(d.amount, d.currency), 0)
   const dueGroups = ([['Card bills', ['card']], ['EMIs', ['emi']], ['SIPs & RDs', ['sip']], ['Rent & bills', ['repeat', 'bill', 'premium']]] as [string, string[]][])
-    .map(([label, kinds]) => ({ label, amount: fromBank.filter(d => kinds.includes(d.kind)).reduce((s, d) => s + v(d.amount, d.currency), 0) })).filter(g => g.amount > 0)
+    .map(([label, kinds]) => { const rows = fromBank.filter(d => kinds.includes(d.kind)); return { label, amount: rows.reduce((s, d) => s + v(d.amount, d.currency), 0), items: rows.map(d => ({ id: d.id, label: d.label, amount: d.amount, currency: d.currency, date: d.date, sub: d.sub, why: d.why, seen: d.seen })) } }).filter(g => g.amount > 0)
   // What you declared you send is already in the dues this month; else your history
   const declaredHome = (inp.plans ?? []).filter(p => p.is_active && p.kind === 'remit').reduce((s, p) => s + Number(p.amount), 0)
   const home = view !== 'uae' ? { usual: 0, left: 0 } : declaredHome > 0 ? { usual: declaredHome, left: 0 } : sentHome(inp.txns, today)
@@ -140,10 +176,10 @@ export function homePlan(inp: { today: string; view: View; fx: number; cash: num
   const items = monthCommitments({ ym: next, today, view, txns: inp.txns, accounts: inp.accounts, loans: inp.loans, insurance: inp.insurance, mutualFunds: inp.mutualFunds, rds: inp.rds, recurring: inp.recurring, lic: inp.lic, bills: inp.bills })
   const committed = items.reduce((s, c) => s + v(c.amount, c.currency), 0)
   return {
-    rest: { cash: inp.cash, comingIn, incoming, dueOut, dueGroups, sentHome: home.left, budgetsLeft: inp.budgetsLeft, endOfMonth, afterBudgets: endOfMonth - inp.budgetsLeft, days: daysInMonth(month) - Number(today.slice(8, 10)) },
+    rest: { cash: inp.cash, comingIn, incoming, dueOut, dueGroups, usual: inp.usual ?? [], sentHome: home.left, budgetsLeft: inp.budgetsLeft, endOfMonth, afterBudgets: endOfMonth - inp.budgetsLeft, days: daysInMonth(month) - Number(today.slice(8, 10)) },
     next: { ym: next, income: inp.avgIncome, committed, sentHome: home.usual, toPlan: inp.avgIncome - committed - home.usual, items,
       groups: ([['EMIs', ['emi']], ['SIPs & RDs', ['sip', 'rd']], ['Rent & bills', ['repeat']], ['Card bills', ['card']], ['Insurance', ['premium']]] as [string, string[]][])
-        .map(([label, kinds]) => ({ label, amount: items.filter(i => kinds.includes(i.kind)).reduce((s, i) => s + v(i.amount, i.currency), 0) })).filter(g => g.amount > 0),
+        .map(([label, kinds]) => { const rows = items.filter(i => kinds.includes(i.kind)); return { label, amount: rows.reduce((s, i) => s + v(i.amount, i.currency), 0), items: rows } }).filter(g => g.amount > 0),
       events: inp.events.filter(e => !e.closed_at && ymOf(String(e.start_date)) === next) },
   }
 }

@@ -57,7 +57,7 @@ export default function MoneyOverviewClient(p: Props) {
   useEffect(() => { setToday(localToday()) }, [])
   const [picking, setPicking] = useState<Due | null>(null)
   const plans = p.plans ?? []
-  const bills = p.bills ?? [], billSkips = p.billSkips ?? []
+  const bills = (p.bills ?? []).filter(b => view === 'consolidated' || (view === 'uae' ? b.currency === 'AED' : b.currency === 'INR')), billSkips = p.billSkips ?? []
   const confirms = pendingCount(p.pending) + incomeCheckCount(plans, p.transactions, today, FX) + billReminderCount(bills, p.transactions, today, billSkips)
 
   const inView = (c: string) => view === 'consolidated' || (view === 'uae' ? c === 'AED' : c !== 'AED')

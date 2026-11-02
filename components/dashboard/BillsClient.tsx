@@ -31,6 +31,8 @@ export default function BillsClient({ transactions, cards, accounts, loans, insu
   const short = (n: number) => fmtCompact(n, cur)
   const inView = (c: string) => view === 'consolidated' || (view === 'uae' ? c === 'AED' : c === 'INR')
   const thisMonth = today.slice(0, 7)
+  const repeatsHere = useMemo(() => recurring.filter(r => inView(r.currency)), [recurring, view]) // eslint-disable-line react-hooks/exhaustive-deps
+  const txnsHere = useMemo(() => transactions.filter(t => inView(t.currency)), [transactions, view]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const bills = useMemo(() => !today ? [] : findRecurring(
     transactions.filter(t => t.txn_date && inView(t.currency)), thisMonth,
@@ -78,7 +80,7 @@ export default function BillsClient({ transactions, cards, accounts, loans, insu
     : `No regular charges spotted yet. We look for the same merchant at a steady amount in 3 of the last 4 months.`
       + (week.length ? ` ${week.length} card, loan or premium payment${week.length === 1 ? ' is' : 's are'} due in the next 7 days.` : '')
 
-  if (today && bills.length === 0 && scheduled.length === 0 && recurring.length === 0) return (
+  if (today && bills.length === 0 && scheduled.length === 0 && repeatsHere.length === 0) return (
     <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
       <PageHeader title="Bills & subscriptions" sub="Found in your statements, so you never miss a due date" />
       <EmptyState message="Bills show up here once a merchant charges you a steady amount in 3 of the last 4 months. Import a few months of bank or card statements, or add your cards, loans and policies."
@@ -104,7 +106,7 @@ export default function BillsClient({ transactions, cards, accounts, loans, insu
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-3.5 md:gap-4 items-start">
         <div className="flex flex-col gap-3.5 md:gap-4 min-w-0">
-          <RepeatingPanel list={recurring} ready={recurringReady} transactions={transactions} accounts={accounts} today={today} />
+          <RepeatingPanel list={repeatsHere} ready={recurringReady} transactions={txnsHere} accounts={accounts} today={today} />
           <Panel title="Coming up · next 30 days">
             {comingUp.length === 0
               ? <p className="text-[12.5px] mt-2" style={{ color: 'var(--text3)' }}>Nothing due in the next 30 days.</p>

@@ -35,7 +35,7 @@ export default function BigBillsClient(p: Props) {
   const { today, bills, fx } = p
   const curs = (['INR', 'AED'] as Cur[]).filter(c => bills.some(b => b.currency === c))
   const [picked, setPicked] = useState<Cur | null>(null)
-  const cur: Cur = picked ?? (view === 'uae' && curs.includes('AED') ? 'AED' : view === 'india' && curs.includes('INR') ? 'INR' : curs[0] ?? (view === 'uae' ? 'AED' : 'INR'))
+  const cur: Cur = view === 'uae' ? 'AED' : view === 'india' ? 'INR' : picked ?? curs[0] ?? 'INR'
   const [form, setForm] = useState<{ draft: BillDraft; bill: Bill | null } | null>(null)
   const [paying, setPaying] = useState<Bill | null>(null)
   const [aside, setAside] = useState<Bill | null>(null)
@@ -54,7 +54,7 @@ export default function BigBillsClient(p: Props) {
     return { AED: free('AED'), INR: free('INR') }
   }, [p.transactions, p.accounts, p.loans, p.insurance, p.lic, p.mutualFunds, p.recurring, p.rds, p.plans, bills, today, fx])
   const covers = useMemo(() => coverBills(bills, spare, p.accounts), [bills, spare, p.accounts])
-  const found = useMemo(() => detectBills(p.transactions, bills, p.recurring, today, p.skips).filter(f => !hidden.has(f.key)), [p.transactions, bills, p.recurring, today, p.skips, hidden])
+  const found = useMemo(() => detectBills(p.transactions, bills, p.recurring, today, p.skips).filter(f => !hidden.has(f.key) && f.currency === cur), [p.transactions, bills, p.recurring, today, p.skips, hidden, cur])
   const months = useMemo(() => yearAhead(bills, cur, today), [bills, cur, today])
 
   const mine = bills.filter(b => b.currency === cur)
@@ -102,7 +102,7 @@ export default function BigBillsClient(p: Props) {
         </div>
       )}
 
-      {curs.length > 1 && <div><Segmented label="Currency" value={cur} onChange={(c: Cur) => setPicked(c)} options={[{ value: 'INR', label: 'India (₹)' }, { value: 'AED', label: 'UAE (AED)' }]} /></div>}
+      {view === 'consolidated' && curs.length > 1 && <div><Segmented label="Currency" value={cur} onChange={(c: Cur) => setPicked(c)} options={[{ value: 'INR', label: 'India (₹)' }, { value: 'AED', label: 'UAE (AED)' }]} /></div>}
 
       {mine.length > 0 && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
