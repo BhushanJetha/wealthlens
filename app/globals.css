@@ -346,6 +346,8 @@ body {
 
 /* Viewing a family member is read only: no Add or import buttons */
 .wl-viewing .wl-hide-viewing { display: none !important; }
+.wl-show-viewing { display: none; }
+.wl-viewing .wl-show-viewing { display: block; }
 
 /* Opening the installed app (app/layout.tsx): brand for a moment, then the page */
 #wl-splash { display: none; }

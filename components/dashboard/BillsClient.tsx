@@ -189,11 +189,15 @@ export default function BillsClient(p: Props) {
 
   return (
     <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
-      <PageHeader title="Bills" sub="Everything that leaves on a known date. What repeats in your statements is found for you." onAdd={() => setForm({ bill: null, repeat: null, draft: blank() })} addLabel="Add a bill"
-        actions={<>
+      <PageHeader title="Bills" sub="Everything that leaves on a known date. What repeats in your statements is found for you." actions={<>
           <button onClick={() => router.push('/dashboard/ingest')} className="wl-btn" style={{ height: 34 }}>Import statements</button>
           <button onClick={() => setForm({ bill: null, repeat: null, draft: blank() })} className="wl-btn wl-btn-primary wl-hide-viewing" style={{ height: 34 }}><Plus size={14} />Add a bill</button>
         </>} />
+
+      <button onClick={() => setForm({ bill: null, repeat: null, draft: blank() })} className="md:hidden wl-btn wl-btn-primary w-full wl-hide-viewing" style={{ height: 44 }}><Plus size={16} />Add a bill</button>
+      <div className="wl-show-viewing rounded-2xl px-4 py-3 text-[13px]" style={{ background: 'var(--accent-bg)', color: 'var(--accent2)' }}>
+        You’re viewing a family member’s bills, so adding and changing are off. Switch back to your own view to add a bill.
+      </div>
 
       {!p.ready && (
         <div className="rounded-2xl px-4 py-3 text-[13px]" style={{ background: 'var(--amber-bg)', color: 'var(--amber-text)' }}>
@@ -230,7 +234,7 @@ export default function BillsClient(p: Props) {
         </Panel>
       )}
 
-      <Panel title="Your bills" right={repeatsHere.length + billsHere.length > 0 ? <Segmented label="Show" value={filter} onChange={(v: Filter) => setFilter(v)} options={[{ value: 'all', label: 'All' }, { value: 'monthly', label: `Monthly ${nMonthly}` }, { value: 'few', label: `Every few months ${nFew}` }]} /> : undefined}>
+      <Panel title="Your bills" right={repeatsHere.length + billsHere.length > 0 ? <Segmented label="Show" value={filter} onChange={(v: Filter) => setFilter(v)} options={[{ value: 'all', label: 'All' }, { value: 'monthly', label: `Monthly ${nMonthly}` }, { value: 'few', label: `Few months ${nFew}` }]} /> : undefined}>
         {repeatsHere.length + billsHere.length === 0 ? (<>
           <p className="mt-1.5 text-[13px] leading-snug" style={{ color: 'var(--text3)' }}>Your LIC and insurance premiums appear here by themselves once they’re on file. Add anything else:</p>
           <div className="flex flex-wrap gap-1.5 mt-3 wl-hide-viewing">
