@@ -96,7 +96,7 @@ export default async function DashboardPage() {
   const india = computeNetWorth(holdings, 'india', fx)
   let historyReady = !isMissingTable(snapsRes.error)
   let snapshots: any[] = snapsRes.data ?? []
-  if (historyReady && uae.totalAssets + uae.totalLiab + india.totalAssets + india.totalLiab > 0) {
+  if (historyReady && !(supabase as any).__viewAs && uae.totalAssets + uae.totalLiab + india.totalAssets + india.totalLiab > 0) {
     const all = computeNetWorth(holdings, 'consolidated', fx)
     const row = {
       snap_date: today, fx,

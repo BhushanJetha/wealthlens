@@ -42,7 +42,7 @@ const BRING_IN: Opt[] = [
 export function AddButton() {
   const { openAdd } = useUiStore()
   return (
-    <button onClick={() => openAdd()} className="wl-btn wl-btn-primary flex-shrink-0" style={{ height: 34 }}>
+    <button onClick={() => openAdd()} className="wl-btn wl-btn-primary flex-shrink-0 wl-hide-viewing" style={{ height: 34 }}>
       <Plus size={14} />Add
     </button>
   )
@@ -78,7 +78,7 @@ export default function QuickAdd() {
     <>
       {fab && (
         <button onClick={() => openAdd()} aria-label="Add a transaction or import"
-          className="add-fab md:hidden no-print fixed z-30 w-[52px] h-[52px] rounded-full flex items-center justify-center text-white"
+          className="add-fab wl-hide-viewing md:hidden no-print fixed z-30 w-[52px] h-[52px] rounded-full flex items-center justify-center text-white"
           style={{ background: 'linear-gradient(135deg, #6A55E8, #7A66F0)', boxShadow: '0 10px 24px rgba(91,71,224,.38)' }}>
           <Plus size={24} strokeWidth={2.4} />
         </button>

@@ -115,7 +115,7 @@ export default function LoanNeedsPanel({ loans, pendingEmis, pendingDrafts = [],
               <span className="flex-1 min-w-0 truncate" style={{ color: 'var(--text)' }}>{l.name}
                 <span style={{ color: 'var(--text4)' }}>{l.emi_last_month ? ` · last recorded ${fmtDay(`${l.emi_last_month}-01`).split(' ')[1]}` : ''}</span></span>
               <button onClick={() => setAuto(l, !l.emi_auto)} disabled={busy === l.id}
-                title={l.emi_auto ? 'Recorded on the EMI day — tap to be asked first' : 'You’re asked if it isn’t in your statement — tap to record it automatically'}
+                title={l.emi_auto ? 'Recorded on the EMI day, no review — tap to review each one' : 'Entered on the EMI day, waiting for your approval — tap to skip the review'}
                 className="rounded-full px-2 h-[26px] text-[11px] font-semibold flex items-center gap-1 flex-shrink-0"
                 style={l.emi_auto ? { background: '#E7F7EF', color: '#1E7A50' } : { background: 'var(--accent-bg)', color: 'var(--accent2)' }}>
                 {l.emi_auto ? <><Zap size={11} />Auto</> : <><Hand size={11} />Review</>}

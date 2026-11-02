@@ -29,6 +29,11 @@ export interface Automation {
 // Run automation and the page's reads together (one round trip on a normal
 // day instead of three or four in a row); read again only if it recorded something.
 export async function withAutomation<T>(supabase: any, userId: string, today: string, load: () => Promise<T>): Promise<[Automation, T]> {
+  // Viewing a family member: read only. Nothing is recorded, and only they approve their entries.
+  if (supabase.__viewAs) {
+    const [rec, data] = await Promise.all([supabase.from('recurring_txns').select('*').eq('user_id', userId).order('created_at'), load()])
+    return [{ recurring: rec.data ?? [], recurringReady: !rec.error, pending: { recurring: [], emis: [], sips: [], drafts: [] }, count: 0, changed: false }, data]
+  }
   const [auto, data] = await Promise.all([runAutomation(supabase, userId, today), load()])
   return [auto, auto.changed ? await load() : data]
 }

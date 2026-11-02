@@ -215,7 +215,7 @@ export default function DashboardClient(p: Props) {
           </h1>
           <p className="text-[13px] mt-0.5" style={{ color: 'var(--text3)' }}>{viewLabel} · {holderLabel} · {rangeLabel}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 wl-hide-viewing">
           <button onClick={() => openAdd()} className="wl-btn wl-btn-primary" style={{ height: 34 }}><Plus size={14} />Add</button>
           <button onClick={() => setUploadOpen(true)} className="wl-btn" style={{ height: 34 }}><Upload size={14} />Upload statement</button>
           <button onClick={() => setModal('voice')} className="wl-btn" style={{ height: 34 }}><Mic size={14} />Speak it</button>
@@ -298,7 +298,7 @@ export default function DashboardClient(p: Props) {
 // Phones: the four things you do most
 function QuickActions({ openAdd, upload, voice, advisor }: { openAdd: () => void; upload: () => void; voice: () => void; advisor: () => void }) {
   return (
-    <div className="md:hidden grid grid-cols-4 gap-2">
+    <div className="md:hidden grid grid-cols-4 gap-2 wl-hide-viewing">
       {([['Add', Plus, openAdd], ['Upload', Upload, upload], ['Speak', Mic, voice], ['Ask AI', Sparkles, advisor]] as [string, LucideIcon, () => void][]).map(([label, Icon, fn]) => (
         <button key={label} onClick={() => fn()} className="wl-card py-2.5 px-1 flex flex-col items-center gap-1 text-[11px] font-medium" style={{ color: 'var(--text2)' }}>
           <Icon size={18} style={{ color: 'var(--accent)' }} />{label}

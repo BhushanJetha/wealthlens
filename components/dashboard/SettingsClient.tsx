@@ -2,7 +2,8 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { User, Lock, Bell, Save, Loader2, CheckCircle, Shield, Trash2 } from 'lucide-react'
+import Link from 'next/link'
+import { User, Lock, Bell, Save, Loader2, CheckCircle, Shield, Trash2, Users, ChevronRight } from 'lucide-react'
 import { removeDuplicateTransactions } from '@/lib/dedupeTransactions'
 
 type Tab = 'profile' | 'security' | 'preferences'
@@ -48,6 +49,15 @@ export default function SettingsClient({ profile, userId }: any) {
         <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em]" style={{ color: 'var(--text)' }}>Settings</h1>
         <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>Manage your account, preferences and security</p>
       </div>
+
+      <Link href="/dashboard/settings/family" className="wl-card px-4 py-3.5 flex items-center gap-3 hover:bg-[#F5F3FE] transition-colors">
+        <span className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}><Users size={17} /></span>
+        <span className="flex-1 min-w-0">
+          <span className="block text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Family</span>
+          <span className="block text-[12px]" style={{ color: 'var(--text3)' }}>Invite family members, or see who can view your money</span>
+        </span>
+        <ChevronRight size={17} style={{ color: 'var(--text4)' }} />
+      </Link>
 
       {/* Tab bar */}
       <div className="flex gap-1 rounded-xl p-1" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
