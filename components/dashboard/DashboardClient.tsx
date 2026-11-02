@@ -30,6 +30,7 @@ import { plannedIncoming, mergeExpected, declaredIncome, declaredPayday, type In
 import SpendRoomPanel from './SpendRoomPanel'
 import { FreeToSpendCard, NextWeekCard, PlanCard, BigBillsStrip } from './HomeCards'
 import BillReminders, { billReminderCount } from './BillReminders'
+import LandedChecks, { landedCheckCount } from './LandedChecks'
 import type { Bill } from '@/lib/bigBills'
 import { foundRegular, pendingCharges } from '@/lib/regular'
 
@@ -464,7 +465,7 @@ function NetWorthCard({ nw, hist, est, historyReady, holderLabel, savingsRate, m
 function AttentionCard({ items, pending, accName, onImport, plans, txns, today, fx, bills, billSkips, accounts, foundCount, className = '' }: { bills: Bill[]; billSkips: string[]; accounts: any[]; foundCount: number; items: Attention[]; pending: Pending; accName: (id: string | null) => string | null; onImport: () => void; plans: IncomePlan[]; txns: any[]; today: string; fx: number; className?: string }) {
   const [all, setAll] = useState(false)
   const shown = all ? items : items.slice(0, 4)
-  const waiting = pendingCount(pending) + incomeCheckCount(plans, txns, today, fx) + billReminderCount(bills, txns, today, billSkips) + (foundCount > 0 ? 1 : 0)
+  const waiting = pendingCount(pending) + incomeCheckCount(plans, txns, today, fx) + billReminderCount(bills, txns, today, billSkips) + (foundCount > 0 ? 1 : 0) + landedCheckCount(txns, today, fx)
   return (
     <Card aria-labelledby="att-title" className={`flex flex-col ${className}`}>
       <CardTitle id="att-title" right={items.length + waiting > 0 && (
@@ -479,6 +480,7 @@ function AttentionCard({ items, pending, accName, onImport, plans, txns, today, 
       ) : (
         <ul className="mt-2.5">
           <BillReminders bills={bills} skips={billSkips} txns={txns} today={today} accounts={accounts} foundCount={foundCount} />
+          <LandedChecks txns={txns} today={today} fx={fx} />
           <IncomeChecks plans={plans} txns={txns} today={today} fx={fx} />
           <PendingConfirms pending={pending} accName={accName} />
           {shown.map(it => {

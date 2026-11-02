@@ -316,6 +316,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
       const err = id ? await uploadReceipt(supabase, id, receiptFile) : 'Could not attach the receipt'
       repeatNote += err ? ` · receipt not saved (${err})` : ' · receipt attached'
     }
+    if (body.counter_amount && data.transaction && !('counter_amount' in data.transaction)) toast('Rupees received wasn’t saved: run migration 042 in Supabase.', 'error')
     toast((mode === 'edit' ? 'Changes saved' : `${noun} saved · ${form.merchant.trim()}`) + repeatNote)
     router.refresh()
     onAdded?.()

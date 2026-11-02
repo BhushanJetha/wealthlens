@@ -22,6 +22,7 @@ import PendingConfirms, { pendingCount, type Pending } from './PendingConfirms'
 import SpendRoomPanel from './SpendRoomPanel'
 import IncomeChecks, { incomeCheckCount } from './IncomeChecks'
 import BillReminders, { billReminderCount } from './BillReminders'
+import LandedChecks, { landedCheckCount } from './LandedChecks'
 import type { Bill } from '@/lib/bigBills'
 import { foundRegular, pendingCharges } from '@/lib/regular'
 import { declaredPayday, type IncomePlan } from '@/lib/incomePlans'
@@ -61,7 +62,7 @@ export default function MoneyOverviewClient(p: Props) {
   const bills = (p.bills ?? []).filter(b => view === 'consolidated' || (view === 'uae' ? b.currency === 'AED' : b.currency === 'INR')), billSkips = p.billSkips ?? []
   const foundCount = useMemo(() => pendingCharges(foundRegular(p.transactions, p.recurring, today, billSkips, p.bills ?? []), billSkips)
     .filter(f => view === 'consolidated' || (view === 'uae' ? f.currency === 'AED' : f.currency === 'INR')).length, [p.transactions, p.recurring, today, billSkips, p.bills, view])
-  const confirms = pendingCount(p.pending) + incomeCheckCount(plans, p.transactions, today, FX) + billReminderCount(bills, p.transactions, today, billSkips) + (foundCount > 0 ? 1 : 0)
+  const confirms = pendingCount(p.pending) + incomeCheckCount(plans, p.transactions, today, FX) + billReminderCount(bills, p.transactions, today, billSkips) + (foundCount > 0 ? 1 : 0) + landedCheckCount(p.transactions, today, FX)
 
   const inView = (c: string) => view === 'consolidated' || (view === 'uae' ? c === 'AED' : c !== 'AED')
   const accounts = useMemo(() => p.accounts.filter(a => inView(a.currency)), [p.accounts, view])
@@ -187,6 +188,7 @@ export default function MoneyOverviewClient(p: Props) {
           ) : (
             <ul className="mt-2">
               <BillReminders bills={bills} skips={billSkips} txns={p.transactions} today={today} accounts={p.accounts} foundCount={foundCount} />
+              <LandedChecks txns={p.transactions} today={today} fx={FX} />
               <IncomeChecks plans={plans} txns={p.transactions} today={today} fx={FX} />
               <PendingConfirms pending={p.pending} accName={accName} />
               {needs.slice(0, 6).map(it => {

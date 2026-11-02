@@ -13,6 +13,7 @@ import { fmtDay } from '@/lib/insights'
 import { PageHeader, InsightBar, KpiTile, EmptyState } from '@/components/ui/kit'
 import { ListCard, ListRow } from '@/components/ui/list'
 import AddTransactionModal from '@/components/forms/AddTransactionModal'
+import { LandedSheet } from './LandedChecks'
 import { isNre } from '@/lib/ledger'
 
 const sign = (n: number) => (n < 0 ? '−' : '')
@@ -23,7 +24,7 @@ const STATUS: Record<Remittance['source'], { label: string; color: string; note:
   matched:   { label: 'Matched',   color: '#16A34A', note: 'paired with the NRE credit' },
   entered:   { label: 'You entered', color: '#16A34A', note: 'the ₹ you entered on the transfer' },
   'via NRO': { label: 'Via NRO',   color: '#3B8EF0', note: '₹ taken from the NRE → NRO move that followed' },
-  estimated: { label: 'Estimated', color: '#D97706', note: 'no ₹ credit found — estimated at today’s rate' },
+  estimated: { label: 'Estimated', color: '#D97706', note: 'estimated at today’s rate. Tap to enter what you got' },
   received:  { label: 'Received',  color: '#6A55E8', note: 'landed in India with no matching UAE debit' },
 }
 
@@ -76,6 +77,7 @@ export default function MoneyFlowClient({ transactions, accounts }: { transactio
   const { fromMonth, toMonth, fxRate: FX } = useViewStore()
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<any>(null)
+  const [landed, setLanded] = useState<Remittance | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [showMoves, setShowMoves] = useState(false)
   const router = useRouter()
@@ -220,8 +222,9 @@ export default function MoneyFlowClient({ transactions, accounts }: { transactio
                   sub={[r.sentOn ? `Sent ${fmtDay(r.sentOn)}${from ? ` from ${from}` : ''}` : null, `landed ${fmtDay(r.landedOn)}${to ? ` in ${to}` : ''}`, st.note].filter(Boolean).join(' · ')}
                   tag={st.label} meta={r.rate ? `₹${r.rate.toFixed(2)}/AED` : '—'}
                   amount={inrFmt(r.inr)} amountSub={r.aed ? aedFmt(r.aed) : undefined}
-                  onOpen={() => setEditing(r.out ?? r.in)}
+                  onOpen={() => (r.out && r.source !== 'matched' ? setLanded(r) : setEditing(r.out ?? r.in))}
                   actions={[
+                    ...(r.out && r.source !== 'matched' ? [{ label: 'Edit rupees received', icon: Pencil, onClick: () => setLanded(r) }] : []),
                     ...(r.out ? [{ label: 'Edit transfer', icon: Pencil, onClick: () => setEditing(r.out) }] : []),
                     ...(r.in && r.source !== 'via NRO' ? [{ label: r.out ? 'Edit the ₹ credit' : 'Edit', icon: Pencil, onClick: () => setEditing(r.in) }] : []),
                     r.out
@@ -289,6 +292,7 @@ export default function MoneyFlowClient({ transactions, accounts }: { transactio
         </section>
       </>)}
 
+      {landed && <LandedSheet r={landed} onClose={() => setLanded(null)} />}
       {editing && <AddTransactionModal edit={{ txn: editing }} onClose={() => { setEditing(null); router.refresh() }} />}
       {adding && <AddTransactionModal onClose={() => setAdding(false)} defaults={{ txn_type: 'transfer', sub_category: 'International', category: 'Transfer', currency: 'AED', merchant: 'Transfer to India' }} />}
     </div>

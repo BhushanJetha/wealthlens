@@ -100,7 +100,7 @@ export function nextExpected(p: IncomePlan, today: string, txns: any[]): { date:
 
 // ₹ per dirham you actually got lately, else today's rate
 export function usualRate(txns: any[], fx: number) {
-  const rows = prepareMoney(txns, { fx }).filter(t => t._remit && t._source === 'matched' && Number(t._rate) > 0)
+  const rows = prepareMoney(txns, { fx }).filter(t => t._remit && (t._source === 'matched' || t._source === 'entered') && Number(t._rate) > 0)
     .sort((a, b) => String(b.txn_date).localeCompare(String(a.txn_date)))
   return Number(rows[0]?._rate) || fx
 }

@@ -200,6 +200,12 @@ export function pairRemittances(txns: any[], fx: number): Remittance[] {
   return out.sort((a, b) => b.landedOn.localeCompare(a.landedOn))
 }
 
+// Transfers from the last 45 days still at an estimate: only you know what landed
+export function landedToAsk(txns: any[], today: string, fx: number): Remittance[] {
+  const now = dayNum(today)
+  return pairRemittances(txns, fx).filter(r => r.source === 'estimated' && r.out?.id && r.out.auto_status !== 'pending' && r.sentOn && now - dayNum(r.sentOn) >= 0 && now - dayNum(r.sentOn) <= 45)
+}
+
 // ── Splitting with friends ──────────────────────────────────────────────────
 // You paid for friends too: `friend_share` is what they owe you back. Only
 // your share is spending; theirs is money lent — a move out of your account
