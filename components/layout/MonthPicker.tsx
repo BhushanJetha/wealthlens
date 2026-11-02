@@ -1,7 +1,7 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
 import { ChevronLeft, ChevronRight, Calendar, X } from 'lucide-react'
-import { useViewStore } from '@/store/viewStore'
+import { useViewStore, currentMonth } from '@/store/viewStore'
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const MONTH_NAMES_LONG = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -70,7 +70,7 @@ function MonthRangePicker({ from, to, onApply, onClose }: {
   }
 
   function selectPreset(months: number) {
-    const now = new Date().toISOString().slice(0, 7)
+    const now = currentMonth()
     const start = addMonths(now, -(months - 1))
     setDraft({ from: start, to: now })
     setPickYear(parseYM(now)[0])
@@ -184,6 +184,19 @@ export default function MonthPicker({ compact }: { compact?: boolean }) {
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
+  // Coming back to the app after a while (phones keep it open in the background)
+  // counts as opening it: back to the current month
+  useEffect(() => {
+    let hiddenAt = 0
+    const onChange = () => {
+      if (document.hidden) { hiddenAt = Date.now(); return }
+      if (hiddenAt && Date.now() - hiddenAt > 30 * 60 * 1000) { const m = currentMonth(); useViewStore.getState().setDateRange(m, m) }
+      hiddenAt = 0
+    }
+    document.addEventListener('visibilitychange', onChange)
+    return () => document.removeEventListener('visibilitychange', onChange)
+  }, [])
+
   function shiftRange(delta: number) {
     setDateRange(addMonths(fromMonth, delta), isSingleMonth ? addMonths(fromMonth, delta) : addMonths(toMonth, delta))
   }
@@ -212,7 +225,7 @@ export default function MonthPicker({ compact }: { compact?: boolean }) {
             </span>
           </button>
           {!isSingleMonth && (
-            <button onClick={() => { const m = new Date().toISOString().slice(0, 7); setDateRange(m, m) }}
+            <button onClick={() => { const m = currentMonth(); setDateRange(m, m) }}
               aria-label="Back to this month" className="px-1 h-full opacity-60 hover:opacity-100" style={{ color: 'var(--text3)' }}>
               <X size={11} />
             </button>
