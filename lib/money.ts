@@ -155,7 +155,7 @@ export const isNreToNro = (t: any) => t?.currency === 'INR' && ((t?.sub_category
 
 export interface Remittance {
   id: string; sentOn: string | null; landedOn: string; aed: number | null; inr: number
-  rate: number | null; source: 'matched' | 'via NRO' | 'estimated' | 'received'
+  rate: number | null; source: 'matched' | 'entered' | 'via NRO' | 'estimated' | 'received'
   out?: any; in?: any
 }
 const dayNum = (d: string) => Math.floor(new Date(`${d.slice(0, 10)}T00:00:00Z`).getTime() / 864e5)
@@ -184,11 +184,16 @@ export function pairRemittances(txns: any[], fx: number): Remittance[] {
   }
   const out: Remittance[] = outs.map(o => {
     const aed = Number(o.amount) || 0
-    const hit = pick(ins, o) ?? pick(plain, o), nro = hit ? null : pick(nros, o)
-    const inr = hit ? Number(hit.amount) : nro ? Number(nro.amount) : Math.round(aed * fx)
+    const hit = pick(ins, o) ?? pick(plain, o)
+    const entered = !hit && Number(o.counter_amount) > 0 ? Number(o.counter_amount) : 0
+    // What you moved on to NRO is what landed only if it's all of it: moving part
+    // of it says nothing about the rest, which is still in NRE
+    const est = Math.round(aed * fx)
+    const nro = hit || entered ? null : pick(nros.filter(t => Math.abs((Number(t.amount) || 0) - est) <= est * 0.04), o)
+    const inr = hit ? Number(hit.amount) : entered || (nro ? Number(nro.amount) : est)
     return {
       id: `remit-${o.id ?? o.txn_date}`, sentOn: o.txn_date, landedOn: (hit ?? nro ?? o).txn_date, aed, inr,
-      rate: aed > 0 ? inr / aed : null, source: hit ? 'matched' : nro ? 'via NRO' : 'estimated', out: o, in: hit ?? nro ?? undefined,
+      rate: aed > 0 ? inr / aed : null, source: hit ? 'matched' : entered ? 'entered' : nro ? 'via NRO' : 'estimated', out: o, in: hit ?? nro ?? undefined,
     }
   })
   for (const t of ins) if (!used.has(t)) out.push({ id: `remit-${t.id ?? t.txn_date}`, sentOn: null, landedOn: t.txn_date, aed: null, inr: Number(t.amount) || 0, rate: null, source: 'received', in: t })

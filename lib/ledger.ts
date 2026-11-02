@@ -73,12 +73,14 @@ export function counterOf(t: any, from: any, accounts: any[]): string | null {
 export function missingCounter(t: any, a: any, accounts: any[]): boolean {
   if (!a || t.txn_type === 'income' || t.counter_account_id || isCredit(t, a)) return false
   const c = catOf(t)
-  const own = (c === CC_BILL && kindOf(a) !== 'card') || isNreToNro(t) || c === 'ATM Withdrawal' || c === 'Self Transfer'
+  const own = (c === CC_BILL && kindOf(a) !== 'card') || isNreToNro(t) || c === 'ATM Withdrawal' || c === 'Self Transfer' || isRemitOut(t)
   return own && !counterOf(t, a, accounts)
 }
 // The accounts that move could have gone to
 export function counterChoices(t: any, a: any, accounts: any[]): any[] {
   const c = catOf(t)
+  // Money sent home lands in rupees, in NRE first
+  if (isRemitOut(t)) return accounts.filter(x => x.is_active !== false && x.currency === 'INR' && kindOf(x) === 'bank').sort((x, y) => Number(isNre(y)) - Number(isNre(x)))
   const same = accounts.filter(x => x.id !== a?.id && x.is_active !== false && x.currency === t.currency)
   if (c === CC_BILL) return same.filter(x => kindOf(x) === 'card')
   if (c === 'ATM Withdrawal') return same.filter(x => kindOf(x) === (kindOf(a) === 'cash' ? 'bank' : 'cash'))
@@ -101,7 +103,13 @@ function ledgerMoves(accounts: any[], txns: any[], fx: number): Record<string, {
   const byId = new Map(accounts.map(a => [a.id, a]))
   const moves: Record<string, { t: any; delta: number }[]> = {}
   const push = (id: string, t: any, delta: number) => { (moves[id] ||= []).push({ t, delta }) }
-  const after = (a: any, d: string) => { const s = asOfOf(a); return !s || d.slice(0, 10) > s }
+  // A saved balance already includes everything up to its date. The exception is
+  // something you typed in that same day, after you last saved the account
+  const after = (a: any, t: any) => {
+    const s = asOfOf(a), d = String(t.txn_date).slice(0, 10)
+    if (!s || d > s) return true
+    return d === s && t.source === 'manual' && !!t.created_at && !!a.updated_at && Date.parse(t.created_at) > Date.parse(a.updated_at)
+  }
   // Real rows per account, to spot when the other side of a move is already recorded
   const realOn = new Map<string, any[]>()
   for (const t of txns) if (t.account_id) (realOn.get(t.account_id) ?? realOn.set(t.account_id, []).get(t.account_id)!).push(t)
@@ -117,10 +125,10 @@ function ledgerMoves(accounts: any[], txns: any[], fx: number): Record<string, {
     if (!(amt > 0) || !t.txn_date) continue
     const credit = a ? isCredit(t, a) : false
     // Own account
-    if (a && after(a, t.txn_date)) push(a.id, t, kindOf(a) === 'card' ? (credit ? -amt : amt) : (credit ? amt : -amt))
+    if (a && after(a, t)) push(a.id, t, kindOf(a) === 'card' ? (credit ? -amt : amt) : (credit ? amt : -amt))
     // Other side of a move between your accounts
     const cid = counterOf(t, a, accounts), c = cid ? byId.get(cid) : null
-    if (!c || c.id === a?.id || !after(c, t.txn_date)) continue
+    if (!c || c.id === a?.id || !after(c, t)) continue
     let camt = amt
     if (c.currency !== t.currency) {
       const r = remitOf.get(t)
@@ -183,14 +191,15 @@ export function applyLedgers(accounts: any[], ledgers: Record<string, Ledger>) {
 export async function withLedgerBalances(supabase: any, userId: string, accounts: any[], fx: number) {
   if (!accounts?.length) return accounts ?? []
   const since = accounts.map(asOfOf).filter(Boolean).sort()[0] ?? null
-  const cols = 'id,account_id,counter_account_id,txn_date,amount,currency,txn_type,category,sub_category,merchant,description'
+  const cols = 'id,account_id,counter_account_id,txn_date,amount,currency,txn_type,category,sub_category,merchant,description,source,created_at,counter_amount'
   const read = (sel: string) => fetchAll((a, b) => {
     let q = supabase.from('transactions').select(sel).eq('user_id', userId)
     if (since) q = q.gte('txn_date', since)
     return q.order('txn_date', { ascending: true }).order('id').range(a, b)
   }, 10)
   let res = await read(cols)
-  if (res.error) res = await read(cols.replace('counter_account_id,', ''))
+  if (res.error) res = await read(cols.replace(',counter_amount', ''))      // before migration 042
+  if (res.error) res = await read(cols.replace(',counter_amount', '').replace('counter_account_id,', ''))
   return applyLedgers(accounts, computeLedgers(accounts, res.data, fx))
 }
 

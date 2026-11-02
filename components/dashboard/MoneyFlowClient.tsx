@@ -21,6 +21,7 @@ const inrFmt = (n: number) => `${sign(n)}₹${Math.round(Math.abs(n)).toLocaleSt
 const inrShort = (n: number) => Math.abs(n) >= 1e5 ? `${sign(n)}₹${(Math.abs(n) / 1e5).toFixed(2)}L` : inrFmt(n)
 const STATUS: Record<Remittance['source'], { label: string; color: string; note: string }> = {
   matched:   { label: 'Matched',   color: '#16A34A', note: 'paired with the NRE credit' },
+  entered:   { label: 'You entered', color: '#16A34A', note: 'the ₹ you entered on the transfer' },
   'via NRO': { label: 'Via NRO',   color: '#3B8EF0', note: '₹ taken from the NRE → NRO move that followed' },
   estimated: { label: 'Estimated', color: '#D97706', note: 'no ₹ credit found — estimated at today’s rate' },
   received:  { label: 'Received',  color: '#6A55E8', note: 'landed in India with no matching UAE debit' },
@@ -176,7 +177,7 @@ export default function MoneyFlowClient({ transactions, accounts }: { transactio
           <Stage icon={Globe} where="India" title="Landed in NRE" big={inrFmt(f.landed)} total={0}
             sub={`${aedFmt(f.sentAed)} sent · ${remits.length} transfer${remits.length === 1 ? '' : 's'}${f.rate ? ` · ₹${f.rate.toFixed(2)}/AED` : ''}`}
             rows={[
-              ...(['matched', 'via NRO', 'estimated', 'received'] as const).filter(s => remits.some(r => r.source === s)).map(s => ({
+              ...(['matched', 'entered', 'via NRO', 'estimated', 'received'] as const).filter(s => remits.some(r => r.source === s)).map(s => ({
                 label: `${STATUS[s].label} (${remits.filter(r => r.source === s).length})`, value: inrShort(remits.filter(r => r.source === s).reduce((a, r) => a + r.inr, 0)),
                 amount: remits.filter(r => r.source === s).reduce((a, r) => a + r.inr, 0), color: STATUS[s].color })),
             ]} />

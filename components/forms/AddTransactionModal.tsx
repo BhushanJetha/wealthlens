@@ -1,11 +1,12 @@
 'use client'
 import { eventForDate, eventKind } from '@/lib/events'
-import { fmtDay } from '@/lib/insights'
 import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { X, Loader2, ArrowRight, RefreshCw, Plus, Settings2, Globe, ArrowLeftRight, Users, Banknote, CreditCard, Paperclip, Landmark } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useViewStore } from '@/store/viewStore'
+import { isNre, kindOf } from '@/lib/ledger'
+import { fmtDay } from '@/lib/insights'
 import { useCategoryStore } from '@/store/categoryStore'
 import { colorOf } from '@/lib/categories'
 import { canonCategory } from '@/lib/money'
@@ -85,6 +86,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
       account_id:   t0?.account_id ?? defaults?.account_id ?? '',
       // The other account in a move (card bill → card, ATM → bank it came from…)
       counter_account_id: t0?.counter_account_id ?? '',
+      counter_amount: t0?.counter_amount ? String(t0.counter_amount) : '',   // UAE → India: the rupees that landed
       payment_mode: t0?.payment_mode ?? '',
       holder_name:  t0?.holder_name ?? '',      // family member it was for ('' = household)
       event_id:     t0?.event_id ?? defaults?.event_id ?? '',   // the trip or event it belongs to ('' = none)
@@ -133,7 +135,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
     setForm(p => (p.event_id === (ev?.id ?? '') ? p : { ...p, event_id: ev?.id ?? '' }))
   }, [events, form.txn_date, form.txn_type, eventTouched])
   useEffect(() => {
-    supabase.from('accounts').select('id,name,bank_name,currency,account_type').eq('is_active', true)
+    supabase.from('accounts').select('*').eq('is_active', true)
       .then(({ data }) => setAccounts(data ?? []))
   }, [])
   useEffect(() => {
@@ -203,7 +205,9 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
     const isCard = (id: string) => accounts.some(a => a.id === id && a.account_type === 'credit_card')
     setForm(p => ({
       ...p, sub_category: isBill ? '' : sub,
-      counter_account_id: isBill && cardsIn(p.currency).length === 1 ? cardsIn(p.currency)[0].id : '',
+      // A card bill has its one card; money home lands in your one NRE
+      counter_account_id: isBill && cardsIn(p.currency).length === 1 ? cardsIn(p.currency)[0].id
+        : sub === 'International' && accounts.filter(isNre).length === 1 ? accounts.filter(isNre)[0].id : '',
       // Only a new, still-empty entry takes the kind's currency. An amount
       // that's there already keeps its own (relabelling ₹40,000 as AED 40,000
       // made it about ₹9 lakh everywhere).
@@ -241,6 +245,8 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
     return data.id
   }
 
+  // Dated before an account's saved balance: that balance already includes it
+  const backdated = accounts.filter(a => [form.account_id, isTransfer ? form.counter_account_id : ''].includes(a.id) && a.balance_as_of && form.txn_date && form.txn_date < a.balance_as_of)
   async function save() {
     if (!(Number(form.amount) > 0)) { setError('Enter an amount above zero.'); return }
     if (!form.merchant.trim()) { setError(isTransfer ? 'Give the transfer a label.' : isIncome ? 'Who paid you? Add a source.' : 'Where did you spend it? Add a merchant.'); return }
@@ -253,6 +259,9 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
     if (isTransfer && !kindFits(transferKind, form.currency)) {
       setError(transferKind === 'International' ? 'UAE → India is for amounts in AED. Pick another kind, or change the currency if it really was AED.'
         : 'NRE → NRO is for amounts in ₹. Pick another kind, or change the currency if it really was ₹.'); return
+    }
+    if (isTransfer && transferKind === 'International' && !form.counter_account_id && accounts.some(a => a.currency === 'INR' && kindOf(a) === 'bank')) {
+      setError('Pick the India account it lands in, so its balance goes up.'); return
     }
     if (friendPaid && form.paid_by_friend_id === '__new__' && !friendName.trim()) { setError('Who paid? Add their name.'); return }
     if (splitting && split.error) { setError(split.error); return }
@@ -268,6 +277,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
     }
     const body = { ...form, merchant: form.merchant.trim(), description: form.description.trim() || null, amount: Math.abs(Number(form.amount)), account_id,
       counter_account_id: isTransfer ? form.counter_account_id || null : null,
+      counter_amount: isTransfer && transferKind === 'International' && Number(form.counter_amount) > 0 ? Number(form.counter_amount) : null,
       payment_mode: !isTransfer && form.payment_mode ? form.payment_mode : null,
       holder_name: form.holder_name || null, tax_tag: showTax ? form.tax_tag || null : null,
       event_id: form.txn_type === 'expense' ? form.event_id || null : null,
@@ -466,6 +476,18 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
                   ? 'Takes this amount off the bank and off what you owe on the card — once. Not spending (the purchases were counted when you made them). A card-loan EMI is added to the card on its own day, so nothing counts twice.'
                   : 'Both balances update from this one entry. Not income or spending.'}
               </div>
+              {transferKind === 'International' && (
+                <div className="mt-3">
+                  <Label>Rupees received (optional)</Label>
+                  <input inputMode="decimal" value={form.counter_amount} onChange={e => set({ counter_amount: e.target.value.replace(/[^0-9.]/g, '') })} placeholder={Number(form.amount) > 0 && liveRate ? `About ₹${Math.round(Number(form.amount) * liveRate).toLocaleString('en-IN')}` : '₹'} className="wl-input" style={FIELD} aria-label="Rupees received" />
+                  <div className="text-[11.5px] mt-1" style={{ color: 'var(--text4)' }}>Leave it empty and we’ll use today’s rate. A statement row replaces this estimate when you import one.</div>
+                </div>
+              )}
+            </div>
+          )}
+          {backdated.length > 0 && (
+            <div role="status" className="text-[12px] rounded-lg px-3 py-2 leading-snug" style={{ background: '#FFF2E2', color: '#8A4B08' }}>
+              {backdated.map(a => a.name).join(' and ')} {backdated.length === 1 ? 'has a balance' : 'have balances'} saved on {fmtDay(backdated[0].balance_as_of)}, which should already include this, so {backdated.length === 1 ? 'it won’t' : 'they won’t'} change. If it doesn’t, update the balance on Accounts.
             </div>
           )}
 
