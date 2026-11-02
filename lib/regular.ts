@@ -134,6 +134,12 @@ export function foundRegular(txns: any[], repeats: any[], today: string, answers
   }
   return out.sort((a, b) => ORDER[a.state] - ORDER[b.state] || b.med - a.med)
 }
+// How much history there is to look at, in one currency
+export function historyCover(txns: any[], cur: string, today: string) {
+  const months = new Set(txns.filter(t => t.currency === cur && !t.auto_ref && t.txn_date && isSpend(t) && String(t.txn_date) <= today).map(t => ymOf(t.txn_date)))
+  const sorted = Array.from(months).sort()
+  return { months: sorted.length, from: sorted[0] ?? null, to: sorted[sorted.length - 1] ?? null }
+}
 // What still needs an answer from you
 export const pendingCharges = (found: FoundCharge[], answers: string[]) =>
   found.filter(f => f.state === 'looks' || (f.state === 'counted' && answersFor(f.key, answers).length === 0))

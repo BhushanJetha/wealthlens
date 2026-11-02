@@ -1,7 +1,7 @@
 'use client'
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CalendarClock, Hand, HandCoins, Pause, Play, Receipt, Repeat, Trash2, TrendingUp, Wallet, Zap } from 'lucide-react'
+import { CalendarClock, Hand, HandCoins, Pause, Play, Plus, Receipt, Repeat, Trash2, TrendingUp, Wallet, Zap } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useViewStore } from '@/store/viewStore'
 import { daysBetween, fmtDay } from '@/lib/insights'
@@ -12,7 +12,7 @@ import { spendCategories } from '@/lib/recurringGoals'
 import { buildDues, safeToSpend } from '@/lib/moneyOverview'
 import { declaredPayday } from '@/lib/incomePlans'
 import { billTotals, coverBills, setAsideBill, whyMonthly, yearAhead, type Bill, type Cover } from '@/lib/bigBills'
-import { answerCharge, answerNo, answerSame, answerSeparate, answersFor, entriesOf, foundRegular, monthlyCommitted, pendingCharges, type FoundCharge } from '@/lib/regular'
+import { answerCharge, answerNo, answerSame, answerSeparate, answersFor, entriesOf, foundRegular, historyCover, monthlyCommitted, pendingCharges, sameName, type FoundCharge } from '@/lib/regular'
 import { AiActions, KpiTile, LearnStrip, PageHeader, Panel, Segmented } from '@/components/ui/kit'
 import { toast } from '@/components/ui/toaster'
 import AddTransactionModal from '@/components/forms/AddTransactionModal'
@@ -95,6 +95,9 @@ export default function BillsClient(p: Props) {
     ...repeatsHere.map(r => ({ id: `r-${r.id}`, date: r.is_active ? nextDate(r, today) : '9999', few: (r.every_months || 1) > 1, repeat: r, bill: null as Bill | null })),
     ...billsHere.map(b => ({ id: b.key, date: b.due, few: true, repeat: null as RecurringTxn | null, bill: b })),
   ].filter(x => filter === 'all' || (filter === 'few') === x.few).sort((a, b) => a.date.localeCompare(b.date))
+  const cover = useMemo(() => historyCover(p.transactions, cur, today), [p.transactions, cur, today])
+  const monthName = (ym: string) => `${monOf(ym)} ${ym.slice(0, 4)}`
+  const quick = TEMPLATES.filter(t => (!t.currency || t.currency === cur) && ![...repeatsHere.map(r => r.merchant), ...billsHere.map(b => b.name)].some(n => sameName(n, t.name)))
   const nFew = repeatFew.length + billsHere.length, nMonthly = repeatsHere.length - repeatFew.length
 
   const blank = (o: Partial<BillDraft> = {}): BillDraft => ({ name: '', amount: '', currency: cur, due: '', every: 1, category: '', accountId: '', ...o })
@@ -187,7 +190,10 @@ export default function BillsClient(p: Props) {
   return (
     <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
       <PageHeader title="Bills" sub="Everything that leaves on a known date. What repeats in your statements is found for you." onAdd={() => setForm({ bill: null, repeat: null, draft: blank() })} addLabel="Add a bill"
-        actions={<button onClick={() => router.push('/dashboard/ingest')} className="wl-btn" style={{ height: 34 }}>Import statements</button>} />
+        actions={<>
+          <button onClick={() => router.push('/dashboard/ingest')} className="wl-btn" style={{ height: 34 }}>Import statements</button>
+          <button onClick={() => setForm({ bill: null, repeat: null, draft: blank() })} className="wl-btn wl-btn-primary wl-hide-viewing" style={{ height: 34 }}><Plus size={14} />Add a bill</button>
+        </>} />
 
       {!p.ready && (
         <div className="rounded-2xl px-4 py-3 text-[13px]" style={{ background: 'var(--amber-bg)', color: 'var(--amber-text)' }}>
@@ -200,15 +206,20 @@ export default function BillsClient(p: Props) {
       {view === 'consolidated' && curs.length > 1 && <div><Segmented label="Currency" value={cur} onChange={(c: Cur) => setPicked(c)} options={[{ value: 'INR', label: 'India (₹)' }, { value: 'AED', label: 'UAE (AED)' }]} /></div>}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
-        <KpiTile label="Bills a month" value={fmtCompact(committed.total, cur)} delta={committed.aside > 0 ? `${fmtCompact(committed.aside, cur)} of it for big bills` : 'Including estimates'} icon={Wallet} tint={0} />
+        <KpiTile label="Bills a month" value={fmtCompact(committed.total, cur)} delta={committed.aside > 0 ? `${fmtCompact(committed.aside, cur)} of it for big bills` : committed.spotted > 0 ? `${fmtCompact(committed.spotted, cur)} of it estimated` : 'From your bills'} icon={Wallet} tint={0} />
         <KpiTile label="Still due this month" value={fmtCompact(leftThisMonth, cur)} delta={leftThisMonth > 0 ? 'Bills and premiums' : 'Nothing more'} icon={CalendarClock} tint={2} />
         <KpiTile label="To set aside a month" value={fmtCompact(totals.monthly, cur)} delta={`${fmtCompact(totals.saved, cur)} set aside so far`} icon={HandCoins} tint={1} />
         <KpiTile label="Next bill" value={nextUp ? fmtCompact(nextUp.amount, cur) : '—'} delta={nextUp ? `${nextUp.name}, ${fmtDay(nextUp.date)}` : 'None yet'} icon={Receipt} tint={3} />
       </div>
 
-      {found.length > 0 && (
+      {(
         <Panel title="Found in your statements" right={asking.length > 0 ? <span className="text-[11px] font-semibold px-2 py-[3px] rounded-full" style={{ background: 'var(--amber-bg)', color: 'var(--amber-text)' }}>{asking.length} to review</span> : undefined}>
-          <p className="text-[12px] mt-0.5 leading-snug" style={{ color: 'var(--text3)' }}>Anything that repeats, at any gap. Monthly ones are offered as monthly bills, longer gaps as big bills. New ones appear here by themselves.</p>
+          <p className="text-[12px] mt-0.5 leading-snug" style={{ color: 'var(--text3)' }}>
+            {cover.months > 0 ? `We've read ${cover.months} month${cover.months === 1 ? '' : 's'} of your ${cur === 'AED' ? 'UAE' : 'India'} spending (${monthName(cover.from!)} to ${monthName(cover.to!)}). ` : `There's no ${cur === 'AED' ? 'UAE' : 'India'} spending to read yet. `}
+            A monthly bill shows up after 3 payments, and a bill every few months after 2 or 3. New ones appear here by themselves.
+            {cover.months < 6 && <> <button onClick={() => router.push('/dashboard/ingest')} className="font-semibold underline" style={{ color: 'var(--accent)' }}>Import more statements</button> to find more sooner.</>}
+          </p>
+          {found.length === 0 && <p className="text-[13px] mt-2" style={{ color: 'var(--text2)' }}>Nothing new repeats yet. You can add anything you already know about below.</p>}
           {asking.length > 0 && <ul className="mt-1">{asking.map(foundRow)}</ul>}
           {answered.length > 0 && (
             <details className="mt-2">
@@ -239,6 +250,15 @@ export default function BillsClient(p: Props) {
               </div>
             </div>
           ))
+        )}
+        {repeatsHere.length + billsHere.length > 0 && quick.length > 0 && (
+          <div className="mt-3 pt-3 wl-hide-viewing" style={{ borderTop: '1px solid var(--track)' }}>
+            <div className="text-[12px] font-semibold mb-1.5" style={{ color: 'var(--text3)' }}>Add another</div>
+            <div className="flex flex-wrap gap-1.5">
+              {quick.map(t => <button key={t.name} onClick={() => setForm({ bill: null, repeat: null, draft: blank({ name: t.name, every: t.every, category: t.category, currency: t.currency ?? cur }) })} className="wl-chip" style={{ height: 34 }}>{t.name}</button>)}
+              <button onClick={() => setForm({ bill: null, repeat: null, draft: blank() })} className="wl-chip" style={{ height: 34 }}><Plus size={13} />Something else</button>
+            </div>
+          </div>
         )}
       </Panel>
 
