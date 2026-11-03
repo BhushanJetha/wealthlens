@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, createJSONStorage } from 'zustand/middleware'
 
 interface HolderStore {
   selectedHolder: string   // '' = all members, 'Self' or a family member name
@@ -12,6 +12,7 @@ export const useHolderStore = create<HolderStore>()(
       selectedHolder: '',
       setSelectedHolder: (selectedHolder) => set({ selectedHolder }),
     }),
-    { name: 'wealthlens-holder' }
+    // This visit only: a person picked last week shouldn't quietly hide everyone else's money
+    { name: 'wealthlens-holder', storage: createJSONStorage(() => sessionStorage) }
   )
 )

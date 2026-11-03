@@ -11,6 +11,7 @@ import MobileHeader from '@/components/layout/MobileHeader'
 import CommandPalette from '@/components/layout/CommandPalette'
 import QuickAdd from '@/components/layout/QuickAdd'
 import FamilyBar from '@/components/layout/FamilyBar'
+import HolderNotice from '@/components/layout/HolderNotice'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = createClient()
@@ -54,6 +55,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <main className="flex-1 min-w-0 overflow-y-auto px-4 md:px-7 pt-[calc(10px+env(safe-area-inset-top))] md:pt-6 pb-24 md:pb-8 bg-canvas-m md:bg-canvas">
             <MobileHeader firstName={(profile?.full_name ?? '').split(' ')[0] || null} />
             <FamilyBar members={familyOn ? members : []} viewing={viewing} stale={!!viewAs && !viewing} left={mine.filter((l: any) => l.status === 'left').map((l: any) => ({ id: l.id, name: l.name }))} />
+            <HolderNotice firstName={(profile?.full_name ?? '').split(' ')[0] || null} />
             <SectionTabs />
             {children}
           </main>
