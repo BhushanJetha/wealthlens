@@ -368,3 +368,5 @@ body {
    lets its last card take the rest), so a page never shows a ragged gap */
 .wl-even { align-items: stretch; }
 .wl-even > .flex-col:not(.wl-card):not(section) > :last-child { flex-grow: 1; }
+.wl-even > .flex-col:has(> .wl-grow) > :last-child { flex-grow: 0; }
+.wl-even > .flex-col > .wl-grow { flex-grow: 1; }

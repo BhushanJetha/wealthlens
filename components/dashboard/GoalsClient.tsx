@@ -410,7 +410,7 @@ export default function GoalsClient({ data }: { data: GoalsData }) {
                   <span className="text-[11.5px]" style={{ color: 'var(--text4)' }}>A little each month · starts again after each date</span>
                 </div>
                 <YearStrip items={recurring} today={today} fx={data.fx} />
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 md:gap-3.5">{[...recurring].sort((a, b) => a.rec!.due.localeCompare(b.rec!.due)).map(recCard)}</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 md:gap-3.5 md:[&>*:last-child:nth-child(odd)]:col-span-2">{[...recurring].sort((a, b) => a.rec!.due.localeCompare(b.rec!.due)).map(recCard)}</div>
               </section>
             )}
             {hz === 'all' && recurring.length === 0 && nextDiwali && (
@@ -431,7 +431,7 @@ export default function GoalsClient({ data }: { data: GoalsData }) {
                   </h2>
                   <span className="text-[11.5px]" style={{ color: 'var(--text4)' }}>{HORIZON[h].fit}</span>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 md:gap-3.5">{byHz(h).map(card)}</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 md:gap-3.5 md:[&>*:last-child:nth-child(odd)]:col-span-2">{byHz(h).map(card)}</div>
               </section>
             ))}
             </>)}
@@ -444,7 +444,7 @@ export default function GoalsClient({ data }: { data: GoalsData }) {
               if (!f?.rows.length) return null
               const pct = f.need > 0 ? Math.min(100, Math.max(cap, 0) / f.need * 100) : 100
               return (
-                <section key={c} className="wl-card px-4 md:px-5 py-4" aria-label={`Funding plan ${c}`}>
+                <section key={c} className="wl-card wl-grow px-4 md:px-5 py-4 flex flex-col" aria-label={`Funding plan ${c}`}>
                   <div className="flex items-baseline justify-between gap-2">
                     <h2 className="text-[14px] font-semibold flex items-center gap-1.5" style={{ color: 'var(--text)' }}><PiggyBank size={15} style={{ color: 'var(--accent)' }} />Funding plan{curs.length > 1 ? ` · ${c === 'AED' ? 'UAE' : 'India'}` : ''}</h2>
                     <span className="text-[11.5px]" style={{ color: 'var(--text4)' }}>a month</span>
@@ -473,7 +473,7 @@ export default function GoalsClient({ data }: { data: GoalsData }) {
                       </li>
                     ))}
                   </ul>
-                  <p className="text-[11px] mt-1.5 leading-snug" style={{ color: 'var(--text4)' }}>Saving = income − spending − EMIs, last 3 months (investing counts). Funded in order: festivals & yearly costs, emergency fund, then Must have → Nice to have, then nearest date.</p>
+                  <p className="text-[11px] mt-auto pt-1.5 leading-snug" style={{ color: 'var(--text4)' }}>Saving = income − spending − EMIs, last 3 months (investing counts). Funded in order: festivals & yearly costs, emergency fund, then Must have → Nice to have, then nearest date.</p>
                 </section>
               )
             })}
