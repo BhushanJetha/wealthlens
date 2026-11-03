@@ -39,7 +39,7 @@ export default function JoinClient({ code, email, state, ownerName }: { code: st
     <div className="min-h-screen flex items-center justify-center px-4 py-8" style={{ background: 'var(--canvas)' }}>
       <div className="w-full max-w-[440px] flex flex-col gap-3.5">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/icon-192.png" alt="" width={56} height={56} className="rounded-2xl" />
+        <img src="/brand/icon-192.png" alt="" width={56} height={56} className="rounded-2xl" />
         {outcome !== 'valid' ? (
           <div className="wl-card px-5 py-5">
             <h1 className="text-[20px] font-bold" style={{ color: 'var(--text)' }}>This invite can’t be used</h1>

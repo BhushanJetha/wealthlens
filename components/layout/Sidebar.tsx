@@ -2,6 +2,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { LogOut, Search } from 'lucide-react'
+import LogoMark from '@/components/ui/LogoMark'
 import { createClient } from '@/lib/supabase/client'
 import { useUiStore } from '@/store/uiStore'
 import { useFamily } from '@/hooks/useFamily'
@@ -40,8 +41,7 @@ export default function Sidebar({ user }: { user?: any }) {
 
       {/* Logo */}
       <div className="h-[60px] flex items-center gap-2.5 px-[18px] flex-shrink-0">
-        <div className="w-[30px] h-[30px] rounded-[9px] flex items-center justify-center font-bold text-[14px] text-white flex-shrink-0"
-          style={{ background: 'linear-gradient(135deg, #6A55E8, #7A66F0)' }}>◈</div>
+        <LogoMark size={30} />
         <div className="leading-tight">
           <div className="text-[15px] font-bold text-white">WealthLens</div>
           <div className="text-[10.5px]" style={{ color: 'var(--sidebar-muted)' }}>UAE · India finance</div>

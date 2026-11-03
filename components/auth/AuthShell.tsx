@@ -1,4 +1,5 @@
 import { Check } from 'lucide-react'
+import LogoMark from '@/components/ui/LogoMark'
 
 const PROPS = [
   'Upload a bank or card PDF — every transaction is read and tagged for you',
@@ -9,8 +10,7 @@ const PROPS = [
 export function AuthLogo({ light }: { light?: boolean }) {
   return (
     <div className="flex items-center gap-2.5">
-      <div className="w-[34px] h-[34px] rounded-[10px] flex items-center justify-center text-[16px] font-bold text-white flex-shrink-0"
-        style={{ background: light ? '#6A55E8' : 'linear-gradient(135deg, #6A55E8, #7A66F0)' }}>◈</div>
+      <LogoMark size={34} className={light ? 'rounded-[10px] ring-1 ring-white/30' : ''} />
       <div className="text-[18px] font-bold" style={{ color: light ? '#fff' : 'var(--text)' }}>WealthLens</div>
     </div>
   )
