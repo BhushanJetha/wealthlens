@@ -476,7 +476,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
               )}
               <div className="text-[11.5px] mt-1" style={{ color: 'var(--text4)' }}>
                 {transferKind === 'Card bill'
-                  ? 'Takes this amount off the bank and off what you owe on the card, once. It isn’t spending: purchases count when you make them. If you don’t import the card’s purchases, the bill counts as card spending, minus the EMIs of loans on this card, which count as EMIs. Add a card EMI once under Loans › Loans on cards and every bill is split by itself.'
+                  ? 'Takes this amount off the bank and off what you owe on the card, once. It isn’t spending: purchases count when you make them. If you don’t import the card’s purchases, the bill counts as card spending, minus the EMIs of loans on this card, which count as EMIs. Add a card EMI once under Wealth › Loans › Loan on card and every bill is split by itself.'
                   : 'Both balances update from this one entry. Not income or spending.'}
               </div>
               {transferKind === 'International' && (
