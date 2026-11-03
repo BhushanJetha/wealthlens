@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Search, AlertTriangle, ChevronRight, MoreHorizontal, type LucideIcon } from 'lucide-react'
+import { Search, AlertTriangle, ChevronRight, MoreHorizontal, type LucideIcon, Check } from 'lucide-react'
 
 // Design v2 lists (transactions, holdings, loans). One row layout for both
 // sizes: desktop = 4 columns + action icons, phone = avatar · title ·
@@ -45,18 +45,21 @@ export function ListCard({ title, sub, right, toolbar, head, children, footer, e
   )
 }
 
-export function ListRow({ initial, color, title, sub, tag, warn, meta, metaColor, amount, amountColor, amountSub, actions = [], href, onOpen }: {
+export function ListRow({ initial, color, title, sub, tag, warn, meta, metaColor, amount, amountColor, amountSub, actions: given = [], href: link, onOpen, selected, onSelect }: {
   initial?: React.ReactNode; color: string            // hex; tints the avatar and tag
   title: React.ReactNode; sub?: React.ReactNode       // sub = desktop second line (account, bank…)
   tag?: string; warn?: string | null                  // tag = category / type pill; warn = tooltip for a ⚠
   meta?: React.ReactNode; metaColor?: string          // date, return %…
   amount: React.ReactNode; amountColor?: string; amountSub?: React.ReactNode
   actions?: RowAction[]; href?: string; onOpen?: () => void
+  selected?: boolean; onSelect?: () => void          // picking rows: a tap ticks it
 }) {
+  const actions = onSelect ? [] : given, href = onSelect ? undefined : link
   const [sheet, setSheet] = useState(false)
   const router = useRouter()
   const tint = `${color}1A`
   const open = () => {
+    if (onSelect) { onSelect(); return }
     if (href) { router.push(href); return }
     const desktop = typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches
     if (!desktop && actions.length) setSheet(true)
@@ -64,7 +67,13 @@ export function ListRow({ initial, color, title, sub, tag, warn, meta, metaColor
   }
   // "Open details" is the row itself when it has a page — never listed twice
   const menu = href ? actions.filter(a => !/^open/i.test(a.label)) : actions
-  const avatar = (
+  const avatar = onSelect ? (
+    <span role="checkbox" aria-checked={!!selected} aria-label={`Select ${typeof title === 'string' ? title : 'row'}`}
+      className="w-9 h-9 md:w-[34px] md:h-[34px] rounded-[10px] flex items-center justify-center flex-shrink-0"
+      style={{ background: selected ? 'var(--accent)' : '#fff', border: selected ? 'none' : '2px solid #CBD5E1' }}>
+      {selected && <Check size={17} color="#fff" strokeWidth={3} />}
+    </span>
+  ) : (
     <span className="w-9 h-9 md:w-[34px] md:h-[34px] rounded-[10px] flex items-center justify-center flex-shrink-0 text-[14px] font-bold"
       style={{ background: tint, color }}>{initial ?? String(title ?? '?').trim()[0]?.toUpperCase()}</span>
   )
@@ -123,8 +132,9 @@ export function ListRow({ initial, color, title, sub, tag, warn, meta, metaColor
     <div className="group [&+&]:border-t [&+&]:border-[var(--track)] hover:bg-[#FAFAFE] transition-colors">
       {href && !actions.length
         ? <Link href={href} className="block">{body}</Link>
-        : <div role={onOpen || actions.length ? 'button' : undefined} tabIndex={onOpen || actions.length ? 0 : undefined}
-            onClick={open} onKeyDown={e => { if (e.key === 'Enter') open() }} className={onOpen || actions.length ? 'cursor-pointer' : ''}>{body}</div>}
+        : <div role={onOpen || onSelect || actions.length ? 'button' : undefined} tabIndex={onOpen || onSelect || actions.length ? 0 : undefined}
+            onClick={open} onKeyDown={e => { if (e.key === 'Enter' || (onSelect && e.key === ' ')) { e.preventDefault(); open() } }}
+            className={onOpen || onSelect || actions.length ? 'cursor-pointer' : ''} style={selected ? { background: 'var(--accent-bg)' } : undefined}>{body}</div>}
 
       {sheet && (
         <div className="md:hidden fixed inset-0 z-50 wl-sheet" onClick={() => setSheet(false)}>

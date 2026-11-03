@@ -19,12 +19,13 @@ import { colorOf as catColorOf } from '@/lib/categories'
 import { isSpending, spendGroup, catOf, labelOf, myShare } from '@/lib/money'
 import { toast } from '@/components/ui/toaster'
 
-import { Upload, Image, Mic, PenLine, BarChart2, X, CreditCard, Pencil, Trash2, ChevronDown, Plus, Copy, Wallet, Banknote, MessageSquareText, Landmark, TrendingUp, CalendarDays, Settings2, Paperclip, Users, Check, Repeat } from 'lucide-react'
+import { Upload, Image, Mic, PenLine, BarChart2, X, CreditCard, Pencil, Trash2, ChevronDown, Plus, Copy, Wallet, Banknote, MessageSquareText, Landmark, TrendingUp, CalendarDays, Settings2, Paperclip, Users, Check, Repeat, ListChecks } from 'lucide-react'
 import { openReceipt } from '@/lib/receipts'
 import { approveAuto } from '@/lib/autoEntries'
 import { repeatFrom } from '@/lib/recurring'
 import Link from 'next/link'
 import { PageHeader, InsightBar, AiActions, KpiTile, HeroStat, Bars, Donut, ProgressRow, LearnStrip, PALETTE } from '@/components/ui/kit'
+import BulkBar, { useSelection } from './BulkBar'
 import { ListCard, ListRow, ListSearch, ChipFilter } from '@/components/ui/list'
 import { addMonths, daysInMonth, localToday, fmtDay } from '@/lib/insights'
 import { fmtCompact } from '@/lib/format'
@@ -106,6 +107,8 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
   }, [])
 
   const openEdit      = (txn: any) => setEditing({ txn })
+  // Picking many rows to change or delete at once
+  const sel = useSelection()
   const openDuplicate = (txn: any) => setEditing({ txn, duplicate: true })
 
   async function deleteTxn(t: any) {
@@ -504,7 +507,10 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
       <ListCard className="max-md:order-9" title="Transactions"
         sub={`${listRows.length} in ${rangeLabel}${cat !== 'All' ? ` · ${cat}` : ''}`}
         head={['Merchant', 'Category', 'Date', 'Amount']}
-        right={<button onClick={() => setManageCats(true)} className="wl-btn flex-shrink-0" style={{ height: 30, fontSize: 12 }}><Settings2 size={13} />Categories</button>}
+        right={<div className="flex gap-1.5 flex-shrink-0">
+          <button onClick={() => (sel.on ? sel.stop() : sel.start())} aria-pressed={sel.on} className="wl-btn wl-hide-viewing" style={{ height: 30, fontSize: 12, ...(sel.on ? { background: 'var(--accent-bg)', color: 'var(--accent2)', borderColor: 'var(--accent)' } : {}) }}><ListChecks size={13} />{sel.on ? 'Done' : 'Select'}</button>
+          <button onClick={() => setManageCats(true)} className="wl-btn" style={{ height: 30, fontSize: 12 }}><Settings2 size={13} />Categories</button>
+        </div>}
         toolbar={<>
           <ListSearch value={search} onChange={setSearch} placeholder="Search…">
             <select value={accFilter} onChange={e => setAccFilter(e.target.value)} aria-label="Account"
@@ -550,7 +556,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
               amountColor={isSpending(t) || spendGroup(t) ? '#DC2626' : 'var(--text3)'}
               amountSub={t.auto_status === 'pending' ? 'auto entry · pending approval' : Number(t.friend_share) > 0 ? `split · your share ${lSym}${myShare(t).toLocaleString('en-IN')}`
                 : t.paid_by_friend_id ? 'a friend paid · you owe them' : inrEq ?? (!spendGroup(t) ? 'move · not spending' : undefined)}
-              onOpen={() => openEdit(t)}
+              onOpen={() => openEdit(t)} {...(sel.on ? { selected: sel.ids.has(t.id), onSelect: () => sel.toggle(t.id) } : {})}
               actions={[
                 ...(t.auto_status === 'pending' ? [{ label: 'Approve', icon: Check, onClick: () => approve(t) }] : []),
                 { label: 'Edit', icon: Pencil, onClick: () => openEdit(t) },
@@ -577,6 +583,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
       {activeModal === 'credit_card' && <CreditCardUploadModal onClose={() => setActiveModal('none')} />}
 
       {editing && <AddTransactionModal edit={editing} onClose={() => setEditing(null)} />}
+      <BulkBar sel={sel} rows={listRows} allIds={listRows.map((t: any) => t.id).filter(Boolean)} accounts={accounts} />
       {splitting && <SplitSheet txn={splitting} onClose={() => setSplitting(null)} />}
       {manageCats && <ManageCategoriesSheet usage={catUsage} onClose={() => setManageCats(false)} onChanged={() => router.refresh()} />}
     </div>

@@ -14,9 +14,10 @@ import { prepareMoney, isIncome, pairRemittances } from '@/lib/money'
 import { toast } from '@/components/ui/toaster'
 
 import Pagination from '@/components/dashboard/Pagination'
-import { PenLine, BarChart2, Plus, Pencil, Trash2, Upload, Image, Mic, ChevronDown, Copy, Settings2, ArrowRightLeft } from 'lucide-react'
+import { PenLine, BarChart2, Plus, Pencil, Trash2, Upload, Image, Mic, ChevronDown, Copy, Settings2, ArrowRightLeft, ListChecks } from 'lucide-react'
 import Link from 'next/link'
 import { PageHeader, InsightBar, AiActions, KpiTile, HeroStat, Bars, Donut, ProgressRow, LearnStrip, PALETTE } from '@/components/ui/kit'
+import BulkBar, { useSelection } from './BulkBar'
 import { ListCard, ListRow, ListSearch, ChipFilter } from '@/components/ui/list'
 import { addMonths, fmtDay } from '@/lib/insights'
 import { fmtCompact } from '@/lib/format'
@@ -62,6 +63,8 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
   ]
 
   const openEdit      = (t: any) => setEditing({ txn: t })
+  // Picking many rows to change or delete at once
+  const sel = useSelection()
   const openDuplicate = (t: any) => setEditing({ txn: t, duplicate: true })
   async function deleteTxn(id: string) {
     if (!confirm('Delete this income entry?')) return
@@ -268,7 +271,10 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
       <ListCard className="max-md:order-9" title="Income"
         sub={`${filteredForMonth.length} in ${rangeLabel}${cat !== 'All' ? ` · ${cat}` : ''}`}
         head={['Source', 'Category', 'Date', 'Amount']}
-        right={<button onClick={() => setManageCats(true)} className="wl-btn flex-shrink-0" style={{ height: 30, fontSize: 12 }}><Settings2 size={13} />Categories</button>}
+        right={<div className="flex gap-1.5 flex-shrink-0">
+          <button onClick={() => (sel.on ? sel.stop() : sel.start())} aria-pressed={sel.on} className="wl-btn wl-hide-viewing" style={{ height: 30, fontSize: 12, ...(sel.on ? { background: 'var(--accent-bg)', color: 'var(--accent2)', borderColor: 'var(--accent)' } : {}) }}><ListChecks size={13} />{sel.on ? 'Done' : 'Select'}</button>
+          <button onClick={() => setManageCats(true)} className="wl-btn" style={{ height: 30, fontSize: 12 }}><Settings2 size={13} />Categories</button>
+        </div>}
         toolbar={<>
           <ListSearch value={search} onChange={setSearch} placeholder="Search…">
             <select value={accFilter} onChange={e => setAccFilter(e.target.value)} aria-label="Account"
@@ -297,7 +303,7 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
               sub={[account, t._remit ? (t._aed ? `AED ${Math.round(t._aed).toLocaleString('en-US')} sent at ₹${Number(t._rate).toFixed(2)}${t._source === 'estimated' ? ' (estimated)' : ''} · see Money flow` : 'Landed in NRE · see Money flow') : null].filter(Boolean).join(' · ') || undefined}
               amount={`+${lSym}${Number(t.amount).toLocaleString('en-IN')}`} amountColor="#16A34A"
               amountSub={t.currency === 'AED' && view !== 'uae' ? `≈ ₹${Math.round(Number(t.amount) * FX).toLocaleString('en-IN')}` : undefined}
-              href={t._remit ? '/dashboard/transfers' : undefined}
+              href={t._remit ? '/dashboard/transfers' : undefined} {...(sel.on && !t._remit ? { selected: sel.ids.has(t.id), onSelect: () => sel.toggle(t.id) } : {})}
               onOpen={t._remit ? undefined : () => openEdit(t)}
               actions={t._remit ? [] : [
                 { label: 'Edit', icon: Pencil, onClick: () => openEdit(t) },
@@ -335,6 +341,7 @@ export default function IncomeClient({ transactions, accounts, transfers = [] }:
       {activeModal === 'voice'     && <TransactionVoiceModal onClose={() => setActiveModal('none')} defaultType="income" />}
 
       {editing && <AddTransactionModal edit={editing} onClose={() => setEditing(null)} />}
+      <BulkBar sel={sel} rows={filteredForMonth} allIds={filteredForMonth.filter((t: any) => !t._remit && t.id).map((t: any) => t.id)} accounts={accounts} />
       {manageCats && <ManageCategoriesSheet initialKind="income" usage={catUsage} onClose={() => setManageCats(false)} onChanged={() => router.refresh()} />}
     </div>
   )
