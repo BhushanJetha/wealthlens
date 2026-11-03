@@ -50,11 +50,14 @@ async function keepEstimates(supabase: any, userId: string): Promise<number> {
     if (error || !data?.length) return 0
     const { rate } = await getAedInr()
     if (!(rate > 1)) return 0
+    // 10 at a time, at most 40 per visit: the rest are kept on the next ones
     let n = 0
-    for (const t of data) {
-      const { error: e } = await supabase.from('transactions').update({ counter_amount: Math.round((Number(t.amount) || 0) * rate), counter_estimated: true }).eq('id', t.id)
-      if (e) break
-      n++
+    const rows = data.slice(0, 40)
+    for (let i = 0; i < rows.length; i += 10) {
+      const res = await Promise.all(rows.slice(i, i + 10).map((t: any) =>
+        supabase.from('transactions').update({ counter_amount: Math.round((Number(t.amount) || 0) * rate), counter_estimated: true }).eq('id', t.id)))
+      n += res.filter((r: any) => !r.error).length
+      if (res.some((r: any) => r.error)) break          // before migration 043: nothing more to do
     }
     return n
   } catch { return 0 }

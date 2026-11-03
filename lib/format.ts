@@ -5,11 +5,13 @@ export type Cur = 'AED' | 'INR'
 export const symOf = (cur: string) => (cur === 'AED' ? 'AED ' : '₹')
 
 export function fmtMoney(n: number, cur: string) {
+  if (!Number.isFinite(n)) return '—'
   const v = Math.round(Math.abs(n) || 0).toLocaleString(cur === 'AED' ? 'en-US' : 'en-IN')
   return `${n < 0 ? '−' : ''}${symOf(cur)}${v}`
 }
 
 export function fmtCompact(n: number, cur: string) {
+  if (!Number.isFinite(n)) return '—'
   const a = Math.abs(n) || 0
   const sign = n < 0 ? '−' : ''
   const trim = (x: number, d: number) => x.toFixed(d).replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1')
