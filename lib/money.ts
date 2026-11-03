@@ -115,6 +115,8 @@ const SENT_CATS = new Set(['Transfer', 'Family Transfer', 'NRO to Family'])
 export function spendGroup(t: any): SpendGroup | null {
   if (!isSpend(t)) return null
   const c = catOf(t)
+  // A card bill standing in for purchases is what you bought: everyday spending
+  if (t._cardSpend) return 'living'
   if (t.txn_type === 'loan' || c === 'EMI/Loan') return 'loans'
   // Money into an asset: investments, and payments towards your home
   if (c === 'Investment' || c === 'Home purchase') return 'invest'
@@ -276,16 +278,33 @@ export const cashLeft = (income: number, o: CashOut) => income - o.direct - o.ca
 
 // Card bills stand in for card purchases only when that month's purchases on
 // cards of the same currency were never imported (else they'd count twice).
+// A card loan's EMI billed to the card is in the bill too, but it's an EMI, not
+// spending: it's taken out of the bill, and it doesn't make a month look itemised.
+const NOT_PURCHASES = new Set([CC_BILL, 'Loan on Card', 'Converted to EMI', 'Refund'])
 export function markUnitemisedCardBills(txns: any[], cardIds: Set<string>): any[] {
   if (!cardIds.size) return txns
   const itemised = new Set<string>()        // `${currency}|${YYYY-MM}` with card purchases
-  for (const t of txns) if (t.account_id && cardIds.has(t.account_id) && t.txn_type !== 'income' && catOf(t) !== CC_BILL) itemised.add(`${t.currency}|${String(t.txn_date).slice(0, 7)}`)
+  for (const t of txns) if (t.account_id && cardIds.has(t.account_id) && t.txn_type !== 'income' && !NOT_PURCHASES.has(catOf(t))) itemised.add(`${t.currency}|${String(t.txn_date).slice(0, 7)}`)
   const prev = (m: string) => { const [y, mo] = m.split('-').map(Number); const d = new Date(y, mo - 2, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
-  return txns.map(t => {
-    if (catOf(t) !== CC_BILL || (t.account_id && cardIds.has(t.account_id))) return t
+  const emis = txns.filter(t => t.account_id && cardIds.has(t.account_id) && catOf(t) === 'Loan on Card' && t.txn_type !== 'income')
+  const used = new Set<any>()
+  const out = new Map<any, any>()
+  // Oldest bill first: each EMI goes into the first bill after it, within 40 days
+  for (const t of [...txns].sort((a, b) => String(a.txn_date).localeCompare(String(b.txn_date)))) {
+    if (catOf(t) !== CC_BILL || (t.account_id && cardIds.has(t.account_id))) continue
     const m = String(t.txn_date).slice(0, 7)
-    return itemised.has(`${t.currency}|${m}`) || itemised.has(`${t.currency}|${prev(m)}`) ? t : { ...t, _cardSpend: true }
-  })
+    if (itemised.has(`${t.currency}|${m}`) || itemised.has(`${t.currency}|${prev(m)}`)) continue
+    const day = dayNum(t.txn_date)
+    const mine = emis.filter(e => !used.has(e) && e.currency === t.currency && (!t.counter_account_id || e.account_id === t.counter_account_id)
+      && day - dayNum(e.txn_date) >= 0 && day - dayNum(e.txn_date) <= 40)
+    const bill = Number(t.amount) || 0
+    let emi = 0
+    for (const e of mine) { if (emi + (Number(e.amount) || 0) > bill + 0.5) continue; emi += Number(e.amount) || 0; used.add(e) }
+    const rest = Math.round((bill - emi) * 100) / 100
+    // All of it was EMIs: nothing left that's spending
+    if (rest > 0) out.set(t, { ...t, _cardSpend: true, _billAmount: bill, _cardEmi: emi, amount: rest })
+  }
+  return out.size ? txns.map(t => out.get(t) ?? t) : txns
 }
 
 // The receiving side of a move between your own accounts that a statement

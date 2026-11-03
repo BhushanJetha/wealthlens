@@ -80,7 +80,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
       description:  t0 ? (t0.description && t0.description !== t0.merchant ? t0.description : '') : (defaults?.description ?? ''),
       category:     cardPay ? 'Credit Card Payment' : t0?.category ?? defaults?.category ?? (type === 'income' ? 'Salary' : type === 'transfer' ? 'Transfer' : 'Food'),
       sub_category: cardPay ? '' : t0?.sub_category ?? defaults?.sub_category ?? '',
-      amount:       t0 ? String(Math.abs(Number(t0.amount))) : (defaults?.amount ?? ''),
+      amount:       t0 ? String(Math.abs(Number(t0._billAmount ?? t0.amount))) : (defaults?.amount ?? ''),
       currency:     t0?.currency ?? defaults?.currency ?? (view === 'uae' ? 'AED' : 'INR'),
       txn_type:     type,
       account_id:   t0?.account_id ?? defaults?.account_id ?? '',
@@ -476,7 +476,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
               )}
               <div className="text-[11.5px] mt-1" style={{ color: 'var(--text4)' }}>
                 {transferKind === 'Card bill'
-                  ? 'Takes this amount off the bank and off what you owe on the card — once. Not spending (the purchases were counted when you made them). A card-loan EMI is added to the card on its own day, so nothing counts twice.'
+                  ? 'Takes this amount off the bank and off what you owe on the card, once. It isn’t spending: purchases count when you make them. If you don’t import the card’s purchases, the bill counts as card spending, minus the EMIs of loans on this card, which count as EMIs. Add a card EMI once under Loans › Loans on cards and every bill is split by itself.'
                   : 'Both balances update from this one entry. Not income or spending.'}
               </div>
               {transferKind === 'International' && (
