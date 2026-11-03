@@ -32,6 +32,9 @@ import { FreeToSpendCard, NextWeekCard, PlanCard, BigBillsStrip } from './HomeCa
 import BillReminders, { billReminderCount } from './BillReminders'
 import LandedChecks, { landedCheckCount } from './LandedChecks'
 import type { Bill } from '@/lib/bigBills'
+import { payFirstDue, type PayFirstMode } from '@/lib/plan'
+import { buildGoals } from '@/lib/goalsView'
+import { PayFirstRow } from './plan/PlanParts'
 import { foundRegular, pendingCharges } from '@/lib/regular'
 
 interface Props {
@@ -50,6 +53,8 @@ interface Props {
   recurring: RecurringTxn[]
   bills: Bill[]
   billSkips: string[]
+  contributions: any[]
+  payFirst: PayFirstMode
   events: any[]; friends: any[]; splits: any[]; friendTxns: any[]
   plans: IncomePlan[]; plansReady: boolean; fx: number
 }
@@ -183,6 +188,19 @@ export default function DashboardClient(p: Props) {
   const budgetsLeft = usual.reduce((s, u) => s + toView(u.amount, u.currency), 0)
   // Reminders and the total follow the country you're looking at
   const billsHere = useMemo(() => p.bills.filter(b => view === 'consolidated' || (view === 'uae' ? b.currency === 'AED' : b.currency === 'INR')), [p.bills, view])
+  // Salary day: set aside each goal's share first (Goals › Pay yourself first)
+  const payDue = useMemo(() => {
+    if (p.payFirst === 'off' || !p.goals.length) return null
+    const investments = { stocks: h.stocks, mutual_funds: h.mutualFunds, fixed_deposits: h.fixedDeposits, recurring_deposits: h.recurringDeposits, nps_accounts: h.nps,
+      lic_policies: h.lic, gold_investments: h.gold, bond_investments: h.bonds, etf_investments: h.etf, ppf_epf_accounts: h.ppfEpf }
+    const built = buildGoals({ goals: p.goals, links: p.goalInvestments ?? [], contributions: p.contributions, invTxns: [], accounts: p.holdings.accounts, loans: h.loans, transactions: p.transactions, investments, fx: FX }, today)
+    for (const c of (view === 'uae' ? ['AED'] : view === 'india' ? ['INR'] : ['INR', 'AED']) as ('AED' | 'INR')[]) {
+      const usual = declaredIncome(p.plans, c === 'AED' ? 'uae' : 'india', FX, p.transactions) ?? built.monthly[c].income
+      const d = payFirstDue({ mode: p.payFirst, cur: c, today, txns: p.transactions, items: built.items, links: p.goalInvestments ?? [], saving: built.monthly[c].saved, usualIncome: usual, fx: FX, answers: p.billSkips, contributions: p.contributions })
+      if (d) return d
+    }
+    return null
+  }, [p, h, FX, today, view])
   const foundCount = useMemo(() => pendingCharges(foundRegular(p.transactions, p.recurring, today, p.billSkips, p.bills), p.billSkips)
     .filter(f => view === 'consolidated' || (view === 'uae' ? f.currency === 'AED' : f.currency === 'INR')).length, [p.transactions, p.recurring, today, p.billSkips, p.bills, view])
   const plan = useMemo(() => homePlan({ today, view, fx: FX, cash: nw.cash, dues, incoming, budgetsLeft, avgIncome: declaredIncome(p.plans, view, FX, p.transactions) ?? ins.trend.avgIncome, plans: p.plans,
@@ -263,7 +281,7 @@ export default function DashboardClient(p: Props) {
           <FreeToSpendCard className="lg:flex-1" cards={rooms.map(r => ({ cur: r.cur, amount: r.sts.amount, cash: r.sts.cash, due: r.sts.dueBefore + r.sts.unlinked, reserved: r.sts.reserved, until: r.sts.until, perDay: r.sts.perDay, payday: r.sts.payday }))} />
           <QuickActions openAdd={openAdd} upload={() => setUploadOpen(true)} voice={() => setModal('voice')} advisor={() => openAdvisor()} />
         </div>
-        <AttentionCard items={ins.attention} pending={p.pending} accName={accName} onImport={() => setUploadOpen(true)} plans={p.plans} txns={p.transactions} today={today} fx={FX} bills={billsHere} billSkips={p.billSkips} accounts={h.accounts} foundCount={foundCount} />
+        <AttentionCard items={ins.attention} pending={p.pending} accName={accName} onImport={() => setUploadOpen(true)} plans={p.plans} txns={p.transactions} today={today} fx={FX} bills={billsHere} billSkips={p.billSkips} accounts={h.accounts} foundCount={foundCount} payDue={payDue} payFirst={p.payFirst} />
       </div>
       {p.plansReady && p.plans.length === 0 && (
         <Link href="/dashboard/settings/income" className="wl-card px-4 py-3 flex items-center gap-3 wl-hide-viewing" style={{ background: '#F0EDFF', borderColor: '#DAD3FF' }}>
@@ -462,10 +480,10 @@ function NetWorthCard({ nw, hist, est, historyReady, holderLabel, savingsRate, m
   )
 }
 
-function AttentionCard({ items, pending, accName, onImport, plans, txns, today, fx, bills, billSkips, accounts, foundCount, className = '' }: { bills: Bill[]; billSkips: string[]; accounts: any[]; foundCount: number; items: Attention[]; pending: Pending; accName: (id: string | null) => string | null; onImport: () => void; plans: IncomePlan[]; txns: any[]; today: string; fx: number; className?: string }) {
+function AttentionCard({ items, pending, accName, onImport, plans, txns, today, fx, bills, billSkips, accounts, foundCount, payDue, payFirst, className = '' }: { bills: Bill[]; billSkips: string[]; accounts: any[]; foundCount: number; payDue: any; payFirst: PayFirstMode; items: Attention[]; pending: Pending; accName: (id: string | null) => string | null; onImport: () => void; plans: IncomePlan[]; txns: any[]; today: string; fx: number; className?: string }) {
   const [all, setAll] = useState(false)
   const shown = all ? items : items.slice(0, 4)
-  const waiting = pendingCount(pending) + incomeCheckCount(plans, txns, today, fx) + billReminderCount(bills, txns, today, billSkips) + (foundCount > 0 ? 1 : 0) + landedCheckCount(txns, today, fx)
+  const waiting = pendingCount(pending) + incomeCheckCount(plans, txns, today, fx) + billReminderCount(bills, txns, today, billSkips) + (foundCount > 0 ? 1 : 0) + landedCheckCount(txns, today, fx) + (payDue ? 1 : 0)
   return (
     <Card aria-labelledby="att-title" className={`flex flex-col ${className}`}>
       <CardTitle id="att-title" right={items.length + waiting > 0 && (
@@ -480,6 +498,7 @@ function AttentionCard({ items, pending, accName, onImport, plans, txns, today, 
       ) : (
         <ul className="mt-2.5">
           <BillReminders bills={bills} skips={billSkips} txns={txns} today={today} accounts={accounts} foundCount={foundCount} />
+          {payDue && <PayFirstRow due={payDue} mode={payFirst} today={today} />}
           <LandedChecks txns={txns} today={today} fx={fx} />
           <IncomeChecks plans={plans} txns={txns} today={today} fx={fx} />
           <PendingConfirms pending={pending} accName={accName} />

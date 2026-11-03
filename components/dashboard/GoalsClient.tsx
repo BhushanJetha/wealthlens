@@ -19,6 +19,8 @@ import { PageHeader, InsightBar, Ring, Donut, Segmented } from '@/components/ui/
 import AddGoalModal, { type GoalDefaults } from '@/components/forms/AddGoalModal'
 import { AddMoneySheet, RollSheet } from './GoalSheets'
 import { YearStrip, iconOf, repeatLabel, whenLabel } from './RecurringGoals'
+import { fixesFor, type PayFirstMode } from '@/lib/plan'
+import { FixesCard, PayFirstSettings } from './plan/PlanParts'
 
 const STATUS = {
   achieved: { label: 'Achieved', bg: 'var(--pos-bg)', c: 'var(--pos-text)' },
@@ -44,7 +46,7 @@ type Nudge = { id: string; icon: string; tone: 'good' | 'warn' | 'info'; title: 
 // Goals (design v2): every goal tagged short / mid / long term and by type,
 // in its own currency, valued from what funds it (lib/goals), checked against
 // what you actually save (funding plan), with nudges and ideas to start more.
-export default function GoalsClient({ data }: { data: GoalsData }) {
+export default function GoalsClient({ data, payFirst = 'ask' }: { data: GoalsData; payFirst?: PayFirstMode }) {
   const router = useRouter()
   const { view } = useViewStore()
   const { selectedHolder } = useHolderStore()
@@ -456,6 +458,11 @@ export default function GoalsClient({ data }: { data: GoalsData }) {
                   <div className="text-[12px] mt-1.5 font-semibold" style={{ color: f.need <= cap ? 'var(--pos-text)' : 'var(--amber-text)' }}>
                     {cap <= 0 ? 'No monthly saving yet to fund goals from' : f.need <= cap ? `✓ It all fits — ${short(f.spare, c)} to spare` : `${short(f.need - cap, c)} a month short`}
                   </div>
+                  {cap > 0 && f.need > cap && (
+                    <div className="mt-2.5">
+                      <FixesCard compact cur={c} short={f.need - cap} fixes={fixesFor({ cur: c, today, items: built.items, short: f.need - cap, budgetRows: [], spent: {}, links: data.links })} />
+                    </div>
+                  )}
                   <ul className="mt-2">
                     {f.rows.filter(r => !(isRecurring(r.goal) && r.need <= 0)).map(r => (
                       <li key={r.goal.id} className="py-2 text-[12.5px]" style={{ borderTop: '1px solid var(--track)' }}>
@@ -477,6 +484,8 @@ export default function GoalsClient({ data }: { data: GoalsData }) {
                 </section>
               )
             })}
+
+            <PayFirstSettings mode={payFirst} />
 
             {oneOff.length > 0 && (() => {
               const hzRows = (['short', 'mid', 'long'] as Horizon[]).map(h => ({ h, n: oneOff.filter(it => it.plan.horizon === h).length })).filter(x => x.n > 0)

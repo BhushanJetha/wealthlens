@@ -78,10 +78,13 @@ export const SECTIONS: NavSection[] = [
       { label: 'Nominees', href: '/dashboard/nominees' },
     ] },
   ] },
-  { key: 'plan', label: 'Plan', desc: 'Budgets, goals and forecasts', icon: Target, href: '/dashboard/budgets', tabs: [
+  { key: 'plan', label: 'Plan', desc: 'Budgets, goals and forecasts', icon: Target, href: '/dashboard/plan', tabs: [
+    { label: 'Overview',           href: '/dashboard/plan' },
     { label: 'Budgets',            href: '/dashboard/budgets' },
     { label: 'Bills',              href: '/dashboard/bills' },
     { label: 'Goals',              href: '/dashboard/goals' },
+    { label: 'Year ahead',         href: '/dashboard/plan/year' },
+    { label: 'What if',            href: '/dashboard/plan/what-if' },
     { label: 'Events & trips',     href: '/dashboard/events' },
     { label: 'Cash-flow forecast', href: '/dashboard/cashflow' },
     { label: 'Tax planner',        href: '/dashboard/tax' },

@@ -262,6 +262,6 @@ export async function skipBill(sb: any, uid: string, key: string): Promise<strin
 
 // For the loaders: the reads Big bills needs on top of what each page has
 export const loadBillReads = (supabase: any, uid: string) => Promise.all([
-  supabase.from('goal_contributions').select('goal_id,amount,contrib_date,note').eq('user_id', uid),
+  supabase.from('goal_contributions').select('goal_id,amount,contrib_date,note,currency').eq('user_id', uid),
   supabase.from('big_bill_skips').select('key').eq('user_id', uid),
 ])

@@ -11,6 +11,7 @@ import { goalInterestsOf } from '@/lib/goalInterests'
 import { withAutomation } from '@/lib/automation'
 import { loadWealthExtras } from '@/lib/wealthExtras'
 import { buildBills, loadBillReads } from '@/lib/bigBills'
+import { payFirstModeOf } from '@/lib/plan'
 
 // Today's stored snapshot already says this (fx is stored to 4 decimals;
 // jsonb key order differs, so compare by key)
@@ -133,6 +134,8 @@ export default async function DashboardPage() {
       plans={plansRes.data ?? []}
       bills={bills}
       billSkips={billSkips}
+      contributions={contribRes.data ?? []}
+      payFirst={payFirstModeOf(fresh.user?.user_metadata ?? user!.user_metadata)}
       plansReady={!isMissingTable(plansRes.error)}
       fx={fx}
       insurance={insRes.data ?? []}
