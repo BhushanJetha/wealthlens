@@ -231,7 +231,7 @@ export default function AnalysisClient({ transactions: raw, budgets }: { transac
       )}
 
       {/* Budget vs actual + budget used */}
-      <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-4 items-start">
+      <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-4 wl-even">
         <section className="wl-card max-md:order-4 px-4 md:px-6 py-4 md:py-5 flex flex-col gap-3 md:gap-3.5">
           <div className="flex justify-between items-center gap-2">
             <h2 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Budget vs actual</h2>
@@ -286,7 +286,7 @@ export default function AnalysisClient({ transactions: raw, budgets }: { transac
       </div>
 
       {/* This period vs comparison + what changed */}
-      <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-4 items-start">
+      <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-4 wl-even">
         <section className="wl-card max-md:hidden px-6 py-5">
           <div className="flex justify-between items-center gap-3">
             <h2 className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>{monLabel(focus)} vs {cmpLabel}</h2>
@@ -324,7 +324,7 @@ export default function AnalysisClient({ transactions: raw, budgets }: { transac
       </div>
 
       {/* Cumulative spend + big purchases */}
-      <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-4 items-start">
+      <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-4 wl-even">
         <section className="wl-card max-md:order-6 px-4 md:px-6 py-4 md:py-5">
           <div className="flex justify-between items-center gap-3 flex-wrap">
             <h2 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Cumulative spend</h2>
@@ -385,7 +385,7 @@ export default function AnalysisClient({ transactions: raw, budgets }: { transac
         </section>
       </div>
 
-      <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-4 items-start">
+      <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-4 wl-even">
         <SpendCalendar className="max-md:order-7" rows={daily} month={focus} today={today || `${thisMonth}-31`} value={valueOf} short={short} />
         {members.length > 1 && <ByMember rows={daily.filter(t => t.txn_date?.slice(0, 7) === focus)} value={valueOf} short={short} />}
       </div>

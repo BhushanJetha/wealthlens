@@ -50,7 +50,7 @@ export function WealthPanels({ o, view, fx }: { o: Overview; view: string; fx: n
   const rupeeHit = c.inr / fx * 0.1   // in AED, if ₹ falls 10%
   const staying = o.returnPlan === 'no' || o.returnPlan === 'later'
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3.5 md:gap-4 items-start">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3.5 md:gap-4 wl-even">
       <Panel title={<span className="flex items-center gap-1.5"><Timer size={15} style={{ color: 'var(--accent)' }} />How quickly you can reach it</span>}>
         <div className="flex h-3 rounded-full overflow-hidden gap-[2px] mt-3" role="img" aria-label={o.access.map(a => `${a.label} ${show(a.value)}`).join(', ')}>
           {o.access.filter(a => a.value > 0).map(a => <div key={a.key} style={{ width: `${a.value / (total || 1) * 100}%`, background: a.color }} />)}

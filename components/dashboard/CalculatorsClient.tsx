@@ -129,7 +129,7 @@ export default function CalculatorsClient() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-4 wl-even">
         <section className="wl-card px-4 md:px-6 py-4 md:py-5 flex flex-col gap-4">
           <div>
             <h2 className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>{CALCS[key].name} calculator</h2>

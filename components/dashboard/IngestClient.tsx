@@ -106,7 +106,7 @@ export default function IngestClient({ recent, latestTxn, accounts, initialModal
         </div>
       </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-3.5 md:gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-3.5 md:gap-4 wl-even">
         <Panel title="Recent statement imports">
           {batches.length === 0
             ? <p className="text-[12.5px] mt-2" style={{ color: 'var(--text3)' }}>No statements imported in the last 90 days.</p>

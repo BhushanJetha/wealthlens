@@ -84,7 +84,7 @@ export default function CardsReportClient({ transactions, accounts, loans, fx }:
       </KpiGrid>
 
       {rows.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 md:gap-4 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 md:gap-4 wl-even">
           <section className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
             <h2 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>By card</h2>
             {rows.map(r => {
@@ -123,7 +123,7 @@ export default function CardsReportClient({ transactions, accounts, loans, fx }:
       {rows.length > 0 && (
         <section className="flex flex-col gap-2.5">
           <h2 className="text-[15px] md:text-[16px] font-semibold px-0.5" style={{ color: 'var(--text)' }}>Each card</h2>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 md:gap-4 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 md:gap-4 wl-even">
             {rows.map(r => <CardPanel key={r.f.account.id} f={r.f} loans={loans} colorOf={colorOf} />)}
           </div>
         </section>

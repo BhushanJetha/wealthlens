@@ -146,7 +146,7 @@ export default function AssetsClient({ today, assets, ready, gratuity, loans }: 
         </section>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 md:gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 md:gap-4 wl-even">
         <div className="flex flex-col gap-3.5 md:gap-4 min-w-0">
           <Panel title="Property & land" right={ready ? <button onClick={() => setSheet({ defaults: { kind: 'property' } })} className="text-[12px] font-semibold flex items-center gap-1" style={{ color: 'var(--accent)' }}><Plus size={13} />Add</button> : undefined}>
             {property.length ? <ul className="mt-1">{property.map(row)}</ul>

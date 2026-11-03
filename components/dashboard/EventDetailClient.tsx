@@ -91,7 +91,7 @@ export default function EventDetailClient({ id, data }: { id: string; data: Even
         <KpiTile label="To tag" value={String(sugg.length)} tint={1} icon={ListChecks} delta={sugg.length ? 'in its dates, not tagged yet' : 'All tagged'} />
       </KpiGrid>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-3.5 md:gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-3.5 md:gap-4 wl-even">
         <div className="flex flex-col gap-3.5 md:gap-4 min-w-0">
           {sugg.length > 0 && (
             <Panel title="Did these belong to it?" right={<button onClick={() => tag(Array.from(pick))} disabled={busy || !pick.size} className="wl-btn wl-btn-primary disabled:opacity-60" style={{ height: 32, fontSize: 12.5 }}>Tag {pick.size}</button>}>

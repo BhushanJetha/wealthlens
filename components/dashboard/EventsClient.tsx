@@ -86,7 +86,7 @@ export default function EventsClient({ data }: { data: EventsData }) {
         </section>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-3.5 md:gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-3.5 md:gap-4 wl-even">
         <div className="flex flex-col gap-2.5 min-w-0">
           {!data.ready ? null : y.items.length === 0 ? (
             <div className="wl-card px-5 py-8 text-center flex flex-col items-center gap-3">

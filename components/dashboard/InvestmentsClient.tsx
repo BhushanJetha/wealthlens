@@ -529,7 +529,7 @@ export default function InvestmentsClient({
           </div>
 
           {/* Portfolio rows + check-up / SIPs */}
-          <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.7fr_1fr] gap-4 items-start">
+          <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.7fr_1fr] gap-4 wl-even">
             <section className="max-md:order-5 md:bg-white md:border md:border-[var(--line)] md:rounded-[20px] md:shadow-card md:px-[22px] md:py-[18px]">
               <div className="flex justify-between items-baseline mb-2 md:mb-1.5">
                 <h2 className="text-[16px] md:text-[15px] font-bold md:font-semibold" style={{ color: 'var(--text)' }}>Your portfolio</h2>

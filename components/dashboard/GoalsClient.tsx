@@ -388,7 +388,7 @@ export default function GoalsClient({ data }: { data: GoalsData }) {
       </div>
 
       {tab === 'my' && (
-        <div className="grid grid-cols-1 lg:grid-cols-[1.8fr_1fr] gap-4 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-[1.8fr_1fr] gap-4 wl-even">
           <div className="flex flex-col gap-4 min-w-0">
             {live.length === 0 ? (
               <div className="rounded-[14px] px-6 py-10 text-center bg-white" style={{ border: '1.5px dashed var(--border2)' }}>

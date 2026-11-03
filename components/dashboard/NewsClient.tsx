@@ -97,7 +97,7 @@ export default function NewsClient({ holdings }: { holdings: Holding[] }) {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4 wl-even">
         <div className="flex flex-col gap-3 max-lg:order-2">
           {articles === null ? (
             [0, 1, 2, 3].map(i => <div key={i} className="h-[84px] rounded-xl animate-pulse" style={{ background: '#E8EBF0' }} />)

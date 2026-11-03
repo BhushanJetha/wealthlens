@@ -199,7 +199,7 @@ export default function FreedomCheckClient({ detected, initialAnswers, updatedAt
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-5 items-start">
+      <div className="grid lg:grid-cols-2 gap-5 wl-even">
         {/* Checklist */}
         <div className="wl-card overflow-hidden">
           <div className="px-4 py-3 flex items-center justify-between" style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>

@@ -400,6 +400,19 @@ export default function ReportClient({ transactions: raw, accounts = [], events 
               </div>
             ))}
           </div>
+          {catRows.length > 0 && outRows.length < 5 && (
+            <div className="flex flex-col">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.05em] pb-1" style={{ color: 'var(--text3)' }}>Biggest spending</div>
+              {catRows.slice(0, 5 - outRows.length).map(r => (
+                <div key={r.c} className="flex items-center gap-2.5 py-1.5" style={{ borderTop: '1px solid var(--track)' }}>
+                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: colorFor(r.c) }} />
+                  <span className="flex-1 min-w-0 truncate text-[12.5px]" style={{ color: 'var(--text2)' }}>{labelOf(r.c)}</span>
+                  <span className="text-[12.5px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{short(r.v)}</span>
+                  <span className="w-11 text-right text-[11.5px] tabular-nums" style={{ color: 'var(--text4)' }}>{Math.round(r.share)}%</span>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-2 mt-auto" style={{ background: kept >= 0 ? '#E7F7EF' : '#FDECE8' }}>
             <div>
               <div className="text-[12.5px] font-semibold" style={{ color: kept >= 0 ? '#1E8F5F' : '#D9482F' }}>{kept >= 0 ? `Saved${P.invest > 0 ? ` (incl. ${short(P.invest)} invested)` : ''}` : 'Spent more than came in'}</div>
@@ -418,9 +431,14 @@ export default function ReportClient({ transactions: raw, accounts = [], events 
         <KpiTile label="Invested" value={short(P.invest)} delta={dIv.text} tone={dIv.tone} tint={3} icon={TrendingUp} href="/dashboard/investments" />
       </div>
 
+<div className="wl-card px-4 md:px-5 py-3 flex flex-wrap items-center justify-between gap-2.5">
+        <span className="text-[12.5px]" style={{ color: 'var(--text2)' }}><b>All spending in {periodLabel}</b> (what budgets use) = {money(sumL(B.spend))} paid from bank + {money(allSpendP - sumL(B.spend))} bought on cards</span>
+        <span className="text-[15px] font-bold tabular-nums" style={{ color: 'var(--accent2)' }}>{money(allSpendP)}</span>
+      </div>
+
       {/* Money in & out: bank accounts (where the salary went — only money that
           left your banks) beside credit cards (where card spending went) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 md:gap-4 items-start" aria-label="Money in and out">
+      <div className="lg:columns-2 lg:gap-4 [&>*]:break-inside-avoid [&>*]:mb-3.5 md:[&>*]:mb-4 -mb-3.5 md:-mb-4" aria-label="Money in and out">
         <section className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
           <div className="flex items-center gap-2.5">
             <span className="w-9 h-9 rounded-[11px] flex items-center justify-center" style={{ background: '#E7F1FE', color: '#1D5FA8' }}><Landmark size={17} /></span>
@@ -519,14 +537,7 @@ export default function ReportClient({ transactions: raw, accounts = [], events 
             </div>
           )}
         </section>
-      </div>
-      <div className="wl-card px-4 md:px-5 py-3 flex flex-wrap items-center justify-between gap-2.5">
-        <span className="text-[12.5px]" style={{ color: 'var(--text2)' }}><b>All spending in {periodLabel}</b> (what budgets use) = {money(sumL(B.spend))} paid from bank + {money(allSpendP - sumL(B.spend))} bought on cards</span>
-        <span className="text-[15px] font-bold tabular-nums" style={{ color: 'var(--accent2)' }}>{money(allSpendP)}</span>
-      </div>
-
       {/* Categories + highlights */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] gap-3.5 md:gap-4 items-start">
         <section className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
           <div className="flex justify-between items-baseline gap-2 mb-1">
             <h2 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Spending by category</h2>
@@ -557,7 +568,6 @@ export default function ReportClient({ transactions: raw, accounts = [], events 
           )}
         </section>
 
-        <div className="flex flex-col gap-3.5 md:gap-4">
         <section className="rounded-[20px] bg-ai px-4 md:px-[22px] py-4 md:py-[18px]" style={{ border: '1px solid #E1DAFF' }}>
           <div className="text-[10.5px] md:text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: 'var(--accent2)' }}>✦ Highlights</div>
           <h2 className="text-[16px] md:text-[17px] font-bold mt-0.5 mb-1" style={{ color: 'var(--text)' }}>What {periodLabel} tells you</h2>
@@ -573,10 +583,54 @@ export default function ReportClient({ transactions: raw, accounts = [], events 
         </section>
         <PaidBy rows={transactions.filter(t => months.includes(String(t.txn_date).slice(0, 7)) && inView(t.currency) && isSpending(t))}
           accounts={accounts} amountOf={t => conv(Number(t.amount) || 0, t.currency)} fmt={short} />
-        </div>
+        {mode !== 'year' && (<>
+          {/* Loans and investments for the month (only when there are any) */}
+          {(P.loans > 0 || P.invest > 0) && <section className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
+            <h2 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Loans and investments</h2>
+            <div className="text-[12px] mb-1" style={{ color: 'var(--text3)' }}>Money that paid down debt or went to work</div>
+            {[{ title: 'Loan repayments', total: P.loans, rows: P.loanBy, color: GROUP.loans.color, Icon: Landmark },
+              { title: 'Investments', total: P.invest, rows: P.investBy, color: GROUP.invest.color, Icon: TrendingUp }].map(s => (
+              <div key={s.title} className="mt-2">
+                <div className="flex justify-between items-baseline py-1.5">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.05em]" style={{ color: 'var(--text3)' }}>{s.title}</span>
+                  <span className="text-[13px] font-bold tabular-nums" style={{ color: s.color }}>{short(s.total)}</span>
+                </div>
+                {Object.keys(s.rows).length === 0 ? <div className="text-[12.5px] pb-2" style={{ color: 'var(--text4)' }}>None in {periodLabel}</div>
+                  : Object.entries(s.rows).sort((a, b) => b[1] - a[1]).map(([name, v]) => (
+                    <div key={name} className="flex items-center gap-2.5 py-2" style={{ borderTop: '1px solid var(--track)' }}>
+                      <span className="w-7 h-7 rounded-[9px] flex items-center justify-center flex-shrink-0" style={{ background: s.color + '1A', color: s.color }}><s.Icon size={13} /></span>
+                      <span className="flex-1 min-w-0 truncate text-[13px]" style={{ color: 'var(--text)' }}>{name}</span>
+                      <span className="text-[13px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{short(v)}</span>
+                    </div>
+                  ))}
+              </div>
+            ))}
+          </section>}
+
+          {/* Biggest payments */}
+          <section className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
+            <div className="flex justify-between items-baseline gap-2">
+              <h2 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Biggest payments</h2>
+              {topPays.length > 0 && spending > 0 && <span className="text-[11.5px]" style={{ color: 'var(--text4)' }}>{Math.round(topPays.reduce((a, p) => a + p.v, 0) / spending * 100)}% of spending</span>}
+            </div>
+            {topPays.length === 0 ? <div className="text-[12.5px] py-6 text-center" style={{ color: 'var(--text3)' }}>No payments in {periodLabel}.</div> : topPays.map((p, i) => {
+              const c = catOf(p.t), col = colorFor(c)
+              return (
+                <div key={`${p.t.id}-${i}`} className="flex items-center gap-3 py-2.5" style={{ borderTop: i ? '1px solid var(--track)' : 'none' }}>
+                  <span className="w-9 h-9 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ background: col + '1A', color: col }}><CategoryIcon icon={iconFor(c)} size={15} /></span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-semibold truncate" style={{ color: 'var(--text)' }}>{p.t.merchant || labelOf(c)}</div>
+                    <div className="text-[11.5px] truncate" style={{ color: 'var(--text4)' }}>{labelOf(c)} · {Number(p.t.txn_date.slice(8, 10))} {mShort(p.month)}</div>
+                  </div>
+                  <span className="text-[13.5px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{short(p.v)}</span>
+                </div>
+              )
+            })}
+          </section>
+        </>)}
       </div>
 
-      {mode === 'year' ? (<>
+      {mode === 'year' && (<>
         {/* Month by month */}
         <section className="wl-card overflow-hidden">
           <div className="px-4 md:px-5 pt-4 md:pt-[18px] pb-3">
@@ -685,53 +739,7 @@ export default function ReportClient({ transactions: raw, accounts = [], events 
             </section>
           )
         })()}
-      </>) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 md:gap-4 items-start">
-          {/* Loans and investments for the month */}
-          <section className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
-            <h2 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Loans and investments</h2>
-            <div className="text-[12px] mb-1" style={{ color: 'var(--text3)' }}>Money that paid down debt or went to work</div>
-            {[{ title: 'Loan repayments', total: P.loans, rows: P.loanBy, color: GROUP.loans.color, Icon: Landmark },
-              { title: 'Investments', total: P.invest, rows: P.investBy, color: GROUP.invest.color, Icon: TrendingUp }].map(s => (
-              <div key={s.title} className="mt-2">
-                <div className="flex justify-between items-baseline py-1.5">
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.05em]" style={{ color: 'var(--text3)' }}>{s.title}</span>
-                  <span className="text-[13px] font-bold tabular-nums" style={{ color: s.color }}>{short(s.total)}</span>
-                </div>
-                {Object.keys(s.rows).length === 0 ? <div className="text-[12.5px] pb-2" style={{ color: 'var(--text4)' }}>None in {periodLabel}</div>
-                  : Object.entries(s.rows).sort((a, b) => b[1] - a[1]).map(([name, v]) => (
-                    <div key={name} className="flex items-center gap-2.5 py-2" style={{ borderTop: '1px solid var(--track)' }}>
-                      <span className="w-7 h-7 rounded-[9px] flex items-center justify-center flex-shrink-0" style={{ background: s.color + '1A', color: s.color }}><s.Icon size={13} /></span>
-                      <span className="flex-1 min-w-0 truncate text-[13px]" style={{ color: 'var(--text)' }}>{name}</span>
-                      <span className="text-[13px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{short(v)}</span>
-                    </div>
-                  ))}
-              </div>
-            ))}
-          </section>
-
-          {/* Biggest payments */}
-          <section className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
-            <div className="flex justify-between items-baseline gap-2">
-              <h2 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Biggest payments</h2>
-              {topPays.length > 0 && spending > 0 && <span className="text-[11.5px]" style={{ color: 'var(--text4)' }}>{Math.round(topPays.reduce((a, p) => a + p.v, 0) / spending * 100)}% of spending</span>}
-            </div>
-            {topPays.length === 0 ? <div className="text-[12.5px] py-6 text-center" style={{ color: 'var(--text3)' }}>No payments in {periodLabel}.</div> : topPays.map((p, i) => {
-              const c = catOf(p.t), col = colorFor(c)
-              return (
-                <div key={`${p.t.id}-${i}`} className="flex items-center gap-3 py-2.5" style={{ borderTop: i ? '1px solid var(--track)' : 'none' }}>
-                  <span className="w-9 h-9 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ background: col + '1A', color: col }}><CategoryIcon icon={iconFor(c)} size={15} /></span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-semibold truncate" style={{ color: 'var(--text)' }}>{p.t.merchant || labelOf(c)}</div>
-                    <div className="text-[11.5px] truncate" style={{ color: 'var(--text4)' }}>{labelOf(c)} · {Number(p.t.txn_date.slice(8, 10))} {mShort(p.month)}</div>
-                  </div>
-                  <span className="text-[13.5px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{short(p.v)}</span>
-                </div>
-              )
-            })}
-          </section>
-        </div>
-      )}
+      </>)}
 
       {/* How the numbers are counted */}
       <section className="rounded-[16px] px-4 md:px-5 py-3.5" style={{ background: '#FAFAFE', border: '1px solid var(--line)' }}>

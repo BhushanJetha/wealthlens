@@ -363,3 +363,8 @@ body {
 @keyframes wlSplashIn { from { opacity: 0; transform: translateY(10px) scale(.97); } to { opacity: 1; transform: none; } }
 @keyframes wlSplashOut { to { opacity: 0; visibility: hidden; } }
 @media (prefers-reduced-motion: reduce) { #wl-splash img, #wl-splash strong, #wl-splash span { animation: none; } }
+
+/* Side-by-side cards end level: the shorter side stretches (a column of cards
+   lets its last card take the rest), so a page never shows a ragged gap */
+.wl-even { align-items: stretch; }
+.wl-even > .flex-col:not(.wl-card):not(section) > :last-child { flex-grow: 1; }

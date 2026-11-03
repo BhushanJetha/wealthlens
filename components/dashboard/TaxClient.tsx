@@ -57,7 +57,7 @@ export default function TaxClient({ input }: { input: TaxInput }) {
         <KpiTile label="Days to 31 March" value={String(p.daysLeft)} tint={2} icon={CalendarClock} delta={`${p.fy.label} deadline`} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-3.5 md:gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-3.5 md:gap-4 wl-even">
         <div className="flex flex-col gap-3.5 md:gap-4 min-w-0">
           <Panel title="Suggestions" right={<Segmented label="Your tax slab" value={slab} onChange={setSlab} options={[{ value: '5', label: '5%' }, { value: '20', label: '20%' }, { value: '30', label: '30%' }]} />}>
             <p className="text-[11.5px] mt-1" style={{ color: 'var(--text4)' }}>Pick your slab to see what each step saves.</p>

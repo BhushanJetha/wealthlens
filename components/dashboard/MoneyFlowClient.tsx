@@ -212,7 +212,7 @@ export default function MoneyFlowClient({ transactions, accounts, fx: FX, nreAcc
             delta={indiaIn > 0 ? `${Math.round(indiaSaved / indiaIn * 100)}% · incl. ${inrShort(indiaInvest)} invested` : '—'} />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-3.5 md:gap-4 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-3.5 md:gap-4 wl-even">
           <ListCard title="Transfers to India" sub={`${remits.length} in ${rangeLabel} · each AED debit paired with the ₹ that landed`}
             head={['Transfer', 'Status', 'Rate', 'Landed']}
             empty={remits.length === 0 ? <div className="text-center py-10 text-[13px]" style={{ color: 'var(--text3)', borderTop: '1px solid var(--line)' }}>No transfers in {rangeLabel}.</div> : undefined}>

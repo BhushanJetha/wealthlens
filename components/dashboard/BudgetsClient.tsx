@@ -421,7 +421,7 @@ export default function BudgetsClient({ today: serverToday, budgets: initial, tr
         )}
       </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 md:gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 md:gap-4 wl-even">
         {/* Save first */}
         <Panel title="Save first" right={smallLink(() => setSheet({ kind: 'savings' }), target > 0 ? 'Change' : 'Set a target')}>
           {target > 0 ? (<>
@@ -467,7 +467,7 @@ export default function BudgetsClient({ today: serverToday, budgets: initial, tr
         </Panel>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 md:gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 md:gap-4 wl-even">
         {/* Yearly costs */}
         <Panel title="Yearly costs & festivals" right={fundsReady ? <span className="flex items-center gap-3">
           {fundsSource === 'goals' && <Link href="/dashboard/goals" className="text-[12px] font-semibold" style={{ color: 'var(--text3)' }}>In Goals</Link>}
@@ -538,11 +538,14 @@ export default function BudgetsClient({ today: serverToday, budgets: initial, tr
         </Panel>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 md:gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 md:gap-4 wl-even">
         {/* Income plan */}
         <Panel title="How your budget splits your income" right={past.length > 0 ? <span className="text-[11.5px]" style={{ color: 'var(--text4)' }}>{cur === 'AED' ? 'UAE' : 'India'} income · avg of {past.length} month{past.length === 1 ? '' : 's'}</span> : undefined}>
           {incomeAvg <= 0 ? (
-            <p className="text-[12.5px] mt-2" style={{ color: 'var(--text3)' }}>{cur === 'AED' ? 'Add your UAE income (salary…)' : 'Add your India income — money you send home counts once it lands in NRE'} to see how much of it your budgets plan for.</p>
+            <div className="flex flex-col items-center justify-center text-center gap-2.5 py-8 md:py-10">
+              <p className="text-[12.5px] max-w-[340px]" style={{ color: 'var(--text3)' }}>{cur === 'AED' ? 'Add your UAE income (salary…)' : 'Add your India income — money you send home counts once it lands in NRE'} to see how much of it your budgets plan for.</p>
+              <a href="/dashboard/settings/income" className="wl-btn wl-btn-primary wl-hide-viewing" style={{ height: 34 }}>Set your expected income</a>
+            </div>
           ) : (<>
             <div className="text-[12.5px] mt-1.5" style={{ color: 'var(--text2)' }}>Average income <b style={{ color: 'var(--text)' }}>{money(incomeAvg)}</b> a month{target > 0 ? <> · save-first target <b style={{ color: 'var(--text)' }}>{money(target)}</b></> : null}</div>
             <div className="flex h-3 rounded-full overflow-hidden gap-[2px] mt-3" role="img"

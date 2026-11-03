@@ -47,7 +47,7 @@ export default function NomineesClient({ rows: initial, ready, members }: { rows
       <InsightBar text={insight} prompt="Explain nominees vs a will for an NRI with accounts in India and the UAE, and what I should set up." />
       {error && <div className="rounded-xl px-4 py-2.5 text-[12.5px]" style={{ background: '#FDECE8', color: '#B4231A' }}>{error}</div>}
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_2fr] gap-3.5 md:gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_2fr] gap-3.5 md:gap-4 wl-even">
         <section className="wl-card px-5 py-5 flex flex-col items-center gap-3 text-center">
           <Ring pct={pct} size={120} stroke={4} color={pct >= 100 ? 'var(--pos)' : '#F29A2E'} label="Nominees recorded">
             <span className="text-[24px] font-bold leading-none" style={{ color: 'var(--text)' }}>{set}/{rows.length}</span>

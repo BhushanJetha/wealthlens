@@ -71,7 +71,7 @@ export default function PortfolioClient({ p, fx, reviews, reviewsReady, wealthRe
         <KpiTile label="Off target" value={big ? `${Math.round(Math.abs(big.off))} pts` : '—'} tint={1} icon={Scale} tone={big && Math.abs(big.off) >= 10 ? 'bad' : 'neutral'} delta={big ? `${CLS_LABEL[big.cls]} ${Math.round(big.now)}% vs ${big.target}%` : 'No investments yet'} />
       </KpiGrid>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-3.5 md:gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-3.5 md:gap-4 wl-even">
         <div className="flex flex-col gap-3.5 md:gap-4 min-w-0">
           {todo.length > 0 && (
             <Panel title="Do this first">

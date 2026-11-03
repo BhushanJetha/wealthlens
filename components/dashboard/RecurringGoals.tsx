@@ -159,7 +159,7 @@ export function RecurringDetail({ it, data, today }: { it: GoalItem; data: Goals
         <KpiTile label="Rounds done" value={String(Number(g.cycles_done) || 0)} tint={1} icon={Repeat} delta={repeatLabel(g)} />
       </KpiGrid>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_1fr] gap-3.5 md:gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_1fr] gap-3.5 md:gap-4 wl-even">
         <div className="flex flex-col gap-3.5 md:gap-4 min-w-0">
           <Panel title="How it works">
             <ol className="mt-2 flex flex-col gap-2 text-[12.5px] leading-snug" style={{ color: 'var(--text2)' }}>

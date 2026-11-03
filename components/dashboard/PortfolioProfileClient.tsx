@@ -49,7 +49,7 @@ export default function PortfolioProfileClient({ answers: start, targets, ready 
       <PageHeader title="My investor profile" sub={`${count} of ${QUESTIONS.length} answered — so suggestions fit you, not a default`} />
       {!ready && <div className="rounded-xl px-4 py-2.5 text-[12.5px]" style={{ background: 'var(--amber-bg)', color: 'var(--amber-text)' }}>Run migration 032 in Supabase to save your answers.</div>}
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-3.5 md:gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-3.5 md:gap-4 wl-even">
         <div className="flex flex-col gap-3 min-w-0">
           {QUESTIONS.map((q, i) => (
             <section key={q.key} className="wl-card px-4 md:px-5 py-3.5">

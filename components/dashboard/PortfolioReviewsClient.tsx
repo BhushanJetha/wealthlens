@@ -33,7 +33,7 @@ export default function PortfolioReviewsClient({ reviews, ready, next }: { revie
         prompt="How should I use quarterly, half-yearly and yearly portfolio reviews?" />
       {error && <div className="rounded-xl px-4 py-2.5 text-[12.5px]" style={{ background: '#FDECE8', color: '#B4231A' }}>{error}</div>}
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-3.5 md:gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-3.5 md:gap-4 wl-even">
         <div className="flex flex-col gap-2.5 min-w-0">
           {ready && !hasLast && (
             <button onClick={() => run('auto')} disabled={busy} className="wl-card px-4 py-3.5 flex items-center gap-3 text-left disabled:opacity-60" style={{ borderStyle: 'dashed' }}>

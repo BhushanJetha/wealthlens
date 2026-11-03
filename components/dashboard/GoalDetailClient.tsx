@@ -185,7 +185,7 @@ export default function GoalDetailClient({ goalId, data }: { goalId: string; dat
       </div>
 
       {tab === 'overview' && (
-        <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-3.5 md:gap-4 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-3.5 md:gap-4 wl-even">
           <div className="flex flex-col gap-3.5 md:gap-4 min-w-0">
             <Panel title="Where the money comes from" right={<button onClick={() => setSheet('link')} className="text-[12px] font-semibold flex items-center gap-1" style={{ color: 'var(--accent)' }}><Link2 size={13} />Link</button>}>
               <ul className="mt-2">
@@ -282,7 +282,7 @@ export default function GoalDetailClient({ goalId, data }: { goalId: string; dat
       )}
 
       {tab === 'calculator' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 md:gap-4 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 md:gap-4 wl-even">
           <Panel title="If I put in…">
             <div className="flex gap-1.5 mt-2 flex-wrap">
               {(['cautious', 'expected', 'optimistic'] as const).map(s => (
@@ -321,7 +321,7 @@ export default function GoalDetailClient({ goalId, data }: { goalId: string; dat
       )}
 
       {tab === 'funding' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 md:gap-4 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 md:gap-4 wl-even">
           <Panel title={`Linked investments · ${links.length}`} right={<button onClick={() => setSheet('link')} className="text-[12px] font-semibold flex items-center gap-1" style={{ color: 'var(--accent)' }}><Link2 size={13} />Manage</button>}>
             {v.holdings.length === 0 ? <p className="text-[12.5px] mt-2" style={{ color: 'var(--text3)' }}>None linked. Link a fund, FD or SIP — its value (or the share you give this goal) counts here, and SIPs keep it growing every month.</p> : (
               <ul className="mt-2">

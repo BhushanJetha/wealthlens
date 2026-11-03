@@ -55,7 +55,7 @@ export default function PortfolioReviewReport({ review, aiReady }: { review: any
         <KpiTile label="Actions" value={String(r.actions.length)} tint={2} icon={ListChecks} delta="Below, most important first" />
       </KpiGrid>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-3.5 md:gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-3.5 md:gap-4 wl-even">
         <div className="flex flex-col gap-3.5 md:gap-4 min-w-0">
           <Panel title="What to do">
             {r.actions.length ? (

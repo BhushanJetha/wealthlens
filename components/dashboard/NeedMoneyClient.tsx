@@ -38,7 +38,7 @@ export default function NeedMoneyClient({ today, fx, hs, goals, essentials, savi
       <PageHeader title="I need money" sub="Where to take it from — cheapest first, your emergency fund, goals and locked money left alone" />
       <InsightBar text={insight} prompt={`I need ${amt ? money(amt) : 'some money'} ${WHEN[when].label.toLowerCase()}${purpose ? ` for ${purpose}` : ''}. Plan: ${plan?.steps.map(s => `${s.source} ${money(s.amount)} (${s.costNote})`).join('; ') ?? 'none yet'}. What's the smartest way?`} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.4fr] gap-3.5 md:gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.4fr] gap-3.5 md:gap-4 wl-even">
         <Panel title={<span className="flex items-center gap-1.5"><HandCoins size={15} style={{ color: 'var(--accent)' }} />What do you need?</span>}>
           <div className="flex flex-col gap-3.5 mt-3">
             <div className="grid grid-cols-[1fr_auto] gap-3 items-end">
