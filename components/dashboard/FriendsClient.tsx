@@ -111,10 +111,112 @@ export default function FriendsClient(p: Props) {
         </form>
       </div>
 
+      {list.some(b => b.entries.length) && <FriendTxns list={list} accounts={p.accounts} onOpen={setOpen} />}
+
       {open && <FriendSheet b={open} onClose={() => setOpen(null)} onSettle={() => { setSettling(open); setOpen(null) }}
         onPaid={() => { setPaying({ friendId: open.friend.id }); setOpen(null) }} />}
       {settling && <SettleSheet b={settling} recent={p.recent} accounts={p.accounts} view={view} onClose={() => setSettling(null)} />}
       {paying && <FriendPaidSheet friends={p.friends} friendId={paying.friendId} view={view} onClose={() => setPaying(null)} />}
+    </div>
+  )
+}
+
+// ── The transactions behind the balances, on the page ───────────────────────
+// I paid: what you paid with friends' shares in it (one row per transaction,
+// however many friends shared it). Friends paid: what a friend paid for you.
+// Paid back: money that settled up, either way.
+type Tab = 'i_paid' | 'they_paid' | 'back'
+interface Row { key: string; date: string; label: string; amount: number; currency: Cur; sub: string; people: { b: FriendBalance; amount: number }[] }
+
+function FriendTxns({ list, accounts, onOpen }: { list: FriendBalance[]; accounts: any[]; onOpen: (b: FriendBalance) => void }) {
+  const [tab, setTab] = useState<Tab>('i_paid')
+  const [who, setWho] = useState('')
+  const accName = (id: string | null) => accounts.find(a => a.id === id)?.name ?? ''
+  const rows = useMemo(() => {
+    const out: Record<Tab, Row[]> = { i_paid: [], they_paid: [], back: [] }
+    const shared = new Map<string, Row>()
+    for (const b of list) for (const e of b.entries) {
+      if (who && b.friend.id !== who) continue
+      if (e.kind === 'split') {
+        const t = e.txn, k = String(t.id ?? e.id)
+        const r: Row = shared.get(k) ?? { key: k, date: e.date, label: e.label, amount: Number(t.amount) || 0, currency: e.currency, sub: accName(t.account_id), people: [] }
+        r.people.push({ b, amount: e.amount })
+        if (!shared.has(k)) { shared.set(k, r); out.i_paid.push(r) }
+      } else if (e.kind === 'paid_for_you') {
+        out.they_paid.push({ key: e.id, date: e.date, label: e.label, amount: e.amount, currency: e.currency, sub: e.txn.category ?? '', people: [{ b, amount: e.amount }] })
+      } else {
+        out.back.push({ key: e.id, date: e.date, label: e.kind === 'repaid_you' ? `${b.friend.name} paid you back` : `You paid ${b.friend.name} back`, amount: e.amount, currency: e.currency,
+          sub: accName(e.txn.account_id) || (e.txn.account_id ? '' : 'Cash'), people: [{ b, amount: e.kind === 'repaid_you' ? -e.amount : e.amount }] })
+      }
+    }
+    for (const k of Object.keys(out) as Tab[]) out[k].sort((x, y) => String(y.date).localeCompare(String(x.date)))
+    return out
+  }, [list, who]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const sum = (rs: Row[], f: (r: Row) => number) => rs.reduce((s, r) => { s[r.currency] += f(r); return s }, { AED: 0, INR: 0 } as Record<Cur, number>)
+  const theirs = (r: Row) => r.people.reduce((s, x) => s + x.amount, 0)
+  const shown = rows[tab]
+  const total = tab === 'i_paid' ? `Friends’ shares ${pair(sum(shown, theirs))}`
+    : tab === 'they_paid' ? `Your shares ${pair(sum(shown, r => r.amount))}`
+    : [shown.some(r => r.people[0].amount < 0) && `Came in ${pair(sum(shown.filter(r => r.people[0].amount < 0), r => r.amount))}`,
+       shown.some(r => r.people[0].amount > 0) && `went out ${pair(sum(shown.filter(r => r.people[0].amount > 0), r => r.amount))}`].filter(Boolean).join(' · ')
+  const withEntries = list.filter(b => b.entries.length)
+
+  return (
+    <div className="wl-card overflow-hidden">
+      <div className="px-4 md:px-5 pt-4 pb-3 flex flex-col gap-2.5">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h2 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Transactions</h2>
+          {withEntries.length > 1 && (
+            <select value={who} onChange={e => setWho(e.target.value)} aria-label="Friend" className="wl-input" style={{ height: 34, width: 'auto', fontSize: 12.5 }}>
+              <option value="">All friends</option>
+              {withEntries.map(b => <option key={b.friend.id} value={b.friend.id}>{b.friend.name}</option>)}
+            </select>
+          )}
+        </div>
+        <div className="overflow-x-auto -mx-1 px-1">
+          <Segmented label="Which transactions" value={tab} onChange={setTab} options={[
+            { value: 'i_paid' as Tab, label: <><span className="hidden sm:inline">I paid for friends</span><span className="sm:hidden">I paid</span> · {rows.i_paid.length}</> },
+            { value: 'they_paid' as Tab, label: <><span className="hidden sm:inline">Friends paid for me</span><span className="sm:hidden">They paid</span> · {rows.they_paid.length}</> },
+            { value: 'back' as Tab, label: `Paid back · ${rows.back.length}` },
+          ]} />
+        </div>
+        {shown.length > 0 && <div className="text-[12px]" style={{ color: 'var(--text3)' }}>{total}</div>}
+      </div>
+      {shown.length === 0 ? (
+        <div className="px-5 py-6 text-[13px] text-center" style={{ borderTop: '1px solid #F1F0F7', color: 'var(--text3)' }}>
+          {tab === 'i_paid' ? 'Nothing split yet. In Expenses, open what you paid and choose Split.'
+            : tab === 'they_paid' ? 'Nothing a friend paid for you yet. Use “A friend paid for me” above.' : 'No money paid back yet. Use Settle up on a friend.'}
+        </div>
+      ) : shown.map(r => (
+        <div key={r.key} className="flex items-start gap-3 px-4 md:px-5 py-3" style={{ borderTop: '1px solid #F1F0F7' }}>
+          <span className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
+            style={tab === 'they_paid' || (tab === 'back' && r.people[0].amount > 0) ? { background: '#FFF2E2', color: '#B45309' } : { background: '#E7F7EF', color: '#1E8F5F' }}>
+            {tab === 'i_paid' ? <ArrowUpRight size={15} /> : tab === 'they_paid' ? <ArrowDownLeft size={15} /> : <Check size={15} />}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="text-[13.5px] font-medium truncate" style={{ color: 'var(--text)' }}>{r.label}</div>
+            <div className="text-[11.5px]" style={{ color: 'var(--text3)' }}>{fmtDay(r.date)}{r.sub ? ` · ${r.sub}` : ''}</div>
+            {tab !== 'back' && (
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                {r.people.map(x => (
+                  <button key={x.b.friend.id} onClick={() => onOpen(x.b)} className="inline-flex items-center gap-1 rounded-full pl-1 pr-2 py-[2px] text-[11.5px] font-medium"
+                    style={{ background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--line)' }}>
+                    <span className="w-4 h-4 rounded-full text-white text-[9px] font-bold flex items-center justify-center" style={{ background: avatarOf(x.b.friend.name) }}>{x.b.friend.name.trim().charAt(0).toUpperCase()}</span>
+                    {tab === 'i_paid' ? `${x.b.friend.name} · ${fmt(x.amount, r.currency)}` : `Paid by ${x.b.friend.name}`}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="text-right flex-shrink-0">
+            <div className="text-[13.5px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{fmt(r.amount, r.currency)}</div>
+            <div className="text-[11px]" style={{ color: 'var(--text3)' }}>
+              {tab === 'i_paid' ? `you paid · yours ${fmt(Math.max(0, r.amount - theirs(r)), r.currency)}` : tab === 'they_paid' ? 'your share' : r.people[0].amount < 0 ? 'came in' : 'went out'}
+            </div>
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
