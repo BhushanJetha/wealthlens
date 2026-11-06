@@ -19,7 +19,9 @@ const Lbl = ({ children }: { children: React.ReactNode }) => (
 const inputStyle = { background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }
 const aed = (n: number) => `AED ${Math.round(n).toLocaleString('en-AE')}`
 
-export default function NriToolkitClient() {
+type Sent = { inr: number; usd: number; pct: number; fy: string } | null
+
+export default function NriToolkitClient({ sent = null }: { sent?: Sent }) {
   return (
     <div className="space-y-5 animate-fade-up">
       <PageHeader title="NRI toolkit" sub="UAE gratuity, India tax residency and NRE/NRO essentials — the NRI things generic apps miss" />
@@ -31,7 +33,7 @@ export default function NriToolkitClient() {
         <ResidencyCard />
       </div>
 
-      <NreNroCard />
+      <NreNroCard sent={sent} />
 
       <div className="text-[10px] flex items-start gap-1.5" style={{ color: 'var(--text3)' }}>
         <Info size={12} className="flex-shrink-0 mt-0.5" />
@@ -153,7 +155,7 @@ function ResidencyCard() {
 }
 
 // ── NRE / NRO / FCNR + repatriation reference ──────────────────────────────────
-function NreNroCard() {
+function NreNroCard({ sent }: { sent: Sent }) {
   const rows = [
     { name: 'NRE Account', tax: 'Interest tax-free in India', repat: 'Fully repatriable (principal + interest)', use: 'Park foreign earnings, no Indian tax', color: '#16A34A' },
     { name: 'NRO Account', tax: 'Interest taxable · 30% TDS', repat: 'Up to USD 1M / financial year', use: 'India-sourced income (rent, dividends)', color: '#D97706' },
@@ -186,8 +188,17 @@ function NreNroCard() {
           </tbody>
         </table>
       </div>
-      <div className="px-4 py-2.5 border-t text-[10px]" style={{ borderColor: 'var(--border)', color: 'var(--text3)' }}>
-        Repatriation from NRO is capped at <strong>USD 1 million per financial year</strong> (needs Form 15CA/CB). NRE &amp; FCNR have no such cap.
+      <div className="px-4 py-3 border-t" style={{ borderColor: 'var(--border)' }}>
+        {sent ? <>
+          <div className="flex justify-between items-baseline gap-3 text-[12.5px]">
+            <span style={{ color: 'var(--text2)' }}>Sent out of NRO in {sent.fy} (to NRE or abroad)</span>
+            <span className="font-semibold tabular-nums" style={{ color: 'var(--text)' }}>₹{Math.round(sent.inr).toLocaleString('en-IN')} · about ${Math.round(sent.usd).toLocaleString('en-US')}</span>
+          </div>
+          <div className="h-2 rounded-full mt-2 overflow-hidden" style={{ background: 'var(--track)' }} role="progressbar" aria-valuenow={Math.round(sent.pct)} aria-valuemin={0} aria-valuemax={100} aria-label="Share of the USD 1 million limit used">
+            <div className="h-full rounded-full" style={{ width: `${Math.max(sent.pct, sent.inr > 0 ? 1 : 0)}%`, background: sent.pct > 80 ? '#D97706' : 'var(--accent)' }} />
+          </div>
+          <p className="text-[11.5px] mt-1.5" style={{ color: 'var(--text3)' }}>{sent.pct.toFixed(1)}% of the USD 1 million you may send out of NRO each financial year. Each transfer needs Form 15CA/CB from your bank. NRE and FCNR have no cap.</p>
+        </> : <p className="text-[11.5px]" style={{ color: 'var(--text3)' }}>Repatriation from NRO is capped at <strong>USD 1 million per financial year</strong> (needs Form 15CA/CB). NRE &amp; FCNR have no such cap. Mark your NRO account on Accounts and this tracks what you’ve sent.</p>}
       </div>
     </div>
   )

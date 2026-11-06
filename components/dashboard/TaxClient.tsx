@@ -13,7 +13,7 @@ type Slab = keyof typeof SLABS
 
 // Tax planner (design v2): India, old regime. Deductions come from the
 // holdings you've added; all figures are estimates, not tax advice.
-export default function TaxClient({ input }: { input: TaxInput }) {
+export default function TaxClient({ input, gains }: { input: TaxInput; gains?: React.ReactNode }) {
   const [today, setToday] = useState('')
   const [slab, setSlab] = useState<Slab>('30')
   useEffect(() => { setToday(localToday()) }, [])
@@ -129,6 +129,8 @@ export default function TaxClient({ input }: { input: TaxInput }) {
           </Panel>
         </div>
       </div>
+
+      {gains}
 
       <AiActions actions={['Old or new regime: which suits me?', 'Plan my 80C']}
         context={`India tax, ${p.fy.label}, estimates. Counted: ${counted || 'nothing yet'}. 80C room left ${money(c80Room)}; ${p.daysLeft} days to 31 March.`} />

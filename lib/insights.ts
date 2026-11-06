@@ -3,6 +3,7 @@
 // the shared rules in lib/money.ts so numbers always match.
 import { isSpend, catOf, labelOf, isIncome as isIncomeIn, spendGroup, prepareMoney } from './money'
 import { viewAmount, NW_RULES, type View } from './netWorth'
+import { fdMaturity, holdingHref } from './holding'
 import { budgetLabel, budgetLines, spendByCategory, carryIn, FIXED, type Cur } from './budgets'
 
 // ─── Dates (string-based so server/browser time zones can't shift a day) ─────
@@ -262,8 +263,8 @@ export function buildHomeInsights(inp: InsightInput): HomeInsights {
     if (d >= -15 && d <= 30) attention.push({
       id: `fd-${f.id}`, severity: d <= 0 ? 'medium' : 'low',
       title: d < 0 ? `${f.name} matured ${-d} day${d === -1 ? '' : 's'} ago` : `${f.name} matures ${inDays(d)}`,
-      detail: `${nativeMoney(Number(f.maturity_amt) || Number(f.principal) || 0, f.currency)} · decide to renew or reinvest`,
-      href: '/dashboard/investments/fixed-deposits', actionLabel: 'Plan', date: f.maturity_date,
+      detail: `${nativeMoney(Number(f.maturity_amt) || (f.start_date ? fdMaturity(Number(f.principal) || 0, Number(f.interest_rate) || 0, f.start_date, f.maturity_date) : Number(f.principal) || 0), f.currency)} · renew it, keep it for a goal, or invest it`,
+      href: f.id ? holdingHref('fixed_deposits', f.id) : '/dashboard/investments/fixed-deposits', actionLabel: 'Decide', date: f.maturity_date,
     })
   }
   // Budgets for the focus month — each currency on its own (UAE budgets in

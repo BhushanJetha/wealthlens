@@ -6,7 +6,7 @@ import { ChevronLeft, MoreHorizontal, Pencil, Plus, CalendarClock, RefreshCw, Tr
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, ReferenceLine, CartesianGrid } from 'recharts'
 import { createClient } from '@/lib/supabase/client'
 import { fmtMoney, fmtCompact } from '@/lib/format'
-import { HTYPES, BENCH, holdingModel, projectValue, rdMaturity, type HType, type Lot } from '@/lib/holding'
+import { HTYPES, BENCH, holdingModel, projectValue, rdMaturity, saleCost, fyLabel, type HType, type Lot, type HoldingModel } from '@/lib/holding'
 import { localToday } from '@/lib/insights'
 import { toast } from '@/components/ui/toaster'
 import { Segmented } from '@/components/ui/kit'
@@ -14,6 +14,10 @@ import Pagination from './Pagination'
 import BatchPurchaseModal from '@/components/forms/BatchPurchaseModal'
 import EditHoldingModal from '@/components/forms/EditHoldingModal'
 import EditLotModal from '@/components/forms/EditLotModal'
+import AddInvestmentModal from '@/components/forms/AddInvestmentModal'
+
+// Kinds edited with the shared investment form (PPF / EPF has its own on its page)
+const EDIT_TYPE: Partial<Record<HType, string>> = { etf_investments: 'etf', fixed_deposits: 'fixed_deposit', recurring_deposits: 'recurring_deposit', bond_investments: 'bond', nps_accounts: 'nps', gold_investments: 'gold', lic_policies: 'lic' }
 
 type Range = '1Y' | '3Y' | '5Y' | 'Mine'
 const RANGE_MONTHS: Record<Range, number> = { '1Y': 12, '3Y': 36, '5Y': 60, Mine: 600 }
@@ -30,7 +34,7 @@ const fmtDate = (d: string) => new Date(`${d.slice(0, 10)}T00:00:00Z`).toLocaleD
 // One holding's page (lib/holding): value and return, its price chart, what
 // you hold, its SIP, every purchase (paged), tax if you sold today, and where
 // it could go. The same page for every kind; sections show when they apply.
-export default function HoldingClient({ type, row, txns, kindTotal }: { type: HType; row: any; txns: any[]; kindTotal: number }) {
+export default function HoldingClient({ type, row, txns, kindTotal, accounts = [] }: { type: HType; row: any; txns: any[]; kindTotal: number; accounts?: any[] }) {
   const router = useRouter()
   const meta = HTYPES[type], market = type === 'mutual_funds' || type === 'stocks' || type === 'etf_investments'
   const [today, setToday] = useState(localToday())
@@ -80,8 +84,10 @@ export default function HoldingClient({ type, row, txns, kindTotal }: { type: HT
     const buys = [...m.lots].filter(l => l.kind !== 'Dividend').sort((a, b) => a.date.localeCompare(b.date))
     if (buys.length < 2) return null
     let total = 0
-    return buys.map(l => ({ date: l.date, v: (total += l.kind === 'Sold' ? -l.amount : l.amount) }))
-  }, [m.lots])
+    // A sale takes out what the sold units cost, not what they fetched
+    const soldCost = new Map(m.sales.map(x => [x.id, x.cost]))
+    return buys.map(l => ({ date: l.date, v: (total += l.kind === 'Sold' ? -(soldCost.get(l.id) ?? 0) : l.amount) }))
+  }, [m.lots, m.sales])
 
   const shown = useMemo(() => {
     if (!series?.length) return []
@@ -94,7 +100,7 @@ export default function HoldingClient({ type, row, txns, kindTotal }: { type: HT
     return yrs >= 0.9 ? Math.round((Math.pow(shown[shown.length - 1].v / shown[0].v, 1 / yrs) - 1) * 1000) / 10 : null
   })() : null
 
-  const [sheet, setSheet] = useState<null | 'buy' | 'edit' | 'sip' | 'repick' | 'delete'>(null)
+  const [sheet, setSheet] = useState<null | 'buy' | 'edit' | 'edit2' | 'sip' | 'repick' | 'delete' | 'sell' | 'renew' | 'paidout'>(null)
   const [menu, setMenu] = useState(false)
   const [editLot, setEditLot] = useState<any | null>(null)
   const [page, setPage] = useState(1)
@@ -127,7 +133,9 @@ export default function HoldingClient({ type, row, txns, kindTotal }: { type: HT
         <div className="flex gap-2 flex-wrap wl-hide-viewing">
           {editable && <button onClick={() => setSheet('buy')} className="wl-btn wl-btn-primary" style={{ height: 40 }}><Plus size={15} />Buy more</button>}
           {type === 'mutual_funds' && <button onClick={() => setSheet('sip')} className="wl-btn" style={{ height: 40 }}><CalendarClock size={15} />{m.sip ? 'Change SIP' : 'Start a SIP'}</button>}
+          {market && (m.units ?? 0) > 0 && <button onClick={() => setSheet('sell')} className="wl-btn" style={{ height: 40 }}>{type === 'mutual_funds' ? 'Redeem' : 'Sell'}</button>}
           {editable ? <button onClick={() => setSheet('edit')} className="wl-btn" style={{ height: 40 }}><Pencil size={14} />Edit</button>
+            : EDIT_TYPE[type] ? <button onClick={() => setSheet('edit2')} className="wl-btn" style={{ height: 40 }}><Pencil size={14} />Edit</button>
             : <Link href={meta.list} className="wl-btn" style={{ height: 40 }}><Pencil size={14} />Edit on {meta.plural}</Link>}
           <div className="relative">
             <button onClick={() => setMenu(v => !v)} aria-label="More" aria-expanded={menu} className="wl-btn" style={{ height: 40, width: 40, padding: 0, justifyContent: 'center' }}><MoreHorizontal size={17} /></button>
@@ -205,8 +213,19 @@ export default function HoldingClient({ type, row, txns, kindTotal }: { type: HT
             <section className={card}>
               <H2>At maturity</H2>
               <div className="text-[19px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{m.maturity.amount ? money(m.maturity.amount) : '—'}</div>
-              <div className="text-[12.5px] mt-1" style={{ color: 'var(--text3)' }}>{m.maturity.date ? `${fmtDate(m.maturity.date)}${m.maturity.monthsLeft != null ? ` · ${m.maturity.monthsLeft > 0 ? `in ${m.maturity.monthsLeft} months` : 'matured'}` : ''}` : 'Add the maturity date to see when'}</div>
+              <div className="text-[12.5px] mt-1" style={{ color: 'var(--text3)' }}>{m.maturity.date ? (() => { const days = Math.round((Date.parse(m.maturity!.date!) - Date.parse(today)) / 864e5); return `${fmtDate(m.maturity!.date!)} · ${days < 0 ? 'matured' : days === 0 ? 'today' : days < 60 ? `in ${days} day${days === 1 ? '' : 's'}` : `in ${m.maturity!.monthsLeft} months`}` })() : 'Add the maturity date to see when'}</div>
               {type === 'fixed_deposits' && !Number(row.maturity_amt) && m.maturity.amount && <p className="text-[11.5px] mt-1.5" style={{ color: 'var(--text4)' }}>Worked out at {m.rate}% compounded quarterly; your bank’s figure may differ slightly.</p>}
+              {/* Near the date (or after it): what to do with the money */}
+              {type === 'fixed_deposits' && row.is_active !== false && m.maturity.date && m.maturity.date <= new Date(Date.parse(today) + 45 * 864e5).toISOString().slice(0, 10) && (
+                <div className="mt-3 pt-3 flex flex-col gap-1.5" style={{ borderTop: '1px solid var(--track)' }}>
+                  <div className="text-[12.5px] font-semibold" style={{ color: 'var(--text)' }}>{m.maturity.date <= today ? 'It has matured. What now?' : 'What will you do with it?'}</div>
+                  <button onClick={() => setSheet('renew')} className="wl-btn justify-center wl-hide-viewing" style={{ height: 38 }}>Renew it</button>
+                  <Link href="/dashboard/goals" className="wl-btn justify-center" style={{ height: 38 }}>Keep it for a goal</Link>
+                  <Link href="/dashboard/portfolio" className="wl-btn justify-center" style={{ height: 38 }}>Invest it (see what your mix needs)</Link>
+                  {m.maturity.date <= today && <button onClick={() => setSheet('paidout')} className="text-[12px] font-semibold mt-0.5 wl-hide-viewing" style={{ color: 'var(--text3)' }}>It’s paid out to my bank: close it</button>}
+                  <p className="text-[11.5px] leading-snug" style={{ color: 'var(--text4)' }}>Check your emergency fund first: if it’s short, this money fills it. Compare your bank’s rate today with {m.rate}% before renewing.</p>
+                </div>
+              )}
             </section>
           )}
         </div>
@@ -229,7 +248,7 @@ export default function HoldingClient({ type, row, txns, kindTotal }: { type: HT
               <span className="hidden md:block text-right tabular-nums" style={{ color: 'var(--text2)' }}>{l.price != null ? price(l.price) : '—'}</span>
               <span className="text-right font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{money(l.amount)}</span>
               <span className="md:hidden text-[11.5px] tabular-nums col-span-2" style={{ color: 'var(--text3)' }}>{l.units != null ? `${l.units.toLocaleString('en-IN', { maximumFractionDigits: 3 })} units` : ''}{l.price != null ? ` at ${price(l.price)}` : ''}</span>
-              <span className="hidden md:flex justify-end">{l.raw && editable && <button onClick={() => setEditLot(l.raw)} aria-label="Edit this purchase" className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[var(--bg2)]" style={{ color: 'var(--text3)' }}><Pencil size={13} /></button>}</span>
+              <span className="hidden md:flex justify-end">{l.raw && editable && l.kind !== 'Sold' && <button onClick={() => setEditLot(l.raw)} aria-label="Edit this purchase" className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[var(--bg2)]" style={{ color: 'var(--text3)' }}><Pencil size={13} /></button>}</span>
             </div>
           ))}
           <Pagination total={lots.length} page={page} pageSize={pageSize} onPage={setPage} onPageSize={s => { setPageSize(s); setPage(1) }} />
@@ -246,6 +265,12 @@ export default function HoldingClient({ type, row, txns, kindTotal }: { type: HT
               <div className="flex justify-between pt-2" style={{ borderTop: '1px solid var(--track)' }}><dt>Tax, about</dt><dd className="font-bold tabular-nums">{m.tax.tax == null ? 'at your slab' : money(m.tax.tax)}</dd></div>
             </dl>
             <p className="text-[11.5px] mt-2 leading-snug" style={{ color: 'var(--text4)' }}>{m.tax.note}</p>
+            {(() => {
+              const fy = fyLabel(today), mine = m.sales.filter(x => fyLabel(x.date) === fy)
+              if (!mine.length) return null
+              const g = mine.reduce((a, x) => a + x.gain, 0)
+              return <p className="text-[12px] mt-2 pt-2 leading-snug" style={{ borderTop: '1px solid var(--track)', color: 'var(--text2)' }}>You sold {mine.length === 1 ? 'once' : `${mine.length} times`} in {fy}: {g >= 0 ? 'gain' : 'loss'} of <b>{money(Math.abs(g))}</b>. <Link href="/dashboard/tax#gains" className="font-semibold" style={{ color: 'var(--accent2)' }}>All your gains this year</Link></p>
+            })()}
           </section>
         )}
         {m.value > 0 && type !== 'lic_policies' && (
@@ -273,6 +298,10 @@ export default function HoldingClient({ type, row, txns, kindTotal }: { type: HT
       {sheet === 'edit' && <EditHoldingModal kind={kindFor} row={row} onClose={done} />}
       {editLot && <EditLotModal kind={kindFor} holding={row} lot={editLot} onClose={() => { setEditLot(null); router.refresh() }} />}
       {sheet === 'sip' && <SipSheet row={row} onClose={() => setSheet(null)} onSaved={done} />}
+      {sheet === 'sell' && <SellSheet type={type} row={row} m={m} accounts={accounts} today={today} onClose={() => setSheet(null)} onSaved={done} />}
+      {sheet === 'renew' && <RenewSheet row={row} amount={m.maturity?.amount ?? Number(row.principal) ?? 0} onClose={() => setSheet(null)} onSaved={done} />}
+      {sheet === 'paidout' && <PaidOutSheet row={row} name={m.name} onClose={() => setSheet(null)} onSaved={done} />}
+      {sheet === 'edit2' && <AddInvestmentModal defaultType={EDIT_TYPE[type] as any} editData={{ ...row, _type: EDIT_TYPE[type] }} onClose={done} />}
       {sheet === 'repick' && <RepickSheet row={row} onClose={() => setSheet(null)} onSaved={done} />}
       {sheet === 'delete' && <DeleteSheet type={type} row={row} name={m.name} onClose={() => setSheet(null)} />}
     </div>
@@ -367,6 +396,130 @@ function DeleteSheet({ type, row, name, onClose }: { type: HType; row: any; name
     <Sheet title={`Delete ${name}?`} onClose={onClose}>
       <p className="text-[13px]" style={{ color: 'var(--text2)' }}>It’s removed with its purchase history. Goals or bills it was kept for stop counting it. This can’t be undone.</p>
       <div className="flex gap-2"><button onClick={onClose} className="wl-btn flex-1 justify-center" style={{ height: 44 }}>Cancel</button><button onClick={go} disabled={busy} className="wl-btn wl-btn-primary flex-1 justify-center disabled:opacity-60" style={{ height: 44, background: '#B4231A' }}>{busy ? 'Deleting…' : 'Delete'}</button></div>
+    </Sheet>
+  )
+}
+
+// ── Sell / redeem: records the sale with its cost (first in, first out),
+// lowers what you hold, and puts the money in your account as a move ──
+function SellSheet({ type, row, m, accounts, today, onClose, onSaved }: { type: HType; row: any; m: HoldingModel; accounts: any[]; today: string; onClose: () => void; onSaved: () => void }) {
+  const held = m.units ?? 0, cur = m.currency
+  const money = (n: number) => fmtMoney(n, cur)
+  const [units, setUnits] = useState(String(+held.toFixed(4)))
+  const [px, setPx] = useState(m.price ? String(+m.price.toFixed(4)) : '')
+  const [date, setDate] = useState(today)
+  const [accountId, setAccountId] = useState('')
+  const [busy, setBusy] = useState(false)
+  const u = Math.min(held, Number(units) || 0), p = Number(px) || 0, proceeds = u * p
+  const c = saleCost(m, u, date), gain = proceeds - c.cost
+  const longShare = u > 0 ? c.longUnits / u : 0
+  const banks = accounts.filter(a => (a.currency === 'AED' ? 'AED' : 'INR') === cur)
+  const verb = type === 'mutual_funds' ? 'Redeem' : 'Sell'
+
+  async function save() {
+    if (!(u > 0)) { toast('How many units?', 'error'); return }
+    if (!(p > 0)) { toast(`Enter the ${type === 'mutual_funds' ? 'NAV' : 'price'}.`, 'error'); return }
+    setBusy(true)
+    const sb = createClient()
+    const { data: { user } } = await sb.auth.getUser()
+    if (!user) { setBusy(false); toast('Please sign in again.', 'error'); return }
+    const sale: any = { user_id: user.id, asset_type: HTYPES[type].asset, asset_id: row.id, asset_name: m.name, folio_number: row.folio_number ?? null, txn_date: date, txn_type: 'redemption',
+      amount: Math.round(proceeds * 100) / 100, units: u, nav: p, currency: cur, source: 'manual', cost_amount: Math.round(c.cost * 100) / 100 }
+    let r = await sb.from('investment_transactions').insert(sale)
+    let noCost = false
+    if (r.error && /cost_amount/.test(r.error.message)) { delete sale.cost_amount; noCost = true; r = await sb.from('investment_transactions').insert(sale) }
+    if (r.error) { setBusy(false); toast(/asset_type_check/.test(r.error.message) ? 'Run migration 044 to record ETF sales.' : r.error.message, 'error'); return }
+    // What's left, at the cost of the units still held
+    const left = Math.max(0, held - u), leftCost = Math.max(0, m.cost - c.cost), avg = left > 0 ? leftCost / left : 0
+    const patch = type === 'stocks' ? { quantity: left, avg_buy_price: Math.round(avg * 10000) / 10000 }
+      : type === 'mutual_funds' ? { units: left, invested_amount: Math.round(leftCost * 100) / 100, avg_nav: Math.round(avg * 10000) / 10000 }
+      : { units: left, invested_amount: Math.round(leftCost * 100) / 100, avg_buy_price: Math.round(avg * 10000) / 10000 }
+    r = await sb.from(type).update(patch).eq('id', row.id)
+    if (r.error) { setBusy(false); toast(r.error.message, 'error'); return }
+    if (accountId) {
+      r = await sb.from('transactions').insert({ user_id: user.id, account_id: accountId, txn_date: date, amount: Math.round(proceeds * 100) / 100, currency: cur, country: cur === 'AED' ? 'UAE' : 'India',
+        txn_type: 'income', category: 'Investment Sold', merchant: `${verb === 'Redeem' ? 'Redeemed' : 'Sold'} ${m.name}`, description: `${+u.toFixed(4)} units at ${p}`, source: 'manual' })
+      if (r.error) { setBusy(false); toast(`Sale saved, but the money didn't reach the account: ${r.error.message}`, 'error'); onSaved(); return }
+    }
+    setBusy(false)
+    toast(noCost ? 'Sale saved. Run migration 044 so its cost is kept exactly.' : `${verb === 'Redeem' ? 'Redeemed' : 'Sold'} · ${gain >= 0 ? 'gain' : 'loss'} ${money(Math.abs(gain))}`)
+    onSaved()
+  }
+
+  return (
+    <Sheet title={`${verb} ${m.name}`} onClose={onClose}>
+      <div className="grid grid-cols-2 gap-2.5">
+        <label className="block"><span className="flex justify-between text-[12px] font-semibold mb-1" style={{ color: 'var(--text2)' }}>Units<button type="button" onClick={() => setUnits(String(+held.toFixed(4)))} className="font-semibold" style={{ color: 'var(--accent)' }}>All {+held.toFixed(3)}</button></span>
+          <input inputMode="decimal" value={units} onChange={e => setUnits(e.target.value.replace(/[^0-9.]/g, ''))} className="wl-input w-full" style={{ height: 44 }} /></label>
+        <label className="block"><span className="block text-[12px] font-semibold mb-1" style={{ color: 'var(--text2)' }}>{type === 'mutual_funds' ? 'NAV' : 'Price'}</span>
+          <input inputMode="decimal" value={px} onChange={e => setPx(e.target.value.replace(/[^0-9.]/g, ''))} className="wl-input w-full" style={{ height: 44 }} /></label>
+      </div>
+      <label className="block"><span className="block text-[12px] font-semibold mb-1" style={{ color: 'var(--text2)' }}>Date</span>
+        <input type="date" value={date} max={today} onChange={e => setDate(e.target.value)} className="wl-input w-full" style={{ height: 44 }} /></label>
+      <label className="block"><span className="block text-[12px] font-semibold mb-1" style={{ color: 'var(--text2)' }}>Money went to</span>
+        <select value={accountId} onChange={e => setAccountId(e.target.value)} className="wl-input w-full" style={{ height: 44 }}>
+          <option value="">Not one of my accounts here</option>
+          {banks.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+        <span className="block text-[11.5px] mt-1" style={{ color: 'var(--text3)' }}>It lands as your own money coming back, not income.</span></label>
+      {u > 0 && p > 0 && (
+        <dl className="rounded-xl p-3 flex flex-col gap-1.5 text-[13px]" style={{ background: 'var(--bg2)' }}>
+          <div className="flex justify-between"><dt style={{ color: 'var(--text3)' }}>You get</dt><dd className="font-semibold tabular-nums">{money(proceeds)}</dd></div>
+          <div className="flex justify-between"><dt style={{ color: 'var(--text3)' }}>Those units cost</dt><dd className="font-semibold tabular-nums">{money(c.cost)}</dd></div>
+          <div className="flex justify-between"><dt style={{ color: 'var(--text3)' }}>{gain >= 0 ? 'Gain' : 'Loss'}</dt><dd className="font-bold tabular-nums" style={{ color: gain >= 0 ? 'var(--pos-text)' : '#B4231A' }}>{money(Math.abs(gain))}</dd></div>
+          {m.gainKind && <div className="text-[11.5px] leading-snug" style={{ color: 'var(--text3)' }}>{Math.round(longShare * 100)}% of the units are long-term ({m.gainKind === 'equity' ? '1 year' : '2 years'} or more). The oldest units are sold first.</div>}
+        </dl>
+      )}
+      <button onClick={save} disabled={busy} className="wl-btn wl-btn-primary justify-center disabled:opacity-60" style={{ height: 44 }}>{busy ? 'Saving…' : verb}</button>
+    </Sheet>
+  )
+}
+
+// ── An FD at maturity: renew it (the maturity amount becomes the new
+// principal) or close it once the money is back in your bank ──
+function RenewSheet({ row, amount, onClose, onSaved }: { row: any; amount: number; onClose: () => void; onSaved: () => void }) {
+  const from = String(row.maturity_date).slice(0, 10)
+  const [principal, setPrincipal] = useState(String(Math.round(amount)))
+  const [rate, setRate] = useState(String(row.interest_rate ?? ''))
+  const [months, setMonths] = useState(String(row.start_date && row.maturity_date ? Math.max(1, Math.round((Date.parse(row.maturity_date) - Date.parse(row.start_date)) / (30.44 * 864e5))) : 12))
+  const [busy, setBusy] = useState(false)
+  async function save() {
+    const p = Number(principal), r = Number(rate), n = Number(months)
+    if (!(p > 0) || !(r > 0) || !(n > 0)) { toast('Enter the amount, rate and term.', 'error'); return }
+    const end = new Date(`${from}T00:00:00Z`); end.setUTCMonth(end.getUTCMonth() + n)
+    setBusy(true)
+    const { error } = await createClient().from('fixed_deposits').update({ principal: p, interest_rate: r, start_date: from, maturity_date: end.toISOString().slice(0, 10), maturity_amt: null }).eq('id', row.id)
+    setBusy(false)
+    if (error) { toast(error.message, 'error'); return }
+    toast(`Renewed until ${fmtDate(end.toISOString().slice(0, 10))}`); onSaved()
+  }
+  const field = (label: string, v: string, set: (x: string) => void) => (
+    <label className="block"><span className="block text-[12px] font-semibold mb-1" style={{ color: 'var(--text2)' }}>{label}</span>
+      <input inputMode="decimal" value={v} onChange={e => set(e.target.value.replace(/[^0-9.]/g, ''))} className="wl-input w-full" style={{ height: 44 }} /></label>
+  )
+  return (
+    <Sheet title={`Renew ${row.name ?? 'the FD'}`} onClose={onClose}>
+      <p className="text-[12.5px]" style={{ color: 'var(--text3)' }}>From {fmtDate(from)}. If you took some money out, lower the amount.</p>
+      {field('Amount', principal, setPrincipal)}
+      <div className="grid grid-cols-2 gap-2.5">{field('Rate (% a year)', rate, setRate)}{field('Term (months)', months, setMonths)}</div>
+      <button onClick={save} disabled={busy} className="wl-btn wl-btn-primary justify-center disabled:opacity-60" style={{ height: 44 }}>{busy ? 'Saving…' : 'Renew'}</button>
+    </Sheet>
+  )
+}
+
+function PaidOutSheet({ row, name, onClose, onSaved }: { row: any; name: string; onClose: () => void; onSaved: () => void }) {
+  const [busy, setBusy] = useState(false)
+  async function go() {
+    setBusy(true)
+    const { error } = await createClient().from('fixed_deposits').update({ is_active: false }).eq('id', row.id)
+    setBusy(false)
+    if (error) { toast(error.message, 'error'); return }
+    toast(`${name} closed`); onSaved()
+  }
+  return (
+    <Sheet title={`Close ${name}?`} onClose={onClose}>
+      <p className="text-[13px]" style={{ color: 'var(--text2)' }}>It leaves your investments. The money now counts in your bank balance once that credit is in your transactions, so it isn’t counted twice.</p>
+      <div className="flex gap-2"><button onClick={onClose} className="wl-btn flex-1 justify-center" style={{ height: 44 }}>Cancel</button><button onClick={go} disabled={busy} className="wl-btn wl-btn-primary flex-1 justify-center disabled:opacity-60" style={{ height: 44 }}>{busy ? 'Closing…' : 'Close it'}</button></div>
     </Sheet>
   )
 }

@@ -191,6 +191,38 @@ export default function LoansClient({ loans, pendingEmis = [], pendingDrafts = [
 
       {filtered.length > 0 && <LoanNeedsPanel className="max-md:order-5" loans={filtered} pendingEmis={pendingEmis} pendingDrafts={pendingDrafts} loanTxns={loanTxns} today={today} />}
 
+      {/* With two or more loans: the order to put any extra money in (dearest
+          first), each with the date it ends at its EMI. The debt-free date and the
+          prepay saving are above, so they aren't repeated here. */}
+      {filtered.filter(l => Number(l.outstanding_amt) > 0).length > 1 && (() => {
+        const order = [...filtered].filter(l => Number(l.outstanding_amt) > 0)
+          .map(l => ({ l, rate: Number(l.interest_rate || 0), end: payoff(Number(l.outstanding_amt), Number(l.interest_rate || 0), Number(l.emi_amount)) }))
+          .sort((a, b) => b.rate - a.rate)
+        const endOf = (months: number) => { const d = new Date(); d.setMonth(d.getMonth() + months); return d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) }
+        return (
+          <section className="wl-card max-md:order-6 px-4 md:px-5 py-4 md:py-[18px]">
+            <div className="flex items-baseline justify-between gap-2">
+              <h2 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Got extra? Clear them in this order</h2>
+              <span className="text-[11.5px]" style={{ color: 'var(--text4)' }}>Dearest first</span>
+            </div>
+            <ol className="mt-2.5 flex flex-col">
+              {order.map(({ l, rate, end }, i) => (
+                <li key={l.id} style={{ borderTop: i ? '1px solid var(--track)' : undefined }}>
+                  <Link href={`/dashboard/loans/detail/${l.id}`} className="flex items-center gap-3 py-2.5 hover:opacity-90">
+                    <span className="w-6 h-6 rounded-full flex items-center justify-center text-[12px] font-bold flex-shrink-0" style={{ background: i === 0 ? 'var(--accent)' : 'var(--bg2)', color: i === 0 ? '#fff' : 'var(--text2)' }}>{i + 1}</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-[13.5px] font-semibold truncate" style={{ color: 'var(--text)' }}>{l.name}</span>
+                      <span className="block text-[11.5px]" style={{ color: 'var(--text3)' }}>{rate}% · {fmt(Number(l.outstanding_amt), l.currency === 'AED' ? 'AED ' : '₹')} left · {end ? `ends ${endOf(end.months)}` : 'EMI doesn’t cover the interest'}</span>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ol>
+            <p className="text-[11.5px] mt-1.5 leading-snug" style={{ color: 'var(--text4)' }}>Each extra rupee on the dearest loan saves the most interest. Keep paying every EMI; put the extra on number 1 until it’s gone, then on number 2.{order.some(x => catOf(x.l).type === 'home_loan') ? ' A home loan can cost less than its rate shows if you claim its interest under 24(b).' : ''}</p>
+          </section>
+        )
+      })()}
+
       {/* Active loans: one card each — tap a card to open its payoff plan */}
       <section className="max-md:order-7 flex flex-col gap-2.5 md:gap-3">
         <div className="flex items-baseline justify-between gap-2 px-0.5">

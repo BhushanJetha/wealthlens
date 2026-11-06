@@ -11,17 +11,19 @@ export default async function HoldingPage({ params }: { params: { type: string; 
   const supabase = createClient()
   const user = await getSessionUser(supabase)
   const uid = user!.id
-  const [rowRes, peersRes, txnRes] = await Promise.all([
+  const [rowRes, peersRes, txnRes, accRes] = await Promise.all([
     supabase.from(type).select('*').eq('user_id', uid).eq('id', params.id).maybeSingle(),
     supabase.from(type).select('*').eq('user_id', uid),
     meta.asset
       ? supabase.from('investment_transactions').select('*').eq('user_id', uid).eq('asset_id', params.id).order('txn_date', { ascending: true })
       : Promise.resolve({ data: [] as any[] }),
+    // Where the money from a sale can land
+    supabase.from('accounts').select('id,name,currency,account_type').eq('user_id', uid).eq('is_active', true),
   ])
   const row = rowRes.data
   if (!row) return notFound()
   // Share of what you hold of this kind, in this currency
   const peers = (peersRes.data ?? []).filter((r: any) => (r.currency === 'AED') === (row.currency === 'AED') && r.is_active !== false)
   const kindTotal = peers.reduce((s: number, r: any) => s + holdingValue[meta.key](r), 0)
-  return <HoldingClient type={type} row={row} txns={txnRes.data ?? []} kindTotal={kindTotal} />
+  return <HoldingClient type={type} row={row} txns={txnRes.data ?? []} kindTotal={kindTotal} accounts={(accRes.data ?? []).filter((a: any) => a.account_type !== 'credit_card')} />
 }

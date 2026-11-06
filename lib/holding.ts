@@ -58,11 +58,19 @@ const monthsBetween = (a: string, b: string) => Math.max(0, Math.round((ms(b) - 
 export interface Lot { id: string | null; date: string; kind: 'SIP' | 'Lump sum' | 'Opening' | 'Sold' | 'Dividend' | 'Other'; units: number | null; price: number | null; amount: number; raw: any }
 export interface Maturity { date: string | null; amount: number | null; rate: number | null; monthsLeft: number | null }
 export interface Tax { kind: 'equity' | 'debt' | 'gold'; longGain: number; shortGain: number; tax: number | null; note: string }
+// A sale, matched first-in-first-out against what was bought (the Indian rule)
+export interface Sale { id: string | null; date: string; units: number; proceeds: number; cost: number; gain: number; longGain: number; shortGain: number; costKnown: boolean }
+// What's still held from each purchase, after the sales
+export interface OpenLot { date: string; units: number; unitCost: number }
+export type GainKind = Tax['kind']
+export const gainKindOf = (r: any): GainKind => isGold(r) ? 'gold' : isDebt(r) ? 'debt' : 'equity'
+export const longAfterOf = (k: GainKind) => (k === 'equity' ? 12 : 24)
 export interface HoldingModel {
   type: HType; name: string; sub: string; currency: Cur
   value: number; cost: number; gain: number; gainPct: number | null; xirr: number | null
   units: number | null; avg: number | null; price: number | null; since: string | null
   facts: [string, string][]; lots: Lot[]; maturity: Maturity | null; tax: Tax | null
+  sales: Sale[]; open: OpenLot[]; gainKind: GainKind | null
   rate: number; sip: { amount: number; day: number | null } | null
   chart: { kind: 'nav'; code: number | null } | { kind: 'price'; symbol: string } | null
   share?: number
@@ -107,13 +115,42 @@ export function holdingModel(type: HType, r: any, txns: any[], today: string, op
     const sold = lots.filter(l => l.kind === 'Sold').reduce((s, l) => s + (l.units ?? 0), 0)
     const opening = unitsNow - bought + sold
     if (opening > 0.001) {
+      // What the opening units cost: what's left in, plus the cost of what was
+      // sold (kept on each sale), minus the recorded purchases. A sale from an
+      // old import has no cost kept; then the average price stands in.
       const spent = lots.filter(l => l.kind === 'SIP' || l.kind === 'Lump sum').reduce((s, l) => s + l.amount, 0)
-      const amount = Math.max(0, cost - spent)
+      const sales = lots.filter(l => l.kind === 'Sold')
+      const known = sales.every(l => l.raw?.cost_amount != null)
+      const amount = known ? Math.max(0, cost + sales.reduce((s2, l) => s2 + (Number(l.raw?.cost_amount) || 0), 0) - spent) : opening * (avg ?? 0)
       const date = String(r.purchase_date ?? r.created_at ?? lots[0]?.date ?? today).slice(0, 10)
       lots.unshift({ id: null, date: lots[0] && lots[0].date < date ? lots[0].date : date, kind: 'Opening', units: opening, price: amount > 0 ? amount / opening : null, amount, raw: null })
     }
   }
   const start = String(r.start_date ?? r.purchase_date ?? lots[0]?.date ?? r.created_at ?? '').slice(0, 10) || null
+
+  // First in, first out: each sale uses up the oldest units still held
+  const gainKind = unitsNow != null ? gainKindOf(r) : null
+  const open: OpenLot[] = [], sales: Sale[] = []
+  for (const l of [...lots].sort((a, b) => a.date.localeCompare(b.date) || (a.kind === 'Opening' ? -1 : 0))) {
+    if ((l.kind === 'SIP' || l.kind === 'Lump sum' || l.kind === 'Opening') && l.units && l.units > 0)
+      open.push({ date: l.date, units: l.units, unitCost: l.price ?? (l.amount > 0 ? l.amount / l.units : avg ?? 0) })
+    else if (l.kind === 'Sold' && l.units && l.units > 0 && gainKind) {
+      let left = l.units, fifoCost = 0, longCost = 0, longUnits = 0
+      while (left > 1e-9 && open.length) {
+        const o = open[0], take = Math.min(left, o.units)
+        fifoCost += take * o.unitCost
+        if (monthsBetween(o.date, l.date) >= longAfterOf(gainKind)) { longCost += take * o.unitCost; longUnits += take }
+        o.units -= take; left -= take
+        if (o.units <= 1e-9) open.shift()
+      }
+      const costKnown = l.raw?.cost_amount != null
+      const saleCost = costKnown ? Number(l.raw.cost_amount) : fifoCost
+      const perUnit = l.amount / l.units, longShare = l.units > 0 ? longUnits / l.units : 0
+      const longGain = longUnits * perUnit - (fifoCost > 0 ? saleCost * (longCost / fifoCost) : 0)
+      const gainAll = l.amount - saleCost
+      sales.push({ id: l.id, date: l.date, units: l.units, proceeds: l.amount, cost: saleCost, gain: gainAll, longGain: longShare > 0 ? longGain : 0, shortGain: gainAll - (longShare > 0 ? longGain : 0), costKnown })
+    }
+  }
 
   // Yearly return: from the dated money in and out, valued today
   let x: number | null = null
@@ -179,13 +216,13 @@ export function holdingModel(type: HType, r: any, txns: any[], today: string, op
 
   // Tax if sold today (India rules, from each purchase's age; an estimate)
   if (cur === 'INR' && (type === 'mutual_funds' || type === 'stocks' || type === 'etf_investments') && price && unitsNow) {
-    const kind: Tax['kind'] = isGold(r) ? 'gold' : isDebt(r) ? 'debt' : 'equity'
-    const longAfter = kind === 'equity' ? 12 : 24
+    const kind = gainKindOf(r), longAfter = longAfterOf(kind)
+    // From the units still held (after past sales), each with its own age
     let longGain = 0, shortGain = 0, units = 0
-    for (const l of lots.filter(l => l.units && l.units > 0 && l.price && l.kind !== 'Sold' && l.kind !== 'Dividend')) {
-      const g = l.units! * (price - l.price!)
-      if (monthsBetween(l.date, today) >= longAfter) longGain += g; else shortGain += g
-      units += l.units!
+    for (const o of open) {
+      const g = o.units * (price - o.unitCost)
+      if (monthsBetween(o.date, today) >= longAfter) longGain += g; else shortGain += g
+      units += o.units
     }
     if (units === 0 && avg) { if (start && monthsBetween(start, today) >= longAfter) longGain = gain; else shortGain = gain }
     const t = kind === 'equity' ? Math.max(0, longGain - 125000) * 0.125 + Math.max(0, shortGain) * 0.2
@@ -197,8 +234,25 @@ export function holdingModel(type: HType, r: any, txns: any[], today: string, op
   }
 
   return { type, name: holdingName(type, r), sub, currency: cur, value, cost, gain, gainPct, xirr: x, units: unitsNow, avg, price, since: start,
-    facts, lots: lots.reverse(), maturity, tax, rate, sip, chart }
+    facts, lots: lots.reverse(), maturity, tax, rate, sip, chart, sales, open, gainKind }
 }
+
+// Selling `units` now: what they cost (first in, first out) and how much of
+// that is long-term, from the units still held
+export function saleCost(m: Pick<HoldingModel, 'open' | 'gainKind'>, units: number, date: string) {
+  let left = units, cost = 0, longUnits = 0
+  for (const o of m.open) {
+    if (left <= 1e-9) break
+    const take = Math.min(left, o.units)
+    cost += take * o.unitCost
+    if (m.gainKind && monthsBetween(o.date, date) >= longAfterOf(m.gainKind)) longUnits += take
+    left -= take
+  }
+  return { cost, longUnits, short: Math.max(0, left) }
+}
+
+// India's financial year (April to March) a date falls in, as "FY 2026–27" (as lib/tax labels it)
+export const fyLabel = (d: string) => { const y = Number(d.slice(0, 4)), m = Number(d.slice(5, 7)), s = m >= 4 ? y : y - 1; return `FY ${s}–${String(s + 1).slice(2)}` }
 
 // Value in N years, with a monthly SIP (or RD), at a yearly rate
 export function projectValue(now: number, monthly: number, rate: number, years: number) {

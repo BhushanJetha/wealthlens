@@ -26,6 +26,8 @@ export const MOVEMENT_CATS = new Set([
   'Converted to EMI',
   // Splitting with friends: their share of what you paid, and settling up
   'Lent to friends', 'Repaid by friend', 'Paid back to friend',
+  // Money back from selling an investment: your own money coming home, not income
+  'Investment Sold',
 ])
 
 // Card bill payments settle purchases already counted on the card, so they're a
@@ -130,7 +132,7 @@ export const isSpending = (t: any) => { const g = spendGroup(t); return g === 'l
 // Income-typed rows that are really moves (money received from yourself,
 // borrowing, or the old auto "NRO" copies)
 const NOT_INCOME = new Set(['NRE Received', 'Received from NRE', 'Received from UAE', 'NRI Transfer', 'Inward Remittance',
-  'Loan Taken', 'Loan Received', 'UAE Income (NRO)', 'Self Transfer', 'NRE to NRO', 'NRO Settled', 'Repaid by friend'])
+  'Loan Taken', 'Loan Received', 'UAE Income (NRO)', 'Self Transfer', 'NRE to NRO', 'NRO Settled', 'Repaid by friend', 'Investment Sold'])
 export const INDIA_INCOME = 'Received from UAE'
 
 // Income in a view. Remittances landing in India (rows made by prepareMoney)

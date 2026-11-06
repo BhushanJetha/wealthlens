@@ -8,5 +8,6 @@ export default async function MutualFundsPage() {
   const { data: funds } = await supabase
     .from('mutual_funds').select('*').eq('user_id', user.id)
     .order('invested_amount', { ascending: false })
-  return <MutualFundsClient funds={funds ?? []} />
+  // A fund sold in full leaves the list; its sales stay in the capital gains report
+  return <MutualFundsClient funds={(funds ?? []).filter((f: any) => f.units == null || Number(f.units) > 0.0005)} />
 }

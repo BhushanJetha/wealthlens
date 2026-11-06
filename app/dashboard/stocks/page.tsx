@@ -10,5 +10,6 @@ export default async function StocksDashboardPage() {
     .select('*')
     .eq('user_id', user.id)
     .order('avg_buy_price', { ascending: false })
-  return <StocksDashboardClient stocks={stocks ?? []} />
+  // A share sold in full leaves the list; its sales stay in the capital gains report
+  return <StocksDashboardClient stocks={(stocks ?? []).filter((s: any) => s.quantity == null || Number(s.quantity) > 0)} />
 }

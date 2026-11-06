@@ -131,7 +131,7 @@ export default function LoanDetailClient({ loan, txns, plan = [] }: { loan: any;
 
   // ── Ways to finish sooner (plain suggestions with real numbers) ────────────
   const ideas = useMemo(() => {
-    const out: { title: string; body: string }[] = []
+    const out: { title: string; body: string; href?: string; link?: string }[] = []
     const rate = Number(loan.interest_rate) || 0
     if (!(outstandingBal > 0 && emiVal > 0 && Number.isFinite(baseSim.months))) return out
     const extra = Math.max(loan.currency === 'AED' ? 100 : 1000, Math.round(emiVal * 0.1 / 100) * 100)
@@ -146,8 +146,19 @@ export default function LoanDetailClient({ loan, txns, plan = [] }: { loan: any;
       if (Number.isFinite(c.months) && baseSim.interest - c.interest > 0)
         out.push({ title: 'Ask for a lower rate', body: `A 0.5% cut (${rate}% → ${(rate - 0.5).toFixed(2)}%) at the same EMI saves about ${money(baseSim.interest - c.interest)}. Ask ${loan.bank_name || 'your bank'} for a rate reset, or compare a balance transfer.` })
     }
+    // Prepay or invest: a prepayment earns the loan's rate, for sure; investing
+    // the same money might earn more after tax, but isn't guaranteed. A home
+    // loan's interest deduction (old regime, 30% slab) makes it cheaper.
+    {
+      const after = isHome && loan.currency !== 'AED' ? Math.round(rate * (1 - 0.312) * 10) / 10 : rate
+      const invest = loan.currency === 'AED' ? 7 : 10.5          // a balanced fund, after tax, long run (estimate)
+      const verdict = after >= invest - 0.5 ? 'Prepay: it beats what investing usually earns, with no risk.'
+        : after <= invest - 3 ? 'Invest the extra: the loan is cheap, and long-term investing usually earns more.'
+        : 'Split it: put some on the loan and some in a SIP. Both are close.'
+      out.push({ title: 'Prepay or invest?', body: `This loan costs ${rate}% a year${after !== rate ? ` (about ${after}% after the home-loan tax deduction)` : ''}. A balanced fund has usually earned about ${invest}% after tax, but isn't guaranteed. ${verdict}` })
+    }
     if (isHome && loan.currency !== 'AED')
-      out.push({ title: 'Claim the tax benefit', body: `Under the old tax regime, interest on a self-occupied home loan is deductible up to ₹2L a year (Section 24b) and principal up to ₹1.5L under 80C. This year's interest is roughly ${money(outstandingBal * rate / 100)}.` })
+      out.push({ href: '/dashboard/tax', link: 'See it in your Tax planner', title: 'Claim the tax benefit', body: `Under the old tax regime, interest on a self-occupied home loan is deductible up to ₹2L a year (Section 24b) and principal up to ₹1.5L under 80C. This year's interest is roughly ${money(outstandingBal * rate / 100)}.` })
     return out
   }, [loan, outstandingBal, emiVal, baseSim])
   const emiDiffers = Number(loan.emi_saved) > 0 && Math.abs(Number(loan.emi_saved) - Number(loan.emi_amount)) >= 1
@@ -409,6 +420,7 @@ export default function LoanDetailClient({ loan, txns, plan = [] }: { loan: any;
                 <div className="min-w-0">
                   <div className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{x.title}</div>
                   <div className="text-[12.5px] leading-snug mt-0.5" style={{ color: 'var(--text3)' }}>{x.body}</div>
+                  {x.href && <Link href={x.href} className="text-[12px] font-semibold mt-1 inline-block" style={{ color: 'var(--accent2)' }}>{x.link} →</Link>}
                 </div>
               </div>
             ))}
