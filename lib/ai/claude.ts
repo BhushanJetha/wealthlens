@@ -30,21 +30,31 @@ export async function askClaude(opts: {
   maxTokens?: number
   // JSON schema for structured output (the reply text is then valid JSON)
   schema?: Record<string, unknown>
+  // Let Claude search the web (market news, fund facts); never needed for your own numbers
+  webSearch?: number
 }): Promise<string> {
-  const res = await getClient().beta.messages.create({
-    model: MODEL,
-    max_tokens: opts.maxTokens ?? 8000,
-    // A declined request is re-run on Anthropic's recommended fallback model
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
-    output_config: {
-      effort: opts.effort ?? 'medium',
-      ...(opts.schema ? { format: { type: 'json_schema' as const, schema: opts.schema } } : {}),
-    },
-    system: opts.system,
-    messages: opts.messages,
-  })
-  if (res.stop_reason === 'refusal') throw new AiRefused()
+  const messages = [...opts.messages]
+  let res: Anthropic.Beta.BetaMessage | null = null
+  // A long search can pause; resend the turn so the server carries on
+  for (let i = 0; i < 4; i++) {
+    res = await getClient().beta.messages.create({
+      model: MODEL,
+      max_tokens: opts.maxTokens ?? 8000,
+      // A declined request is re-run on Anthropic's recommended fallback model
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default',
+      output_config: {
+        effort: opts.effort ?? 'medium',
+        ...(opts.schema ? { format: { type: 'json_schema' as const, schema: opts.schema } } : {}),
+      },
+      ...(opts.webSearch ? { tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: opts.webSearch }] as any } : {}),
+      system: opts.system,
+      messages,
+    })
+    if (res.stop_reason !== 'pause_turn') break
+    messages.push({ role: 'assistant', content: res.content as any })
+  }
+  if (!res || res.stop_reason === 'refusal') throw new AiRefused()
   return res.content.flatMap(b => (b.type === 'text' ? [b.text] : [])).join('').trim()
 }
 

@@ -5,6 +5,7 @@ import { MODEL, aiConfigured, aiErrorResponse } from '@/lib/ai/claude'
 import { CLS_LABEL } from '@/lib/portfolio/advice'
 import type { ReviewData } from '@/lib/portfolio/review'
 import type { Cls } from '@/lib/portfolio/holdings'
+import { AI_OFF, Vault, aiSettingsOf, mask, namesToHide } from '@/lib/ai/privacy'
 
 const SYSTEM = `You are a careful portfolio analyst for an Indian living in the UAE (an NRI) with money in both India (₹) and the UAE (AED).
 You check a rules-based portfolio review against TODAY's market, using web search — never from memory.
@@ -13,11 +14,13 @@ Be plain and specific. If the market supports a suggestion, say so; if it argues
 
 // Adds an AI market view to a saved review: Claude searches today's news
 // (Indian valuations, RBI rates, gold, the rupee, global markets) and checks
-// the review's suggestions against it, with sources. Only with a real key.
+// the review's suggestions against it, with sources. Only with a real key and
+// AI switched on. It's sent the mix as percentages and fund names, never an amount.
 export async function POST(req: NextRequest) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Not signed in' }, { status: 401 })
+  if (!aiSettingsOf(user.user_metadata).on) return NextResponse.json(AI_OFF, { status: 403 })
   if (!aiConfigured()) return NextResponse.json({ error: 'AI service not configured', details: 'Add a real ANTHROPIC_API_KEY to .env.local and restart the dev server.' }, { status: 503 })
   const { id } = await req.json().catch(() => ({}))
   const { data: row } = await supabase.from('portfolio_reviews').select('id,data').eq('user_id', user.id).eq('id', id).maybeSingle()
@@ -29,10 +32,15 @@ export async function POST(req: NextRequest) {
     `Review: ${r.label}. Profile: ${r.mix.profile ?? 'not set'}.`,
     `Mix now vs target: ${(['equity', 'debt', 'gold', 'cash'] as Cls[]).map(c => `${CLS_LABEL[c]} ${Math.round(r.mix.now[c])}% (target ${r.mix.target[c]}%)`).join(', ')}.`,
     `Split: ${Math.round(r.currency.aedPct)}% in AED, ${Math.round(r.currency.inrPct)}% in ₹.`,
-    `Suggested additions: ${r.adds.map(a => `${a.title} (${a.amount.toFixed(0)} ${a.currency}; examples: ${a.examples.slice(0, 3).map(e => e.name).join(', ')})`).join('; ') || 'none'}.`,
+    `Suggested additions: ${r.adds.map(a => `${a.title} (in ${a.currency === 'AED' ? 'AED' : '₹'}; examples:${a.examples.slice(0, 3).map(e => e.name).join(', ')})`).join('; ') || 'none'}.`,
     `Holdings flagged: ${r.holdings.filter(h => h.verdict !== 'keep').slice(0, 12).map(h => `${h.name} — ${h.verdict}`).join('; ') || 'none'}.`,
   ].join('\n')
-  const ask = `${brief}
+  const [{ data: profile }, { data: members }] = await Promise.all([
+    supabase.from('profiles').select('full_name').eq('id', user.id).maybeSingle(),
+    supabase.from('family_members').select('name').eq('user_id', user.id),
+  ])
+  const safe = mask(brief, new Vault(), namesToHide({ fullName: profile?.full_name, members: members ?? [] }))
+  const ask = `${safe}
 
 Today is ${today}. Search the web for the current state of: Indian equity valuations (e.g. Nifty 50 P/E vs its history), the RBI's interest-rate stance and what it means for debt funds and FDs, the gold price trend, the rupee against the dirham/dollar, and global equity markets.
 Then reply EXACTLY in this format and nothing else:

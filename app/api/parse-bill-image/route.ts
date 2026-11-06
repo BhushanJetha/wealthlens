@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { askClaude, aiErrorResponse } from '@/lib/ai/claude'
+import { PHOTOS_OFF, aiSettingsOf } from '@/lib/ai/privacy'
 
+// A photo can't be masked (it shows the amount), so this needs its own switch
+// in Settings › AI & privacy as well as AI being on.
 // Image types Claude can read; HEIC (iPhone default) must be saved as JPG first
 const SUPPORTED = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'] as const
 type Supported = (typeof SUPPORTED)[number]
@@ -25,6 +28,7 @@ export async function POST(req: Request) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!aiSettingsOf(user.user_metadata).photos) return NextResponse.json(PHOTOS_OFF, { status: 403 })
 
   const formData = await req.formData()
   const file = formData.get('file') as File | null

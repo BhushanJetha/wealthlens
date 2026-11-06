@@ -118,7 +118,7 @@ export default function PortfolioReviewReport({ review, aiReady }: { review: any
             </>) : aiReady ? (<>
               <p className="text-[12.5px] mt-2 leading-snug" style={{ color: 'var(--text3)' }}>Ask AI to read today’s market news (interest rates, valuations, the rupee) and check these suggestions against it, with sources.</p>
               <button onClick={marketView} disabled={busy} className="wl-btn wl-btn-primary mt-2.5 disabled:opacity-60" style={{ height: 36 }}><Globe2 size={14} />{busy ? 'Reading the news…' : 'Add a market view'}</button>
-            </>) : <p className="text-[12.5px] mt-2 leading-snug" style={{ color: 'var(--text3)' }}>Add a real ANTHROPIC_API_KEY to .env.local and restart, and each review can include an AI market view of today’s news, with sources. The rules above work without it.</p>}
+            </>) : <p className="text-[12.5px] mt-2 leading-snug" style={{ color: 'var(--text3)' }}>Turn on AI in <a href="/dashboard/settings/ai" className="underline" style={{ color: 'var(--accent2)' }}>Settings › AI &amp; privacy</a> (it needs a Claude key) and each review can include an AI market view of today’s news, with sources. Only your mix in percentages and fund names are sent. The rules above work without it.</p>}
             {error && <p className="text-[12px] mt-2" style={{ color: '#B4231A' }}>{error}</p>}
           </Panel>
 

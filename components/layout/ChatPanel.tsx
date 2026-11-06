@@ -1,9 +1,11 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
+import Link from 'next/link'
 import { X, ArrowUp } from 'lucide-react'
 import { useUiStore } from '@/store/uiStore'
 
-interface Message { role: 'user' | 'assistant'; content: string; ts: number }
+// note: an app message (greeting, error), never sent back as history
+interface Message { role: 'user' | 'assistant'; content: string; ts: number; note?: boolean; off?: boolean }
 
 const SUGGESTIONS = [
   'Why did my spending rise?',
@@ -19,7 +21,7 @@ const SUGGESTIONS = [
 export default function ChatPanel() {
   const { advisorOpen, advisorPrompt, closeAdvisor, clearAdvisorPrompt } = useUiStore()
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'assistant', content: 'Hi — I can see your full portfolio, read-only. Ask me anything about your money.', ts: Date.now() }
+    { role: 'assistant', content: 'Hi — ask me anything about your money. I see your numbers as shares and trends; names and amounts are hidden before anything is sent.', ts: Date.now(), note: true }
   ])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -45,19 +47,19 @@ export default function ChatPanel() {
       const res = await fetch('/api/ai-advisor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: msg, history: messages.slice(-10) })
+        body: JSON.stringify({ message: msg, history: messages.filter(m => !m.note).slice(-10).map(({ role, content }) => ({ role, content })) })
       })
       if (!res.ok) {
         const errText = await res.text().catch(() => '')
         let errMsg = 'Something went wrong. Please try again.'
         try { const j = JSON.parse(errText); errMsg = j.details || j.error || errMsg } catch { /* ignore */ }
-        setMessages(prev => [...prev, { role: 'assistant', content: errMsg, ts: Date.now() }])
+        setMessages(prev => [...prev, { role: 'assistant', content: errMsg, ts: Date.now(), note: true, off: res.status === 403 }])
       } else {
         const data = await res.json()
         setMessages(prev => [...prev, { role: 'assistant', content: data.response ?? 'No response received.', ts: Date.now() }])
       }
     } catch {
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Network error — please check your connection and try again.', ts: Date.now() }])
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Network error — please check your connection and try again.', ts: Date.now(), note: true }])
     }
     setLoading(false)
   }
@@ -84,6 +86,7 @@ export default function ChatPanel() {
               ? { alignSelf: 'flex-end', background: 'var(--accent)', color: '#fff', borderRadius: '12px 12px 3px 12px' }
               : { background: '#F1F5F9', color: 'var(--text)', borderRadius: '12px 12px 12px 3px' }}>
             {m.content}
+            {m.off && <Link href="/dashboard/settings/ai" onClick={closeAdvisor} className="block mt-1.5 font-semibold underline" style={{ color: 'var(--accent2)' }}>Open AI &amp; privacy</Link>}
           </div>
         ))}
         {loading && (
@@ -114,7 +117,7 @@ export default function ChatPanel() {
             <ArrowUp size={16} />
           </button>
         </div>
-        <p className="text-[10.5px] text-center mt-0.5" style={{ color: 'var(--text4)' }}>Read-only access · educational guidance, not regulated advice</p>
+        <p className="text-[10.5px] text-center mt-0.5" style={{ color: 'var(--text4)' }}>Names &amp; amounts hidden before sending · <Link href="/dashboard/settings/ai" onClick={closeAdvisor} className="underline">AI &amp; privacy</Link> · not regulated advice</p>
       </div>
     </aside>
   )

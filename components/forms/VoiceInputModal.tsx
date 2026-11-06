@@ -65,7 +65,7 @@ export function VoiceInputModal({ onClose, investmentType }: Props) {
         body: JSON.stringify({ text: transcript, investmentType }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Parsing failed')
+      if (!res.ok) throw new Error(data.details ?? data.error ?? 'Parsing failed')
       setParsed(data.investment ?? {})
       setStatus('review')
     } catch (e: any) {

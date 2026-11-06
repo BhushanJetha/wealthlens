@@ -1,56 +1,66 @@
 import { NextResponse } from 'next/server'
-import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
+import { askClaude, aiErrorResponse } from '@/lib/ai/claude'
+import { AI_OFF, Vault, aiSettingsOf, mask, namesToHide, numberBack } from '@/lib/ai/privacy'
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+// Numbers go to Claude as placeholders like [A1]; the real amount, units, NAV
+// and value are put back here. Interest rates (7.1%) and dates are kept.
+const NUMS = ['amount', 'units', 'nav', 'current_value'] as const
+const field = { type: ['string', 'null'] }
+const SCHEMA = {
+  type: 'object',
+  properties: {
+    type: { type: 'string' },
+    name: { type: 'string' },
+    amount: { ...field, description: 'placeholder like [A1], or null' },
+    units: { ...field, description: 'placeholder, or null' },
+    nav: { ...field, description: 'placeholder, or null' },
+    current_value: { ...field, description: 'placeholder, or null' },
+    purchase_date: { ...field, description: 'YYYY-MM-DD or null' },
+    maturity_date: { ...field, description: 'YYYY-MM-DD or null' },
+    interest_rate: { type: ['number', 'null'] },
+    currency: { type: 'string', enum: ['INR', 'AED'] },
+    notes: { type: 'string' },
+  },
+  required: ['type', 'name', 'amount', 'units', 'nav', 'current_value', 'purchase_date', 'maturity_date', 'interest_rate', 'currency', 'notes'],
+  additionalProperties: false,
+}
 
 export async function POST(req: Request) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!aiSettingsOf(user.user_metadata).on) return NextResponse.json(AI_OFF, { status: 403 })
 
   const { text, investmentType } = await req.json()
   if (!text) return NextResponse.json({ error: 'No text provided' }, { status: 400 })
 
-  const systemPrompt = `You are a financial data extraction assistant. The user will describe an investment verbally. Extract structured investment data.
-
-Return ONLY valid JSON (no markdown):
-{
-  "type": "${investmentType ?? 'mutual_fund'}",
-  "name": "investment name",
-  "amount": 100000,
-  "units": null,
-  "nav": null,
-  "purchase_date": "YYYY-MM-DD or null",
-  "maturity_date": "YYYY-MM-DD or null",
-  "interest_rate": null,
-  "current_value": null,
-  "currency": "INR or AED",
-  "notes": "any extra info"
-}
-
-Rules:
-- Infer fields from natural language
-- Use null for fields not mentioned
-- Today's date if purchase date not mentioned: ${new Date().toISOString().slice(0, 10)}
-- Positive amounts only`
+  const [{ data: profile }, { data: members }] = await Promise.all([
+    supabase.from('profiles').select('full_name').eq('id', user.id).maybeSingle(),
+    supabase.from('family_members').select('name').eq('user_id', user.id),
+  ])
+  const vault = new Vault()
+  const said = mask(text, vault, namesToHide({ fullName: profile?.full_name, members: members ?? [] }), { allNumbers: true })
 
   try {
-    const message = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 512,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: text }],
+    const raw = await askClaude({
+      effort: 'low',
+      maxTokens: 4000,
+      schema: SCHEMA,
+      system: `The user describes an investment out loud. Extract it.
+- type: "${investmentType ?? 'mutual_fund'}".
+- Numbers are hidden as placeholders like [A1]. For amount, units, nav and current_value copy the right placeholder exactly, or null; never guess a value.
+- interest_rate: the percentage as a number, or null. currency: AED for dirhams, INR for rupees; INR if nothing is said.
+- purchase_date: today (${new Date().toISOString().slice(0, 10)}) if not mentioned. Use null for anything else not mentioned.
+- *** is a hidden name; leave it out.`,
+      messages: [{ role: 'user', content: said }],
     })
-
-    const raw = (message.content[0] as any).text ?? ''
-    const jsonMatch = raw.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) throw new Error('Could not parse AI response')
-
-    const investment = JSON.parse(jsonMatch[0])
-
-    return NextResponse.json({ success: true, investment })
-  } catch (err: any) {
-    return NextResponse.json({ error: 'Failed to parse voice input', details: err.message }, { status: 500 })
+    const inv = JSON.parse(raw)
+    for (const k of NUMS) { const n = numberBack(inv[k], vault); inv[k] = n != null ? Math.abs(n) : null }
+    inv.name = vault.restore(inv.name ?? ''); inv.notes = vault.restore(inv.notes ?? '')
+    return NextResponse.json({ success: true, investment: inv })
+  } catch (err) {
+    const { body, status } = aiErrorResponse(err)
+    return NextResponse.json(body, { status })
   }
 }
