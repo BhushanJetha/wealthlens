@@ -5,6 +5,7 @@ import { prepareMoney, catOf, isSpend } from './money'
 import { monthMoney, addMonths } from './budgets'
 import { goalValue, goalPace, goalPlan, kindOf, tracksCash, fundingPlan, isRecurring, type Ctx, type Cur, type Kind, type GoalValue, type Plan } from './goals'
 import { recurringState, type RecurringState } from './recurringGoals'
+import { emergencyAdvice } from './emergency'
 
 // rec: set for a recurring goal (Diwali, premiums…) — this round's state
 export interface GoalItem { goal: any; kind: Kind; v: GoalValue; pace: number; plan: Plan; rec?: RecurringState }
@@ -80,5 +81,7 @@ export function buildGoals(d: {
     const now = monthMoney(prepared, thisMonth, c).income, usual = monthly[c].income
     if (usual > 0 && now > usual * 1.25) extra[c] = now - usual
   }
-  return { items, ctx, monthly, travel, cash, loans, extra }
+  // How big the emergency fund should be, from your spending (lib/emergency)
+  const emergency = { AED: emergencyAdvice(prepared, today, 'AED'), INR: emergencyAdvice(prepared, today, 'INR') }
+  return { items, ctx, monthly, travel, cash, loans, extra, emergency }
 }

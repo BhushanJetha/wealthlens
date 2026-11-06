@@ -1,6 +1,6 @@
 // Everything the Goals pages need, loaded once on the server: goals and what
 // funds them (linked investments, money added by hand, accounts with live
-// balances), plus 14 months of transactions for your monthly saving, travel
+// balances), plus 25 months of transactions for your monthly saving, the emergency-fund size, travel
 // spend, extra income and last Diwali's spending, and insurance policies (for
 // premium goals). Tables from later migrations come back empty.
 import { fetchAllRows } from './supabase/fetchAll'
@@ -13,7 +13,7 @@ export const INVESTMENT_TABLES = ['stocks', 'mutual_funds', 'fixed_deposits', 'r
 
 export async function loadGoalsData(supabase: any, uid: string) {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' })
-  const start = new Date(); start.setUTCMonth(start.getUTCMonth() - 14)
+  const start = new Date(); start.setUTCMonth(start.getUTCMonth() - 25)
   const fromDate = `${start.toISOString().slice(0, 7)}-01`
   const recent = new Date(); recent.setUTCMonth(recent.getUTCMonth() - 4)
   const { rate: fx } = await getAedInr()

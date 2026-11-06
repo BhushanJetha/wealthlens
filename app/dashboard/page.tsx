@@ -75,7 +75,7 @@ export default async function DashboardPage() {
   ])
   // Goal interests live in user_metadata — read fresh (the session copy is as of sign-in)
   const [[auto, [txns, loansRes, ledger, stocksRes, mfRes, fdRes, insRes, goalsRes, giRes, budgetsRes,
-    rdRes, npsRes, licRes, goldRes, bondRes, etfRes, ppfRes, profileRes, extras, snapsRes, eventsRes, friendsRes, splitsRes, friendTxnsRes, plansRes, [contribRes, skipsRes]]], { data: fresh }] = await Promise.all([
+    rdRes, npsRes, licRes, goldRes, bondRes, etfRes, ppfRes, profileRes, extras, snapsRes, eventsRes, friendsRes, splitsRes, friendTxnsRes, plansRes, [contribRes, skipsRes, billHeld]]], { data: fresh }] = await Promise.all([
     withAutomation(supabase, uid, today, load), supabase.auth.getUser(),
   ])
 
@@ -97,7 +97,7 @@ export default async function DashboardPage() {
   // Home shows a "history starts once…" note.
   const fx = ledger.fx
   const billSkips = (skipsRes.data ?? []).map((s: any) => s.key)
-  const bills = buildBills({ goals: goalsRes.data ?? [], contributions: contribRes.data ?? [], insurance: insRes.data ?? [], lic: licRes.data ?? [], accounts: ledger.accounts, skips: billSkips }, today)
+  const bills = buildBills({ goals: goalsRes.data ?? [], contributions: contribRes.data ?? [], insurance: insRes.data ?? [], lic: licRes.data ?? [], accounts: ledger.accounts, skips: billSkips, held: billHeld }, today)
   const uae = computeNetWorth(holdings, 'uae', fx)
   const india = computeNetWorth(holdings, 'india', fx)
   let historyReady = !isMissingTable(snapsRes.error)

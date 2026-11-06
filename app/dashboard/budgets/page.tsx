@@ -5,7 +5,7 @@ import { isMissingTable } from '@/lib/supabase/missingTable'
 import { activeAccountsWithLedger } from '@/lib/ledger'
 import { getAedInr } from '@/lib/fx'
 import type { Fund } from '@/lib/budgets'
-import { TAKEN_BACK, buildBills } from '@/lib/bigBills'
+import { TAKEN_BACK, buildBills, loadBillHeld } from '@/lib/bigBills'
 import { foundRegular, monthlyCommitted } from '@/lib/regular'
 import { declaredIncome } from '@/lib/incomePlans'
 import BudgetsClient from '@/components/dashboard/BudgetsClient'
@@ -27,7 +27,7 @@ export default async function BudgetsPage() {
   // (read as soon as the goals arrive, alongside everything else)
   const accountsP: Promise<any[]> = recP.then(r => !r.error && (r.data ?? []).some((g: any) => g.account_id)
     ? getAedInr().then(({ rate }) => activeAccountsWithLedger(supabase, uid, rate)).then(a => a.data ?? []) : [])
-  const [txns, budgetsRes, cardsRes, recRes, contribRes, accounts, repeatsRes, insRes, licRes, plansRes, skipsRes, fx] = await Promise.all([
+  const [txns, budgetsRes, cardsRes, recRes, contribRes, accounts, repeatsRes, insRes, licRes, plansRes, skipsRes, fx, billHeld] = await Promise.all([
     fetchAllRows((a, b) => supabase.from('transactions').select('*')
       .eq('user_id', uid).gte('txn_date', fromDate)
       .order('txn_date', { ascending: false }).order('id').range(a, b)),
@@ -42,11 +42,12 @@ export default async function BudgetsPage() {
     supabase.from('income_plans').select('*').eq('user_id', uid),
     supabase.from('big_bill_skips').select('key').eq('user_id', uid),
     getAedInr(),
+    loadBillHeld(supabase, uid),
   ])
   // What bills take each month, for the line at the top
   const answers = (skipsRes.data ?? []).map((s: any) => s.key)
   const repeats = repeatsRes.data ?? []
-  const bills = buildBills({ goals: recRes.data ?? [], contributions: contribRes.data ?? [], insurance: insRes.data ?? [], lic: licRes.data ?? [], accounts, skips: answers }, today)
+  const bills = buildBills({ goals: recRes.data ?? [], contributions: contribRes.data ?? [], insurance: insRes.data ?? [], lic: licRes.data ?? [], accounts, skips: answers, held: billHeld }, today)
   const found = foundRegular(txns, repeats, today, answers, bills)
   const committed = Object.fromEntries((['AED', 'INR'] as const).map(c => [c, { bills: monthlyCommitted(c, repeats, bills, found).total, income: declaredIncome(plansRes.data ?? [], c === 'AED' ? 'uae' : 'india', fx.rate, txns) }]))
 

@@ -6,7 +6,7 @@
 import { fundPlan } from './budgets'
 import { catOf, isSpend } from './money'
 import { nextDueDate } from './occasions'
-import { isRecurring, kindInfo, type Cur } from './goals'
+import { isRecurring, kindInfo, investmentValue, type Cur } from './goals'
 import { addMonthsTo, daysUntil, datesAhead, normName, POLICY_FREQ, rollForward, rollRecurring, setAside } from './recurringGoals'
 import { autoTag } from './recurring'
 import { fmtMoney } from './format'
@@ -30,14 +30,28 @@ export interface Bill {
   rise: { from: number; pct: number } | null
 }
 
-export interface BillsData { goals: any[]; contributions: any[]; insurance: any[]; lic: any[]; accounts: any[]; skips: string[] }
+// held: what investments linked to each pot are worth (heldByGoal), by goal id
+export interface BillsData { goals: any[]; contributions: any[]; insurance: any[]; lic: any[]; accounts: any[]; skips: string[]; held?: Record<string, number> }
 
-// What a pot holds: every set-aside and payment, plus a linked account's balance
-export function potOf(g: any, contributions: any[], accounts: any[]) {
+// What the investments linked to each goal are worth (its share of each), in the
+// goal's currency. An RD or FD you keep for a bill fills its pot this way.
+export function heldByGoal(goals: any[], links: any[], investments: Record<string, any[]>): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const l of links) {
+    const g = goals.find(x => x.id === l.goal_id), rec = (investments[l.investment_type] ?? []).find(r => r.id === l.investment_id)
+    if (!g || !rec || curOf(rec.currency) !== curOf(g.currency)) continue
+    out[g.id] = (out[g.id] ?? 0) + investmentValue(l.investment_type, rec) * (Number(l.allocation_pct ?? 100) / 100)
+  }
+  return out
+}
+
+// What a pot holds: every set-aside and payment, plus a linked account's
+// balance and linked investments
+export function potOf(g: any, contributions: any[], accounts: any[], held: Record<string, number> = {}) {
   const cur = curOf(g.currency)
   const mine = contributions.filter(c => c.goal_id === g.id)
   const acc = g.account_id ? accounts.find(a => a.id === g.account_id && a.currency === cur) : null
-  const saved = Math.max(0, mine.reduce((s, c) => s + (Number(c.amount) || 0), 0) + (acc ? Math.max(0, Number(acc.current_balance) || 0) : 0))
+  const saved = Math.max(0, mine.reduce((s, c) => s + (Number(c.amount) || 0), 0) + (acc ? Math.max(0, Number(acc.current_balance) || 0) : 0) + (held[g.id] ?? 0))
   const last = mine.filter(c => Number(c.amount) > 0).map(c => String(c.contrib_date).slice(0, 7)).sort().pop() ?? null
   return { saved, last }
 }
@@ -63,7 +77,7 @@ export function buildBills(d: BillsData, today: string): Bill[] {
     return { ...x, days: daysUntil(today, x.due), saved, left: f.left, pct: f.pct, monthly: f.monthly, slots: f.slots, normal: Math.ceil(x.amount / Math.max(1, x.every) / step) * step, doneThisMonth: f.doneThisMonth, rise }
   }
   for (const g of live) {
-    const link = linkOf(g), { saved, last } = potOf(g, d.contributions, d.accounts)
+    const link = linkOf(g), { saved, last } = potOf(g, d.contributions, d.accounts, d.held)
     const target = Number(g.target_amount) || 0, amount = link ? Math.ceil(link.per) : target
     const dated = String(g.target_date).slice(0, 10)
     const due = link && dated >= today ? link.due! : dated          // a date that's gone stays until you say it's paid
@@ -211,7 +225,7 @@ export function billGoalRow(uid: string, f: BillForm) {
   return { user_id: uid, name: f.name.trim(), target_amount: f.amount, currency: f.currency, country: f.currency === 'AED' ? 'UAE' : 'India', target_date: f.due, category: 'general',
     color: info.color, icon: info.icon, kind: 'payment', priority: 1, status: 'active', track_cash: false, repeat_months: f.every, occasion: f.occasion ?? null, spend_category: f.category || null, source_id: f.source_id ?? null }
 }
-async function potFor(sb: any, uid: string, b: Bill): Promise<{ goal?: any; error?: string }> {
+export async function potFor(sb: any, uid: string, b: Bill): Promise<{ goal?: any; error?: string }> {
   if (b.goal) return { goal: b.goal }
   const { data, error } = await sb.from('goals').insert(billGoalRow(uid, { name: b.name, amount: b.amount, currency: b.currency, due: b.due, every: b.every, category: b.category, source_id: b.policy?.id, occasion: b.policy?.table === 'lic_policies' ? 'lic' : null })).select().single()
   return error ? { error: error.message } : { goal: data }
@@ -261,7 +275,33 @@ export async function skipBill(sb: any, uid: string, key: string): Promise<strin
 }
 
 // For the loaders: the reads Big bills needs on top of what each page has
+// (the third: what investments linked to bill pots are worth, read only when there are links)
 export const loadBillReads = (supabase: any, uid: string) => Promise.all([
-  supabase.from('goal_contributions').select('goal_id,amount,contrib_date,note,currency').eq('user_id', uid),
+  supabase.from('goal_contributions').select('id,goal_id,amount,contrib_date,note,currency').eq('user_id', uid),
   supabase.from('big_bill_skips').select('key').eq('user_id', uid),
+  loadBillHeld(supabase, uid),
 ])
+// What a bill's money can be kept in: your investments (an RD or FD kept for
+// it, a fund…), with what other goals already use of each, and the links
+export interface Holding { type: string; id: string; name: string; currency: Cur; value: number }
+const HOLDING_TABLES = ['recurring_deposits', 'fixed_deposits', 'mutual_funds', 'bond_investments', 'etf_investments', 'gold_investments', 'stocks', 'nps_accounts'] as const
+const holdingName = (t: string, r: any) => t === 'mutual_funds' ? r.fund_name : t === 'stocks' ? `${r.name ?? r.symbol}` : t === 'etf_investments' ? r.etf_name ?? r.name : r.name ?? r.bank_name
+export async function loadBillHoldings(supabase: any, uid: string): Promise<{ holdings: Holding[]; links: any[] }> {
+  const [linksRes, ...rows] = await Promise.all([
+    supabase.from('goal_investments').select('goal_id,investment_type,investment_id,allocation_pct').eq('user_id', uid),
+    ...HOLDING_TABLES.map(t => { const q = supabase.from(t).select('*').eq('user_id', uid); return ['fixed_deposits', 'recurring_deposits'].includes(t) ? q.eq('is_active', true) : q }),
+  ])
+  const holdings = HOLDING_TABLES.flatMap((t, i) => (rows[i].data ?? []).map((r: any) => ({ type: t, id: r.id, name: String(holdingName(t, r) ?? 'Investment'), currency: curOf(r.currency), value: investmentValue(t, r) })))
+  return { holdings, links: linksRes.data ?? [] }
+}
+export async function loadBillHeld(supabase: any, uid: string): Promise<Record<string, number>> {
+  const [linksRes, goalsRes] = await Promise.all([
+    supabase.from('goal_investments').select('goal_id,investment_type,investment_id,allocation_pct').eq('user_id', uid),
+    supabase.from('goals').select('id,currency').eq('user_id', uid).not('repeat_months', 'is', null),
+  ])
+  const goals = goalsRes.data ?? [], links = (linksRes.data ?? []).filter((l: any) => goals.some((g: any) => g.id === l.goal_id))
+  if (!links.length) return {}
+  const tables = Array.from(new Set(links.map((l: any) => String(l.investment_type))))
+  const rows = await Promise.all(tables.map(t => supabase.from(t).select('*').eq('user_id', uid).in('id', links.filter((l: any) => l.investment_type === t).map((l: any) => l.investment_id))))
+  return heldByGoal(goals, links, Object.fromEntries(tables.map((t, i) => [t, rows[i].data ?? []])))
+}

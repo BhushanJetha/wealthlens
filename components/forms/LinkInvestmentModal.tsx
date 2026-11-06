@@ -51,10 +51,13 @@ interface Props {
   goal: any
   allInvestments: AllInvestments
   linked: LinkedItem[]
+  // Links on your other goals: what they already use of each investment
+  otherLinks?: (LinkedItem & { goal_id: string })[]
+  goalNames?: Record<string, string>
   onClose: () => void
 }
 
-export default function LinkInvestmentModal({ goalId, goal, allInvestments, linked, onClose }: Props) {
+export default function LinkInvestmentModal({ goalId, goal, allInvestments, linked, otherLinks = [], goalNames = {}, onClose }: Props) {
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
   const [error, setError] = useState('')
@@ -65,6 +68,20 @@ export default function LinkInvestmentModal({ goalId, goal, allInvestments, link
 
   const goalCurrency = goal.currency ?? 'INR'
 
+  // What your other goals already use of each investment. One fully given to
+  // other goals isn't offered again; one partly given offers only what's left.
+  const usedElsewhere = useMemo(() => {
+    const m: Record<string, { pct: number; goals: string[] }> = {}
+    for (const l of otherLinks) {
+      const k = `${l.investment_type}::${l.investment_id}`
+      const e = m[k] ?? (m[k] = { pct: 0, goals: [] })
+      e.pct += Number(l.allocation_pct ?? 100)
+      if (goalNames[l.goal_id]) e.goals.push(goalNames[l.goal_id])
+    }
+    return m
+  }, [otherLinks, goalNames])
+  const freeOf = (k: string) => Math.max(0, Math.round(100 - (usedElsewhere[k]?.pct ?? 0)))
+
   // Build flat item list with scores — only investments in the goal's currency
   // (an India/INR goal links Indian investments only; UAE/AED for an AED goal)
   const allItems = useMemo(() => {
@@ -72,12 +89,14 @@ export default function LinkInvestmentModal({ goalId, goal, allInvestments, link
     Object.entries(allInvestments).forEach(([type, records]) => {
       records.forEach((rec: any) => {
         if ((rec.currency ?? 'INR') !== goalCurrency) return
+        // Fully used by other goals, and not already on this one
+        if (freeOf(`${type}::${rec.id}`) <= 0 && !linked.some(l => l.investment_type === type && l.investment_id === rec.id)) return
         const score = scoreInvestmentForGoal(type, rec, goal.category, monthsLeft)
         items.push({ type, id: rec.id, name: getInvName(type, rec), value: getInvCurrentValue(type, rec), currency: rec.currency ?? 'INR', score, record: rec })
       })
     })
     return items.sort((a, b) => b.score - a.score)
-  }, [allInvestments, goal.category, goalCurrency, monthsLeft])
+  }, [allInvestments, goal.category, goalCurrency, monthsLeft, usedElsewhere, linked]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Initial selection state + allocation %
   const initSelected = useMemo(() => {
@@ -92,13 +111,13 @@ export default function LinkInvestmentModal({ goalId, goal, allInvestments, link
     const key = `${type}::${id}`
     setSelected(prev => {
       if (key in prev) { const n = { ...prev }; delete n[key]; return n }
-      return { ...prev, [key]: 100 }
+      return { ...prev, [key]: Math.max(1, freeOf(key)) }
     })
   }
 
   function setAlloc(type: string, id: string, pct: number) {
     const key = `${type}::${id}`
-    setSelected(prev => ({ ...prev, [key]: Math.min(100, Math.max(1, Math.round(pct))) }))
+    setSelected(prev => ({ ...prev, [key]: Math.min(Math.max(1, freeOf(key)), Math.max(1, Math.round(pct))) }))
   }
 
   // Filter by search
@@ -277,7 +296,7 @@ export default function LinkInvestmentModal({ goalId, goal, allInvestments, link
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="text-[12px] font-medium truncate" style={{ color: 'var(--text)' }}>{item.name}</div>
-                            <div className="text-[10px]" style={{ color: 'var(--text3)' }}>{fmt(item.value, item.currency)}</div>
+                            <div className="text-[10px]" style={{ color: 'var(--text3)' }}>{fmt(item.value, item.currency)}{usedElsewhere[key] && <> · {freeOf(key)}% free{usedElsewhere[key].goals.length ? ` (rest on ${usedElsewhere[key].goals.join(', ')})` : ''}</>}</div>
                           </div>
                           {match && (
                             <span className="text-[9px] px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0"
@@ -290,14 +309,14 @@ export default function LinkInvestmentModal({ goalId, goal, allInvestments, link
                           <div className="flex items-center gap-3 px-3 py-2 rounded-b-xl -mt-px"
                             style={{ background: `${goal.color}06`, border: `1.5px solid ${goal.color}`, borderTop: 'none' }}>
                             <span className="text-[10px] font-semibold flex-shrink-0" style={{ color: 'var(--text3)' }}>Alloc</span>
-                            <input type="range" min={1} max={100} step={1} value={selected[key]}
+                            <input type="range" min={1} max={Math.max(1, freeOf(key))} step={1} value={selected[key]}
                               onChange={e => setAlloc(item.type, item.id, Number(e.target.value))}
                               className="flex-1 cursor-pointer"
                               style={{ accentColor: goal.color }}
                             />
                             <div className="flex items-center gap-1 flex-shrink-0">
                               <input
-                                type="number" min={1} max={100}
+                                type="number" min={1} max={Math.max(1, freeOf(key))}
                                 value={selected[key]}
                                 onChange={e => {
                                   const v = parseInt(e.target.value, 10)

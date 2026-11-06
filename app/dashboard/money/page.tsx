@@ -17,7 +17,7 @@ export default async function MoneyPage() {
   const fromDate = `${start.toISOString().slice(0, 7)}-01`
   // Repeating entries, EMIs and SIPs whose day has come are recorded
   // alongside these reads; the rest wait here
-  const [auto, [txns, accsRes, loansRes, insRes, mfRes, fdRes, budgetsRes, rdRes, plansRes, goalsRes, licRes, [contribRes, skipsRes]]] = await withAutomation(supabase, uid, today, () => Promise.all([
+  const [auto, [txns, accsRes, loansRes, insRes, mfRes, fdRes, budgetsRes, rdRes, plansRes, goalsRes, licRes, [contribRes, skipsRes, billHeld]]] = await withAutomation(supabase, uid, today, () => Promise.all([
     fetchAllRows((a, b) => supabase.from('transactions').select('*')
       .eq('user_id', uid).gte('txn_date', fromDate)
       .order('txn_date', { ascending: false }).order('id').range(a, b)),
@@ -34,7 +34,7 @@ export default async function MoneyPage() {
     loadBillReads(supabase, uid),
   ]))
   const billSkips = (skipsRes.data ?? []).map((s: any) => s.key)
-  const bills = buildBills({ goals: goalsRes.data ?? [], contributions: contribRes.data ?? [], insurance: insRes.data ?? [], lic: licRes.data ?? [], accounts: accsRes.data ?? [], skips: billSkips }, today)
+  const bills = buildBills({ goals: goalsRes.data ?? [], contributions: contribRes.data ?? [], insurance: insRes.data ?? [], lic: licRes.data ?? [], accounts: accsRes.data ?? [], skips: billSkips, held: billHeld }, today)
 
   return (
     <MoneyOverviewClient

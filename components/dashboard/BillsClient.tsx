@@ -11,7 +11,7 @@ import { nextDate, suggestRepeats, type RecurringTxn } from '@/lib/recurring'
 import { spendCategories } from '@/lib/recurringGoals'
 import { buildDues, safeToSpend } from '@/lib/moneyOverview'
 import { declaredPayday } from '@/lib/incomePlans'
-import { billTotals, coverBills, setAsideBill, whyMonthly, yearAhead, type Bill, type Cover } from '@/lib/bigBills'
+import { billTotals, coverBills, setAsideBill, whyMonthly, yearAhead, type Bill, type Cover, type Holding } from '@/lib/bigBills'
 import { answerCharge, answerNo, answerSame, answerSeparate, answersFor, entriesOf, foundRegular, historyCover, monthlyCommitted, pendingCharges, sameName, type FoundCharge } from '@/lib/regular'
 import { AiActions, KpiTile, LearnStrip, PageHeader, Panel, Segmented } from '@/components/ui/kit'
 import { toast } from '@/components/ui/toaster'
@@ -23,6 +23,7 @@ type Filter = 'all' | 'monthly' | 'few'
 interface Props {
   today: string; fx: number; bills: Bill[]; answers: string[]; ready: boolean; recurringReady: boolean
   transactions: any[]; accounts: any[]; loans: any[]; insurance: any[]; lic: any[]; mutualFunds: any[]; rds: any[]; plans: any[]; recurring: RecurringTxn[]
+  holdings: Holding[]; goalLinks: any[]; contributions: any[]
 }
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const monOf = (ym: string) => MON[Number(ym.slice(5, 7)) - 1]
@@ -339,7 +340,7 @@ export default function BillsClient(p: Props) {
       <AiActions actions={['Which subscriptions could I cancel?', 'How can I lower my bills?']} context={listText ? `My bills: ${listText}.` : 'No bills on file yet.'} />
       <LearnStrip title="Statement date vs due date" href="/dashboard/cards/learn" />
 
-      {form && <BillFormSheet draft={form.draft} bill={form.bill} repeat={form.repeat} accounts={p.accounts} categories={categories} onClose={() => setForm(null)} />}
+      {form && <BillFormSheet draft={form.draft} bill={form.bill} repeat={form.repeat} accounts={p.accounts} categories={categories} holdings={p.holdings} goalLinks={p.goalLinks} contributions={p.contributions} onClose={() => setForm(null)} />}
       {paying && <PaySheet bill={paying} accounts={p.accounts} categories={categories} txns={p.transactions} today={today} onClose={() => setPaying(null)} />}
       {aside && <AsideSheet bill={aside} today={today} onClose={() => setAside(null)} />}
       {other && <AddTransactionModal repeat onClose={() => { setOther(false); router.refresh() }} />}

@@ -18,12 +18,14 @@ import type { GoalsData } from '@/lib/goalsData'
 import { PageHeader, InsightBar, Ring, Donut, Segmented } from '@/components/ui/kit'
 import AddGoalModal, { type GoalDefaults } from '@/components/forms/AddGoalModal'
 import { AddMoneySheet, RollSheet } from './GoalSheets'
+import EmergencySize from './EmergencySize'
 import { YearStrip, iconOf, repeatLabel, whenLabel } from './RecurringGoals'
 import { fixesFor, type PayFirstMode } from '@/lib/plan'
 import { FixesCard, PayFirstSettings } from './plan/PlanParts'
 
 const STATUS = {
   achieved: { label: 'Achieved', bg: 'var(--pos-bg)', c: 'var(--pos-text)' },
+  funded:   { label: 'Fully funded', bg: 'var(--pos-bg)', c: 'var(--pos-text)' },
   on_track: { label: 'On track', bg: 'var(--pos-bg)', c: 'var(--pos-text)' },
   behind:   { label: 'Behind', bg: 'var(--amber-bg)', c: 'var(--amber-text)' },
   paused:   { label: 'Paused', bg: '#F1F5F9', c: 'var(--text3)' },
@@ -203,7 +205,7 @@ export default function GoalsClient({ data, payFirst = 'ask' }: { data: GoalsDat
   const card = (it: GoalItem) => {
     const g = it.goal, p = it.plan, c = g.currency, info = kindInfo(it.kind), H = HORIZON[p.horizon], st = STATUS[p.status]
     const eqPct = it.v.value > 0 ? it.v.equity / it.v.value * 100 : 0
-    const line = p.status === 'achieved' ? 'Reached 🎉' : p.status === 'paused' ? 'Paused — not counted in the funding plan'
+    const line = p.status === 'achieved' ? 'Reached 🎉' : p.status === 'funded' ? 'Fully funded · keep it topped up as your spending grows' : p.status === 'paused' ? 'Paused — not counted in the funding plan'
       : p.status === 'new' ? `Needs ${short(p.need, c)}/mo — link a fund or add money to start`
       : p.status === 'on_track' ? `On track · ${short(it.pace, c)}/mo going in${p.gap > 0 ? ` · ${short(p.gap, c)} ahead` : ''}`
       : `${short(-p.gap, c)} short at ${short(it.pace, c)}/mo · needs ${short(p.need, c)}/mo`
@@ -242,7 +244,7 @@ export default function GoalsClient({ data, payFirst = 'ask' }: { data: GoalsDat
             <span className="text-[12px]" style={{ color: 'var(--text3)' }}>of {short(p.futureTarget, c)}{p.inflation > 0 ? <span title={`${fmtMoney(Number(g.target_amount), c)} in today's money, with prices rising ${p.inflation}% a year`}> *</span> : null}</span>
           </div>
           <div className="h-[7px] md:h-[9px] rounded-full mt-2" style={{ background: 'var(--track)' }} role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(p.pct)} aria-label={`${g.name} progress`}>
-            <div className="h-full rounded-full wl-grow" style={{ width: `${p.pct}%`, background: p.status === 'achieved' ? 'var(--pos)' : info.color }} />
+            <div className="h-full rounded-full wl-grow" style={{ width: `${p.pct}%`, background: p.status === 'achieved' || p.status === 'funded' ? 'var(--pos)' : info.color }} />
           </div>
         </Link>
         <div className="flex justify-between items-center gap-2 text-[12px]">
@@ -254,6 +256,7 @@ export default function GoalsClient({ data, payFirst = 'ask' }: { data: GoalsDat
             <button onClick={() => setConfirmDelete(g.id)} title="Delete goal" aria-label="Delete goal" className="p-1.5 rounded-md hover:bg-[var(--rose-bg)]" style={{ color: 'var(--text4)' }}><Trash2 size={12} /></button>
           </span>
         </div>
+        {it.kind === 'emergency' && <EmergencySize goal={g} advice={built.emergency[c === 'AED' ? 'AED' : 'INR']} compact />}
       </div>
     )
   }
@@ -336,14 +339,14 @@ export default function GoalsClient({ data, payFirst = 'ask' }: { data: GoalsDat
             return <div key={c} className="text-[19px] md:text-[26px] font-bold leading-[1.25] tracking-[-0.02em] mt-1">{short(v, c)} <span className="text-[13px] md:text-[15px] font-medium" style={{ color: '#E4DEFF' }}>saved of {short(t, c)}{curs.length > 1 ? (c === 'AED' ? ' · UAE goals' : ' · India goals') : ''}</span></div>
           })}
           <div className="flex gap-2 mt-3 flex-wrap">
-            {[`${live.length} goal${live.length === 1 ? '' : 's'}`, `${live.filter(it => it.plan.status === 'on_track').length} on track`, ...curs.map(c => `${short(funding[c]?.need ?? 0, c)}/mo needed`), done.length ? `${done.length} achieved` : ''].filter(Boolean).map(t => (
+            {[`${live.length} goal${live.length === 1 ? '' : 's'}`, `${live.filter(it => it.plan.status === 'on_track' || it.plan.status === 'funded').length} on track`, ...curs.map(c => `${short(funding[c]?.need ?? 0, c)}/mo needed`), done.length ? `${done.length} achieved` : ''].filter(Boolean).map(t => (
               <span key={t} className="rounded-full px-[11px] py-1 text-[11.5px] font-semibold" style={{ background: 'rgba(255,255,255,.16)' }}>{t}</span>
             ))}
           </div>
         </div>
         <div className="relative flex-shrink-0">
-          <Ring pct={live.length ? live.filter(it => it.plan.status === 'on_track').length / live.length * 100 : 0} size={112} stroke={3.2} color="#fff" track="rgba(255,255,255,.2)" label="Goals on track">
-            <span className="text-[24px] font-bold leading-none">{live.filter(it => it.plan.status === 'on_track').length}/{live.length}</span>
+          <Ring pct={live.length ? live.filter(it => it.plan.status === 'on_track' || it.plan.status === 'funded').length / live.length * 100 : 0} size={112} stroke={3.2} color="#fff" track="rgba(255,255,255,.2)" label="Goals on track">
+            <span className="text-[24px] font-bold leading-none">{live.filter(it => it.plan.status === 'on_track' || it.plan.status === 'funded').length}/{live.length}</span>
             <span className="text-[10.5px] mt-0.5" style={{ color: '#DAD3FF' }}>on track</span>
           </Ring>
         </div>

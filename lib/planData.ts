@@ -2,7 +2,7 @@
 // bills, declared income, your answers about bills, trips ahead and the
 // pay-yourself-first setting. One round of reads, in parallel.
 import { loadGoalsData } from './goalsData'
-import { buildBills } from './bigBills'
+import { buildBills, heldByGoal } from './bigBills'
 import { isMissingTable } from './supabase/missingTable'
 import { payFirstModeOf } from './plan'
 
@@ -19,7 +19,7 @@ export async function loadPlanData(supabase: any, uid: string) {
     supabase.auth.getUser(),
   ])
   const answers: string[] = (skipsRes.data ?? []).map((s: any) => s.key)
-  const bills = buildBills({ goals: g.goals, contributions: g.contributions, insurance: g.insurance, lic: g.investments.lic_policies ?? [], accounts: g.accounts, skips: answers }, g.today)
+  const bills = buildBills({ goals: g.goals, contributions: g.contributions, insurance: g.insurance, lic: g.investments.lic_policies ?? [], accounts: g.accounts, skips: answers, held: heldByGoal(g.goals, g.links, g.investments) }, g.today)
   return {
     ...g,
     budgets: (budgetsRes.data ?? []) as any[],

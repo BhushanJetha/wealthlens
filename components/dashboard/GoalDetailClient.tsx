@@ -13,6 +13,7 @@ import type { GoalsData } from '@/lib/goalsData'
 import { InsightBar, AiActions, KpiTile, KpiGrid, Panel } from '@/components/ui/kit'
 import AddGoalModal from '@/components/forms/AddGoalModal'
 import LinkInvestmentModal from '@/components/forms/LinkInvestmentModal'
+import EmergencySize from './EmergencySize'
 import { AddMoneySheet, AchieveSheet } from './GoalSheets'
 import { RecurringDetail } from './RecurringGoals'
 
@@ -103,6 +104,7 @@ export default function GoalDetailClient({ goalId, data }: { goalId: string; dat
 
   const ctx = `Goal "${g.name}" (${info.label}, ${H.label}, ${PRIORITY[Number(g.priority ?? 2)]}): ${money(v.value)} saved of ${money(p.futureTarget)} by ${g.target_date} (${money(Number(g.target_amount))} in today's money, ${p.inflation}% inflation). Needs ${money(p.need)}/month at an assumed ${p.ret}%; pace ${money(it.pace)}/month; ${Math.round(eqPct)}% equity.`
   const insight = achieved ? `You reached ${g.name}. Mark it achieved to free its investments for your next goal.`
+    : p.status === 'funded' ? `Fully funded: ${money(v.value)} covers your target. Keep it here and top it up as your spending grows; an emergency fund never closes.`
     : p.months <= 0 ? `The date has passed with ${money(Math.max(0, p.futureTarget - v.value))} still to go. Pick a new date (What if) or a smaller target.`
     : `${Math.round(p.pct)}% there. About ${money(p.need)} a month closes the gap by ${fmtDay(g.target_date)} ${g.target_date.slice(0, 4)}, assuming ${p.ret}% a year (${money(p.needRange.optimistic)}–${money(p.needRange.cautious)} if returns differ by 3%).`
 
@@ -228,6 +230,7 @@ export default function GoalDetailClient({ goalId, data }: { goalId: string; dat
           </div>
 
           <div className="flex flex-col gap-3.5 md:gap-4">
+            {it.kind === 'emergency' && <Panel title="How big should it be?"><EmergencySize goal={g} advice={built.emergency[cur]} /></Panel>}
             <Panel title="What to do">
               <ul className="mt-2 flex flex-col gap-2">
                 {suggestions.slice(0, 5).map((s, i) => <li key={i} className="rounded-lg px-3 py-2 text-[12.5px] leading-snug" style={{ background: 'var(--bg2)', color: 'var(--text2)' }}>{s}</li>)}
@@ -243,7 +246,7 @@ export default function GoalDetailClient({ goalId, data }: { goalId: string; dat
               </dl>
               <button onClick={() => setSheet('edit')} className="text-[12px] font-semibold mt-2" style={{ color: 'var(--accent)' }}>Change</button>
             </Panel>
-            {!achieved && g.status !== 'paused' && (
+            {!achieved && g.status !== 'paused' && it.kind !== 'emergency' && (
               <button onClick={() => setSheet('achieve')} className="wl-card px-4 py-3 flex items-center gap-3 text-left">
                 <Trophy size={18} style={{ color: '#D97706' }} />
                 <span className="flex-1 text-[13px]" style={{ color: 'var(--text2)' }}><b style={{ color: 'var(--text)' }}>Done with it?</b> Mark it achieved and record what you used.</span>
@@ -353,7 +356,7 @@ export default function GoalDetailClient({ goalId, data }: { goalId: string; dat
       )}
 
       {sheet === 'edit' && <AddGoalModal editData={g} accounts={data.accounts} members={data.members} onClose={() => setSheet(null)} />}
-      {sheet === 'link' && <LinkInvestmentModal goalId={g.id} goal={g} allInvestments={data.investments} linked={links} onClose={() => setSheet(null)} />}
+      {sheet === 'link' && <LinkInvestmentModal goalId={g.id} goal={g} allInvestments={data.investments} linked={links} otherLinks={data.links.filter(l => l.goal_id !== g.id && data.goals.find(x => x.id === l.goal_id)?.status !== 'cancelled')} goalNames={Object.fromEntries(data.goals.map(x => [x.id, x.name]))} onClose={() => setSheet(null)} />}
       {sheet === 'money' && <AddMoneySheet goal={g} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); router.refresh() }} />}
       {sheet === 'achieve' && <AchieveSheet goal={g} value={v.value} linkCount={links.length} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); router.refresh() }} />}
     </div>

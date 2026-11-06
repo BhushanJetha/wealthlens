@@ -186,7 +186,9 @@ export function goalPace(g: any, ctx: Ctx, today: string): number {
 }
 
 // ── The plan for one goal ────────────────────────────────────────────────────
-export type GoalStatus = 'achieved' | 'paused' | 'new' | 'on_track' | 'behind'
+// funded: an emergency fund at its target. It never ends (spending grows and
+// you may need it any day), so it stays on the list instead of being archived.
+export type GoalStatus = 'achieved' | 'funded' | 'paused' | 'new' | 'on_track' | 'behind'
 export interface Plan {
   months: number; horizon: Horizon; inflation: number; ret: number
   futureTarget: number                 // target in money of the target date
@@ -208,7 +210,9 @@ export function goalPlan(g: any, value: number, pace: number, today: string): Pl
   const at = (rate: number) => fv(value, rate / 1200, months) + annuity(pace, rate / 1200, months)
   const need = pmtFor(futureTarget, value, ret / 1200, months)
   const projected = at(ret)
-  const status: GoalStatus = g.status === 'achieved' || value >= futureTarget ? 'achieved' : g.status === 'paused' ? 'paused'
+  const ongoing = kindOf(g) === 'emergency'
+  const status: GoalStatus = ongoing && value >= futureTarget ? 'funded'
+    : !ongoing && (g.status === 'achieved' || value >= futureTarget) ? 'achieved' : g.status === 'paused' ? 'paused'
     : value <= 0 && pace <= 0 ? 'new' : projected >= futureTarget * 0.98 ? 'on_track' : 'behind'
   return {
     months, horizon, inflation, ret, futureTarget, pct: futureTarget > 0 ? Math.min(100, value / futureTarget * 100) : 0,

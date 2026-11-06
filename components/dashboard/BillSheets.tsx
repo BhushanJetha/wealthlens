@@ -9,7 +9,7 @@ import { fmtDay } from '@/lib/insights'
 import { kindOf } from '@/lib/ledger'
 import { Segmented } from '@/components/ui/kit'
 import { toast } from '@/components/ui/toaster'
-import { billGoalRow, payBill, setAsideBill, skipBill, takeBack, type Bill } from '@/lib/bigBills'
+import { billGoalRow, payBill, potFor, setAsideBill, skipBill, takeBack, type Bill, type Holding } from '@/lib/bigBills'
 import { nextDueDate } from '@/lib/occasions'
 import { repeatRow, type RecurringTxn } from '@/lib/recurring'
 
@@ -120,6 +120,50 @@ export function AsideSheet({ bill, today, onClose }: { bill: Bill; today: string
   )
 }
 
+// ── What's been set aside for a bill, each one changeable ───────────────────
+function SetAsideHistory({ rows, currency }: { rows: any[]; currency: 'AED' | 'INR' }) {
+  const router = useRouter()
+  const [editing, setEditing] = useState<{ id: string; amount: string } | null>(null)
+  const [sure, setSure] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const list = [...rows].filter(r => r.id).sort((a, b) => String(b.contrib_date).localeCompare(String(a.contrib_date)))
+  if (!list.length) return null
+  async function run(q: PromiseLike<{ error: any }>, note: string) {
+    setBusy(true)
+    const { error } = await q
+    setBusy(false); setEditing(null); setSure(null)
+    if (error) { toast(error.message, 'error'); return }
+    toast(note); router.refresh()
+  }
+  const supabase = createClient()
+  return (
+    <div>
+      <span className={label} style={{ color: 'var(--text2)' }}>Set aside and paid</span>
+      <div className="rounded-[12px] overflow-hidden max-h-[220px] overflow-y-auto" style={{ border: '1px solid var(--line)' }}>
+        {list.map(r => {
+          const amt = Number(r.amount) || 0, open = editing?.id === r.id
+          return (
+            <div key={r.id} className="flex items-center gap-2 px-3 py-2" style={{ borderTop: '1px solid var(--track)' }}>
+              <div className="flex-1 min-w-0">
+                <div className="text-[13px] font-medium" style={{ color: 'var(--text)' }}>{fmtDay(String(r.contrib_date).slice(0, 10))} {String(r.contrib_date).slice(0, 4)}</div>
+                <div className="text-[11.5px] truncate" style={{ color: 'var(--text3)' }}>{r.note || (amt < 0 ? 'Used to pay' : 'Set aside')}</div>
+              </div>
+              {open ? <>
+                <input inputMode="decimal" value={editing!.amount} onChange={e => setEditing({ id: r.id, amount: digits(e.target.value) })} aria-label="Amount" className="wl-input" style={{ height: 34, width: 96 }} autoFocus />
+                <button disabled={busy || !(Number(editing!.amount) > 0)} onClick={() => run(supabase.from('goal_contributions').update({ amount: (amt < 0 ? -1 : 1) * Number(editing!.amount) }).eq('id', r.id), 'Changed')} className="wl-btn wl-btn-primary disabled:opacity-60" style={{ height: 34 }}>Save</button>
+              </> : <>
+                <span className="text-[13px] font-semibold tabular-nums" style={{ color: amt < 0 ? 'var(--text3)' : 'var(--text)' }}>{amt < 0 ? '−' : ''}{fmtMoney(Math.abs(amt), currency)}</span>
+                <button onClick={() => setEditing({ id: r.id, amount: String(Math.abs(amt)) })} className="text-[12px] font-semibold px-1.5" style={{ color: 'var(--accent)' }}>Edit</button>
+                <button onClick={() => sure === r.id ? run(supabase.from('goal_contributions').delete().eq('id', r.id), 'Removed') : setSure(r.id)} disabled={busy} className="text-[12px] font-semibold px-1.5" style={{ color: sure === r.id ? '#DC2626' : 'var(--text3)' }}>{sure === r.id ? 'Sure?' : 'Delete'}</button>
+              </>}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ── Add or change a bill ─────────────────────────────────────────────────────
 // One form: every month makes a monthly entry, a longer gap a big bill with a set-aside
 export interface BillDraft { name: string; amount: string; currency: 'AED' | 'INR'; due: string; every: number; category: string; accountId: string; found?: boolean }
@@ -137,7 +181,12 @@ export const TEMPLATES: { name: string; every: number; category: string; currenc
 ]
 const EVERY = [1, 3, 6, 12]
 
-export function BillFormSheet({ draft, bill, repeat, accounts, categories, onClose }: { draft: BillDraft; bill: Bill | null; repeat: RecurringTxn | null; accounts: any[]; categories: string[]; onClose: () => void }) {
+const HOLDING_LABEL: Record<string, string> = { recurring_deposits: 'RD', fixed_deposits: 'FD', mutual_funds: 'Fund', bond_investments: 'Bond', etf_investments: 'ETF', gold_investments: 'Gold', stocks: 'Share', nps_accounts: 'NPS' }
+
+export function BillFormSheet({ draft, bill, repeat, accounts, categories, holdings = [], goalLinks = [], contributions = [], onClose }: {
+  draft: BillDraft; bill: Bill | null; repeat: RecurringTxn | null; accounts: any[]; categories: string[]
+  holdings?: Holding[]; goalLinks?: any[]; contributions?: any[]; onClose: () => void
+}) {
   const router = useRouter()
   const [f, setF] = useState<BillDraft>(draft)
   const [busy, setBusy] = useState(false)
@@ -150,6 +199,31 @@ export function BillFormSheet({ draft, bill, repeat, accounts, categories, onClo
   const monthlyEntry = !!repeat || (!bill && f.every === 1)
   const cats = Array.from(new Set([...(f.category ? [f.category] : []), ...categories, ...TEMPLATES.map(t => t.category)]))
   const finish = (note: string) => { toast(note); onClose(); router.refresh() }
+
+  // Kept in: where this bill's money sits. A savings account kept for it, or an
+  // investment (an RD or FD maturing for it…); its value fills the pot. An
+  // investment other goals already use in full isn't offered.
+  const goalId: string | null = bill?.goal?.id ?? null
+  const mineLink = goalId ? goalLinks.find(l => l.goal_id === goalId) : null
+  const keptFrom = bill?.goal?.account_id ? `acc:${bill.goal.account_id}` : mineLink ? `inv:${mineLink.investment_type}:${mineLink.investment_id}` : ''
+  const [kept, setKept] = useState(keptFrom)
+  const freeOf = (h: Holding) => Math.max(0, Math.round(100 - goalLinks.filter(l => l.goal_id !== goalId && l.investment_type === h.type && l.investment_id === h.id).reduce((s, l) => s + Number(l.allocation_pct ?? 100), 0)))
+  const keepable = holdings.filter(h => h.currency === f.currency && (freeOf(h) > 0 || keptFrom === `inv:${h.type}:${h.id}`))
+  const savings = accounts.filter(a => a.currency === f.currency && kindOf(a) !== 'card')
+  async function saveKept(supabase: any, uid: string, id: string): Promise<string | null> {
+    if (kept === keptFrom) return null
+    const [kind, a, b] = kept.split(':')
+    let r = await supabase.from('goals').update({ account_id: kind === 'acc' ? a : null }).eq('id', id)
+    if (r.error) return r.error.message
+    r = await supabase.from('goal_investments').delete().eq('goal_id', id).eq('user_id', uid)
+    if (r.error) return r.error.message
+    if (kind === 'inv') {
+      const h = holdings.find(x => x.type === a && x.id === b)
+      r = await supabase.from('goal_investments').insert({ goal_id: id, user_id: uid, investment_type: a, investment_id: b, allocation_pct: h ? Math.max(1, freeOf(h)) : 100 })
+      if (r.error) return r.error.message
+    }
+    return null
+  }
 
   async function save() {
     const amount = Number(f.amount)
@@ -169,13 +243,27 @@ export function BillFormSheet({ draft, bill, repeat, accounts, categories, onClo
       error = (await supabase.from('recurring_txns').insert(repeatRow(user.id, { name: f.name, amount, currency: f.currency, due: f.due, every: f.every, category: f.category, accountId: f.accountId }))).error
     } else {
       const row = billGoalRow(user.id, { name: f.name, amount, currency: f.currency, due: f.due, every: f.every, category: f.category || null })
-      error = (bill?.goal
-        ? await supabase.from('goals').update({ name: row.name, target_amount: amount, target_date: f.due, repeat_months: f.every, spend_category: row.spend_category, updated_at: new Date().toISOString() }).eq('id', bill.goal.id)
-        : await supabase.from('goals').insert(row)).error
+      const res = bill?.goal
+        ? await supabase.from('goals').update({ name: row.name, target_amount: amount, target_date: f.due, repeat_months: f.every, spend_category: row.spend_category, updated_at: new Date().toISOString() }).eq('id', bill.goal.id).select('id').single()
+        : await supabase.from('goals').insert(row).select('id').single()
+      error = res.error
+      if (!error && res.data?.id) { const e = await saveKept(supabase, user.id, res.data.id); if (e) error = { message: e } }
     }
     setBusy(false)
     if (error) { toast(error.message, 'error'); return }
     finish(editing ? 'Saved' : `${f.name.trim()} added`)
+  }
+  // A policy's bill: only where its money is kept can change here
+  async function savePolicyKept() {
+    if (!bill) return
+    setBusy(true)
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    const pot = user ? await potFor(supabase, user.id, bill) : { error: 'Please sign in again.' }
+    const err = pot.error ?? (pot.goal ? await saveKept(supabase, user!.id, pot.goal.id) : null)
+    setBusy(false)
+    if (err) { toast(err, 'error'); return }
+    finish('Saved')
   }
   // Stops tracking it. A policy stays yours: it's only hidden from this page
   async function remove() {
@@ -229,8 +317,32 @@ export function BillFormSheet({ draft, bill, repeat, accounts, categories, onClo
             {cats.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </Field>
+        {!monthlyEntry && (savings.length > 0 || keepable.length > 0) && (
+          <Field name="Kept in">
+            <select value={kept} onChange={e => setKept(e.target.value)} className="wl-input w-full" style={FIELD}>
+              <option value="">Nothing yet: I set money aside here</option>
+              {keepable.length > 0 && <optgroup label="An investment">{keepable.map(h => <option key={h.type + h.id} value={`inv:${h.type}:${h.id}`}>{HOLDING_LABEL[h.type] ?? 'Investment'} · {h.name} · {fmtMoney(h.value, h.currency)}{freeOf(h) < 100 ? ` · ${freeOf(h)}% free` : ''}</option>)}</optgroup>}
+              {savings.length > 0 && <optgroup label="A savings account">{savings.map(a => <option key={a.id} value={`acc:${a.id}`}>{a.name}</option>)}</optgroup>}
+            </select>
+            <span className="block text-[12px] mt-1 leading-snug" style={{ color: 'var(--text3)' }}>Its value counts towards this bill, so you set aside only what it doesn’t cover.</span>
+          </Field>
+        )}
         <button onClick={save} disabled={busy} className="wl-btn wl-btn-primary disabled:opacity-60" style={FIELD}>{busy ? 'Saving…' : editing ? 'Save' : 'Add bill'}</button>
       </>}
+      {fromPolicy && (savings.length > 0 || keepable.length > 0) && <>
+        {(savings.length > 0 || keepable.length > 0) && (
+          <Field name="Kept in">
+            <select value={kept} onChange={e => setKept(e.target.value)} className="wl-input w-full" style={FIELD}>
+              <option value="">Nothing yet: I set money aside here</option>
+              {keepable.length > 0 && <optgroup label="An investment">{keepable.map(h => <option key={h.type + h.id} value={`inv:${h.type}:${h.id}`}>{HOLDING_LABEL[h.type] ?? 'Investment'} · {h.name} · {fmtMoney(h.value, h.currency)}{freeOf(h) < 100 ? ` · ${freeOf(h)}% free` : ''}</option>)}</optgroup>}
+              {savings.length > 0 && <optgroup label="A savings account">{savings.map(a => <option key={a.id} value={`acc:${a.id}`}>{a.name}</option>)}</optgroup>}
+            </select>
+            <span className="block text-[12px] mt-1 leading-snug" style={{ color: 'var(--text3)' }}>Its value counts towards this bill, so you set aside only what it doesn’t cover.</span>
+          </Field>
+        )}
+        <button onClick={savePolicyKept} disabled={busy || kept === keptFrom} className="wl-btn wl-btn-primary disabled:opacity-60" style={FIELD}>{busy ? 'Saving…' : 'Save'}</button>
+      </>}
+      {goalId && <SetAsideHistory rows={contributions.filter(c => c.goal_id === goalId)} currency={f.currency} />}
       {bill && (
         <button onClick={remove} disabled={busy} className="wl-btn disabled:opacity-60" style={{ ...FIELD, color: sure ? '#DC2626' : undefined }}>
           {sure ? (bill.saved > 0 ? `Yes, remove it and free ${fmtMoney(bill.saved, bill.currency)}` : 'Yes, remove it') : 'Remove from your bills'}

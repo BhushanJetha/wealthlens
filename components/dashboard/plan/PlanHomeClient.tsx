@@ -33,7 +33,7 @@ export default function PlanHomeClient({ data }: { data: PlanData }) {
     ...data.bills.filter(b => b.currency === cur && b.days >= 0).map(b => ({ name: b.name, date: b.due, amount: b.amount })),
   ].sort((a, b) => a.date.localeCompare(b.date))[0], [data, cur, today])
   const oneOff = built.items.filter(it => it.goal.currency === cur && !it.rec && it.goal.status !== 'cancelled' && it.plan.status !== 'achieved')
-  const onTrack = oneOff.filter(it => it.plan.status === 'on_track').length
+  const onTrack = oneOff.filter(it => it.plan.status === 'on_track' || it.plan.status === 'funded').length
   const event = data.events.filter(e => !e.closed_at && e.currency === cur && String(e.start_date) >= today).sort((a, b) => String(a.start_date).localeCompare(String(b.start_date)))[0]
 
   const parts = [
