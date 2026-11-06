@@ -1,5 +1,6 @@
 'use client'
 import InvHoldings, { fullDate, pctText, pctColor } from './InvHoldings'
+import { holdingHref } from '@/lib/holding'
 import { Landmark as IcBank, TrendingUp as IcUp, Percent as IcPct, Wallet as IcWallet, Layers as IcLayers, CalendarClock as IcCal } from 'lucide-react'
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
@@ -95,7 +96,7 @@ export default function LicClient({ data }: { data: any[] }) {
         items={filtered.map((x, i) => {
           const daysToNext = x.next_premium_date ? Math.ceil((new Date(x.next_premium_date).getTime() - Date.now()) / 86400000) : null
           return {
-            key: x.id ?? String(i), name: x.name, color: '#0891B2',
+            key: x.id ?? String(i), href: x.id ? holdingHref('lic_policies', x.id) : undefined, name: x.name, color: '#0891B2',
             sub: [x.plan_name, x.policy_number, x.maturity_date ? `matures ${fullDate(x.maturity_date)}` : null, x.holder_name && x.holder_name !== 'Self' ? x.holder_name : null].filter(Boolean).join(' · ') || undefined,
             tag: x.premium_frequency ?? 'Annually',
             meta: daysToNext == null ? '—' : daysToNext < 0 ? 'Overdue' : `${fullDate(x.next_premium_date)}`,

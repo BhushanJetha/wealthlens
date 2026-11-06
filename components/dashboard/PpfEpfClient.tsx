@@ -1,5 +1,6 @@
 'use client'
 import InvHoldings, { fullDate, pctText, pctColor } from './InvHoldings'
+import { holdingHref } from '@/lib/holding'
 import { Landmark as IcBank, TrendingUp as IcUp, Percent as IcPct, Wallet as IcWallet, Layers as IcLayers, CalendarClock as IcCal } from 'lucide-react'
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
@@ -93,7 +94,7 @@ export default function PpfEpfClient({ data }: { data: any[] }) {
         items={filtered.map((x, i) => {
           const isPpf = (x.kind ?? 'ppf') === 'ppf'
           return {
-            key: x.id ?? String(i), name: x.name, color: isPpf ? '#16A34A' : '#3B8EF0',
+            key: x.id ?? String(i), href: x.id ? holdingHref('ppf_epf_accounts', x.id) : undefined, name: x.name, color: isPpf ? '#16A34A' : '#3B8EF0',
             sub: [`A/C ${maskAccount(x.account_number)}`, x.maturity_date ? `matures ${fullDate(x.maturity_date)}` : null, x.holder_name && x.holder_name !== 'Self' ? x.holder_name : null].filter(Boolean).join(' · '),
             tag: isPpf ? 'PPF' : 'EPF', meta: Number(x.interest_rate ?? 0) > 0 ? `${Number(x.interest_rate)}% p.a.` : '—',
             value: Number(x.current_balance ?? 0), valueText: `₹${Number(x.current_balance ?? 0).toLocaleString('en-IN')}`,

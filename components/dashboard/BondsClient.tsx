@@ -1,5 +1,6 @@
 'use client'
 import InvHoldings, { fullDate, pctText, pctColor } from './InvHoldings'
+import { holdingHref } from '@/lib/holding'
 import { Landmark as IcBank, TrendingUp as IcUp, Percent as IcPct, Wallet as IcWallet, Layers as IcLayers, CalendarClock as IcCal } from 'lucide-react'
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
@@ -105,7 +106,7 @@ export default function BondsClient({ data }: { data: any[] }) {
           const ret = inv > 0 ? (cur - inv) / inv * 100 : 0
           const type = String(x.bond_type ?? 'bond').replace('_', ' ')
           return {
-            key: x.id ?? String(i), name: x.name, color: ({ govt: '#3B8EF0', corporate: '#7C3AED', tax_free: '#16A34A', rbi_bonds: '#D97706', sgb: '#0891B2' } as Record<string, string>)[x.bond_type] ?? '#3B8EF0',
+            key: x.id ?? String(i), href: x.id ? holdingHref('bond_investments', x.id) : undefined, name: x.name, color: ({ govt: '#3B8EF0', corporate: '#7C3AED', tax_free: '#16A34A', rbi_bonds: '#D97706', sgb: '#0891B2' } as Record<string, string>)[x.bond_type] ?? '#3B8EF0',
             sub: [x.quantity ? `${x.quantity} × ${sym}${Number(x.face_value || 0).toLocaleString('en-IN')}` : null, x.coupon_rate ? `${x.coupon_rate}% coupon` : null, x.holder_name && x.holder_name !== 'Self' ? x.holder_name : null].filter(Boolean).join(' · ') || undefined,
             tag: type.toUpperCase() === 'SGB' ? 'SGB' : type[0].toUpperCase() + type.slice(1),
             meta: pctText(ret), metaColor: pctColor(ret),

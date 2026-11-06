@@ -23,6 +23,7 @@ import Link from 'next/link'
 import { holdingValue as V, holdingCost as C } from '@/lib/netWorth'
 import { investmentFlows, flowMonths, flowYears, FLOW_KEYS, type FlowKey } from '@/lib/investFlows'
 import InvestFlowChart from './InvestFlowChart'
+import InvestGrowthDashboard from './InvestGrowthDashboard'
 
 const COLORS = ['#3D7A58','#3B7DD8','#D4920A','#C96A3A','#7C5CBF','#2E7D52','#B45309','#0891B2','#6D28D9']
 // One fixed colour per investment type, used by every chart and list here
@@ -76,7 +77,7 @@ const INV_LINKS = [
 
 const TABS = [
   { key: 'overview', label: 'Overview',      icon: LayoutGrid  },
-  { key: 'trends',   label: 'Trends',        icon: BarChart2   },
+  { key: 'trends',   label: 'Growth',        icon: BarChart2   },
   { key: 'income',   label: 'Income Rule',   icon: Wallet      },
   { key: 'health',   label: 'Health Report', icon: HeartPulse  },
   { key: 'goalmap',  label: 'Goal Map',      icon: Flag        },
@@ -695,116 +696,11 @@ export default function InvestmentsClient({
         </>
       ))}
 
-      {/* ═══════════ TRENDS ═══════════ */}
+      {/* ═══════════ GROWTH: chart + table by month or year, each kind, biggest holdings, maturing ═══════════ */}
       {tab === 'trends' && (
-        <>
-          {/* Monthly Investment Trend */}
-          <div className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
-            <div className="mb-3">
-              <h3 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Invested each month</h3>
-              <div className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>Last 12 months, by type</div>
-            </div>
-            {monthlyData.some(m => m.total > 0) ? (
-              <>
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={monthlyData} barSize={18}>
-                    <CartesianGrid stroke="var(--track)" vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
-                    <YAxis tickFormatter={v => fmtS(v, sym)} tick={{ fontSize: 10, fill: '#94A3B8' }} width={48} axisLine={false} tickLine={false} />
-                    <Tooltip content={<ChartTip />} />
-                    {FLOW_KEYS.filter(k => monthlyData.some(m => m[k] > 0)).map(k => (
-                      <Bar key={k} dataKey={k} name={TYPE_NAMES[k]} fill={TYPE_COLORS[k]} stackId="a" stroke="#fff" strokeWidth={1} isAnimationActive={false} />
-                    ))}
-                  </BarChart>
-                </ResponsiveContainer>
-
-                {/* Legend: only the types that appear */}
-                <div className="flex flex-wrap gap-x-3 gap-y-1.5 mt-2">
-                  {FLOW_KEYS.filter(k => monthlyData.some(m => m[k] > 0)).map(key => (
-                    <span key={key} className="flex items-center gap-1.5 text-[11.5px]" style={{ color: 'var(--text3)' }}>
-                      <i className="w-2.5 h-2.5 rounded-sm" style={{ background: TYPE_COLORS[key] }} />{TYPE_NAMES[key]}
-                    </span>
-                  ))}
-                </div>
-
-                {/* Last 6 months as rows */}
-                <div className="-mx-4 md:-mx-5 -mb-1 mt-3">
-                  {monthlyData.slice(-6).reverse().map((row: any, i: number) => {
-                    const parts = FLOW_KEYS.filter(k => (row[k] ?? 0) > 0)
-                    return (
-                      <div key={i} className="flex items-center gap-3 px-4 md:px-5 py-2.5" style={{ borderTop: i ? '1px solid var(--track)' : '1px solid var(--line)' }}>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{row.label}</div>
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {parts.length === 0 ? <span className="text-[11.5px]" style={{ color: 'var(--text4)' }}>Nothing added</span>
-                              : parts.map(k => (
-                                <span key={k} className="rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums" style={{ background: TYPE_COLORS[k] + '1A', color: TYPE_COLORS[k] }}>{TYPE_NAMES[k]} {fmtS(row[k], sym)}</span>
-                              ))}
-                          </div>
-                        </div>
-                        <div className="text-[13.5px] font-bold tabular-nums flex-shrink-0" style={{ color: 'var(--text)' }}>{row.total > 0 ? fmtV(row.total, sym) : '—'}</div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </>
-            ) : (
-              <div className="flex items-center justify-center h-40 text-[12px]" style={{ color: 'var(--text3)' }}>
-                No investment records in the last 12 months
-              </div>
-            )}
-          </div>
-
-          {/* Yearly Trend */}
-          <div className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
-            <div className="mb-3">
-              <h3 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Invested each year</h3>
-              <div className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>Growth compared with an FD (7%) and inflation (5%)</div>
-            </div>
-            {yearlyData.some(y => y.total > 0) ? (
-              <>
-                <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={yearlyData}>
-                    <CartesianGrid stroke="var(--track)" vertical={false} />
-                    <XAxis dataKey="year" tick={{ fontSize: 11, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
-                    <YAxis tickFormatter={v => fmtS(v, sym)} tick={{ fontSize: 10, fill: '#94A3B8' }} width={48} axisLine={false} tickLine={false} />
-                    <Tooltip content={<ChartTip />} />
-                    <Bar dataKey="total" name="Invested" fill="var(--sage)" radius={[4,4,0,0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-
-                <div className="-mx-4 md:-mx-5 -mb-1 mt-3">
-                  {[...yearlyData].reverse().map((row: any, i: number) => {
-                    const beatsFD = row.growth !== null && row.growth > 7
-                    const beatsInfl = row.growth !== null && row.growth > 5
-                    const tone = beatsFD ? { bg: '#E7F7EF', c: '#1E8F5F', t: 'Beats FD' } : beatsInfl ? { bg: '#FFF2E2', c: '#B96A0B', t: 'Beats inflation' } : { bg: '#FDECE8', c: '#D9482F', t: 'Below target' }
-                    return (
-                      <div key={i} className="flex items-center gap-3 px-4 md:px-5 py-2.5" style={{ borderTop: i ? '1px solid var(--track)' : '1px solid var(--line)' }}>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-[13px] font-semibold flex items-center gap-2" style={{ color: 'var(--text)' }}>
-                            {row.year}
-                            {row.growth !== null && <span className="text-[12px] font-semibold" style={{ color: row.growth >= 0 ? '#16A34A' : '#DC2626' }}>{row.growth > 0 ? '+' : ''}{row.growth.toFixed(1)}%</span>}
-                          </div>
-                          <div className="text-[11.5px] truncate" style={{ color: 'var(--text3)' }}>
-                            {row.partial ? 'So far this year' : row.fdBench ? `FD would be ${fmtS(row.fdBench, sym)} · inflation ${fmtS(row.inflBench, sym)}` : 'First year on record'}
-                          </div>
-                        </div>
-                        <div className="text-right flex-shrink-0 flex flex-col items-end gap-1">
-                          <span className="text-[13.5px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{fmtV(row.total, sym)}</span>
-                          {row.growth !== null && <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: tone.bg, color: tone.c }}>{tone.t}</span>}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </>
-            ) : (
-              <div className="flex items-center justify-center h-40 text-[12px]" style={{ color: 'var(--text3)' }}>
-                No investment history available
-              </div>
-            )}
-          </div>
-        </>
+        <InvestGrowthDashboard flows={flows} kinds={TYPES} conv={conv} colors={TYPE_COLORS} names={TYPE_NAMES} today={today ?? new Date().toISOString().slice(0, 10)}
+          money={n => fmtV(n, sym)} short={n => fmtS(n, sym)}
+          holdings={{ mutual_funds: fMF, stocks: fSt, etf_investments: fEtf, fixed_deposits: fFD, recurring_deposits: fRD, bond_investments: fBond, ppf_epf_accounts: fPPF, nps_accounts: fNPS, gold_investments: fGold, lic_policies: fLIC }} />
       )}
 
       {/* ═══════════ INCOME RULE ═══════════ */}

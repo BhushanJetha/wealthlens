@@ -14,6 +14,7 @@ export interface InvItem {
   meta?: string; metaColor?: string
   value: number; valueText: string; valueSub?: string
   onEdit: () => void; onDelete: () => void
+  href?: string                                       // its own page (lib/holding)
 }
 export interface InvTile { label: string; value: string; delta?: string; tone?: Tone; icon?: LucideIcon }
 
@@ -69,7 +70,7 @@ export default function InvHoldings({ hero, tiles, items, totalCount, listTitle,
           : undefined}>
         {items.map(i => (
           <ListRow key={i.key} color={i.color} title={i.name} sub={i.sub} tag={i.tag} meta={i.meta} metaColor={i.metaColor}
-            amount={i.valueText} amountSub={i.valueSub} onOpen={i.onEdit}
+            amount={i.valueText} amountSub={i.valueSub} href={i.href} onOpen={i.onEdit}
             actions={[
               { label: 'Edit', icon: Pencil, onClick: i.onEdit },
               { label: 'Delete', icon: Trash2, onClick: i.onDelete, danger: true },

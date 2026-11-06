@@ -1,5 +1,6 @@
 'use client'
 import InvHoldings, { fullDate, pctText, pctColor } from './InvHoldings'
+import { holdingHref } from '@/lib/holding'
 import { Landmark as IcBank, TrendingUp as IcUp, Percent as IcPct, Wallet as IcWallet, Layers as IcLayers, CalendarClock as IcCal } from 'lucide-react'
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
@@ -117,7 +118,7 @@ export default function EtfClient({ data }: { data: any[] }) {
           const ret = inv > 0 ? (cur - inv) / inv * 100 : 0
           const type = String(x.etf_type ?? 'equity')
           return {
-            key: x.id ?? String(i), name: x.etf_name, color: ({ equity: '#16A34A', debt: '#3B8EF0', gold: '#D97706', index: '#7C3AED', international: '#DC2626' } as Record<string, string>)[x.etf_type] ?? '#16A34A',
+            key: x.id ?? String(i), href: x.id ? holdingHref('etf_investments', x.id) : undefined, name: x.etf_name, color: ({ equity: '#16A34A', debt: '#3B8EF0', gold: '#D97706', index: '#7C3AED', international: '#DC2626' } as Record<string, string>)[x.etf_type] ?? '#16A34A',
             sub: [x.symbol, `${Number(x.units || 0).toFixed(2)} units`, x.holder_name && x.holder_name !== 'Self' ? x.holder_name : null].filter(Boolean).join(' · '),
             tag: type[0].toUpperCase() + type.slice(1), meta: pctText(ret), metaColor: pctColor(ret),
             value: cur, valueText: `${sym}${Math.round(cur).toLocaleString('en-IN')}`, valueSub: `${sym}${Math.round(inv).toLocaleString('en-IN')} invested`,

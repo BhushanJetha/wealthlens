@@ -1,5 +1,6 @@
 'use client'
 import InvHoldings, { fullDate, pctText, pctColor } from './InvHoldings'
+import { holdingHref } from '@/lib/holding'
 import { Landmark as IcBank, TrendingUp as IcUp, Percent as IcPct, Wallet as IcWallet, Layers as IcLayers, CalendarClock as IcCal } from 'lucide-react'
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
@@ -97,7 +98,7 @@ export default function NpsClient({ data }: { data: any[] }) {
           const alloc = [['Equity', x.equity_allocation], ['Corp', x.corporate_bond_allocation], ['Govt', x.govt_securities_allocation]]
             .filter(([, v]) => Number(v) > 0).map(([k, v]) => `${k} ${Number(v)}%`).join(' / ')
           return {
-            key: x.id ?? String(i), name: x.name, color: '#16A34A',
+            key: x.id ?? String(i), href: x.id ? holdingHref('nps_accounts', x.id) : undefined, name: x.name, color: '#16A34A',
             sub: [x.fund_manager, alloc || null, x.holder_name && x.holder_name !== 'Self' ? x.holder_name : null].filter(Boolean).join(' · ') || undefined,
             tag: x.tier ?? 'Tier I', meta: pctText(ret), metaColor: pctColor(ret),
             value: corpus, valueText: `₹${Math.round(corpus).toLocaleString('en-IN')}`, valueSub: `₹${Math.round(inv).toLocaleString('en-IN')} invested`,

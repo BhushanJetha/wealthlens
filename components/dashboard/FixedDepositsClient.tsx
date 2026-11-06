@@ -1,5 +1,8 @@
 'use client'
 import InvHoldings, { fullDate, pctText, pctColor } from './InvHoldings'
+import { holdingHref, fdMaturity } from '@/lib/holding'
+// At maturity: the bank's figure, else quarterly compounding over the term (as on the FD's own page)
+const fdMat = (f: any) => Number(f.maturity_amt) || (f.start_date && f.maturity_date ? fdMaturity(Number(f.principal) || 0, Number(f.interest_rate) || 0, f.start_date, f.maturity_date) : Number(f.principal) || 0)
 import { Landmark as IcBank, TrendingUp as IcUp, Percent as IcPct, Wallet as IcWallet, Layers as IcLayers, CalendarClock as IcCal } from 'lucide-react'
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
@@ -55,7 +58,7 @@ export default function FixedDepositsClient({ data }: { data: any[] }) {
   }, [base, search, sort])
 
   const totalPrincipal = filtered.reduce((a, f) => a + Number(f.principal), 0)
-  const totalInterest  = filtered.reduce((a, f) => { const mat = f.maturity_amt ?? (Number(f.principal)*(1+Number(f.interest_rate)/100)); return a + (mat - Number(f.principal)) }, 0)
+  const totalInterest  = filtered.reduce((a, f) => { const mat = fdMat(f); return a + (mat - Number(f.principal)) }, 0)
   const avgRate = filtered.length > 0 ? (filtered.reduce((a, f) => a + Number(f.interest_rate), 0) / filtered.length).toFixed(2) : '0.00'
 
   const chartData = filtered.slice(0,8).map(f => ({ name: f.name?.slice(0,12), principal: Math.round(Number(f.principal)/1000), rate: Number(f.interest_rate) }))
@@ -84,11 +87,11 @@ export default function FixedDepositsClient({ data }: { data: any[] }) {
           { label: 'Average rate', value: `${avgRate}%`, delta: 'per year', icon: IcPct },
         ]}
         items={filtered.map((x, i) => {
-          const matAmt = x.maturity_amt ?? (Number(x.principal) * (1 + Number(x.interest_rate) / 100))
+          const matAmt = fdMat(x)
           const daysLeft = Math.ceil((new Date(x.maturity_date).getTime() - Date.now()) / 86400000)
           const s = x.currency === 'AED' ? 'AED ' : '₹'
           return {
-            key: x.id ?? String(i), name: x.name, color: '#3B8EF0',
+            key: x.id ?? String(i), href: x.id ? holdingHref('fixed_deposits', x.id) : undefined, name: x.name, color: '#3B8EF0',
             sub: [x.bank_name, x.holder_name && x.holder_name !== 'Self' ? x.holder_name : null].filter(Boolean).join(' · '),
             tag: `${x.interest_rate}% p.a.`,
             meta: daysLeft > 0 ? fullDate(x.maturity_date) : 'Matured', metaColor: daysLeft > 0 && daysLeft <= 30 ? '#D97706' : undefined,

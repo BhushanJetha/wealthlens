@@ -1,5 +1,6 @@
 'use client'
 import InvHoldings, { fullDate, pctText, pctColor } from './InvHoldings'
+import { holdingHref } from '@/lib/holding'
 import { Landmark as IcBank, TrendingUp as IcUp, Percent as IcPct, Wallet as IcWallet, Layers as IcLayers, CalendarClock as IcCal } from 'lucide-react'
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
@@ -110,7 +111,7 @@ export default function GoldClient({ data }: { data: any[] }) {
           const ret = inv > 0 ? (cur - inv) / inv * 100 : 0
           const type = String(x.gold_type ?? 'gold').replace('_', ' ')
           return {
-            key: x.id ?? String(i), name: x.name, color: ({ physical: '#D97706', sgb: '#16A34A', gold_etf: '#3B8EF0', gold_mf: '#7C3AED' } as Record<string, string>)[x.gold_type] ?? '#D97706',
+            key: x.id ?? String(i), href: x.id ? holdingHref('gold_investments', x.id) : undefined, name: x.name, color: ({ physical: '#D97706', sgb: '#16A34A', gold_etf: '#3B8EF0', gold_mf: '#7C3AED' } as Record<string, string>)[x.gold_type] ?? '#D97706',
             sub: [x.quantity_grams ? `${x.quantity_grams} g at ${sym}${x.buy_price_per_gram}/g` : null, x.holder_name && x.holder_name !== 'Self' ? x.holder_name : null].filter(Boolean).join(' · ') || undefined,
             tag: type.toUpperCase() === 'SGB' ? 'SGB' : type[0].toUpperCase() + type.slice(1),
             meta: pctText(ret), metaColor: pctColor(ret),

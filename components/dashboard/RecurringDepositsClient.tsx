@@ -1,5 +1,6 @@
 'use client'
 import InvHoldings, { fullDate, pctText, pctColor } from './InvHoldings'
+import { holdingHref } from '@/lib/holding'
 import { Landmark as IcBank, TrendingUp as IcUp, Percent as IcPct, Wallet as IcWallet, Layers as IcLayers, CalendarClock as IcCal } from 'lucide-react'
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
@@ -86,7 +87,7 @@ export default function RecurringDepositsClient({ data }: { data: any[] }) {
           const s = x.currency === 'AED' ? 'AED ' : '₹'
           const paid = rdPaidIn(x)
           return {
-            key: x.id ?? String(i), name: x.name, color: '#16A34A',
+            key: x.id ?? String(i), href: x.id ? holdingHref('recurring_deposits', x.id) : undefined, name: x.name, color: '#16A34A',
             sub: [x.bank_name, x.maturity_date ? `matures ${fullDate(x.maturity_date)}` : null, x.holder_name && x.holder_name !== 'Self' ? x.holder_name : null].filter(Boolean).join(' · '),
             tag: `${x.interest_rate}% p.a.`, meta: `${rdInstalments(x)}/${x.tenure_months} months`,
             value: paid, valueText: `${s}${Math.round(paid).toLocaleString('en-IN')}`,
