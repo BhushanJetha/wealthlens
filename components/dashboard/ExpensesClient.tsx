@@ -14,6 +14,7 @@ import MessageParseModal from '@/components/forms/MessageParseModal'
 import ManageCategoriesSheet from '@/components/forms/ManageCategoriesSheet'
 import SplitSheet from '@/components/dashboard/SplitSheet'
 import PaidBy from './PaidBy'
+import ExpenseSpanPicker, { addDays, daysIncl, mondayOf, type Span } from './ExpenseSpanPicker'
 import { useCategoryStore } from '@/store/categoryStore'
 import { colorOf as catColorOf } from '@/lib/categories'
 import { isSpending, spendGroup, catOf, labelOf, myShare } from '@/lib/money'
@@ -144,7 +145,22 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
     })
   }, [transactions, view, cat, accFilter, search])
 
-  const filteredForMonth    = useMemo(() => filtered.filter(t => inRange(t.txn_date)), [filtered, fromMonth, toMonth])
+  // When: the whole months picked at the top, or a week, a day or dates inside them
+  const [span, setSpan] = useState<Span>('all')
+  const [dFrom, setDFrom] = useState(''), [dTo, setDTo] = useState('')
+  const narrowed = span !== 'all' && !!dFrom && !!dTo
+  const inSpan = (d: string) => !narrowed || (String(d).slice(0, 10) >= dFrom && String(d).slice(0, 10) <= dTo)
+  useEffect(() => { setSpan('all'); setDFrom(''); setDTo('') }, [fromMonth, toMonth])
+  useEffect(() => { setPage(1) }, [span, dFrom, dTo]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Budgets are monthly, so their checks use the whole month
+  const filteredMonthFull   = useMemo(() => filtered.filter(t => inRange(t.txn_date)), [filtered, fromMonth, toMonth])
+  const filteredForMonth    = useMemo(() => filteredMonthFull.filter(t => inSpan(t.txn_date)), [filteredMonthFull, narrowed, dFrom, dTo]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Each day's spending in the months picked, for the week chips and the calendar
+  const dayTotals = useMemo(() => {
+    const m: Record<string, number> = {}
+    filteredMonthFull.filter(isSpending).forEach(t => { const d = String(t.txn_date).slice(0, 10); m[d] = (m[d] ?? 0) + toDisplay(myShare(t), t.currency) })
+    return m
+  }, [filteredMonthFull, view, FX])
   // Same split as Spending analysis and Reports (lib/money): spending = living
   // costs + money sent; loan repayments and investments have their own tiles;
   // card bills settle spend already counted
@@ -163,10 +179,10 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
   // Budget-aware: category totals for selected month
   const catMonthTotals = useMemo(() => {
     const m: Record<string,number> = {}
-    filteredForMonth.filter(t => t.txn_type === 'expense')
+    filteredMonthFull.filter(t => t.txn_type === 'expense')
       .forEach(t => { m[t.category] = (m[t.category] ?? 0) + toDisplay(Number(t.amount), t.currency) })
     return m
-  }, [filteredForMonth, view, FX])
+  }, [filteredMonthFull, view, FX])
 
   const budgetMap = useMemo(() => {
     const m: Record<string, number> = {}
@@ -181,7 +197,10 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
     return { pct: cap > 0 ? (spent / cap) * 100 : 0, cap, spent }
   }
 
-  const rangeLabel = fromMonth === toMonth
+  const longDay = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
+  const shortDay = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+  const rangeLabel = narrowed ? (dFrom === dTo ? longDay(dFrom) : `${shortDay(dFrom)} – ${shortDay(dTo)} ${dTo.slice(0, 4)}`)
+    : fromMonth === toMonth
     ? new Date(fromMonth+'-01').toLocaleDateString('en-GB',{month:'long',year:'numeric'})
     : `${new Date(fromMonth+'-01').toLocaleDateString('en-GB',{month:'short',year:'numeric'})} – ${new Date(toMonth+'-01').toLocaleDateString('en-GB',{month:'short',year:'numeric'})}`
 
@@ -215,10 +234,17 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
   // Same-length period just before the selected one, for "vs previous"
   const spanMonths = (Number(toMonth.slice(0, 4)) - Number(fromMonth.slice(0, 4))) * 12 + Number(toMonth.slice(5)) - Number(fromMonth.slice(5)) + 1
   const prevFrom = addMonths(fromMonth, -spanMonths), prevTo = addMonths(fromMonth, -1)
-  const prevLabel = spanMonths === 1 ? 'last month' : `the previous ${spanMonths} months`
+  const spanLen = narrowed ? daysIncl(dFrom, dTo) : 0
+  const prevD = narrowed ? { from: addDays(dFrom, -spanLen), to: addDays(dFrom, -1) } : null
+  const prevLabel = narrowed ? (spanLen === 1 ? 'the day before' : spanLen === 7 ? 'the week before' : `the ${spanLen} days before`)
+    : spanMonths === 1 ? 'last month' : `the previous ${spanMonths} months`
   const prevSpend = useMemo(() => filtered
-    .filter(t => { const m = t.txn_date?.slice(0, 7) ?? ''; return m >= prevFrom && m <= prevTo && isSpend(t) })
-    .reduce((a, t) => a + toDisplay(Number(t.amount), t.currency), 0), [filtered, prevFrom, prevTo, view, FX])
+    .filter(t => {
+      if (!isSpend(t)) return false
+      if (prevD) { const d = String(t.txn_date).slice(0, 10); return d >= prevD.from && d <= prevD.to }
+      const m = t.txn_date?.slice(0, 7) ?? ''; return m >= prevFrom && m <= prevTo
+    })
+    .reduce((a, t) => a + toDisplay(myShare(t), t.currency), 0), [filtered, prevFrom, prevTo, prevD?.from, prevD?.to, view, FX]) // eslint-disable-line react-hooks/exhaustive-deps
   const spendChg   = prevSpend > 0 ? Math.round((rangeExpenses - prevSpend) / prevSpend * 1000) / 10 : null
   const spendDelta = spendChg != null ? `${spendChg > 0 ? '▲' : '▼'} ${Math.abs(spendChg)}% vs ${prevLabel}`
     : `${realExpensesForMonth.length} transaction${realExpensesForMonth.length === 1 ? '' : 's'}`
@@ -238,14 +264,25 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
       tip: `${MON[Number(m.slice(5)) - 1]} ${m.slice(0, 4)}: ${sym}${Math.round(tot[m] ?? 0).toLocaleString('en-IN')}`,
     }))
   }, [filtered, fromMonth, toMonth, spanMonths, view, FX])
+  const dayBars = useMemo(() => {
+    if (!narrowed) return null
+    const from = span === 'day' ? mondayOf(dFrom) : dFrom, to = span === 'day' ? addDays(mondayOf(dFrom), 6) : dTo
+    const n = daysIncl(from, to)
+    if (n > 31) return null
+    return Array.from({ length: n }, (_, i) => {
+      const d = addDays(from, i), v = dayTotals[d] ?? 0
+      return { label: n <= 7 ? new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' }) : String(Number(d.slice(8))), value: v, hi: d >= dFrom && d <= dTo, tip: `${shortDay(d)}: ${sym}${Math.round(v).toLocaleString('en-IN')}` }
+    })
+  }, [narrowed, span, dFrom, dTo, dayTotals]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Daily average over the days the period has had so far
   const periodDays = useMemo(() => {
     const today = localToday(), thisM = today.slice(0, 7)
     let d = 0
+    if (narrowed) return Math.max(1, dFrom > today ? 0 : daysIncl(dFrom, dTo < today ? dTo : today))
     for (let m = fromMonth; m <= toMonth; m = addMonths(m, 1)) d += m < thisM ? daysInMonth(m) : m === thisM ? Number(today.slice(8, 10)) : 0
     return Math.max(d, 1)
-  }, [fromMonth, toMonth])
+  }, [fromMonth, toMonth, narrowed, dFrom, dTo])
   const dailyAvg = rangeExpenses / periodDays
 
   // Category chips: only categories this period actually has, with counts
@@ -255,14 +292,14 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
     transactions.forEach(t => {
       if (view === 'uae' && t.currency !== 'AED') return
       if (view === 'india' && t.currency !== 'INR') return
-      if (!inRange(t.txn_date) || (accFilter !== 'All' && t.account_id !== accFilter)) return
+      if (!inRange(t.txn_date) || !inSpan(t.txn_date) || (accFilter !== 'All' && t.account_id !== accFilter)) return
       n[t.category] = (n[t.category] ?? 0) + 1
       if (spendGroup(t)) all++     // "All" lists spending only (moves are on Money flow)
     })
     if (cat !== 'All' && !n[cat]) n[cat] = 0
     return [{ key: 'All', label: 'All', count: all },
       ...Object.entries(n).sort((a, b) => b[1] - a[1]).map(([c, k]) => ({ key: c, label: c, count: k, warn: (getBudgetStatus(c)?.pct ?? 0) >= 100 }))]
-  }, [transactions, view, accFilter, fromMonth, toMonth, cat, budgetMap, catMonthTotals])
+  }, [transactions, view, accFilter, fromMonth, toMonth, cat, budgetMap, catMonthTotals, narrowed, dFrom, dTo]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const catUsage = useMemo(() => {
     const n: Record<string, number> = {}
@@ -357,6 +394,11 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
         </div>
       )}
 
+      <div className="max-md:order-2">
+        <ExpenseSpanPicker fromMonth={fromMonth} toMonth={toMonth} today={localToday()} dayTotals={dayTotals} span={span} dFrom={dFrom} dTo={dTo} short={short}
+          onPick={(s2, a, b) => { setSpan(s2); setDFrom(a); setDTo(b) }} />
+      </div>
+
       <div className="max-md:order-4"><InsightBar text={insight} prompt={`Explain my expenses page in plain language. ${aiContext}`} /></div>
       <div className="max-md:order-5"><AiActions actions={['Find ways to save', 'Flag unusual spends']} context={aiContext} /></div>
 
@@ -364,10 +406,10 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
       <div className="max-md:contents grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4">
         <HeroStat className="max-md:order-2" label={`Spent · ${rangeLabel}`} value={money(rangeExpenses)} delta={spendDelta} tone={spendTone}
           right={<div className="flex gap-3.5 text-[11.5px]" style={{ color:'var(--text3)' }}>
-            <span><i className="inline-block w-[9px] h-[9px] rounded-sm mr-1.5" style={{ background:'var(--accent)' }} />Selected period</span>
-            <span><i className="inline-block w-[9px] h-[9px] rounded-sm mr-1.5" style={{ background:'#C9C2F5' }} />Earlier</span>
+            <span><i className="inline-block w-[9px] h-[9px] rounded-sm mr-1.5" style={{ background:'var(--accent)' }} />{dayBars ? (span === 'day' ? 'That day' : 'Selected days') : 'Selected period'}</span>
+            <span><i className="inline-block w-[9px] h-[9px] rounded-sm mr-1.5" style={{ background:'#C9C2F5' }} />{dayBars && span === 'day' ? 'Rest of the week' : 'Earlier'}</span>
           </div>}>
-          <Bars data={barMonths} className="h-[110px] md:h-auto md:flex-1 md:min-h-[200px] mt-2.5 md:mt-4" label={`Spending by month: ${barMonths.map(b => b.tip).join(', ')}`} />
+          <Bars data={dayBars ?? barMonths} className="h-[110px] md:h-auto md:flex-1 md:min-h-[200px] mt-2.5 md:mt-4" label={`Spending by ${dayBars ? 'day' : 'month'}: ${(dayBars ?? barMonths).map(b => b.tip).join(', ')}`} />
         </HeroStat>
 
         <section className="wl-card max-md:order-6 px-4 md:px-5 py-4 md:py-[18px] flex flex-col gap-3">
