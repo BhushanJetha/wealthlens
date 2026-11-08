@@ -13,7 +13,7 @@ import { CC_BILL, classify, labelOf, catOf, prepareMoney, isIncome, isNreToNro, 
 import { findReviewItems, type ReviewKind } from '@/lib/review'
 import { PageHeader, KpiTile, Segmented } from '@/components/ui/kit'
 import { useCategoryStore } from '@/store/categoryStore'
-import { nriKindOf } from '@/lib/ledger'
+import { nriKindOf, methodOf, PAY_METHODS, type PayMethod } from '@/lib/ledger'
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 function momChange(curr: number, prev: number): number | null {
@@ -108,6 +108,8 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
   const colorOf = (cat: string, idx: number) => userCats.find(r => r.name === cat)?.color ?? CAT_COLORS[cat] ?? FALLBACK_PALETTE[idx % FALLBACK_PALETTE.length]
 
   const [tab, setTab] = useState<Tab>('monthly')
+  // Yearly: by category (default) or by the account it was paid from
+  const [byPay, setByPay] = useState(false)
   const [scope, setScope] = useState<Scope>('both')
   const inScope = (t: any) => scope === 'both' || t._nroIn || acctScope(t) === scope
   // Income in this view (lib/money): earned income, plus money landing in NRE
@@ -302,6 +304,23 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
     const list = Object.keys(matrix).sort((a, b) =>
       Object.values(matrix[b]).reduce((x, v) => x + v, 0) - Object.values(matrix[a]).reduce((x, v) => x + v, 0))
     return { matrix, inc, list }
+  }, [transactions, incomeTransactions, view, FX, scope])
+  const payYear = useMemo(() => {
+    const accById = new Map(accounts.map((a: any) => [a.id, a]))
+    const rows: Record<string, { key: string; name: string; method: PayMethod; byYear: Record<string, number>; total: number }> = {}
+    transactions.forEach(t => {
+      const y = t.txn_date?.slice(0, 4); if (!y || !inView(t.currency) || !inScope(t)) return
+      if (classify(catOf(t)) !== 'expense') return
+      const a = t.account_id ? accById.get(t.account_id) : null, key = a ? a.id : 'none', v = disp(t)
+      const r = rows[key] ??= { key, name: a ? a.name : 'Not linked to an account', method: methodOf(t, accById), byYear: {}, total: 0 }
+      r.byYear[y] = (r.byYear[y] ?? 0) + v; r.total += v
+    })
+    return PAY_METHODS.map(m => {
+      const list = Object.values(rows).filter(r => r.method === m.key).sort((a, b) => b.total - a.total)
+      const byYear: Record<string, number> = {}
+      list.forEach(r => Object.entries(r.byYear).forEach(([y, v]) => { byYear[y] = (byYear[y] ?? 0) + v }))
+      return { ...m, label: m.key === 'card' ? 'Credit cards' : m.key === 'bank' ? 'Bank accounts' : m.label, list, byYear, total: list.reduce((a, r) => a + r.total, 0) }
+    }).filter(g => g.list.length)
   }, [transactions, incomeTransactions, view, FX, scope])
 
   const barData = months.map(m => ({
@@ -502,6 +521,19 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
       {/* ─────────────── YEARLY TAB — category × year ─────────────── */}
       {tab === 'yearly' && (
         <div className="wl-card overflow-hidden">
+          <div className="flex items-center justify-between gap-3 px-4 md:px-5 py-3" style={{ borderBottom: '1px solid var(--line)' }}>
+            <div className="min-w-0">
+              <div className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>{byPay ? 'Spending by account, each year' : 'Spending by category, each year'}</div>
+              <div className="text-[11.5px]" style={{ color: 'var(--text3)' }}>{byPay ? 'Which bank account, credit card or cash it was paid from' : 'Every category, whichever account paid'}</div>
+            </div>
+            <label className="flex items-center gap-2 flex-shrink-0 cursor-pointer select-none">
+              <span className="text-[12.5px] font-semibold" style={{ color: 'var(--text2)' }}>By bank &amp; card</span>
+              <button role="switch" aria-checked={byPay} aria-label="Show spending by bank account and card" onClick={() => setByPay(v => !v)}
+                className="relative w-[42px] h-[24px] rounded-full transition-colors" style={{ background: byPay ? 'var(--accent)' : '#CBD0DC' }}>
+                <span className="absolute top-[3px] w-[18px] h-[18px] rounded-full bg-white shadow transition-[left]" style={{ left: byPay ? 21 : 3 }} />
+              </button>
+            </label>
+          </div>
           {yearsSorted.length === 0 || catYear.list.length === 0 ? (
             <div className="text-center py-16 text-[13px]" style={{ color: 'var(--text3)' }}>No expense data yet.</div>
           ) : (
@@ -510,7 +542,7 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
                 <thead>
                   <tr style={{ background: '#FAFAFE', borderBottom: '2px solid var(--line)' }}>
                     <th className="sticky left-0 px-4 py-3 text-left text-[10.5px] uppercase tracking-[0.05em] font-semibold min-w-[150px]"
-                      style={{ background: '#FAFAFE', color: 'var(--text3)', borderRight: '1px solid var(--line)' }}>Category</th>
+                      style={{ background: '#FAFAFE', color: 'var(--text3)', borderRight: '1px solid var(--line)' }}>{byPay ? 'Paid from' : 'Category'}</th>
                     {yearsSorted.map(y => (
                       <th key={y} className="px-4 py-3 text-right text-[11px] font-bold min-w-[90px]"
                         style={{ color: y === String(viewYear) ? 'var(--sage)' : 'var(--text3)', background: y === String(viewYear) ? 'var(--sage-bg)' : 'var(--bg2)' }}>
@@ -521,7 +553,31 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
                   </tr>
                 </thead>
                 <tbody>
-                  {catYear.list.map((cat, ci) => {
+                  {byPay && payYear.map(g => [
+                    <tr key={g.key} style={{ background: g.color + '10', borderBottom: '1px solid var(--line)' }}>
+                      <td className="sticky left-0 px-4 py-2.5 font-bold" style={{ background: '#F6F5FC', borderRight: '1px solid var(--line)' }}>
+                        <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: g.color }} /><span style={{ color: 'var(--text)' }}>{g.label}</span></div>
+                      </td>
+                      {yearsSorted.map(y => <td key={y} className="px-4 py-2.5 text-right tabular-nums font-bold" style={{ color: (g.byYear[y] ?? 0) > 0 ? 'var(--text)' : 'var(--text3)' }}>{(g.byYear[y] ?? 0) > 0 ? `${sym}${fmt(g.byYear[y])}` : '—'}</td>)}
+                      <td className="px-4 py-2.5 text-right tabular-nums font-bold" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--line)' }}>{money(g.total)}</td>
+                    </tr>,
+                    ...g.list.map(r => (
+                      <tr key={r.key} style={{ borderBottom: '1px solid var(--line)' }} className="hover:bg-stone-50 transition-colors">
+                        <td className="sticky left-0 pl-8 pr-4 py-2 text-[12px]" style={{ background: '#fff', borderRight: '1px solid var(--line)', color: 'var(--text2)' }}>{r.name}</td>
+                        {yearsSorted.map(y => { const v = r.byYear[y] ?? 0
+                          return (
+                            <td key={y} className="px-4 py-2 text-right tabular-nums" style={{ color: v > 0 ? 'var(--text2)' : 'var(--text3)', background: y === String(viewYear) ? 'rgba(0,0,0,0.02)' : 'transparent' }}>
+                              {v > 0
+                                ? <button onClick={() => setDrill({ title: r.name, subtitle: y, items: transactions.filter((t: any) => (t.account_id ?? 'none') === r.key && t.txn_date?.slice(0, 4) === y && classify(catOf(t)) === 'expense' && inView(t.currency) && inScope(t)) })} className="hover:underline" style={{ color: 'inherit' }}>{sym}{fmt(v)}</button>
+                                : '—'}
+                            </td>
+                          )
+                        })}
+                        <td className="px-4 py-2 text-right tabular-nums font-semibold" style={{ color: 'var(--text)', borderLeft: '2px solid var(--line)' }}>{money(r.total)}</td>
+                      </tr>
+                    )),
+                  ])}
+                  {!byPay && catYear.list.map((cat, ci) => {
                     const rowTotal = yearsSorted.reduce((a, y) => a + (catYear.matrix[cat]?.[y] ?? 0), 0)
                     return (
                       <tr key={cat} style={{ borderBottom: '1px solid var(--line)' }} className="hover:bg-stone-50 transition-colors">
@@ -569,7 +625,7 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
             </div>
           )}
           <div className="px-4 py-2 text-[10px]" style={{ color: 'var(--text3)', borderTop: '1px solid var(--line)' }}>
-            Actual spend per category each year · click a cell to see the transactions · click a year header to open its monthly view.
+            {byPay ? 'Spending by the account it was paid from; card bills aren’t counted again, as the card purchases already are' : 'Actual spend per category each year'} · click a cell to see the transactions · click a year header to open its monthly view.
           </div>
         </div>
       )}
