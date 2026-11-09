@@ -8,7 +8,7 @@ import { useViewStore } from '@/store/viewStore'
 import { isNre, kindOf } from '@/lib/ledger'
 import { fmtDay } from '@/lib/insights'
 import { useCategoryStore } from '@/store/categoryStore'
-import { colorOf } from '@/lib/categories'
+import { colorOf, isPickable } from '@/lib/categories'
 import { canonCategory } from '@/lib/money'
 import { Segmented } from '@/components/ui/kit'
 import { CategoryIcon } from '@/components/ui/CategoryIcon'
@@ -172,7 +172,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
   // The user's categories for this type, plus the current one if it isn't in the list (e.g. from an import)
   const cats = useMemo(() => {
     // Family support and card bills are kinds of transfer, and "Transfer" isn't a category — pick Type: Transfer
-    const list = categories.filter(c => c.kind === catKind && !(catKind === 'expense' && (TRANSFER_NOT_CATEGORIES.has(c.name) || isCardPayment(c.name))))
+    const list = categories.filter(c => c.kind === catKind && isPickable(catKind, c.name) && !(catKind === 'expense' && (TRANSFER_NOT_CATEGORIES.has(c.name) || isCardPayment(c.name))))
     // Paying a card bill starts here for most people — the chip turns this into a card bill
     if (catKind === 'expense') list.push({ id: 'card-payment', kind: 'expense', name: 'Credit Card Payment', color: '#9333EA', icon: 'credit-card', sort_order: 999 } as any)
     return form.category && !list.some(c => c.name === form.category) && !isTransfer

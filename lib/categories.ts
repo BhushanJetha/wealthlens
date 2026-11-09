@@ -42,6 +42,15 @@ const SYSTEM: Record<CatKind, Set<string>> = {
 }
 export const isSystemCategory = (kind: CatKind, name: string) => SYSTEM[kind].has(name)
 
+// Kept for old transactions, but not offered when picking: money that isn't
+// spending or income is recorded as a transfer (card bill, UAE → India,
+// NRE → NRO) or comes in on its own (loan money, investments paying out)
+const NOT_PICKED: Record<CatKind, Set<string>> = {
+  expense: new Set(['Refund']),
+  income:  new Set(['UAE Income (NRO)', 'NRE Received', 'NRI Transfer', 'Loan Taken', 'FD/RD Maturity']),
+}
+export const isPickable = (kind: CatKind, name: string) => !NOT_PICKED[kind].has(name)
+
 export const CATEGORY_COLORS = ['#6A55E8', '#3B8EF0', '#2FB67C', '#F29A2E', '#EC5B8C', '#0891B2', '#D97706', '#DC2626', '#7C3AED', '#16A34A', '#DB2777', '#64748B']
 
 // Colour for any category name, including ones not in the list (imports)

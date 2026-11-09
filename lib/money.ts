@@ -36,9 +36,11 @@ export const MOVEMENT_CATS = new Set([
 export const CC_BILL = 'Credit Card Payment'
 export const CARD_UNITEMISED = 'Card spending (not itemised)'
 
+// Money back from a shop: never spending (whatever type it was saved as) and never income
+export const REFUND = 'Refund'
 export type SpendClass = 'expense' | 'ccbill' | 'excluded'
 export const classify = (c: string): SpendClass =>
-  c === CC_BILL ? 'ccbill' : (MOVEMENT_CATS.has(c) || c === 'Loan on Card') ? 'excluded' : 'expense'
+  c === CC_BILL ? 'ccbill' : (MOVEMENT_CATS.has(c) || c === 'Loan on Card' || c === REFUND) ? 'excluded' : 'expense'
 
 // Manual transfers are stored as category "Transfer" + a sub_category (the
 // kind). Own = between your own accounts in the same country (ENBD → ADCB).
@@ -130,9 +132,10 @@ export const isSpending = (t: any) => { const g = spendGroup(t); return g === 'l
 
 // ── Income ──────────────────────────────────────────────────────────────────
 // Income-typed rows that are really moves (money received from yourself,
-// borrowing, or the old auto "NRO" copies)
+// borrowing, or the old auto "NRO" copies), your own money coming back (a
+// refund, an FD or RD paying out what you put in — its interest is Interest)
 const NOT_INCOME = new Set(['NRE Received', 'Received from NRE', 'Received from UAE', 'NRI Transfer', 'Inward Remittance',
-  'Loan Taken', 'Loan Received', 'UAE Income (NRO)', 'Self Transfer', 'NRE to NRO', 'NRO Settled', 'Repaid by friend', 'Investment Sold'])
+  'Loan Taken', 'Loan Received', 'UAE Income (NRO)', 'Self Transfer', 'NRE to NRO', 'NRO Settled', 'Repaid by friend', 'Investment Sold', 'Refund', 'FD/RD Maturity'])
 export const INDIA_INCOME = 'Received from UAE'
 
 // Income in a view. Remittances landing in India (rows made by prepareMoney)
