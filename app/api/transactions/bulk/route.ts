@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { undoLinked } from '@/lib/linkTxn'
 import { createClient } from '@/lib/supabase/server'
 import { rejectAuto } from '@/lib/autoEntries'
 import { accountPatch, categoryPatch, groupPatches, type CatKind } from '@/lib/bulk'
@@ -31,6 +32,8 @@ export async function POST(req: Request) {
       deleted++
     }
     const plain = mine.filter(t => !t.auto_ref).map(t => t.id)
+    // Linked to a fund, share, RD or loan: what linking recorded there goes with it
+    for (const t of mine.filter(t => !t.auto_ref && t.link_ref)) await undoLinked(supabase, t.link_ref, Number(t.amount) || 0)
     if (plain.length) {
       const { error: e } = await supabase.from('transactions').delete().eq('user_id', user.id).in('id', plain)
       if (e) return NextResponse.json({ error: e.message, deleted }, { status: 500 })

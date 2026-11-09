@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { loadRules, applyRules } from '@/lib/rules'
 import { rejectAuto } from '@/lib/autoEntries'
+import { undoLinked } from '@/lib/linkTxn'
 
 // Columns added by later migrations (026, 027, 034): a save still works before
 // they're run — the missing one is dropped and the save retried
@@ -134,6 +135,8 @@ export async function DELETE(req: Request) {
     if (err) return NextResponse.json({ error: err }, { status: 500 })
     return NextResponse.json({ success: true })
   }
+  // Linked to a fund, share, RD or loan: what linking recorded there goes with it
+  if (row?.link_ref) await undoLinked(supabase, row.link_ref, Number(row.amount) || 0)
   const { error } = await supabase.from('transactions').delete().eq('id', id).eq('user_id', user.id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ success: true })

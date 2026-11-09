@@ -8,13 +8,15 @@ import { useViewStore } from '@/store/viewStore'
 import { isNre, kindOf } from '@/lib/ledger'
 import { fmtDay } from '@/lib/insights'
 import { useCategoryStore } from '@/store/categoryStore'
-import { colorOf, groupedCategories, type Category } from '@/lib/categories'
+import { colorOf, groupedCategories, investKindOf, type Category, type InvestKind } from '@/lib/categories'
 import { canonCategory } from '@/lib/money'
 import { Segmented } from '@/components/ui/kit'
 import { CategoryIcon } from '@/components/ui/CategoryIcon'
 import { toast } from '@/components/ui/toaster'
 import ManageCategoriesSheet from './ManageCategoriesSheet'
 import CategoryPicker from './CategoryPicker'
+import LinkPicker, { type LinkChoice } from './LinkPicker'
+import { recordLinked, KIND_OF_TYPE, type LinkRef } from '@/lib/linkTxn'
 import { useFamily, holderOptions } from '@/hooks/useFamily'
 import { RECEIPT_TYPES, uploadReceipt, openReceipt, removeReceipt } from '@/lib/receipts'
 import SplitEditor, { saveSplits, useFriends, type SplitValue } from '@/components/dashboard/SplitEditor'
@@ -180,6 +182,13 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
     return { pickRows, current }
   }, [categories, catKind, form.category, isTransfer])
 
+  // An investment or EMI: which fund, share, RD or loan it paid for (lib/linkTxn)
+  const linkedRef: LinkRef | null = mode === 'edit' ? t0?.link_ref ?? null : null
+  const linkKind: InvestKind | 'loan' | null = isTransfer || isIncome ? null
+    : form.category === 'Investment' ? investKindOf({ sub_category: form.sub_category, merchant: form.merchant }) : LOAN_CATS.has(form.category) ? 'loan' : null
+  const [link, setLink] = useState<LinkChoice | null>(null)
+  useEffect(() => { setLink(null) }, [linkKind])
+
   function setType(t: TxnType) {
     if (t === form.txn_type) return
     const kindCats = categories.filter(c => c.kind === (t === 'income' ? 'income' : 'expense'))
@@ -302,6 +311,18 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
       repeatNote += err ? ` · split not saved (${err})` : splitting ? ` · friends owe you ${sym} ${split.total.toLocaleString('en-IN')}` : ''
     }
     if (friendPaid) repeatNote += ' · you owe your friend'
+    // Linked to a fund, share, RD or loan: record it there and keep the link
+    if (savedId && link && !linkedRef && linkKind) {
+      const { data: { user } } = await supabase.auth.getUser()
+      const r = user ? await recordLinked(supabase, user.id, { txn_date: form.txn_date, amount: body.amount, currency: form.currency }, link.option, { units: link.units, fresh: link.fresh })
+        : { error: 'Please sign in again.' }
+      if ('error' in r) repeatNote += ` · not linked (${r.error})`
+      else {
+        const kind = link.option.type === 'loan' ? null : KIND_OF_TYPE[link.option.type]
+        const { error: le } = await supabase.from('transactions').update({ link_ref: r.ref, ...(kind ? { sub_category: kind } : {}) }).eq('id', savedId)
+        repeatNote += le ? ` · not linked (${le.message})` : ` · linked to ${link.option.name}${r.note ? ` (${r.note})` : r.ref.recorded ? ', recorded there too' : ''}`
+      }
+    }
     if (mode !== 'edit' && repeatOn) {
       // This month is the one just saved; the next one is added on its day
       const { data: { user } } = await supabase.auth.getUser()
@@ -569,6 +590,8 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
                 </>} />
             </div>
           )}
+
+          {linkKind && <LinkPicker kind={linkKind} currency={form.currency} amount={Number(form.amount) || 0} value={link} onChange={setLink} linked={linkedRef} />}
 
           <div>
             <Label>{isTransfer ? (transferKind === 'Family' ? 'To (who)' : 'Note (optional)') : 'Note (optional)'}</Label>

@@ -11,6 +11,7 @@ interface Props {
   onClose: () => void
   defaultType?: InvType
   editData?: any
+  onSaved?: (id: string, table: string) => void   // a new one: its id (e.g. to link a payment to it)
 }
 
 const TYPE_LABELS: Record<InvType, string> = {
@@ -19,7 +20,7 @@ const TYPE_LABELS: Record<InvType, string> = {
   gold: 'Gold', bond: 'Bond', etf: 'ETF',
 }
 
-export default function AddInvestmentModal({ onClose, defaultType = 'stock', editData }: Props) {
+export default function AddInvestmentModal({ onClose, defaultType = 'stock', editData, onSaved }: Props) {
   const isEdit = !!editData
   const initialType: InvType = editData?._type ?? defaultType
   const [type, setType] = useState<InvType>(initialType)
@@ -142,8 +143,8 @@ export default function AddInvestmentModal({ onClose, defaultType = 'stock', edi
     const stripRetry = async (run: (p: any) => any, init: any) => {
       let p = init
       for (let t = 0; t < 4; t++) {
-        const { error } = await run(p)
-        if (!error) return
+        const { data, error } = await run(p)
+        if (!error) return data
         const col = error.message?.match(/'([a-zA-Z_]+)' column/)?.[1] ?? error.message?.match(/column "?([a-zA-Z_]+)"?/i)?.[1]
         if (col && (error.code === 'PGRST204' || /column/i.test(error.message))) { const c = { ...p }; delete c[col]; p = c; continue }
         return
@@ -152,7 +153,8 @@ export default function AddInvestmentModal({ onClose, defaultType = 'stock', edi
     if (isEdit && editData?.id) {
       await stripRetry(p => supabase.from(table).update(p).eq('id', editData.id), payload)
     } else {
-      await stripRetry(p => supabase.from(table).insert(p), { ...payload, user_id: user!.id })
+      const saved = await stripRetry(p => supabase.from(table).insert(p).select('id').single(), { ...payload, user_id: user!.id })
+      if (saved?.id) onSaved?.(saved.id, table)
     }
 
     router.refresh()

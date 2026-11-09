@@ -50,8 +50,9 @@ const LOAN_TYPES = [
 
 type ParseState = 'idle' | 'parsing' | 'done' | 'error'
 
-export function AddLoanModal({ onClose, defaultLoanType = 'home_loan', initialData, loanId }: {
+export function AddLoanModal({ onClose, defaultLoanType = 'home_loan', initialData, loanId, onSaved }: {
   onClose: () => void
+  onSaved?: (id: string) => void       // a new loan: its id (e.g. to link a payment to it)
   defaultLoanType?: string
   initialData?: any
   loanId?: string
@@ -171,6 +172,7 @@ export function AddLoanModal({ onClose, defaultLoanType = 'home_loan', initialDa
 
     // Persist parsed disbursement/prepayment rows against the (new) loan
     const newId = (res.data as any)?.id ?? loanId
+    if (!isEdit && (res.data as any)?.id) onSaved?.((res.data as any).id)
     if (newId && user && pendingTxns) {
       const rows = [
         ...(pendingTxns.disbursements ?? []).map((d: any) => ({ user_id: user.id, loan_id: newId, kind: 'disbursement', txn_date: d.txn_date, amount: d.amount, note: d.note ?? null })),

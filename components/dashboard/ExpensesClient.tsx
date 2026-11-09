@@ -116,7 +116,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
   const openDuplicate = (txn: any) => setEditing({ txn, duplicate: true })
 
   async function deleteTxn(t: any) {
-    if (!confirm(`Delete ${t.merchant || 'this transaction'}? This can’t be undone.`)) return
+    if (!confirm(`Delete ${t.merchant || 'this transaction'}?${t.link_ref?.recorded ? ` What it recorded on ${t.link_ref.name} is removed too.` : ''} This can’t be undone.`)) return
     setDeletingId(t.id)
     const res = await fetch(`/api/transactions?id=${t.id}`, { method: 'DELETE' })
     setDeletingId(null)
@@ -643,6 +643,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
           const inrEq = t.currency === 'AED' && view !== 'uae' && liveRate
             ? `≈ ₹${Math.round(Number(t.amount) * liveRate).toLocaleString('en-IN')}` : undefined
           const label = isTransfer ? (t.category === 'Family Transfer' ? 'Family Transfer' : t.sub_category || t.category || 'Transfer')
+            : t.link_ref?.name ? `${t.category === 'Investment' ? investKindOf(t) : 'EMI'} · ${t.link_ref.name}`
             : t.category === 'Investment' ? `Investment · ${investKindOf(t)}` : t.category
           const account = accounts.find((a: any) => a.id === t.account_id)?.name ?? null
           return (
