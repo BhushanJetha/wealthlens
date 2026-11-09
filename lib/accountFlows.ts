@@ -195,8 +195,10 @@ const BANK_OUT: FlowKind[] = ['spend', 'emi', 'invest', 'card']
 const ORDER: Record<string, number> = { income: 0, move: 1, spend: 2, emi: 3, invest: 4, card: 5, payment: 6, refund: 7 }
 const rank = (l: GroupLine) => l.dir === 'out' && l.kind === 'move' ? 6 : ORDER[l.kind]
 
-export function buildAccountGroups(accounts: any[], txns: any[], opts: { fx: number; months: string[]; view: View; toView: (n: number, cur: string) => number; today?: string }): AccountGroups {
+export function buildAccountGroups(accounts: any[], txns: any[], opts: { fx: number; months: string[]; view: View; toView: (n: number, cur: string) => number; today?: string; byYear?: boolean }): AccountGroups {
+  // `months` are years ('2025') with byYear: the same table, a column per year
   const { months, view } = opts
+  const periodOf = (d: string) => d.slice(0, opts.byYear ? 4 : 7)
   const inView = (cur: string) => view === 'consolidated' || (view === 'uae' ? cur === 'AED' : cur !== 'AED')
   const shown = new Set(accounts.filter(a => inView(a.currency)).map(a => a.id))
   const inside = (id: string) => id.startsWith('__none__') ? inView(id.slice(8)) : shown.has(id)
@@ -206,11 +208,11 @@ export function buildAccountGroups(accounts: any[], txns: any[], opts: { fx: num
   const T = { income: zeros(), otherIn: zeros(), moneyOut: zeros(), charged: zeros(), paidToCards: zeros(), bankSpend: zeros(),
     emi: zeros(), invest: zeros(), card: zeros(), sentOut: zeros() }
   // Balances at the end of the day before each month starts (lib/ledger) — null where unknown
-  const dayBefore = (m: string) => { const d = new Date(`${m}-01T00:00:00Z`); d.setUTCDate(0); return d.toISOString().slice(0, 10) }
+  const dayBefore = (m: string) => { const d = new Date(`${opts.byYear ? `${m}-01` : m}-01T00:00:00Z`); d.setUTCDate(0); return d.toISOString().slice(0, 10) }
   const opening = balancesAt(accounts, txns, opts.fx, months.map(dayBefore))
 
   months.forEach((m, i) => {
-    for (const f of accountFlows(accounts, txns, opts.fx, d => d.slice(0, 7) === m, { inside })) {
+    for (const f of accountFlows(accounts, txns, opts.fx, d => periodOf(d) === m, { inside })) {
       const a = f.account, cur = a.currency ?? 'INR'
       if (!inView(cur)) continue
       const card = kindOf(a) === 'card'
@@ -272,7 +274,7 @@ export function buildAccountGroups(accounts: any[], txns: any[], opts: { fx: num
   const friendPaid = zeros()
   for (const t of txns) {
     if (!t.paid_by_friend_id || t.txn_type !== 'expense' || !inView(t.currency ?? 'INR')) continue
-    const i = months.indexOf(String(t.txn_date).slice(0, 7))
+    const i = months.indexOf(periodOf(String(t.txn_date)))
     if (i >= 0) friendPaid[i] += opts.toView(Number(t.amount) || 0, t.currency ?? 'INR')
   }
   const realBanks = banks.filter(g => !g.account._unlinked && g.account.is_active !== false)
