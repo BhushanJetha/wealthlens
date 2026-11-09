@@ -13,7 +13,7 @@ import { CC_BILL, classify, labelOf, catOf, prepareMoney, isIncome, isNreToNro, 
 import { findReviewItems, type ReviewKind } from '@/lib/review'
 import { PageHeader, KpiTile, Segmented } from '@/components/ui/kit'
 import { useCategoryStore } from '@/store/categoryStore'
-import { groupOf, needOf, isGeneral } from '@/lib/categories'
+import { groupOf, needOf, isGeneral, investKindOf, INVEST_KINDS } from '@/lib/categories'
 import { budgetKeyOf, isGroupBudget } from '@/lib/budgets'
 import { nriKindOf } from '@/lib/ledger'
 
@@ -335,6 +335,27 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
     return { matrix, inc, list }
   }, [transactions, incomeTransactions, view, FX, scope])
   const yearTot = (c: string) => yearsSorted.reduce((a, y) => a + (catYear.matrix[c]?.[y] ?? 0), 0)
+
+  // Sub-rows of a category: its sub-categories; Investment opens into what it
+  // went into (Mutual funds, FD… — lib/categories investKindOf)
+  const investMonth = useMemo(() => {
+    const out: Record<string, Record<string, number>> = {}
+    yearTxns.forEach(t => { const m = t.txn_date?.slice(0, 7); if (m && catOf(t) === 'Investment') { const k = investKindOf(t); (out[k] ||= {})[m] = (out[k][m] ?? 0) + disp(t) } })
+    return out
+  }, [yearTxns, view, FX]) // eslint-disable-line react-hooks/exhaustive-deps
+  const investYear = useMemo(() => {
+    const out: Record<string, Record<string, number>> = {}
+    transactions.forEach(t => { const y = t.txn_date?.slice(0, 4); if (y && inView(t.currency) && inScope(t) && catOf(t) === 'Investment') { const k = investKindOf(t); (out[k] ||= {})[y] = (out[k][y] ?? 0) + disp(t) } })
+    return out
+  }, [transactions, view, FX, scope]) // eslint-disable-line react-hooks/exhaustive-deps
+  type SubRow = { key: string; label: string; want: boolean; month: (m: string) => number; year: (y: string) => number; match: (t: any) => boolean }
+  const subsOf = (g: CatGroup, yearly: boolean): SubRow[] => g.cats.flatMap(c => c === 'Investment'
+    ? INVEST_KINDS.filter(k => yearly ? investYear[k] : investMonth[k]).map(k => ({ key: `inv:${k}`, label: k, want: false,
+        month: (m: string) => investMonth[k]?.[m] ?? 0, year: (y: string) => investYear[k]?.[y] ?? 0, match: (t: any) => catOf(t) === 'Investment' && investKindOf(t) === k }))
+    : [{ key: c, label: subName(c, g), want: needOf(c, userCats) === false, month: (m: string) => pivot[c]?.[m] ?? 0, year: (y: string) => catYear.matrix[c]?.[y] ?? 0, match: (t: any) => catOf(t) === c }])
+  // Open-able: more than one line under it, or one that says more than the category (EMIs is just EMIs)
+  const opens = (g: CatGroup, subs: SubRow[]) => subs.length > 1 || (subs.length === 1 && g.key !== 'emi' && !isGeneral(g.cats[0]))
+  const wantTag = <span className="text-[9.5px] font-semibold px-1.5 rounded-full" style={{ background: '#FFF1E6', color: '#9A3412' }}>Want</span>
   const yearGroupsCat = groupList(catYear.list, yearTot)
   const yearNeed = (vals: (c: string) => number, need: boolean) => catYear.list.reduce((a, c) => a + (needOf(c, userCats) === need ? vals(c) : 0), 0)
   const yearGroups = useMemo(() => tab === 'yearly' && byPay && yearsSorted.length
@@ -538,7 +559,7 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
                     </thead>
                     <tbody>
                       {monthGroups.map(g => {
-                        const open = subsShown(g.key), many = g.cats.length > 1 || (g.spending && !isGeneral(g.cats[0]))
+                        const subs = subsOf(g, false), open = subsShown(g.key), many = opens(g, subs)
                         const inG = (t: any) => g.cats.includes(catOf(t))
                         return [
                           <tr key={g.key} style={{ borderBottom: '1px solid var(--line)' }} className="hover:bg-stone-50 transition-colors">
@@ -558,14 +579,19 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
                               <button onClick={() => setDrill({ title: g.label, subtitle: String(viewYear), items: yearTxns.filter(inG) })} className="hover:underline" style={{ color: 'inherit' }}>{money(g.total)}</button>
                             </td>
                           </tr>,
-                          ...(open && many ? g.cats.map(cat => (
-                            <tr key={`${g.key}:${cat}`} style={{ borderBottom: '1px solid var(--line)', background: '#FCFCFF' }}>
+                          ...(open && many ? subs.map(x => (
+                            <tr key={`${g.key}:${x.key}`} style={{ borderBottom: '1px solid var(--line)', background: '#FCFCFF' }}>
                               <td className="sticky left-0 pl-9 pr-4 py-2 text-[11.5px]" style={{ background: '#FCFCFF', borderRight: '1px solid var(--line)', color: 'var(--text2)' }}>
-                                <span className="inline-flex items-center gap-1.5">{subName(cat, g)}{needOf(cat, userCats) === false && <span className="text-[9.5px] font-semibold px-1.5 rounded-full" style={{ background: '#FFF1E6', color: '#9A3412' }}>Want</span>}</span>
+                                <span className="inline-flex items-center gap-1.5">{x.label}{x.want && wantTag}</span>
                               </td>
-                              <MonthCells cat={cat} color={g.color} muted />
+                              {months.map(m => { const v = x.month(m), sel = m >= fromMonth && m <= toMonth
+                                return (
+                                  <td key={m} className="px-3 py-2 text-right tabular-nums" style={{ color: 'var(--text3)', background: sel ? `${g.color}08` : 'transparent' }}>
+                                    {v > 0 ? <button onClick={() => setDrill({ title: x.label, subtitle: mLabel(m), items: yearTxns.filter((t: any) => x.match(t) && t.txn_date?.slice(0, 7) === m) })} className="hover:underline" style={{ color: 'inherit' }}>{sym}{fmt(v)}</button> : '—'}
+                                  </td>
+                                ) })}
                               <td className="px-4 py-2 text-right tabular-nums" style={{ color: 'var(--text2)', borderLeft: '2px solid var(--line)' }}>
-                                <button onClick={() => setDrill({ title: subName(cat, g), subtitle: String(viewYear), items: yearTxns.filter((t: any) => catOf(t) === cat) })} className="hover:underline" style={{ color: 'inherit' }}>{money(rowTot(cat))}</button>
+                                <button onClick={() => setDrill({ title: x.label, subtitle: String(viewYear), items: yearTxns.filter(x.match) })} className="hover:underline" style={{ color: 'inherit' }}>{money(months.reduce((a, m) => a + x.month(m), 0))}</button>
                               </td>
                             </tr>
                           )) : []),
@@ -686,7 +712,7 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
                 </thead>
                 <tbody>
                   {yearGroupsCat.map(g => {
-                    const open = subsShown(g.key), many = g.cats.length > 1 || (g.spending && !isGeneral(g.cats[0]))
+                    const subs = subsOf(g, true), open = subsShown(g.key), many = opens(g, subs)
                     const inG = (t: any) => g.cats.includes(catOf(t))
                     const cell = (title: string, match: (t: any) => boolean, v: number, y: string, sub: boolean) => (
                       <td key={y} className={`px-4 ${sub ? 'py-2' : 'py-2.5'} text-right tabular-nums`} style={{ color: v > 0 ? (sub ? 'var(--text2)' : 'var(--text)') : 'var(--text3)', fontWeight: v > 0 && !sub ? 600 : 400, background: y === String(viewYear) ? 'rgba(0,0,0,0.02)' : 'transparent' }}>
@@ -706,13 +732,13 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
                         {yearsSorted.map(y => cell(g.label, inG, g.cats.reduce((a, c) => a + (catYear.matrix[c]?.[y] ?? 0), 0), y, false))}
                         <td className="px-4 py-2.5 text-right tabular-nums font-bold" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--line)' }}>{money(g.total)}</td>
                       </tr>,
-                      ...(open && many ? g.cats.map(cat => (
-                        <tr key={`${g.key}:${cat}`} style={{ borderBottom: '1px solid var(--line)', background: '#FCFCFF' }}>
+                      ...(open && many ? subs.map(x => (
+                        <tr key={`${g.key}:${x.key}`} style={{ borderBottom: '1px solid var(--line)', background: '#FCFCFF' }}>
                           <td className="sticky left-0 pl-9 pr-4 py-2 text-[11.5px]" style={{ background: '#FCFCFF', borderRight: '1px solid var(--line)', color: 'var(--text2)' }}>
-                            <span className="inline-flex items-center gap-1.5">{subName(cat, g)}{needOf(cat, userCats) === false && <span className="text-[9.5px] font-semibold px-1.5 rounded-full" style={{ background: '#FFF1E6', color: '#9A3412' }}>Want</span>}</span>
+                            <span className="inline-flex items-center gap-1.5">{x.label}{x.want && wantTag}</span>
                           </td>
-                          {yearsSorted.map(y => cell(subName(cat, g), (t: any) => catOf(t) === cat, catYear.matrix[cat]?.[y] ?? 0, y, true))}
-                          <td className="px-4 py-2 text-right tabular-nums" style={{ color: 'var(--text2)', borderLeft: '2px solid var(--line)' }}>{money(yearsSorted.reduce((a, y) => a + (catYear.matrix[cat]?.[y] ?? 0), 0))}</td>
+                          {yearsSorted.map(y => cell(x.label, x.match, x.year(y), y, true))}
+                          <td className="px-4 py-2 text-right tabular-nums" style={{ color: 'var(--text2)', borderLeft: '2px solid var(--line)' }}>{money(yearsSorted.reduce((a, y) => a + x.year(y), 0))}</td>
                         </tr>
                       )) : []),
                     ]

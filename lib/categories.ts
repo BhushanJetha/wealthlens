@@ -132,6 +132,36 @@ export function needOf(name: string, rows: Category[] = []): boolean | null {
   return d ? d[4] ?? true : true
 }
 
+// ── Investing, by what it went into ─────────────────────────────────────────
+// Every investment is saved under the one name Investment (the SIP and RD
+// automations, the Mutual funds page and the dues look for it), with its kind
+// in sub_category. The kind is that, or what the automations save (SIP, RD,
+// Lumpsum, Stock Purchase), else read from the merchant.
+export const INVEST_KINDS = ['Mutual funds', 'Stocks', 'Fixed deposit', 'Recurring deposit', 'Gold', 'PPF & NPS', 'Insurance plans', 'Other investing'] as const
+export type InvestKind = typeof INVEST_KINDS[number]
+export const INVEST_KIND_ICON: Record<InvestKind, string> = {
+  'Mutual funds': 'trending-up', Stocks: 'coins', 'Fixed deposit': 'landmark', 'Recurring deposit': 'repeat', Gold: 'coins',
+  'PPF & NPS': 'piggy-bank', 'Insurance plans': 'receipt', 'Other investing': 'more',
+}
+const KIND_SUB: Record<string, InvestKind> = { sip: 'Mutual funds', lumpsum: 'Mutual funds', 'stock purchase': 'Stocks', rd: 'Recurring deposit', fd: 'Fixed deposit' }
+const KIND_RULES: [RegExp, InvestKind][] = [
+  [/\brd\b|recurring\s*deposit/i, 'Recurring deposit'],
+  [/\bfd\b|fixed\s*deposit|term\s*deposit/i, 'Fixed deposit'],
+  [/\blic\b|ulip|endowment|life\s*insurance|sbi\s*life|hdfc\s*life|max\s*life|pru(?:dential)?\s*life|policy\s*prem/i, 'Insurance plans'],
+  [/\bppf\b|\bnps\b|\bepf\b|\bvpf\b|pension/i, 'PPF & NPS'],
+  [/gold|\bsgb\b|sovereign/i, 'Gold'],
+  [/\bsip\b|mutual\s*fund|\bmf\b|lumpsum|elss|kuvera|paytm\s*money|\bcoin\b|bse\s*star|\bcams\b|kfin/i, 'Mutual funds'],
+  [/stock|shares?\b|equity|\betf\b|zerodha|upstox|angel\s*one|icici\s*direct|hdfc\s*sec|kotak\s*sec|interactive\s*brokers|sarwa|\bnse\b|\bbse\b|groww/i, 'Stocks'],
+]
+export function investKindOf(t: { sub_category?: string | null; merchant?: string | null; description?: string | null }): InvestKind {
+  const sub = String(t?.sub_category ?? '').trim()
+  const named = INVEST_KINDS.find(k => k.toLowerCase() === sub.toLowerCase())
+  if (named) return named
+  if (KIND_SUB[sub.toLowerCase()]) return KIND_SUB[sub.toLowerCase()]
+  const text = `${sub} ${t?.merchant ?? ''} ${t?.description ?? ''}`
+  return KIND_RULES.find(([re]) => re.test(text))?.[1] ?? 'Other investing'
+}
+
 // Kept for old transactions, but not offered when picking: money that isn't
 // spending or income is recorded as a transfer (card bill, UAE → India,
 // NRE → NRO) or comes in on its own (loan money, investments paying out)

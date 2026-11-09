@@ -191,11 +191,12 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
       account_id: form.account_id === '__cash__' && t === 'transfer' ? '' : form.account_id,
     })
   }
-  function setCategory(name: string) {
+  function setCategory(name: string, sub?: string) {
     if (isCardPayment(name)) { set({ txn_type: 'transfer' }); setTransferSubtype('Card bill'); return }
     // Loan categories are loan payments; leaving them makes it an expense again
     const txn_type: TxnType = LOAN_CATS.has(name) ? 'loan' : form.txn_type === 'loan' ? 'expense' : form.txn_type
-    set({ category: name, txn_type })
+    // An investment's kind (Mutual funds, FD…) is its sub_category; leaving Investment clears it
+    set({ category: name, txn_type, sub_category: sub ?? (name === 'Investment' ? form.sub_category : '') })
   }
   function setTransferSubtype(sub: string) {
     const isAtm = sub === 'ATM Withdrawal', isBill = sub === 'Card bill'
@@ -551,7 +552,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
           {!isTransfer && (
             <div>
               <Label right={<button onClick={() => setManage(true)} className="text-[12px] font-semibold flex items-center gap-1" style={{ color: 'var(--accent)' }}><Settings2 size={12} />Manage</button>}>Category</Label>
-              <CategoryPicker rows={pickRows} kind={catKind} value={form.category} onPick={setCategory} current={current}
+              <CategoryPicker rows={pickRows} kind={catKind} value={form.category} onPick={setCategory} current={current} sub={form.sub_category} merchant={form.merchant}
                 extra={<>
                   {/* Paying a card bill starts here for most people — the chip turns this into a card bill */}
                   {catKind === 'expense' && (

@@ -16,7 +16,7 @@ import SplitSheet from '@/components/dashboard/SplitSheet'
 import PaidBy from './PaidBy'
 import ExpenseSpanPicker, { addDays, daysIncl, mondayOf, type Span } from './ExpenseSpanPicker'
 import { useCategoryStore } from '@/store/categoryStore'
-import { colorOf as catColorOf, groupKeyOf, groupByKey, needOf, isGeneral, type GroupKey } from '@/lib/categories'
+import { colorOf as catColorOf, groupKeyOf, groupByKey, needOf, isGeneral, investKindOf, type GroupKey } from '@/lib/categories'
 import { isSpending, spendGroup, catOf, labelOf, myShare } from '@/lib/money'
 import { toast } from '@/components/ui/toaster'
 
@@ -642,7 +642,8 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
           const lSym  = t.currency === 'AED' ? 'AED ' : '₹'
           const inrEq = t.currency === 'AED' && view !== 'uae' && liveRate
             ? `≈ ₹${Math.round(Number(t.amount) * liveRate).toLocaleString('en-IN')}` : undefined
-          const label = isTransfer ? (t.category === 'Family Transfer' ? 'Family Transfer' : t.sub_category || t.category || 'Transfer') : t.category
+          const label = isTransfer ? (t.category === 'Family Transfer' ? 'Family Transfer' : t.sub_category || t.category || 'Transfer')
+            : t.category === 'Investment' ? `Investment · ${investKindOf(t)}` : t.category
           const account = accounts.find((a: any) => a.id === t.account_id)?.name ?? null
           return (
             <ListRow key={t.id} color={catColor} title={t.merchant}

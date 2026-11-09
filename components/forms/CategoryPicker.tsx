@@ -2,13 +2,16 @@
 import { useMemo, useState } from 'react'
 import { Search, X } from 'lucide-react'
 import { CategoryIcon } from '@/components/ui/CategoryIcon'
-import { groupedCategories, groupOf, needOf, isGeneral, type Category, type CatKind } from '@/lib/categories'
+import { groupedCategories, groupOf, needOf, isGeneral, investKindOf, INVEST_KINDS, INVEST_KIND_ICON, type Category, type CatKind } from '@/lib/categories'
 
 // Pick a sub-category, grouped under its category (Food › Groceries…), with a
 // search across both. The category comes with it — nothing else to choose.
 // `extra`: chips that aren't categories (the card-bill shortcut), shown last.
-export default function CategoryPicker({ rows, kind, value, onPick, extra, current }: {
-  rows: Category[]; kind: CatKind; value: string; onPick: (name: string) => void
+// Investing is picked by kind (Mutual funds, FD…): Investment, with the kind
+// as `sub` (lib/categories investKindOf).
+export default function CategoryPicker({ rows, kind, value, onPick, extra, current, sub, merchant }: {
+  rows: Category[]; kind: CatKind; value: string; onPick: (name: string, sub?: string) => void
+  sub?: string; merchant?: string
   extra?: React.ReactNode
   current?: Category | null            // the saved name when it isn't in the list (an import)
 }) {
@@ -16,19 +19,22 @@ export default function CategoryPicker({ rows, kind, value, onPick, extra, curre
   const groups = useMemo(() => groupedCategories(rows, kind), [rows, kind])
   const query = q.trim().toLowerCase()
   const shown = query
-    ? groups.map(g => ({ ...g, items: g.group.label.toLowerCase().includes(query) ? g.items : g.items.filter(c => c.name.toLowerCase().includes(query)) })).filter(g => g.items.length)
+    ? groups.map(g => ({ ...g, items: g.group.label.toLowerCase().includes(query) ? g.items
+        : g.items.filter(c => c.name.toLowerCase().includes(query) || (c.name === 'Investment' && INVEST_KINDS.some(k => k.toLowerCase().includes(query)))) })).filter(g => g.items.length)
     : groups
   const picked = value ? groupOf(value, rows, kind) : null
   const need = kind === 'expense' && value ? needOf(value, rows) : null
+  const investKind = value === 'Investment' ? investKindOf({ sub_category: sub, merchant }) : null
+  const isInvest = (c: Category) => kind === 'expense' && c.name === 'Investment'
 
-  const chip = (c: Category, label: string) => {
-    const on = value === c.name
+  const chip = (c: Category, label: string, asKind?: string) => {
+    const on = value === c.name && (asKind == null || investKind === asKind)
     return (
-      <button key={c.id} type="button" role="radio" aria-checked={on} onClick={() => onPick(c.name)}
+      <button key={asKind ? `${c.id}:${asKind}` : c.id} type="button" role="radio" aria-checked={on} onClick={() => onPick(c.name, asKind)}
         className="inline-flex items-center gap-1.5 h-[34px] pl-1.5 pr-3 rounded-full text-[12.5px] transition-colors"
         style={on ? { background: c.color + '1A', boxShadow: `inset 0 0 0 1.5px ${c.color}`, color: c.color, fontWeight: 600 }
           : { background: '#fff', border: '1px solid var(--line)', color: 'var(--text2)', fontWeight: 500 }}>
-        <span className="w-[22px] h-[22px] rounded-full flex items-center justify-center" style={{ background: c.color + (on ? '26' : '1A'), color: c.color }}><CategoryIcon icon={c.icon} size={12} /></span>
+        <span className="w-[22px] h-[22px] rounded-full flex items-center justify-center" style={{ background: c.color + (on ? '26' : '1A'), color: c.color }}><CategoryIcon icon={asKind ? INVEST_KIND_ICON[asKind as keyof typeof INVEST_KIND_ICON] : c.icon} size={12} /></span>
         {label}
       </button>
     )
@@ -44,7 +50,7 @@ export default function CategoryPicker({ rows, kind, value, onPick, extra, curre
       </div>
       {value && (
         <div className="text-[12px] -mt-0.5" style={{ color: 'var(--text3)' }}>
-          {picked ? <><b style={{ color: 'var(--text2)' }}>{picked.label}</b>{isGeneral(value) ? '' : <> › {value}</>}</> : <b style={{ color: 'var(--text2)' }}>{value}</b>}
+          {picked ? <><b style={{ color: 'var(--text2)' }}>{picked.label}</b>{isGeneral(value) ? '' : <> › {investKind ?? value}</>}</> : <b style={{ color: 'var(--text2)' }}>{value}</b>}
           {need != null && <> · counts as a <b style={{ color: need ? '#1D5FA8' : '#9A3412' }}>{need ? 'need' : 'want'}</b></>}
           {kind === 'income' && value === 'Refund' && <> · money back, not counted as income</>}
         </div>
@@ -59,7 +65,8 @@ export default function CategoryPicker({ rows, kind, value, onPick, extra, curre
               <i className="w-2 h-2 rounded-sm" style={{ background: group.color }} />{group.label}{!group.spending && kind === 'expense' ? <span className="normal-case tracking-normal font-normal"> · not spending</span> : null}
             </span>
             <div className="flex flex-wrap gap-1.5">
-              {items.map(c => chip(c, isGeneral(c.name) && items.length > 1 ? `${group.label} (general)` : c.name))}
+              {items.flatMap(c => isInvest(c) ? INVEST_KINDS.map(k => chip(c, k, k))
+                : [chip(c, isGeneral(c.name) && items.length > 1 ? `${group.label} (general)` : c.name)])}
             </div>
           </div>
         ))}
