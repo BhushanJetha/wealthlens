@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { buildCategoryMemory } from '@/lib/categoryMemory'
 import { useViewStore } from '@/store/viewStore'
 import { useCategoryStore } from '@/store/categoryStore'
+import { CategoryOptgroups } from './CategoryPicker'
 import { Upload, CheckCircle2, Lock, CreditCard } from 'lucide-react'
 import { useDropzone } from 'react-dropzone'
 import { cardPartOfStatement } from '@/lib/cardLoans'
@@ -415,7 +416,9 @@ export default function CreditCardUploadModal({ onClose }: Props) {
                 <ReviewRow key={i} t={t} sym={sym} first={i === 0} onToggle={() => toggleTxn(i)} onRemove={() => removeTxn(i)}
                   category={
                     <select value={t.category} onChange={e => updateTxn(i, 'category', e.target.value)} aria-label="Category" className={rowSelect} style={rowSelectStyle}>
-                      {(cardCats.includes(t.category) ? cardCats : [t.category, ...cardCats]).map(c => <option key={c}>{c}</option>)}
+                      {!cardCats.includes(t.category) && <option>{t.category}</option>}
+                      <CategoryOptgroups rows={userCats} kind="expense" />
+                      <optgroup label="Not spending"><option>Credit Card Payment</option><option>Refund</option><option>Transfer</option></optgroup>
                     </select>
                   }
                   type={

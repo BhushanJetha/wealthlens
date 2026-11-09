@@ -6,6 +6,7 @@
 import { fundingPlan, goalPlan, isRecurring, kindOf, pmtFor, tracksCash, type Cur } from './goals'
 import type { GoalItem } from './goalsView'
 import { spendRoom } from './spendRoom'
+import { budgetKeyOf, spentOn } from './budgets'
 import { monthlyCommitted, type FoundCharge } from './regular'
 import { monthCommitments } from './homePlan'
 import { addMonths, ymOf } from './insights'
@@ -55,7 +56,7 @@ export function monthPlan(inp: {
   // A repeating bill in an everyday category (a subscription, say) is in Bills: not twice
   const repeatsIn: Record<string, number> = {}
   for (const r of inp.recurring) if (r.is_active && r.txn_type === 'expense' && r.currency === cur) repeatsIn[r.category] = (repeatsIn[r.category] ?? 0) + (Number(r.amount) || 0) / (Number(r.every_months) || 1)
-  const everyday = room.lines.reduce((s, l) => s + Math.max(0, l.cap - (repeatsIn[l.category] ?? 0)), 0), everydaySpent = room.lines.reduce((s, l) => s + l.spent, 0)
+  const everyday = room.lines.reduce((s, l) => s + Math.max(0, l.cap - Object.entries(repeatsIn).reduce((a, [c, v]) => a + (c === l.category || budgetKeyOf(c) === l.category ? v : 0), 0)), 0), everydaySpent = room.lines.reduce((s, l) => s + l.spent, 0)
   const income = inp.declared ?? inp.monthly[cur].income
   const goals = goalRows.reduce((s, r) => s + r.amount, 0)
   // Charges only spotted in your history are part of your usual spending, so they're counted there
@@ -214,7 +215,7 @@ export function fixesFor(inp: { cur: Cur; today: string; items: GoalItem[]; shor
   }
   // Spend less: the budgets with the most room, at most 40% off each
   const rows = inp.budgetRows.filter(b => (b.currency ?? 'INR') === cur && b.month_year === today.slice(0, 7) && Number(b.monthly_cap) > 0 && !String(b.category).startsWith('__'))
-    .map(b => ({ row: b, category: b.category, cap: Number(b.monthly_cap), room: Number(b.monthly_cap) - (inp.spent[b.category] ?? 0) }))
+    .map(b => ({ row: b, category: b.category, cap: Number(b.monthly_cap), room: Number(b.monthly_cap) - spentOn(inp.spent, b.category) }))
     .sort((a, b) => b.room - a.room)
   let need = short
   const cuts: { row: any; category: string; from: number; to: number }[] = []

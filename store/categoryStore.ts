@@ -11,14 +11,19 @@ interface CategoryState {
   rows: Category[]
   status: 'idle' | 'loading' | 'ready'
   persisted: boolean
+  hasMeta: boolean            // migration 045 run: parent / need can be saved
   load: (force?: boolean) => Promise<void>
   // Each returns an error message, or null when it worked
-  add: (c: { kind: CatKind; name: string; color: string; icon: string }) => Promise<string | null>
-  update: (id: string, patch: { name?: string; color?: string; icon?: string }) => Promise<string | null>
+  add: (c: { kind: CatKind; name: string; color: string; icon: string; parent?: string | null }) => Promise<string | null>
+  update: (id: string, patch: { name?: string; color?: string; icon?: string; parent?: string | null; need?: boolean | null }) => Promise<string | null>
   remove: (id: string, moveTo: string) => Promise<string | null>
 }
 
 const NEEDS_MIGRATION = 'Saving your own categories needs migration 024 (supabase/migrations/024_categories.sql). Run it in Supabase, then try again.'
+const NEEDS_045 = 'Sub-categories and need / want need migration 045 (supabase/migrations/045_sub_categories.sql). Run it in Supabase, then try again.'
+// parent and need arrive with migration 045; before it, the rest still works
+const COLS = 'id,kind,name,color,icon,sort_order,parent,need', OLD_COLS = 'id,kind,name,color,icon,sort_order'
+const noCol = (e: any) => /parent|need|column/i.test(String(e?.message ?? '')) && !isMissingTable(e)
 const byOrder = (a: Category, b: Category) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)
 const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
 let inflight: Promise<void> | null = null
@@ -27,6 +32,7 @@ export const useCategoryStore = create<CategoryState>((set, get) => ({
   rows: DEFAULT_CATEGORIES,
   status: 'idle',
   persisted: false,
+  hasMeta: false,
 
   load: async (force = false) => {
     if (inflight) return inflight
@@ -37,11 +43,13 @@ export const useCategoryStore = create<CategoryState>((set, get) => ({
       const { data: { user } } = await sb.auth.getUser()
       if (!user) { set({ status: 'ready' }); return }
       const [cats, used] = await Promise.all([
-        sb.from('categories').select('id,kind,name,color,icon,sort_order').eq('user_id', user.id),
+        sb.from('categories').select(COLS).eq('user_id', user.id).then(async (r: any) => r.error && noCol(r.error)
+          ? { ...(await sb.from('categories').select(OLD_COLS).eq('user_id', user.id)), old: true } : r),
         sb.from('transactions').select('category,txn_type').eq('user_id', user.id).in('txn_type', ['expense', 'income'])
           .order('txn_date', { ascending: false }).limit(5000),
       ])
-      let { data, error } = cats
+      let { data, error } = cats as any
+      const hasMeta = !(cats as any).old
       // Names already on the user's transactions (their own, or from imports)
       // join the list so they can be managed too. Money movements never do.
       const usedDefs: Category[] = []
@@ -54,7 +62,7 @@ export const useCategoryStore = create<CategoryState>((set, get) => ({
       if (error) { set({ rows: [...DEFAULT_CATEGORIES, ...usedDefs].sort(byOrder), persisted: false, status: 'ready' }); return }
       // Seed built-ins the first time, add any built-in the app relies on that's
       // missing (e.g. one introduced later), and any name in use not yet listed
-      const have = data ?? []
+      const have: any[] = data ?? []
       const listed = (c: Category) => have.some(r => r.kind === c.kind && sameName(r.name, c.name))
       const missing = [
         ...DEFAULT_CATEGORIES.filter(d => have.length === 0 || (isSystemCategory(d.kind, d.name) && !listed(d))),
@@ -62,14 +70,14 @@ export const useCategoryStore = create<CategoryState>((set, get) => ({
       ]
       if (missing.length) {
         await sb.from('categories').insert(missing.map(({ id, ...d }) => ({ ...d, user_id: user.id })))
-        ;({ data, error } = await sb.from('categories').select('id,kind,name,color,icon,sort_order').eq('user_id', user.id))
+        ;({ data, error } = await sb.from('categories').select(hasMeta ? COLS : OLD_COLS).eq('user_id', user.id) as any)
       }
-      set({ rows: ((data ?? []) as Category[]).sort(byOrder), persisted: !error, status: 'ready' })
+      set({ rows: ((data ?? []) as Category[]).sort(byOrder), persisted: !error, hasMeta: hasMeta && !error, status: 'ready' })
     })().finally(() => { inflight = null })
     return inflight
   },
 
-  add: async ({ kind, name, color, icon }) => {
+  add: async ({ kind, name, color, icon, parent }) => {
     const n = name.trim()
     if (!n) return 'Give the category a name.'
     if (n.length > 40) return 'Keep the name under 40 characters.'
@@ -79,10 +87,11 @@ export const useCategoryStore = create<CategoryState>((set, get) => ({
     const { data: { user } } = await sb.auth.getUser()
     if (!user) return 'Please sign in again.'
     const sort_order = Math.max(-1, ...get().rows.filter(r => r.kind === kind).map(r => r.sort_order)) + 1
-    const { data, error } = await sb.from('categories').insert({ user_id: user.id, kind, name: n, color, icon, sort_order })
-      .select('id,kind,name,color,icon,sort_order').single()
+    if (parent && !get().hasMeta) return NEEDS_045
+    const { data, error } = await sb.from('categories').insert({ user_id: user.id, kind, name: n, color, icon, sort_order, ...(get().hasMeta ? { parent: parent ?? null } : {}) })
+      .select(get().hasMeta ? COLS : OLD_COLS).single()
     if (error || !data) return isMissingTable(error) ? NEEDS_MIGRATION : (error?.message ?? 'Could not add the category.')
-    set({ rows: [...get().rows, data as Category].sort(byOrder) })
+    set({ rows: [...get().rows, data as unknown as Category].sort(byOrder) })
     return null
   },
 
@@ -101,7 +110,12 @@ export const useCategoryStore = create<CategoryState>((set, get) => ({
     const sb = createClient()
     const { data: { user } } = await sb.auth.getUser()
     if (!user) return 'Please sign in again.'
-    const next = { name: renaming ? name! : row.name, color: patch.color ?? row.color, icon: patch.icon ?? row.icon }
+    const meta = 'parent' in patch || 'need' in patch
+    if (meta && !get().hasMeta) return NEEDS_045
+    // A built-in sub-category's category is fixed; only yours can move
+    if ('parent' in patch && isSystemCategory(row.kind, row.name)) return `${row.name} belongs to its category for good. You can add your own sub-category anywhere.`
+    const next = { name: renaming ? name! : row.name, color: patch.color ?? row.color, icon: patch.icon ?? row.icon,
+      ...('parent' in patch ? { parent: patch.parent ?? null } : {}), ...('need' in patch ? { need: patch.need ?? null } : {}) }
     const { error } = await sb.from('categories').update(next).eq('id', id).eq('user_id', user.id)
     if (error) return error.message
     if (renaming) {

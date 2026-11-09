@@ -6,6 +6,7 @@ import { fetchAll } from '@/lib/supabase/fetchAll'
 import { buildCategoryMemory } from '@/lib/categoryMemory'
 import { useViewStore } from '@/store/viewStore'
 import { useCategoryStore } from '@/store/categoryStore'
+import { CategoryOptgroups } from './CategoryPicker'
 import { Upload, CheckCircle2, Lock, Landmark, PiggyBank } from 'lucide-react'
 import { useDropzone } from 'react-dropzone'
 import { ImportSheet, BankField, DropZone, PasswordStep, Working, Notice, ResultState, ReviewSummary, ReviewRow, rowSelect, rowSelectStyle, type ImportStage } from './StatementImport'
@@ -502,12 +503,8 @@ export default function BankStatementUploadModal({ onClose }: Props) {
                         else if (spendCats.includes(cat)) updateTxn(i, 'txn_type', 'expense')
                       }}>
                       {t.category && ![...spendCats, ...incomeCats, 'Transfer', 'International Transfer', 'NRE to NRO', 'NRO to Family', 'Self Transfer', 'Family Transfer', 'Credit Card Payment', 'Loan on Card', 'EMI/Loan', 'Loan Received', 'Loan Taken', 'Refund', 'Other'].includes(t.category) && <option>{t.category}</option>}
-                      <optgroup label="Spending">
-                        {spendCats.map(c => <option key={c}>{c}</option>)}
-                      </optgroup>
-                      <optgroup label="Income">
-                        {incomeCats.map(c => <option key={c}>{c}</option>)}
-                      </optgroup>
+                      <CategoryOptgroups rows={userCats} kind="expense" only={n => spendCats.includes(n)} />
+                      <CategoryOptgroups rows={userCats} kind="income" only={n => incomeCats.includes(n)} prefix="Income · " />
                       <optgroup label="Transfers">
                         <option>Transfer</option>
                         <option>International Transfer</option>

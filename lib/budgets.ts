@@ -4,6 +4,7 @@
 // reserved kinds — a "save first" target and per-person budgets.
 // Spending is counted with the same rules as everywhere else (lib/money).
 import { isSpend, isSpending, isRemitOut, catOf, labelOf, isIncome, spendGroup, type View, canonCategory, expandSplits } from './money'
+import { GROUPS, groupOf, needOf, type Category } from './categories'
 
 // Own date helpers (lib/insights imports this file)
 const ymOf = (d: string) => String(d ?? '').slice(0, 7)
@@ -34,6 +35,27 @@ export const FIXED = new Set(['EMI/Loan', 'Rent', 'Investment', 'Family Transfer
 export const SAVINGS = '__savings__'
 export const PERSON = '__person__'
 export const isReserved = (c: string) => c === SAVINGS || c === PERSON
+// A budget is on a whole category (Food, Transport…) or on one sub-category.
+// Spending counts towards its category's budget, except fixed costs and the
+// rows that aren't a category (each keeps a line of its own). A sub-category
+// budget inside its category's budget is a limit within it — never added to
+// the totals again.
+const SPEND_LABELS = new Set(GROUPS.filter(g => g.spending).map(g => g.label))
+export const isGroupBudget = (c: string) => SPEND_LABELS.has(c)
+const OWN_LINE = new Set(['Credit Card Payment', 'EMI/Loan', 'Transfer', 'International Transfer', 'Card spending (not itemised)'])
+export function budgetKeyOf(c: string, rows: Category[] = []): string {
+  if (FIXED.has(c) || OWN_LINE.has(c)) return c
+  const g = groupOf(c, rows)
+  return g?.spending ? g.label : c
+}
+// What a budget's category spent: a whole category adds up its sub-categories
+export function spentOn(spend: Record<string, number>, c: string, rows: Category[] = []): number {
+  if (!isGroupBudget(c)) return spend[c] ?? 0
+  let v = 0
+  for (const k in spend) if (budgetKeyOf(k, rows) === c) v += spend[k]
+  return v
+}
+
 const LABEL: Record<string, string> = { 'EMI/Loan': 'EMI / loan payments', Transfer: 'Money transfer', 'International Transfer': 'Sent home', 'Credit Card Payment': 'Credit card payments' }
 export const budgetLabel = (c: string) => LABEL[c] ?? labelOf(c)
 
@@ -80,7 +102,7 @@ export function carryIn(budgets: any[], txns: any[], month: string, cur: Cur): R
     if (!rows.length) { carry = {}; continue }
     const spent = spendByCategory(txns, m, cur)
     const next: Record<string, number> = {}
-    for (const b of rows) next[b.category] = Math.max(0, (Number(b.monthly_cap) || 0) + (carry[b.category] ?? 0) - (spent[b.category] ?? 0))
+    for (const b of rows) next[b.category] = Math.max(0, (Number(b.monthly_cap) || 0) + (carry[b.category] ?? 0) - spentOn(spent, b.category))
     carry = next
   }
   return Object.fromEntries(Object.entries(carry).filter(([, v]) => v > 0))
@@ -131,19 +153,24 @@ export interface BudgetLine {
   base: number; carry: number; cover: number      // cap = base + rolled over + yearly fund
   cap: number; spent: number; left: number; pct: number; status: BudgetStatus
   row: any; manual: boolean; rollover: boolean
+  inside?: string       // a sub-category limit inside this category's budget (not added to totals)
 }
 export function budgetLines(budgets: any[], spend: Record<string, number>, month: string, cur: Cur,
-  extras: { carry?: Record<string, number>; cover?: Record<string, number> } = {}): BudgetLine[] {
+  extras: { carry?: Record<string, number>; cover?: Record<string, number>; rows?: Category[] } = {}): BudgetLine[] {
   const RANK: Record<BudgetStatus, number> = { over: 0, near: 1, ok: 2 }
-  return budgets
-    .filter(b => b.month_year === month && curOf(b) === cur && !NOT_PLANABLE.has(canonCategory(b.category)) && !isReserved(b.category) && Number(b.monthly_cap) >= 0)
+  const rows = extras.rows ?? []
+  const mine = budgets.filter(b => b.month_year === month && curOf(b) === cur && !NOT_PLANABLE.has(canonCategory(b.category)) && !isReserved(b.category) && Number(b.monthly_cap) >= 0)
+  const groupBudgets = new Set(mine.map(b => canonCategory(b.category)).filter(isGroupBudget))
+  return mine
     .map(b => {
       const category = canonCategory(b.category), base = Number(b.monthly_cap) || 0
       const carry = extras.carry?.[category] ?? 0, cover = extras.cover?.[category] ?? 0
-      const cap = base + carry + cover, spent = spend[category] ?? 0
+      const cap = base + carry + cover, spent = spentOn(spend, category, rows)
+      const parent = budgetKeyOf(category, rows)
+      const inside = !isGroupBudget(category) && parent !== category && groupBudgets.has(parent) ? parent : undefined
       const pct = cap > 0 ? spent / cap * 100 : spent > 0 ? 100 : 0
       return {
-        category, base, carry, cover, cap, spent, left: cap - spent, pct, row: b, manual: !!b.is_manual, rollover: !!b.rollover,
+        category, base, carry, cover, cap, spent, left: cap - spent, pct, row: b, manual: !!b.is_manual, rollover: !!b.rollover, inside,
         // A fixed cost paid in full (within 2%) is done, not over
         status: (FIXED.has(category) && cap > 0 && spent >= cap * 0.98 && spent <= cap * 1.02 ? 'ok'
           : pct > 100.5 && spent > 0 ? 'over' : pct >= 85 ? 'near' : 'ok') as BudgetStatus,
@@ -165,18 +192,20 @@ export function weekOf(today: string) {
 // A month's money in one currency, by the shared rules: income in that view
 // (India income = money landing in NRE), spent (living + family), EMIs and
 // investing; saved = income − spent − EMIs (investing counts as saving).
+// `wants`: the part of spent that's wants (lib/categories need / want).
 // `prepared` = prepareMoney(transactions).
-export function monthMoney(prepared: any[], month: string, cur: Cur) {
+export function monthMoney(prepared: any[], month: string, cur: Cur, rows: Category[] = []) {
   const view = curView(cur)
-  let income = 0, spent = 0, emi = 0, invest = 0
+  let income = 0, spent = 0, emi = 0, invest = 0, wants = 0
   for (const t of prepared) {
     if (ymOf(t.txn_date) !== month || t.currency !== cur) continue
     const v = Number(t.amount) || 0
     if (isIncome(t, view)) { income += v; continue }
     const g = spendGroup(t)
-    if (g === 'loans') emi += v; else if (g === 'invest') invest += v; else if (g) spent += v
+    if (g === 'loans') emi += v; else if (g === 'invest') invest += v
+    else if (g) { spent += v; if (needOf(catOf(t), rows) === false) wants += v }
   }
-  return { income, spent, emi, invest, saved: income - spent - emi }
+  return { income, spent, emi, invest, wants, saved: income - spent - emi }
 }
 
 // ── Per person ───────────────────────────────────────────────────────────────
@@ -198,14 +227,15 @@ export function personSpend(txns: any[], month: string, cur: Cur): Record<string
 // one-off costs (school fees, a holiday) don't become budgets — those are
 // better as yearly costs. One currency at a time.
 export interface Suggestion { cap: number; avg: number; max: number; months: number }
-export function suggestCaps(txns: any[], currency: Cur, month: string): Record<string, Suggestion> {
+export function suggestCaps(txns: any[], currency: Cur, month: string, rows: Category[] = []): Record<string, Suggestion> {
   const months = [1, 2, 3].map(i => addMonths(month, -i))
   const per: Record<string, Record<string, number>> = {}
   for (const t of expandSplits(txns)) {
     const m = ymOf(t.txn_date)
     if (t.currency !== currency || !months.includes(m) || !budgetable(t)) continue
-    const c = catOf(t)
-    if (NOT_PLANABLE.has(c)) continue
+    if (NOT_PLANABLE.has(catOf(t))) continue
+    // Suggested per category (Food, not Groceries), fixed costs on their own
+    const c = budgetKeyOf(catOf(t), rows)
     ;(per[c] ||= {})[m] = (per[c][m] ?? 0) + (Number(t.amount) || 0)
   }
   const step = currency === 'AED' ? 10 : 100

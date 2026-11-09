@@ -7,14 +7,13 @@ import { useViewStore } from '@/store/viewStore'
 import { useCategoryStore } from '@/store/categoryStore'
 import { useFamily, holderOptions } from '@/hooks/useFamily'
 import { createClient } from '@/lib/supabase/client'
-import { colorOf as catColorOf } from '@/lib/categories'
+import { colorOf as catColorOf, GROUPS } from '@/lib/categories'
 import { fmtMoney, fmtCompact } from '@/lib/format'
 import { prepareMoney, spendGroup, SPEND_GROUPS, type SpendGroup } from '@/lib/money'
 import { daysInMonth, localToday, fmtDay } from '@/lib/insights'
 import {
   spendByCategory, budgetLines, budgetLabel, planMonthBudgets, carryIn, fundPlan, fundCover, weekOf, monthMoney, personSpend, addMonths,
-  NOT_PLANABLE, PAYMENT_BUDGETS, FIXED, SAVINGS, PERSON, type BudgetLine, type Cur, type Fund,
-} from '@/lib/budgets'
+  NOT_PLANABLE, PAYMENT_BUDGETS, FIXED, SAVINGS, PERSON, type BudgetLine, type Cur, type Fund, spentOn, budgetKeyOf, isGroupBudget } from '@/lib/budgets'
 import { PageHeader, InsightBar, AiActions, KpiTile, KpiGrid, Panel, Ring, LearnStrip, MoreLink } from '@/components/ui/kit'
 import { ChipFilter } from '@/components/ui/list'
 import { CategoryIcon } from '@/components/ui/CategoryIcon'
@@ -30,7 +29,8 @@ const STATUS = {
   ok:   { label: 'On track', color: '#16A34A', bg: '#E7F7EF' },
 } as const
 const monLabel = (m: string) => `${MON[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`
-const groupOf = (c: string): SpendGroup => spendGroup({ txn_type: c === 'EMI/Loan' ? 'loan' : 'expense', category: c }) ?? 'sent'
+const SPEND_GROUP_LABELS = GROUPS.filter(g => g.spending).map(g => g.label)
+const groupOf = (c: string): SpendGroup => c === 'Family & kids' ? 'sent' : isGroupBudget(c) ? 'living' : spendGroup({ txn_type: c === 'EMI/Loan' ? 'loan' : 'expense', category: c }) ?? 'sent'
 const curName = (c: Cur) => (c === 'AED' ? 'UAE · AED' : 'India · ₹')
 
 // This device's memory of what the automatic budgets may add this month
@@ -112,24 +112,25 @@ export default function BudgetsClient({ today: serverToday, budgets: initial, tr
 
   const colorOf = (c: string) => c === 'International Transfer' ? '#3B8EF0' : catColorOf(categories, c)
   const iconOf = (c: string) => categories.find(r => r.name === c)?.icon ?? (c === 'International Transfer' ? 'send' : 'tag')
-  const planCats = useMemo(() => [...categories.filter(c => c.kind === 'expense' && !NOT_PLANABLE.has(c.name)).map(c => c.name), 'International Transfer'], [categories])
+  const planCats = useMemo(() => Array.from(new Set([...SPEND_GROUP_LABELS, ...categories.filter(c => c.kind === 'expense' && !NOT_PLANABLE.has(c.name)).map(c => c.name), 'International Transfer'])), [categories])
   const prepared = useMemo(() => prepareMoney(transactions, { fx: FX }), [transactions, FX])
 
   // ── This currency's month ──
   const build = (c: Cur, m: string) => {
     const spend = spendByCategory(transactions, m, c)
-    const ls = budgetLines(budgets, spend, m, c, { carry: carryIn(budgets, transactions, m, c), cover: fundCover(funds, m, c) })
-    // Totals leave out the card-payment budget (it pays for purchases counted above)
-    const counted = ls.filter(l => !PAYMENT_BUDGETS.has(l.category))
+    const ls = budgetLines(budgets, spend, m, c, { carry: carryIn(budgets, transactions, m, c), cover: fundCover(funds, m, c), rows: categories })
+    // Totals leave out the card-payment budget (it pays for purchases counted
+    // above) and a sub-category's limit inside its category's budget
+    const counted = ls.filter(l => !PAYMENT_BUDGETS.has(l.category) && !l.inside)
     return { spend, lines: ls, cap: counted.reduce((a, l) => a + l.cap, 0), spent: counted.reduce((a, l) => a + l.spent, 0) }
   }
-  const { spend, lines, cap, spent } = useMemo(() => build(cur, month), [budgets, transactions, funds, cur, month]) // eslint-disable-line react-hooks/exhaustive-deps
+  const { spend, lines, cap, spent } = useMemo(() => build(cur, month), [budgets, transactions, funds, cur, month, categories]) // eslint-disable-line react-hooks/exhaustive-deps
   const both = useMemo(() => view === 'consolidated' ? (['AED', 'INR'] as Cur[]).map(c => ({ c, ...build(c, month) })) : [], [budgets, transactions, funds, view, month]) // eslint-disable-line react-hooks/exhaustive-deps
   const left = cap - spent
-  const outside = Object.entries(spend).filter(([c]) => !lines.some(l => l.category === c) && !NOT_PLANABLE.has(c) && !PAYMENT_BUDGETS.has(c)).reduce((a, [, v]) => a + v, 0)
-  const counted = lines.filter(l => !PAYMENT_BUDGETS.has(l.category))
+  const outside = Object.entries(spend).filter(([c]) => !lines.some(l => l.category === c || l.category === budgetKeyOf(c, categories)) && !NOT_PLANABLE.has(c) && !PAYMENT_BUDGETS.has(c)).reduce((a, [, v]) => a + v, 0)
+  const counted = lines.filter(l => !PAYMENT_BUDGETS.has(l.category) && !l.inside)
   const payLines = lines.filter(l => PAYMENT_BUDGETS.has(l.category))
-  const flex = lines.filter(l => !FIXED.has(l.category))
+  const flex = lines.filter(l => !FIXED.has(l.category) && !l.inside)
   const flexLeft = flex.reduce((a, l) => a + Math.max(l.left, 0), 0)
   const expectedNow = flex.reduce((a, l) => a + l.cap * day / dim, 0) + counted.filter(l => FIXED.has(l.category)).reduce((a, l) => a + l.spent, 0)
   const projected = !isCurrent ? spent : counted.reduce((a, l) => a + (FIXED.has(l.category) ? Math.max(l.spent, l.cap) : day > 0 ? l.spent / day * dim : l.spent), 0)
@@ -164,15 +165,16 @@ export default function BudgetsClient({ today: serverToday, budgets: initial, tr
   // ── This week ──
   const wk = weekOf(today)
   const weekSpend = isCurrent ? spendByCategory(transactions, month, cur, wk.fromDay, wk.toDay) : {}
-  const weekRows = isCurrent ? flex.filter(l => l.base > 0).map(l => ({ l, share: wk.share(l.base), spent: weekSpend[l.category] ?? 0 })).sort((a, b) => b.share - a.share).slice(0, 6) : []
+  const weekRows = isCurrent ? flex.filter(l => l.base > 0).map(l => ({ l, share: wk.share(l.base), spent: spentOn(weekSpend, l.category, categories) })).sort((a, b) => b.share - a.share).slice(0, 6) : []
 
   // ── History & grid ──
   const history = useMemo(() => {
-    const cats = new Set(lines.map(l => l.category).filter(c => !PAYMENT_BUDGETS.has(c)))
+    const cats = new Set(lines.filter(l => !l.inside).map(l => l.category).filter(c => !PAYMENT_BUDGETS.has(c)))
     return Array.from({ length: 12 }, (_, i) => addMonths(month, i - 11)).map(m => {
       const sp = spendByCategory(transactions, m, cur)
-      const c = budgetLines(budgets, sp, m, cur).filter(l => cats.has(l.category)).reduce((a, l) => a + l.base, 0)
-      return { m, cap: c, spent: Array.from(cats).reduce((a, k) => a + (sp[k] ?? 0), 0), budgeted: c > 0 }
+      const ls = budgetLines(budgets, sp, m, cur, { rows: categories }).filter(l => cats.has(l.category) && !l.inside)
+      const c = ls.reduce((a, l) => a + l.base, 0)
+      return { m, cap: c, spent: Array.from(cats).filter(k => !ls.some(l => l.category !== k && budgetKeyOf(k, categories) === l.category)).reduce((a, k) => a + spentOn(sp, k, categories), 0), budgeted: c > 0 }
     })
   }, [transactions, budgets, month, cur, lines])
   const histMax = Math.max(1, ...history.map(h => Math.max(h.cap, h.spent)))
@@ -180,7 +182,7 @@ export default function BudgetsClient({ today: serverToday, budgets: initial, tr
     const months = Array.from({ length: 6 }, (_, i) => addMonths(month, i - 5))
     const per = months.map(m => ({ sp: spendByCategory(transactions, m, cur), ls: budgetLines(budgets, {}, m, cur) }))
     const cats = Array.from(new Set([...lines.map(l => l.category), ...Object.entries(spend).filter(([c]) => !PAYMENT_BUDGETS.has(c)).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([c]) => c)])).filter(c => !NOT_PLANABLE.has(c))
-    return { months, cats, cell: (c: string, i: number) => ({ v: per[i].sp[c] ?? 0, cap: per[i].ls.find(l => l.category === c)?.base ?? 0 }) }
+    return { months, cats, cell: (c: string, i: number) => ({ v: spentOn(per[i].sp, c, categories), cap: per[i].ls.find(l => l.category === c)?.base ?? 0 }) }
   }, [transactions, budgets, month, cur, lines, spend])
 
   // ── Actions ──
@@ -387,6 +389,7 @@ export default function BudgetsClient({ today: serverToday, budgets: initial, tr
                           {l.manual ? <Lock size={11} style={{ color: 'var(--text4)' }} aria-label="Fixed amount" className="flex-shrink-0" />
                             : <span className="text-[10px] font-semibold px-1.5 py-[1px] rounded-full flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent2)' }}>Auto</span>}
                           {l.rollover && <Repeat size={11} style={{ color: 'var(--text4)' }} aria-label="Rolls over" className="flex-shrink-0" />}
+                          {l.inside && <span className="text-[10px] font-semibold px-1.5 py-[1px] rounded-full flex-shrink-0" style={{ background: '#F1F5F9', color: 'var(--text3)' }} title={`A limit inside your ${l.inside} budget, so it isn’t added to the totals again.`}>inside {l.inside}</span>}
                           {PAYMENT_BUDGETS.has(l.category) && <span className="text-[10px] font-semibold px-1.5 py-[1px] rounded-full flex-shrink-0" style={{ background: '#F3E8FF', color: '#7E22CE' }} title="Card bills you paid this month. They pay for card purchases already counted in the other budgets, so this isn’t added to the totals.">not in totals</span>}
                           {l.carry > 0 && <span className="hidden sm:inline text-[10.5px] font-semibold px-1.5 py-[1px] rounded-full flex-shrink-0" style={{ background: '#E7F7EF', color: '#1E7A50' }}>+{short(l.carry)} rolled over</span>}
                           {l.cover > 0 && <span className="hidden sm:inline text-[10.5px] font-semibold px-1.5 py-[1px] rounded-full flex-shrink-0" style={{ background: '#E0F4F8', color: '#0E7490' }}>+{short(l.cover)} from yearly fund</span>}

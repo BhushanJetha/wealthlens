@@ -9,6 +9,7 @@ import SpendCalendar from './SpendCalendar'
 import { useUiStore } from '@/store/uiStore'
 import { isSpend, isSpending, catOf, labelOf, spendGroup, SPEND_GROUPS, expandSplits } from '@/lib/money'
 import { useCategoryStore } from '@/store/categoryStore'
+import { spentOn, budgetKeyOf, isGroupBudget } from '@/lib/budgets'
 import { colorOf as catColorOf } from '@/lib/categories'
 import { CategoryIcon } from '@/components/ui/CategoryIcon'
 import { addMonths, daysInMonth, localToday } from '@/lib/insights'
@@ -79,10 +80,13 @@ export default function AnalysisClient({ transactions: raw, budgets }: { transac
   const budgetRows = view === 'consolidated' ? [] : budgets.filter(b => b.month_year === focus && inView(b.currency ?? 'INR') && !NOT_PLANABLE.has(b.category))
   const budgetBy: Record<string, number> = {}
   budgetRows.forEach(b => { budgetBy[b.category] = (budgetBy[b.category] ?? 0) + conv(Number(b.monthly_cap), b.currency ?? 'INR') })
-  const B = sum(budgetBy)
+  // A sub-category's limit inside its category's budget isn't added again
+  const insideB = (c: string) => !isGroupBudget(c) && budgetKeyOf(c) !== c && budgetBy[budgetKeyOf(c)] != null
+  const B = Object.keys(budgetBy).reduce((a, c) => a + (insideB(c) ? 0 : budgetBy[c]), 0)
+  const nowFor = (c: string) => spentOn(data.now, c)
   // Budget figures compare only the categories that have a budget; spending
   // elsewhere (rent, transfers…) is called out separately, not counted as "over".
-  const inBudget = (o: Record<string, number>) => Object.keys(budgetBy).reduce((a, c) => a + (o[c] ?? 0), 0)
+  const inBudget = (o: Record<string, number>) => Object.keys(o).reduce((a, c) => a + (budgetBy[c] != null || budgetBy[budgetKeyOf(c)] != null ? o[c] : 0), 0)
   const Tb = inBudget(data.now)
   const outside = T - Tb
   const used = B > 0 ? Tb / B * 100 : null
@@ -99,7 +103,7 @@ export default function AnalysisClient({ transactions: raw, budgets }: { transac
   const paceComparable = B > 0 && T > 0 && Tb >= T * 0.9
   const pct = (a: number, b: number) => b > 0 ? Math.round((a - b) / b * 1000) / 10 : null
   const vsLm = pct(T, LMs), vsLy = pct(T, LYs)
-  const overCats = Object.keys(budgetBy).filter(c => (data.now[c] ?? 0) > budgetBy[c])
+  const overCats = Object.keys(budgetBy).filter(c => nowFor(c) > budgetBy[c])
 
   // Category order follows this month's spend; colour and icon follow the
   // user's own category (so a category looks the same on every screen)
@@ -154,7 +158,7 @@ export default function AnalysisClient({ transactions: raw, budgets }: { transac
   const gaugeColor = used == null ? 'var(--accent)' : used > 100 ? '#E4573D' : used >= 80 ? '#F29A2E' : '#2FB67C'
 
   const insights: { t: string; c: string; bg: string; ic: string }[] = []
-  overCats.forEach(c => insights.push({ ic: '!', c: '#D9482F', bg: '#FDECE8', t: `${labelOf(c)} is over budget by ${short((data.now[c] ?? 0) - budgetBy[c])} (${Math.round((data.now[c] ?? 0) / budgetBy[c] * 100)}% used).` }))
+  overCats.forEach(c => insights.push({ ic: '!', c: '#D9482F', bg: '#FDECE8', t: `${labelOf(c)} is over budget by ${short(nowFor(c) - budgetBy[c])} (${Math.round(nowFor(c) / budgetBy[c] * 100)}% used).` }))
   const up = movers.find(m => m.diff > 0), down = movers.find(m => m.diff < 0)
   const when = cmp === 'lm' ? 'last month' : `in ${cmpLabel}`
   if (up) insights.push({ ic: '↑', c: '#B96A0B', bg: '#FFF2E2', t: up.p != null
@@ -164,7 +168,7 @@ export default function AnalysisClient({ transactions: raw, budgets }: { transac
     ? `Nothing on ${labelOf(down.c)} yet, against ${short(down.from)} by this point ${when}.`
     : `${labelOf(down.c)} is down ${Math.abs(down.p ?? 0)}% vs ${cmpLabel} (−${short(Math.abs(down.diff))}).` })
   if (B > 0 && outside > T * 0.1) {
-    const top = cats.filter(c => !budgetBy[c] && (data.now[c] ?? 0) > 0).slice(0, 2).map(labelOf)
+    const top = cats.filter(c => !budgetBy[c] && !budgetBy[budgetKeyOf(c)] && (data.now[c] ?? 0) > 0).slice(0, 2).map(labelOf)
     insights.push({ ic: '?', c: '#64748B', bg: '#F1F5F9', t: `${short(outside)} (${Math.round(outside / T * 100)}%) of this month's spending has no budget${top.length ? ` — mostly ${top.join(' and ')}` : ''}. Add budgets there to track it.` })
   }
   if (isCurrent && B > 0 && left > 0 && daysLeft > 0) insights.push({ ic: '✓', c: '#5640D6', bg: '#F0EDFF', t: `You can spend about ${short(left / daysLeft)} a day for the rest of ${monLabel(focus)} and stay within budget.` })
@@ -243,8 +247,8 @@ export default function AnalysisClient({ transactions: raw, budgets }: { transac
                 ? <>UAE (AED) and India (₹) budgets are separate — switch the view to UAE or India to compare.</>
                 : <>No budgets for {monLabel(focus, true)}. <Link href="/dashboard/budgets" className="font-semibold" style={{ color: 'var(--accent)' }}>Set budgets →</Link></>}
             </div>
-          ) : cats.filter(c => budgetBy[c]).map(c => {
-            const sp = data.now[c] ?? 0, bu = budgetBy[c], p = sp / bu * 100, over = sp > bu
+          ) : Object.keys(budgetBy).sort((a, b) => nowFor(b) - nowFor(a)).map(c => {
+            const sp = nowFor(c), bu = budgetBy[c], p = sp / bu * 100, over = sp > bu
             return (
               <div key={c} className="flex gap-3 items-center">
                 <span className="w-[34px] h-[34px] md:w-[38px] md:h-[38px] rounded-[11px] flex items-center justify-center flex-shrink-0" style={{ background: bgOf(c), color: colorOf(c) }}><CategoryIcon icon={iconOf(c)} size={16} /></span>

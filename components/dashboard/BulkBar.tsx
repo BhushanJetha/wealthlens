@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { Landmark, Tag, Trash2, X } from 'lucide-react'
 import { toast } from '@/components/ui/toaster'
 import { useCategoryStore } from '@/store/categoryStore'
+import { CategoryOptgroups } from '@/components/forms/CategoryPicker'
 import { selectionKinds, type CatKind } from '@/lib/bulk'
 import { Sheet } from './BillSheets'
 
@@ -84,7 +85,7 @@ export default function BulkBar({ sel, rows, allIds, accounts }: { sel: Selectio
         <label className="block"><span className="block text-[12px] font-semibold mb-1" style={{ color: 'var(--text2)' }}>New category</span>
           <select value={category} onChange={e => setCategory(e.target.value)} autoFocus className="wl-input w-full" style={{ height: 44 }}>
             <option value="">Choose category</option>
-            {cats.map(c => <option key={c} value={c}>{c}</option>)}
+            <CategoryOptgroups rows={categories} kind={kind} />
           </select>
         </label>
         {kind === 'expense' && picked.some(t => t.txn_type === 'transfer') && (

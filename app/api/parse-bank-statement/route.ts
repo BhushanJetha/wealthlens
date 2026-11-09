@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { SUB_RULES } from '@/lib/merchantRules'
 import { extractStructuredText } from '@/lib/pdfText'
 
 const BANK_HINTS: Record<string, string> = {
@@ -78,6 +79,8 @@ const CAT_RULES: [RegExp, string][] = [
   [/credit\s+repayment(?:\s+autopay)?|cc\s+(?:bill|payment)|card\s+(?:bill\s+)?repayment|enbd\s+cc|autopay(?:\s+(?:credit|card))?|credit\s+card\s+(?:bill|payment)|amex\s+payment|mastercard\s+payment|visa\s+payment/i, 'Credit Card Payment'],
   // Remittance / money exchange — must come before Shopping (LULU clash)
   [/lulu\s+international\s+exchange|al\s+ansari\s+exchange|western\s+union|money\s*gram|international\s+exchange\s+llc|forex\s+(?:center|transfer|bureau)|remittance|money\s+transfer\s+(?:llc|co)/i, 'Transfer'],
+  // The merchant's sub-category first (lib/merchantRules), then the wider rules
+  ...SUB_RULES,
   // Food
   [/swiggy|zomato|uber\s*eat|talabat|deliveroo|keet\b|noon\s*food|carriage\b|hunger\s*station|blinkit|zepto|dunzo|bigbasket|restaurant|restaur[ae]?nt?|caf[eé]|mcdonald|kfc|pizza|domino|starbucks|dunkin|subway|burger|sushi|biryani|bakery|canteen|dining|eatery|kitchen|diner|grill|shawarma|falafel|bistro|food(?!stuff)/i, 'Food'],
   [/uber(?!\s*eat)|\bola\b|rapido|metro\b|auto\b|cab\b|taxi\b|rickshaw|redbus|careem|transport/i, 'Travel & transport'],

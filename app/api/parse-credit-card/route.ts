@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { SUB_RULES } from '@/lib/merchantRules'
 
 // ──── Bank hints ──────────────────────────────────────────────────────
 
@@ -123,6 +124,8 @@ function toISODate(raw: string, defaultYear?: number): string | null {
 // ──── Categorisation (rule-based, no AI) ─────────────────────────────
 
 const CAT_RULES: [RegExp, string][] = [
+  // The merchant's sub-category first (lib/merchantRules), then the wider rules
+  ...SUB_RULES,
   // Food & dining — delivery apps, restaurants, cafes
   [/swiggy|zomato|uber\s*eat|talabat|deliveroo|keet\b|noon\s*food|carriage\b|hunger\s*station|eatigo|dineout|blinkit|zepto|dunzo|magicpin|instamrt|bigbasket|grofers|jiomart|restaurant|restaur[ae]?nt?|restoran|caf[eé]|mcdonald|kfc|pizza|domino|starbucks|haldiram|dunkin|subway|burger|sushi|biryani|bakery|canteen|dining|eatery|catering|kitchen|diner|grill|shawarma|falafel|juice\s*bar|food(?!stuff)|çay|bistro|brasserie|trattoria|osteria|tavern|chophouse|steakhouse|noodle|ramen|pho\b|wok\b|bbq|barbecue/i, 'Food'],
   // Transport

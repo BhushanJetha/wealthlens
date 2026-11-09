@@ -16,7 +16,7 @@ import SplitSheet from '@/components/dashboard/SplitSheet'
 import PaidBy from './PaidBy'
 import ExpenseSpanPicker, { addDays, daysIncl, mondayOf, type Span } from './ExpenseSpanPicker'
 import { useCategoryStore } from '@/store/categoryStore'
-import { colorOf as catColorOf } from '@/lib/categories'
+import { colorOf as catColorOf, groupKeyOf, groupByKey, needOf, isGeneral, type GroupKey } from '@/lib/categories'
 import { isSpending, spendGroup, catOf, labelOf, myShare } from '@/lib/money'
 import { toast } from '@/components/ui/toaster'
 
@@ -30,6 +30,9 @@ import BulkBar, { useSelection } from './BulkBar'
 import { ListCard, ListRow, ListSearch, ChipFilter } from '@/components/ui/list'
 import { addMonths, daysInMonth, localToday, fmtDay } from '@/lib/insights'
 import { fmtCompact } from '@/lib/format'
+
+// The category filter: a whole category ('g:food') or one sub-category's name
+const isGroupPick = (k: string) => k.startsWith('g:')
 
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -138,12 +141,12 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
     return transactions.filter(t => {
       if (view === 'uae'   && t.currency !== 'AED') return false
       if (view === 'india' && t.currency !== 'INR') return false
-      if (cat !== 'All'   && t.category !== cat && catOf(t) !== cat) return false
+      if (cat !== 'All'   && (isGroupPick(cat) ? !spendGroup(t) || groupKeyOf(catOf(t), categories) !== cat.slice(2) : t.category !== cat && catOf(t) !== cat)) return false
       if (accFilter !== 'All' && t.account_id !== accFilter) return false
       if (search && !t.merchant?.toLowerCase().includes(search.toLowerCase())) return false
       return true
     })
-  }, [transactions, view, cat, accFilter, search])
+  }, [transactions, view, cat, accFilter, search, categories])
 
   // When: the whole months picked at the top, or a week, a day or dates inside them
   const [span, setSpan] = useState<Span>('all')
@@ -180,9 +183,15 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
   const catMonthTotals = useMemo(() => {
     const m: Record<string,number> = {}
     filteredMonthFull.filter(t => t.txn_type === 'expense')
-      .forEach(t => { m[t.category] = (m[t.category] ?? 0) + toDisplay(Number(t.amount), t.currency) })
+      .forEach(t => {
+        const v = toDisplay(Number(t.amount), t.currency)
+        m[t.category] = (m[t.category] ?? 0) + v
+        // A budget on a whole category (Food) counts every sub-category in it
+        const g = groupByKey(groupKeyOf(catOf(t), categories))?.label
+        if (g && g !== t.category) m[g] = (m[g] ?? 0) + v
+      })
     return m
-  }, [filteredMonthFull, view, FX])
+  }, [filteredMonthFull, view, FX, categories])
 
   const budgetMap = useMemo(() => {
     const m: Record<string, number> = {}
@@ -228,6 +237,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
   const money     = (n: number) => `${sym}${Math.round(n).toLocaleString('en-IN')}`
   const viewLabel = view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'
   const isSpend   = isSpending
+  function spendGroupOfName(c: string) { return !!groupByKey(groupKeyOf(c, categories))?.spending }
   const SENT_COLOR: Record<string, string> = { 'International Transfer': '#3B8EF0', Transfer: '#0EA5E9' }
   const colorOf = (rows: typeof categories, c: string) => SENT_COLOR[c] ?? catColorOf(rows, c)
 
@@ -287,19 +297,30 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
 
   // Category chips: only categories this period actually has, with counts
   const catOptions = useMemo(() => {
+    const open = cat === 'All' ? null : isGroupPick(cat) ? cat.slice(2) : groupKeyOf(cat, categories)
     const n: Record<string, number> = {}
     let all = 0
     transactions.forEach(t => {
       if (view === 'uae' && t.currency !== 'AED') return
       if (view === 'india' && t.currency !== 'INR') return
       if (!inRange(t.txn_date) || !inSpan(t.txn_date) || (accFilter !== 'All' && t.account_id !== accFilter)) return
-      n[t.category] = (n[t.category] ?? 0) + 1
-      if (spendGroup(t)) all++     // "All" lists spending only (moves are on Money flow)
+      if (spendGroup(t)) {         // "All" lists spending only (moves are on Money flow)
+        all++
+        const g = `g:${groupKeyOf(catOf(t), categories)}`
+        n[g] = (n[g] ?? 0) + 1
+        if (g.slice(2) === open) n[catOf(t)] = (n[catOf(t)] ?? 0) + 1
+      } else n[t.category] = (n[t.category] ?? 0) + 1
     })
     if (cat !== 'All' && !n[cat]) n[cat] = 0
+    const label = (k: string) => isGroupPick(k) ? groupByKey(k.slice(2))?.label ?? k
+      : groupKeyOf(k, categories) === open && open && k !== 'All' ? `› ${isGeneral(k) ? 'General' : labelOf(k)}` : labelOf(k)
+    const rank = (k: string) => isGroupPick(k) ? 0 : open && groupKeyOf(k, categories) === open && spendGroupOfName(k) ? 0 : 1
+    const keys = Object.keys(n).sort((a, b) => rank(a) - rank(b) || n[b] - n[a])
+    // A picked category's sub-categories sit right after it
+    const ordered = keys.filter(k => isGroupPick(k)).flatMap(g => [g, ...(g.slice(2) === open ? keys.filter(k => !isGroupPick(k) && rank(k) === 0) : [])])
     return [{ key: 'All', label: 'All', count: all },
-      ...Object.entries(n).sort((a, b) => b[1] - a[1]).map(([c, k]) => ({ key: c, label: c, count: k, warn: (getBudgetStatus(c)?.pct ?? 0) >= 100 }))]
-  }, [transactions, view, accFilter, fromMonth, toMonth, cat, budgetMap, catMonthTotals, narrowed, dFrom, dTo]) // eslint-disable-line react-hooks/exhaustive-deps
+      ...[...ordered, ...keys.filter(k => rank(k) === 1)].map(c => ({ key: c, label: label(c), count: n[c], warn: (getBudgetStatus(isGroupPick(c) ? groupByKey(c.slice(2))?.label ?? c : c)?.pct ?? 0) >= 100 }))]
+  }, [transactions, view, accFilter, fromMonth, toMonth, cat, budgetMap, catMonthTotals, narrowed, dFrom, dTo, categories]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const catUsage = useMemo(() => {
     const n: Record<string, number> = {}
@@ -307,14 +328,26 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
     return n
   }, [transactions])
 
-  // Top five categories + "Other categories"
-  const catRows = useMemo(() => {
-    const m: Record<string, number> = {}
-    realExpensesForMonth.forEach(t => { const c = catOf(t); m[c] = (m[c] ?? 0) + toDisplay(Number(t.amount), t.currency) })
-    const rows = Object.entries(m).sort((a, b) => b[1] - a[1])
-    const rest = rows.slice(5).reduce((a, r) => a + r[1], 0)
-    return [...rows.slice(0, 5).map(([cat, v]) => ({ cat, v, color: colorOf(categories, cat) })), ...(rest > 0 ? [{ cat: 'Other categories', v: rest, color: '#CBD5E1' }] : [])]
-  }, [filteredForMonth, view, FX, categories])
+  // Spending by category, each with its sub-categories, and how much of it
+  // was needs (your share of a split, as in the total above)
+  const { catRows, needs, wants } = useMemo(() => {
+    const g: Record<string, { v: number; subs: Record<string, number> }> = {}
+    let needs = 0, wants = 0
+    realExpensesForMonth.forEach(t => {
+      const c = catOf(t), k = groupKeyOf(c, categories) ?? 'other', v = toDisplay(myShare(t), t.currency)
+      const e = (g[k] ||= { v: 0, subs: {} })
+      e.v += v; e.subs[c] = (e.subs[c] ?? 0) + v
+      if (needOf(c, categories) === false) wants += v; else needs += v
+    })
+    const catRows = Object.entries(g).sort((a, b) => b[1].v - a[1].v).map(([k, e]) => {
+      const grp = groupByKey(k)!
+      return { key: k as GroupKey, cat: grp.label, v: e.v, color: grp.color,
+        subs: Object.entries(e.subs).sort((a, b) => b[1] - a[1]).map(([name, v]) => ({ name, v, color: colorOf(categories, name), need: needOf(name, categories) })) }
+    })
+    return { catRows, needs, wants }
+  }, [filteredForMonth, view, FX, categories]) // eslint-disable-line react-hooks/exhaustive-deps
+  const [openCat, setOpenCat] = useState<string | null>(null)
+  const catLabel = isGroupPick(cat) ? groupByKey(cat.slice(2))?.label ?? cat : labelOf(cat)
 
   const overBudget = Object.keys(budgetMap).filter(c => (catMonthTotals[c] ?? 0) > budgetMap[c])
   const top = catRows[0]
@@ -413,7 +446,14 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
         </HeroStat>
 
         <section className="wl-card max-md:order-6 px-4 md:px-5 py-4 md:py-[18px] flex flex-col gap-3">
-          <h2 className="text-[14px] font-semibold" style={{ color:'var(--text)' }}>Where it went</h2>
+          <div className="flex items-baseline justify-between gap-2 flex-wrap">
+            <h2 className="text-[14px] font-semibold" style={{ color:'var(--text)' }}>Where it went</h2>
+            {needs + wants > 0 && (
+              <span className="text-[12px]" style={{ color:'var(--text3)' }}>
+                <b style={{ color:'#1D5FA8' }}>Needs {short(needs)}</b> · <b style={{ color:'#9A3412' }}>Wants {short(wants)}</b>
+              </span>
+            )}
+          </div>
           {catRows.length === 0 ? (
             <div className="text-[12.5px] py-6 text-center" style={{ color:'var(--text3)' }}>No spending in {rangeLabel}.</div>
           ) : (<>
@@ -425,13 +465,27 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
               </Donut>
             </div>
             {catRows.map(r => {
-              const real = r.cat !== 'Other categories'
-              const cap = real ? budgetMap[r.cat] : undefined
+              const cap = budgetMap[r.cat]
               const share = rangeExpenses > 0 ? r.v / rangeExpenses * 100 : 0
-              const row = <ProgressRow name={labelOf(r.cat)} sub={cap ? `of ${short(cap)} budget` : undefined} value={short(r.v)} right={`${Math.round(share)}%`} pct={share} color={r.color} />
-              return real
-                ? <button key={r.cat} onClick={() => setCat(r.cat)} className="text-left" title={`Show only ${r.cat}`}>{row}</button>
-                : <div key={r.cat}>{row}</div>
+              const open = openCat === r.key
+              return (
+                <div key={r.key} className="flex flex-col gap-1.5">
+                  <button onClick={() => { setOpenCat(open ? null : r.key); setCat(open ? 'All' : `g:${r.key}`) }} aria-expanded={open} className="text-left" title={`Show only ${r.cat}`}>
+                    <ProgressRow name={`${r.cat}${r.subs.length > 1 ? (open ? ' ▾' : ' ▸') : ''}`} sub={cap ? `of ${short(cap)} budget` : undefined} value={short(r.v)} right={`${Math.round(share)}%`} pct={share} color={r.color} />
+                  </button>
+                  {open && r.subs.length > 1 && (
+                    <div className="flex flex-col gap-1.5 pl-3 ml-1 pb-1" style={{ borderLeft: `2px solid ${r.color}33` }}>
+                      {r.subs.map(x => (
+                        <button key={x.name} onClick={() => setCat(x.name)} className="flex items-center gap-2 text-left text-[12.5px] min-h-[28px]" title={`Show only ${x.name}`}>
+                          <span className="flex-1 min-w-0 truncate" style={{ color: cat === x.name ? 'var(--accent2)' : 'var(--text2)', fontWeight: cat === x.name ? 600 : 400 }}>{isGeneral(x.name) ? `${r.cat} (general)` : labelOf(x.name)}</span>
+                          {x.need != null && <span className="text-[10.5px] font-semibold px-1.5 rounded-full" style={x.need ? { background:'#E7F1FE', color:'#1D5FA8' } : { background:'#FFF1E6', color:'#9A3412' }}>{x.need ? 'Need' : 'Want'}</span>}
+                          <span className="tabular-nums font-semibold" style={{ color:'var(--text)' }}>{short(x.v)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
             })}
           </>)}
         </section>
@@ -547,7 +601,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
 
       {/* Transactions: search, account and category filters live in the card */}
       <ListCard className="max-md:order-9" title="Transactions"
-        sub={`${listRows.length} in ${rangeLabel}${cat !== 'All' ? ` · ${cat}` : ''}`}
+        sub={`${listRows.length} in ${rangeLabel}${cat !== 'All' ? ` · ${catLabel}` : ''}`}
         head={['Merchant', 'Category', 'Date', 'Amount']}
         right={<div className="flex gap-1.5 flex-shrink-0">
           <button onClick={() => (sel.on ? sel.stop() : sel.start())} aria-pressed={sel.on} className="wl-btn wl-hide-viewing" style={{ height: 30, fontSize: 12, ...(sel.on ? { background: 'var(--accent-bg)', color: 'var(--accent2)', borderColor: 'var(--accent)' } : {}) }}><ListChecks size={13} />{sel.on ? 'Done' : 'Select'}</button>
@@ -562,11 +616,11 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
             </select>
           </ListSearch>
           <ChipFilter label="Category" value={cat} options={catOptions}
-            onChange={c => { setCat(c); if ((getBudgetStatus(c)?.pct ?? 0) >= 100) setAlertCat(c) }} />
+            onChange={c => { setCat(c); const b = isGroupPick(c) ? groupByKey(c.slice(2))?.label ?? c : c; if ((getBudgetStatus(b)?.pct ?? 0) >= 100) setAlertCat(b) }} />
         </>}
         empty={listRows.length === 0
           ? <div className="text-center py-12 text-[13px]" style={{ color:'var(--text3)', borderTop: '1px solid var(--line)' }}>
-              No transactions{cat !== 'All' ? ` in ${cat}` : ''} for {rangeLabel}.
+              No transactions{cat !== 'All' ? ` in ${catLabel}` : ''} for {rangeLabel}.
             </div>
           : undefined}
         footer={(listRows.length > 0 || movesLeft > 0) && <div>

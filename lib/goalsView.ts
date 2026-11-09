@@ -35,6 +35,7 @@ function loanMonthsLeft(l: any): number | null {
 export function buildGoals(d: {
   goals: any[]; links: any[]; contributions: any[]; invTxns: any[]; accounts: any[]; loans: any[]
   transactions: any[]; investments: Record<string, any[]>; fx: number
+  categories?: any[]                 // your need / want choices (migration 045)
 }, today: string) {
   const ctx: Ctx = { links: d.links, investments: d.investments, contributions: d.contributions, accounts: d.accounts, invTxns: d.invTxns, fx: d.fx }
   const items: GoalItem[] = d.goals.map(g => {
@@ -67,9 +68,9 @@ export function buildGoals(d: {
   }
   const travel: Record<Cur, number> = { AED: 0, INR: 0 }
   const yearAgo = `${addMonths(today.slice(0, 7), -12)}-01`
-  // Trips: flights, hotels and holiday bookings (Travel & transport also holds daily fuel and taxis)
+  // Trips: Holidays and Flights, and flights or hotels still under Travel & transport (which also holds daily fuel and taxis)
   const TRIP = /flight|airline|air ?india|indigo|spicejet|vistara|akasa|emirates|flydubai|air ?arabia|etihad|hotel|resort|airbnb|booking\.com|agoda|makemytrip|goibibo|cleartrip|yatra|easemytrip|\boyo\b|holiday|vacation|tour package|air ?ticket/i
-  for (const t of d.transactions) if (t.txn_date >= yearAgo && isSpend(t) && (/^(travel|trip\/vacation)$/i.test(String(t.category ?? '')) || (catOf(t) === 'Travel & transport' && TRIP.test(`${t.merchant ?? ''} ${t.description ?? ''}`))) && (t.currency === 'AED' || t.currency === 'INR')) travel[t.currency as Cur] += Number(t.amount) || 0
+  for (const t of d.transactions) if (t.txn_date >= yearAgo && isSpend(t) && (/^(travel|trip\/vacation)$/i.test(String(t.category ?? '')) || catOf(t) === 'Holidays' || catOf(t) === 'Flights' || (catOf(t) === 'Travel & transport' && TRIP.test(`${t.merchant ?? ''} ${t.description ?? ''}`))) && (t.currency === 'AED' || t.currency === 'INR')) travel[t.currency as Cur] += Number(t.amount) || 0
   const cash: Record<Cur, number> = { AED: 0, INR: 0 }
   for (const a of d.accounts) if (a.account_type !== 'credit_card' && a.is_active !== false && (a.currency === 'AED' || a.currency === 'INR')) cash[a.currency as Cur] += Math.max(0, Number(a.current_balance) || 0)
   const loans = d.loans.map(l => ({ name: l.name, currency: l.currency, emi: Number(l.emi_amount) || 0, monthsLeft: loanMonthsLeft(l), type: l.loan_type }))
@@ -82,6 +83,6 @@ export function buildGoals(d: {
     if (usual > 0 && now > usual * 1.25) extra[c] = now - usual
   }
   // How big the emergency fund should be, from your spending (lib/emergency)
-  const emergency = { AED: emergencyAdvice(prepared, today, 'AED'), INR: emergencyAdvice(prepared, today, 'INR') }
+  const emergency = { AED: emergencyAdvice(prepared, today, 'AED', d.categories), INR: emergencyAdvice(prepared, today, 'INR', d.categories) }
   return { items, ctx, monthly, travel, cash, loans, extra, emergency }
 }

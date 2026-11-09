@@ -23,7 +23,7 @@ export async function loadGoalsData(supabase: any, uid: string) {
     if (['fixed_deposits', 'recurring_deposits', 'lic_policies'].includes(t)) q = q.eq('is_active', true)
     return q
   })
-  const [goalsRes, linksRes, contribRes, invTxnRes, accRes, loansRes, famRes, insRes, txns, ...invRes] = await Promise.all([
+  const [goalsRes, linksRes, contribRes, invTxnRes, accRes, loansRes, famRes, insRes, catRes, txns, ...invRes] = await Promise.all([
     supabase.from('goals').select('*').eq('user_id', uid).order('created_at', { ascending: false }),
     supabase.from('goal_investments').select('*').eq('user_id', uid),
     supabase.from('goal_contributions').select('*').eq('user_id', uid).order('contrib_date', { ascending: false }),
@@ -32,6 +32,8 @@ export async function loadGoalsData(supabase: any, uid: string) {
     activeLoansWithEmi(supabase, uid),
     supabase.from('family_members').select('id,name,relationship').eq('user_id', uid).eq('is_active', true).order('created_at'),
     supabase.from('insurance_policies').select('id,policy_name,provider,annual_premium,premium_frequency,start_date,expiry_date,next_premium_date,currency').eq('user_id', uid).eq('is_active', true),
+    // Need / want choices (none before migration 045: the built-in ones apply)
+    supabase.from('categories').select('kind,name,parent,need').eq('user_id', uid),
     fetchAllRows((a: number, b: number) => supabase.from('transactions').select('*').eq('user_id', uid).gte('txn_date', fromDate)
       .order('txn_date', { ascending: false }).order('id').range(a, b)),
     ...inv,
@@ -48,6 +50,7 @@ export async function loadGoalsData(supabase: any, uid: string) {
     loans: (loansRes.data ?? []) as any[],
     members: (famRes.data ?? []) as { name: string; relationship: string }[],
     insurance: (insRes.data ?? []) as any[],
+    categories: (catRes.data ?? []) as any[],
     transactions: txns as any[],
     investments,
   }

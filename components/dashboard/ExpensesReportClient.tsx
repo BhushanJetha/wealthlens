@@ -13,6 +13,8 @@ import { CC_BILL, classify, labelOf, catOf, prepareMoney, isIncome, isNreToNro, 
 import { findReviewItems, type ReviewKind } from '@/lib/review'
 import { PageHeader, KpiTile, Segmented } from '@/components/ui/kit'
 import { useCategoryStore } from '@/store/categoryStore'
+import { groupOf, needOf, isGeneral } from '@/lib/categories'
+import { budgetKeyOf, isGroupBudget } from '@/lib/budgets'
 import { nriKindOf } from '@/lib/ledger'
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
@@ -253,6 +255,28 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
   function gapN(k: ReviewKind) { return gaps[k]?.n ?? 0 }
 
   const activeExpense  = expenseCats.filter(c => rowTot(c) > 0).sort((a, b) => rowTot(b) - rowTot(a))
+
+  // The category tables: one row per category (Food, Transport…); its
+  // sub-categories open under it — all of them with the switch, or one
+  // category at a time by tapping its name
+  const [subsOn, setSubsOn] = useState(false)
+  const [openG, setOpenG] = useState<Set<string>>(new Set())
+  const flipG = (k: string) => setOpenG(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n })
+  const subsShown = (k: string) => subsOn || openG.has(k)
+  type CatGroup = { key: string; label: string; color: string; cats: string[]; total: number; spending: boolean }
+  const groupList = (cats: string[], tot: (c: string) => number): CatGroup[] => {
+    const by = new Map<string, CatGroup>()
+    for (const c of cats) {
+      const g = groupOf(c, userCats) ?? { key: 'other', label: 'Other', color: '#64748B', spending: true }
+      const e = by.get(g.key) ?? by.set(g.key, { key: g.key, label: g.label, color: g.color, cats: [], total: 0, spending: g.spending }).get(g.key)!
+      e.cats.push(c); e.total += tot(c)
+    }
+    return Array.from(by.values()).sort((a, b) => b.total - a.total)
+  }
+  const subName = (c: string, g: CatGroup) => isGeneral(c) ? `${g.label} (general)` : labelOf(c)
+  const monthGroups = groupList(activeExpense, rowTot)
+  // Needs and wants (EMIs and investing are neither)
+  const needSum = (vals: (c: string) => number, need: boolean) => activeExpense.reduce((a, c) => a + (needOf(c, userCats) === need ? vals(c) : 0), 0)
   const activeExcluded = excludedCats.filter(c => rowTot(c) > 0).sort((a, b) => rowTot(b) - rowTot(a))
   const ccBillGrand    = rowTot(CC_BILL)
   const hasMonthlyRows = activeExpense.length > 0 || activeExcluded.length > 0 || ccBillGrand > 0
@@ -267,6 +291,8 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
     })
     return map
   }, [budgets, view, FX])
+  // A budget on a whole category (Food) covers each sub-category in it
+  const inBud = (cat: string) => (c: string) => c === cat || (isGroupBudget(cat) && budgetKeyOf(c, userCats) === cat)
   const budgetCats = Object.keys(budgetCapMap).filter(c => budgetCapMap[c] > 0)
     .sort((a, b) => budgetCapMap[b] - budgetCapMap[a])
 
@@ -308,6 +334,9 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
       Object.values(matrix[b]).reduce((x, v) => x + v, 0) - Object.values(matrix[a]).reduce((x, v) => x + v, 0))
     return { matrix, inc, list }
   }, [transactions, incomeTransactions, view, FX, scope])
+  const yearTot = (c: string) => yearsSorted.reduce((a, y) => a + (catYear.matrix[c]?.[y] ?? 0), 0)
+  const yearGroupsCat = groupList(catYear.list, yearTot)
+  const yearNeed = (vals: (c: string) => number, need: boolean) => catYear.list.reduce((a, c) => a + (needOf(c, userCats) === need ? vals(c) : 0), 0)
   const yearGroups = useMemo(() => tab === 'yearly' && byPay && yearsSorted.length
     ? buildAccountGroups(accounts, [...rawIncome, ...rawTxns], { fx: FX, months: yearsSorted, view, toView: conv, byYear: true }) : null,
     [tab, byPay, accounts, rawIncome, rawTxns, FX, view, yearsSorted.join()]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -389,6 +418,15 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
         <Segmented label="Report view" value={tab} onChange={setTab}
           options={TABS.map(({ key, label, icon: Icon }) => ({ value: key, label: <span className="inline-flex items-center gap-1.5"><Icon size={13} />{label}</span> }))} />
         <div className="flex items-center gap-3 flex-wrap">
+          {tab !== 'budget' && !byPay && (
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <span className="text-[12.5px] font-semibold" style={{ color: 'var(--text2)' }}>Sub-categories</span>
+              <button role="switch" aria-checked={subsOn} aria-label="Show sub-categories under each category" onClick={() => { setSubsOn(v => !v); setOpenG(new Set()) }}
+                className="relative w-[42px] h-[24px] rounded-full transition-colors" style={{ background: subsOn ? 'var(--accent)' : '#CBD0DC' }}>
+                <span className="absolute top-[3px] w-[18px] h-[18px] rounded-full bg-white shadow transition-[left]" style={{ left: subsOn ? 21 : 3 }} />
+              </button>
+            </label>
+          )}
           {tab !== 'budget' && (
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <span className="text-[12.5px] font-semibold" style={{ color: 'var(--text2)' }}>By bank &amp; card</span>
@@ -499,19 +537,39 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
                       </tr>
                     </thead>
                     <tbody>
-                      {activeExpense.map((cat, ci) => {
-                        const color = colorOf(cat, ci)
-                        return (
-                          <tr key={cat} style={{ borderBottom: '1px solid var(--line)' }} className="hover:bg-stone-50 transition-colors">
-                            <td className="sticky left-0 px-4 py-2.5 font-semibold" style={{ background: ci % 2 === 0 ? '#fff' : 'var(--bg2)', borderRight: '1px solid var(--line)' }}>
-                              <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: color }} /><span style={{ color: 'var(--text)' }}>{labelOf(cat)}</span></div>
+                      {monthGroups.map(g => {
+                        const open = subsShown(g.key), many = g.cats.length > 1 || (g.spending && !isGeneral(g.cats[0]))
+                        const inG = (t: any) => g.cats.includes(catOf(t))
+                        return [
+                          <tr key={g.key} style={{ borderBottom: '1px solid var(--line)' }} className="hover:bg-stone-50 transition-colors">
+                            <td className="sticky left-0 px-4 py-2.5 font-semibold" style={{ background: '#fff', borderRight: '1px solid var(--line)' }}>
+                              <button onClick={() => many && flipG(g.key)} aria-expanded={many ? open : undefined} className="flex items-center gap-2 text-left" style={{ cursor: many ? 'pointer' : 'default' }}>
+                                <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: g.color }} /><span style={{ color: 'var(--text)' }}>{g.label}</span>
+                                {many && <span className="text-[10.5px]" style={{ color: 'var(--text4)' }}>{open ? '▾' : `▸ ${g.cats.length}`}</span>}
+                              </button>
                             </td>
-                            <MonthCells cat={cat} color={color} />
+                            {months.map(m => { const v = g.cats.reduce((a, c) => a + (pivot[c]?.[m] ?? 0), 0), sel = m >= fromMonth && m <= toMonth
+                              return (
+                                <td key={m} className="px-3 py-2.5 text-right tabular-nums" style={{ color: v > 0 ? 'var(--text)' : 'var(--text3)', background: sel ? `${g.color}08` : 'transparent', fontWeight: v > 0 ? 600 : 400 }}>
+                                  {v > 0 ? <button onClick={() => setDrill({ title: g.label, subtitle: mLabel(m), items: yearTxns.filter((t: any) => inG(t) && t.txn_date?.slice(0, 7) === m) })} className="hover:underline" style={{ color: 'inherit' }}>{sym}{fmt(v)}</button> : '—'}
+                                </td>
+                              ) })}
                             <td className="px-4 py-2.5 text-right tabular-nums font-bold" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--line)' }}>
-                              <button onClick={() => setDrill({ title: labelOf(cat), subtitle: String(viewYear), items: yearTxns.filter((t: any) => catOf(t) === cat) })} className="hover:underline" style={{ color: 'inherit' }}>{money(rowTot(cat))}</button>
+                              <button onClick={() => setDrill({ title: g.label, subtitle: String(viewYear), items: yearTxns.filter(inG) })} className="hover:underline" style={{ color: 'inherit' }}>{money(g.total)}</button>
                             </td>
-                          </tr>
-                        )
+                          </tr>,
+                          ...(open && many ? g.cats.map(cat => (
+                            <tr key={`${g.key}:${cat}`} style={{ borderBottom: '1px solid var(--line)', background: '#FCFCFF' }}>
+                              <td className="sticky left-0 pl-9 pr-4 py-2 text-[11.5px]" style={{ background: '#FCFCFF', borderRight: '1px solid var(--line)', color: 'var(--text2)' }}>
+                                <span className="inline-flex items-center gap-1.5">{subName(cat, g)}{needOf(cat, userCats) === false && <span className="text-[9.5px] font-semibold px-1.5 rounded-full" style={{ background: '#FFF1E6', color: '#9A3412' }}>Want</span>}</span>
+                              </td>
+                              <MonthCells cat={cat} color={g.color} muted />
+                              <td className="px-4 py-2 text-right tabular-nums" style={{ color: 'var(--text2)', borderLeft: '2px solid var(--line)' }}>
+                                <button onClick={() => setDrill({ title: subName(cat, g), subtitle: String(viewYear), items: yearTxns.filter((t: any) => catOf(t) === cat) })} className="hover:underline" style={{ color: 'inherit' }}>{money(rowTot(cat))}</button>
+                              </td>
+                            </tr>
+                          )) : []),
+                        ]
                       })}
                     </tbody>
                     <tfoot>
@@ -519,6 +577,12 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
                         <td className="sticky left-0 px-4 py-2.5 font-bold text-[11px] uppercase tracking-wider" style={{ background: '#FAFAFE', color: 'var(--expense)', borderRight: '1px solid var(--line)' }}>Total Expenses</td>
                         {months.map(m => (<td key={m} className="px-3 py-2.5 text-right tabular-nums font-bold" style={{ color: 'var(--expense)' }}>{outflowCol(m) > 0 ? `${sym}${fmt(outflowCol(m))}` : '—'}</td>))}
                         <td className="px-4 py-2.5 text-right tabular-nums font-bold text-[13px]" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--line)' }}>{money(outflowGrand)}</td>
+                      </tr>
+                      <tr style={{ background: '#FAFAFE' }}>
+                        <td className="sticky left-0 pl-9 pr-4 py-2 text-[11px]" style={{ background: '#FAFAFE', color: 'var(--text3)', borderRight: '1px solid var(--line)' }}>of which <b style={{ color: '#1D5FA8' }}>needs</b> · <b style={{ color: '#9A3412' }}>wants</b></td>
+                        {months.map(m => { const n = needSum(c => pivot[c]?.[m] ?? 0, true), w = needSum(c => pivot[c]?.[m] ?? 0, false)
+                          return <td key={m} className="px-3 py-2 text-right tabular-nums text-[11px] whitespace-nowrap" style={{ color: 'var(--text3)' }}>{n + w > 0 ? `${fmt(n)} · ${fmt(w)}` : '—'}</td> })}
+                        <td className="px-4 py-2 text-right tabular-nums text-[11px] whitespace-nowrap" style={{ color: 'var(--text2)', borderLeft: '2px solid var(--line)' }}>{money(needSum(rowTot, true))} · {money(needSum(rowTot, false))}</td>
                       </tr>
                       <tr style={{ background: 'var(--income-bg)' }}>
                         <td className="sticky left-0 px-4 py-2.5 font-bold text-[11px] uppercase tracking-wider" style={{ background: 'var(--income-bg)', color: 'var(--income)', borderRight: '1px solid var(--line)' }}>Income</td>
@@ -569,15 +633,15 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
             <div className="wl-card px-4 md:px-5 py-4 md:py-[18px]">
               <div className="text-[14px] md:text-[15px] font-semibold mb-3" style={{ color: 'var(--text)' }}>Where it goes — {viewYear}</div>
               <div className="space-y-2">
-                {activeExpense.map((cat, ci) => {
-                  const pct = outflowGrand > 0 ? (rowTot(cat) / outflowGrand) * 100 : 0
-                  const color = colorOf(cat, ci)
+                {monthGroups.map(g => {
+                  const pct = outflowGrand > 0 ? (g.total / outflowGrand) * 100 : 0
+                  const color = g.color
                   return (
-                    <div key={cat} className="flex items-center gap-3">
-                      <div className="text-[11px] font-medium w-28 flex-shrink-0 truncate" style={{ color: 'var(--text2, var(--text))' }}>{labelOf(cat)}</div>
+                    <div key={g.key} className="flex items-center gap-3">
+                      <div className="text-[11px] font-medium w-28 flex-shrink-0 truncate" style={{ color: 'var(--text2, var(--text))' }}>{g.label}</div>
                       <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: '#FAFAFE' }}><div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} /></div>
                       <div className="text-[11px] tabular-nums font-semibold w-12 text-right" style={{ color }}>{pct.toFixed(1)}%</div>
-                      <div className="text-[11px] tabular-nums w-20 text-right" style={{ color: 'var(--text)' }}>{money(rowTot(cat))}</div>
+                      <div className="text-[11px] tabular-nums w-20 text-right" style={{ color: 'var(--text)' }}>{money(g.total)}</div>
                     </div>
                   )
                 })}
@@ -621,25 +685,37 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
                   </tr>
                 </thead>
                 <tbody>
-                  {catYear.list.map((cat, ci) => {
-                    const rowTotal = yearsSorted.reduce((a, y) => a + (catYear.matrix[cat]?.[y] ?? 0), 0)
-                    return (
-                      <tr key={cat} style={{ borderBottom: '1px solid var(--line)' }} className="hover:bg-stone-50 transition-colors">
-                        <td className="sticky left-0 px-4 py-2.5 font-semibold" style={{ background: ci % 2 === 0 ? '#fff' : 'var(--bg2)', borderRight: '1px solid var(--line)' }}>
-                          <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: colorOf(cat, ci) }} /><span style={{ color: 'var(--text)' }}>{labelOf(cat)}</span></div>
-                        </td>
-                        {yearsSorted.map(y => { const v = catYear.matrix[cat]?.[y] ?? 0
-                          return (
-                            <td key={y} className="px-4 py-2.5 text-right tabular-nums" style={{ color: v > 0 ? 'var(--text)' : 'var(--text3)', fontWeight: v > 0 ? 600 : 400, background: y === String(viewYear) ? 'rgba(0,0,0,0.02)' : 'transparent' }}>
-                              {v > 0
-                                ? <button onClick={() => setDrill({ title: labelOf(cat), subtitle: y, items: transactions.filter((t: any) => catOf(t) === cat && t.txn_date?.slice(0, 4) === y && inView(t.currency) && inScope(t)) })} className="hover:underline" style={{ color: 'inherit' }}>{sym}{fmt(v)}</button>
-                                : '—'}
-                            </td>
-                          )
-                        })}
-                        <td className="px-4 py-2.5 text-right tabular-nums font-bold" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--line)' }}>{money(rowTotal)}</td>
-                      </tr>
+                  {yearGroupsCat.map(g => {
+                    const open = subsShown(g.key), many = g.cats.length > 1 || (g.spending && !isGeneral(g.cats[0]))
+                    const inG = (t: any) => g.cats.includes(catOf(t))
+                    const cell = (title: string, match: (t: any) => boolean, v: number, y: string, sub: boolean) => (
+                      <td key={y} className={`px-4 ${sub ? 'py-2' : 'py-2.5'} text-right tabular-nums`} style={{ color: v > 0 ? (sub ? 'var(--text2)' : 'var(--text)') : 'var(--text3)', fontWeight: v > 0 && !sub ? 600 : 400, background: y === String(viewYear) ? 'rgba(0,0,0,0.02)' : 'transparent' }}>
+                        {v > 0
+                          ? <button onClick={() => setDrill({ title, subtitle: y, items: transactions.filter((t: any) => match(t) && t.txn_date?.slice(0, 4) === y && inView(t.currency) && inScope(t)) })} className="hover:underline" style={{ color: 'inherit' }}>{sym}{fmt(v)}</button>
+                          : '—'}
+                      </td>
                     )
+                    return [
+                      <tr key={g.key} style={{ borderBottom: '1px solid var(--line)' }} className="hover:bg-stone-50 transition-colors">
+                        <td className="sticky left-0 px-4 py-2.5 font-semibold" style={{ background: '#fff', borderRight: '1px solid var(--line)' }}>
+                          <button onClick={() => many && flipG(g.key)} aria-expanded={many ? open : undefined} className="flex items-center gap-2 text-left" style={{ cursor: many ? 'pointer' : 'default' }}>
+                            <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: g.color }} /><span style={{ color: 'var(--text)' }}>{g.label}</span>
+                            {many && <span className="text-[10.5px]" style={{ color: 'var(--text4)' }}>{open ? '▾' : `▸ ${g.cats.length}`}</span>}
+                          </button>
+                        </td>
+                        {yearsSorted.map(y => cell(g.label, inG, g.cats.reduce((a, c) => a + (catYear.matrix[c]?.[y] ?? 0), 0), y, false))}
+                        <td className="px-4 py-2.5 text-right tabular-nums font-bold" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--line)' }}>{money(g.total)}</td>
+                      </tr>,
+                      ...(open && many ? g.cats.map(cat => (
+                        <tr key={`${g.key}:${cat}`} style={{ borderBottom: '1px solid var(--line)', background: '#FCFCFF' }}>
+                          <td className="sticky left-0 pl-9 pr-4 py-2 text-[11.5px]" style={{ background: '#FCFCFF', borderRight: '1px solid var(--line)', color: 'var(--text2)' }}>
+                            <span className="inline-flex items-center gap-1.5">{subName(cat, g)}{needOf(cat, userCats) === false && <span className="text-[9.5px] font-semibold px-1.5 rounded-full" style={{ background: '#FFF1E6', color: '#9A3412' }}>Want</span>}</span>
+                          </td>
+                          {yearsSorted.map(y => cell(subName(cat, g), (t: any) => catOf(t) === cat, catYear.matrix[cat]?.[y] ?? 0, y, true))}
+                          <td className="px-4 py-2 text-right tabular-nums" style={{ color: 'var(--text2)', borderLeft: '2px solid var(--line)' }}>{money(yearsSorted.reduce((a, y) => a + (catYear.matrix[cat]?.[y] ?? 0), 0))}</td>
+                        </tr>
+                      )) : []),
+                    ]
                   })}
                 </tbody>
                 <tfoot>
@@ -648,6 +724,12 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
                     <td className="sticky left-0 px-4 py-2.5 font-bold text-[11px] uppercase tracking-wider" style={{ background: '#FAFAFE', color: 'var(--expense)', borderRight: '1px solid var(--line)' }}>Total Expenses</td>
                     {yearsSorted.map(y => (<td key={y} className="px-4 py-2.5 text-right tabular-nums font-bold" style={{ color: 'var(--expense)' }}>{yearAgg[y].outflow > 0 ? `${sym}${fmt(yearAgg[y].outflow)}` : '—'}</td>))}
                     <td className="px-4 py-2.5 text-right tabular-nums font-bold text-[13px]" style={{ color: 'var(--expense)', borderLeft: '2px solid var(--line)' }}>{money(yearsSorted.reduce((a, y) => a + yearAgg[y].outflow, 0))}</td>
+                  </tr>
+                  <tr style={{ background: '#FAFAFE' }}>
+                    <td className="sticky left-0 pl-9 pr-4 py-2 text-[11px]" style={{ background: '#FAFAFE', color: 'var(--text3)', borderRight: '1px solid var(--line)' }}>of which <b style={{ color: '#1D5FA8' }}>needs</b> · <b style={{ color: '#9A3412' }}>wants</b></td>
+                    {yearsSorted.map(y => { const n = yearNeed(c => catYear.matrix[c]?.[y] ?? 0, true), w = yearNeed(c => catYear.matrix[c]?.[y] ?? 0, false)
+                      return <td key={y} className="px-4 py-2 text-right tabular-nums text-[11px] whitespace-nowrap" style={{ color: 'var(--text3)' }}>{n + w > 0 ? `${fmt(n)} · ${fmt(w)}` : '—'}</td> })}
+                    <td className="px-4 py-2 text-right tabular-nums text-[11px] whitespace-nowrap" style={{ color: 'var(--text2)', borderLeft: '2px solid var(--line)' }}>{money(yearNeed(yearTot, true))} · {money(yearNeed(yearTot, false))}</td>
                   </tr>
                   {/* Income */}
                   <tr style={{ background: 'var(--income-bg)' }}>
@@ -701,14 +783,14 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
                         </td>
                         <td className="px-3 py-2.5 text-right tabular-nums font-bold" style={{ color: 'var(--text)', borderRight: '1px solid var(--line)' }}>{money(cap)}</td>
                         {months.map(m => {
-                          const spent = pivot[cat]?.[m] ?? 0
+                          const spent = expenseCats.reduce((a, c) => a + (inBud(cat)(c) ? pivot[c]?.[m] ?? 0 : 0), 0)
                           const pct = cap > 0 ? Math.round(spent / cap * 100) : 0
                           const bg = spent === 0 ? 'transparent' : pct >= 100 ? '#FEE2E2' : pct >= 75 ? '#FEF3C7' : '#DCFCE7'
                           const fg = spent === 0 ? 'var(--text3)' : pct >= 100 ? '#B91C1C' : pct >= 75 ? '#B45309' : '#15803D'
                           return (
                             <td key={m} className="px-2 py-2.5 text-center" style={{ background: bg }}>
                               {spent > 0
-                                ? <button onClick={() => setDrill({ title: `${cat} · budget ${money(cap)}`, subtitle: mLabel(m), items: yearTxns.filter((t: any) => catOf(t) === cat && t.txn_date?.slice(0, 7) === m) })} className="tabular-nums" style={{ color: fg }}>
+                                ? <button onClick={() => setDrill({ title: `${cat} · budget ${money(cap)}`, subtitle: mLabel(m), items: yearTxns.filter((t: any) => inBud(cat)(catOf(t)) && t.txn_date?.slice(0, 7) === m) })} className="tabular-nums" style={{ color: fg }}>
                                     <div className="font-bold text-[11px]">{pct}%</div>
                                     <div className="text-[8px] opacity-80">{sym}{fmt(spent)}</div>
                                   </button>

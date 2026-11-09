@@ -1,10 +1,12 @@
 // How big your emergency fund should be, from your own spending: six months
-// of essentials (spending + EMIs), per currency. It's worked out over the last
+// of essentials (needs + EMIs — the wants you'd stop in a bad month are left
+// out, lib/categories), per currency. It's worked out over the last
 // 6, 12 and (when there's that much history) 24 complete months; the target
 // uses the higher of the 6- and 12-month averages, so a recent rise is
 // covered. It grows each year by how much your spending grew year on year
 // (with two years of history), else by typical price rises.
 import { monthMoney, addMonths } from './budgets'
+import type { Category } from './categories'
 
 type Cur = 'AED' | 'INR'
 export const COVER_MONTHS = 6
@@ -20,13 +22,13 @@ export interface EmergencyAdvice {
   nextYear: number
 }
 
-export function emergencyAdvice(prepared: any[], today: string, cur: Cur): EmergencyAdvice {
+export function emergencyAdvice(prepared: any[], today: string, cur: Cur, rows: Category[] = []): EmergencyAdvice {
   const thisMonth = today.slice(0, 7)
-  const months = Array.from({ length: 24 }, (_, i) => monthMoney(prepared, addMonths(thisMonth, -(i + 1)), cur))
+  const months = Array.from({ length: 24 }, (_, i) => monthMoney(prepared, addMonths(thisMonth, -(i + 1)), cur, rows))
   const used = (x: ReturnType<typeof monthMoney>) => x.income > 0 || x.spent > 0 || x.emi > 0
   const avg = (from: number, n: number) => {
     const ms = months.slice(from, from + n).filter(used)
-    return { have: ms.length, monthly: ms.length ? ms.reduce((s, x) => s + x.spent + x.emi, 0) / ms.length : 0 }
+    return { have: ms.length, monthly: ms.length ? ms.reduce((s, x) => s + x.spent - x.wants + x.emi, 0) / ms.length : 0 }
   }
   // A window counts when at least three quarters of its months have money in them
   const windows = [6, 12, 24].map(n => ({ months: n, ...avg(0, n) }))

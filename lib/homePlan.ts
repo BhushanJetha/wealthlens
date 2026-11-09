@@ -3,7 +3,7 @@
 // built only from what's on file; nothing here writes anything.
 import { kindOf } from './ledger'
 import { catOf, isSpend, isRemitOut, isIncome, labelOf, prepareMoney, expandSplits } from './money'
-import { suggestCaps } from './budgets'
+import { suggestCaps, budgetKeyOf } from './budgets'
 import { fmtMoney } from './format'
 import type { RoomLine } from './spendRoom'
 import { ruleTextFor } from './rules'
@@ -142,11 +142,13 @@ export function usualSpendLeft(inp: { today: string; cur: 'AED' | 'INR'; lines: 
     // An estimate uses your plain average, not the budget suggestion's 10% cushion
     const usual = l.estimated ? Math.min(l.cap, avgs[l.category]?.avg ?? l.cap) : l.cap
     const left = Math.max(0, usual - l.spent)
-    const rows = past.filter(t => catOf(t) === l.category), all = rows.reduce((s, t) => s + (Number(t.amount) || 0), 0)
+    // A line is a whole category (Bills) or one sub-category: what falls in it
+    const inLine = (c: string) => c === l.category || budgetKeyOf(c) === l.category
+    const rows = past.filter(t => inLine(catOf(t))), all = rows.reduce((s, t) => s + (Number(t.amount) || 0), 0)
     const bank = rows.filter(t => !cards.has(t.account_id)).reduce((s, t) => s + (Number(t.amount) || 0), 0)
     const share = all > 0 ? bank / all : 1
-    const listed = dues.filter(d => d.category === l.category).reduce((s, d) => s + d.amount, 0)
-      + same.filter(x => x.category === l.category).reduce((s, x) => s + x.amount, 0)
+    const listed = dues.filter(d => inLine(d.category!)).reduce((s, d) => s + d.amount, 0)
+      + same.filter(x => inLine(x.category)).reduce((s, x) => s + x.amount, 0)
     const amount = Math.max(0, Math.round(left * share - listed))
     if (amount <= 0) continue
     out.push({ id: `usual-${cur}-${l.category}`, category: l.category, estimated: l.estimated, label: labelOf(l.category), amount, currency: cur,

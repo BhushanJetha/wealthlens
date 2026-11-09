@@ -2,6 +2,7 @@
 // Extracts amount, currency, direction, merchant, date and bank+last4 so a
 // pasted or shared message can pre-fill an expense/income for one-tap review.
 // Keeps the app's "no external AI for parsing" rule (regex/heuristics only).
+import { SUB_RULES } from './merchantRules'
 
 export interface ParsedMessage {
   amount: number
@@ -47,6 +48,8 @@ const CAT_RULES: [RegExp, string][] = [
 
 function guessCategory(merchant: string, text: string, direction: 'expense' | 'income'): string {
   const hay = `${merchant} ${text}`
+  // Money out: the merchant's sub-category first (Groceries, Fuel, Salik…)
+  if (direction === 'expense' && !/refund|reversal|cashback/i.test(hay)) for (const [re, cat] of SUB_RULES) if (re.test(hay)) return cat
   for (const [re, cat] of CAT_RULES) if (re.test(hay)) return cat
   return direction === 'income' ? 'Salary' : 'Other'
 }

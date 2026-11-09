@@ -8,12 +8,13 @@ import { useViewStore } from '@/store/viewStore'
 import { isNre, kindOf } from '@/lib/ledger'
 import { fmtDay } from '@/lib/insights'
 import { useCategoryStore } from '@/store/categoryStore'
-import { colorOf, isPickable } from '@/lib/categories'
+import { colorOf, groupedCategories, type Category } from '@/lib/categories'
 import { canonCategory } from '@/lib/money'
 import { Segmented } from '@/components/ui/kit'
 import { CategoryIcon } from '@/components/ui/CategoryIcon'
 import { toast } from '@/components/ui/toaster'
 import ManageCategoriesSheet from './ManageCategoriesSheet'
+import CategoryPicker from './CategoryPicker'
 import { useFamily, holderOptions } from '@/hooks/useFamily'
 import { RECEIPT_TYPES, uploadReceipt, openReceipt, removeReceipt } from '@/lib/receipts'
 import SplitEditor, { saveSplits, useFriends, type SplitValue } from '@/components/dashboard/SplitEditor'
@@ -170,14 +171,13 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
   const catKind    = isIncome ? 'income' : 'expense'
 
   // The user's categories for this type, plus the current one if it isn't in the list (e.g. from an import)
-  const cats = useMemo(() => {
+  const { pickRows, current } = useMemo(() => {
     // Family support and card bills are kinds of transfer, and "Transfer" isn't a category — pick Type: Transfer
-    const list = categories.filter(c => c.kind === catKind && isPickable(catKind, c.name) && !(catKind === 'expense' && (TRANSFER_NOT_CATEGORIES.has(c.name) || isCardPayment(c.name))))
-    // Paying a card bill starts here for most people — the chip turns this into a card bill
-    if (catKind === 'expense') list.push({ id: 'card-payment', kind: 'expense', name: 'Credit Card Payment', color: '#9333EA', icon: 'credit-card', sort_order: 999 } as any)
-    return form.category && !list.some(c => c.name === form.category) && !isTransfer
-      ? [{ id: 'current', kind: catKind, name: form.category, color: colorOf(categories, form.category), icon: 'tag', sort_order: -1 }, ...list]
-      : list
+    const pickRows = categories.filter(c => !(c.kind === 'expense' && (TRANSFER_NOT_CATEGORIES.has(c.name) || isCardPayment(c.name))))
+    const listed = groupedCategories(pickRows, catKind).some(g => g.items.some(c => c.name === form.category))
+    const current = form.category && !listed && !isTransfer && !isCardPayment(form.category)
+      ? { id: 'current', kind: catKind, name: form.category, color: colorOf(categories, form.category), icon: 'tag', sort_order: -1 } as Category : null
+    return { pickRows, current }
   }, [categories, catKind, form.category, isTransfer])
 
   function setType(t: TxnType) {
@@ -551,24 +551,21 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
           {!isTransfer && (
             <div>
               <Label right={<button onClick={() => setManage(true)} className="text-[12px] font-semibold flex items-center gap-1" style={{ color: 'var(--accent)' }}><Settings2 size={12} />Manage</button>}>Category</Label>
-              <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Category">
-                {cats.map(c => {
-                  const on = form.category === c.name
-                  return (
-                    <button key={c.id} role="radio" aria-checked={on} onClick={() => setCategory(c.name)}
-                      className="inline-flex items-center gap-1.5 h-[34px] pl-2 pr-3 rounded-full text-[12.5px] transition-colors"
-                      style={on ? { background: c.color + '1A', boxShadow: `inset 0 0 0 1.5px ${c.color}`, color: c.color, fontWeight: 600 }
-                        : { background: '#fff', border: '1px solid var(--line)', color: 'var(--text2)', fontWeight: 500 }}>
-                      <span className="w-[22px] h-[22px] rounded-full flex items-center justify-center" style={{ background: c.color + (on ? '26' : '1A'), color: c.color }}><CategoryIcon icon={c.icon} size={12} /></span>
-                      {c.name}
+              <CategoryPicker rows={pickRows} kind={catKind} value={form.category} onPick={setCategory} current={current}
+                extra={<>
+                  {/* Paying a card bill starts here for most people — the chip turns this into a card bill */}
+                  {catKind === 'expense' && (
+                    <button type="button" onClick={() => setCategory('Credit Card Payment')} className="inline-flex items-center gap-1.5 h-[34px] pl-1.5 pr-3 rounded-full text-[12.5px]"
+                      style={{ background: '#fff', border: '1px solid var(--line)', color: 'var(--text2)', fontWeight: 500 }}>
+                      <span className="w-[22px] h-[22px] rounded-full flex items-center justify-center" style={{ background: '#9333EA1A', color: '#9333EA' }}><CategoryIcon icon="credit-card" size={12} /></span>
+                      Paying a card bill?
                     </button>
-                  )
-                })}
-                <button onClick={() => setManage(true)} className="inline-flex items-center gap-1 h-[34px] px-3 rounded-full text-[12.5px] font-semibold"
-                  style={{ border: '1px dashed var(--accent-border)', color: 'var(--accent2)', background: 'var(--accent-bg)' }}>
-                  <Plus size={13} />New
-                </button>
-              </div>
+                  )}
+                  <button type="button" onClick={() => setManage(true)} className="inline-flex items-center gap-1 h-[34px] px-3 rounded-full text-[12.5px] font-semibold"
+                    style={{ border: '1px dashed var(--accent-border)', color: 'var(--accent2)', background: 'var(--accent-bg)' }}>
+                    <Plus size={13} />New
+                  </button>
+                </>} />
             </div>
           )}
 

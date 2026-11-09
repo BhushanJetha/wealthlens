@@ -24,7 +24,7 @@ export default function EmergencySize({ goal, advice, compact }: { goal: any; ad
     const { error } = await createClient().from('goals').update({ target_amount: suggested }).eq('id', goal.id)
     setBusy(false)
     if (error) { toast(error.message, 'error'); return }
-    toast(`Target set to ${short(suggested)} — ${COVER_MONTHS} months of your spending`); router.refresh()
+    toast(`Target set to ${short(suggested)} — ${COVER_MONTHS} months of your needs and EMIs`); router.refresh()
   }
 
   if (!advice.basis) return compact ? null : (
@@ -41,7 +41,7 @@ export default function EmergencySize({ goal, advice, compact }: { goal: any; ad
     <div className="mt-2 flex flex-col gap-2.5">
       <table className="w-full text-[12.5px]">
         <thead><tr style={{ color: 'var(--text4)' }}>
-          <th className="text-left font-medium pb-1">Spending + EMIs</th><th className="text-right font-medium pb-1">A month</th><th className="text-right font-medium pb-1">{COVER_MONTHS} months</th>
+          <th className="text-left font-medium pb-1">Needs + EMIs</th><th className="text-right font-medium pb-1">A month</th><th className="text-right font-medium pb-1">{COVER_MONTHS} months</th>
         </tr></thead>
         <tbody>{advice.windows.map(w => (
           <tr key={w.months} style={{ borderTop: '1px solid var(--track)', color: 'var(--text2)', fontWeight: w === advice.basis ? 600 : 400 }}>
@@ -52,7 +52,7 @@ export default function EmergencySize({ goal, advice, compact }: { goal: any; ad
         ))}</tbody>
       </table>
       <p className="text-[12.5px] leading-snug" style={{ color: 'var(--text2)' }}>
-        Keep about <b style={{ color: 'var(--text)' }}>{short(suggested)}</b>: {COVER_MONTHS} months of what you spend, using the higher of your recent averages so a rise is covered.
+        Keep about <b style={{ color: 'var(--text)' }}>{short(suggested)}</b>: {COVER_MONTHS} months of your needs and EMIs (wants you'd stop in a bad month are left out), using the higher of your recent averages so a rise is covered.
         Raise it about <b style={{ color: 'var(--text)' }}>{advice.growth}% a year</b> ({advice.growthFrom === 'spending' ? 'how much your spending grew over the last year' : `typical ${cur === 'AED' ? 'UAE' : 'India'} price rises`}), to about {short(advice.nextYear)} next year.
       </p>
       {differs ? (

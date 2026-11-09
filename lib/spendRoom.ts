@@ -3,7 +3,7 @@
 // last 3 months, and never more than what's actually free to spend (safe to
 // spend: bank & cash minus what's due before payday). Fixed costs aren't here;
 // they're already taken off as dues.
-import { budgetLines, carryIn, spendByCategory, suggestCaps, FIXED } from './budgets'
+import { budgetLines, carryIn, spendByCategory, suggestCaps, spentOn, FIXED } from './budgets'
 import { classify } from './money'
 import { ymOf } from './insights'
 
@@ -16,11 +16,11 @@ export function spendRoom(inp: { today: string; cur: Cur; budgets: any[]; txns: 
   const month = ymOf(today), spend = spendByCategory(txns, month, cur)
   const free = Math.max(0, safe)
   const line = (category: string, cap: number, estimated: boolean): RoomLine => {
-    const spent = spend[category] ?? 0, left = cap - spent
+    const spent = spentOn(spend, category), left = cap - spent
     return { category, cap, spent, left, room: Math.max(0, Math.min(left, free)), estimated }
   }
   const budgeted = budgetLines(budgets, spend, month, cur, { carry: carryIn(budgets, txns, month, cur) })
-    .filter(l => !FIXED.has(l.category) && l.cap > 0).map(l => line(l.category, l.cap, false))
+    .filter(l => !FIXED.has(l.category) && !l.inside && l.cap > 0).map(l => line(l.category, l.cap, false))
   const have = new Set(budgeted.map(l => l.category))
   const estimated = Object.entries(suggestCaps(txns, cur, month))
     .filter(([c]) => !have.has(c) && !FIXED.has(c) && c !== 'Transfer' && classify(c) === 'expense')

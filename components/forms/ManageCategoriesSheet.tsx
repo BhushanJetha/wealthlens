@@ -3,23 +3,24 @@ import { useEffect, useState } from 'react'
 import { X, Plus, Pencil, Trash2, Lock, Loader2, AlertTriangle, Check } from 'lucide-react'
 import { Segmented } from '@/components/ui/kit'
 import { CategoryIcon, CATEGORY_ICONS } from '@/components/ui/CategoryIcon'
-import { CATEGORY_COLORS, isSystemCategory, type Category, type CatKind } from '@/lib/categories'
+import { CATEGORY_COLORS, GROUPS, groupKeyOf, needOf, isSystemCategory, type Category, type CatKind, type GroupKey } from '@/lib/categories'
 import { useCategoryStore } from '@/store/categoryStore'
 import { toast } from '@/components/ui/toaster'
 
-type Draft = { name: string; color: string; icon: string }
+type Draft = { name: string; color: string; icon: string; parent: GroupKey | null }
 
-// Add, rename, recolour and delete expense / income categories.
-// Built-in categories the totals depend on are locked to colour + icon.
+// Categories and their sub-categories, expense or income. The categories are
+// fixed; built-in sub-categories can be recoloured and marked need or want;
+// your own can also be renamed, moved to another category or deleted.
 export default function ManageCategoriesSheet({ onClose, initialKind = 'expense', usage = {}, onChanged }: {
   onClose: () => void; initialKind?: CatKind
   usage?: Record<string, number>          // transactions per category name, when known
   onChanged?: () => void                  // e.g. refresh the page after a rename / delete
 }) {
-  const { rows, persisted, status, load, add, update, remove } = useCategoryStore()
+  const { rows, persisted, hasMeta, status, load, add, update, remove } = useCategoryStore()
   const [kind, setKind] = useState<CatKind>(initialKind)
   const [editing, setEditing] = useState<string | null>(null)       // category id, or 'new'
-  const [draft, setDraft] = useState<Draft>({ name: '', color: CATEGORY_COLORS[0], icon: 'tag' })
+  const [draft, setDraft] = useState<Draft>({ name: '', color: CATEGORY_COLORS[0], icon: 'tag', parent: null })
   const [deleting, setDeleting] = useState<string | null>(null)
   const [moveTo, setMoveTo] = useState('Other')
   const [busy, setBusy] = useState(false)
@@ -32,13 +33,28 @@ export default function ManageCategoriesSheet({ onClose, initialKind = 'expense'
   }, [onClose])
 
   const list = rows.filter(r => r.kind === kind)
-  const startNew = () => { setDeleting(null); setError(''); setEditing('new'); setDraft({ name: '', color: CATEGORY_COLORS[list.length % CATEGORY_COLORS.length], icon: 'tag' }) }
-  const startEdit = (c: Category) => { setDeleting(null); setError(''); setEditing(c.id); setDraft({ name: c.name, color: c.color, icon: c.icon || 'tag' }) }
+  const fallback: GroupKey = kind === 'expense' ? 'other' : 'extra'
+  // Each category with its sub-categories; what isn't spending or income last
+  const sections = [
+    ...GROUPS.filter(g => g.kind === kind).map(g => ({ key: g.key as string, label: g.label, color: g.color, note: g.spending || kind === 'income' ? '' : 'not spending', items: list.filter(c => groupKeyOf(c.name, rows, kind) === g.key) })),
+    { key: 'none', label: kind === 'expense' ? 'Not spending' : 'Not income', color: '#94A3B8', note: 'kept for older transactions', items: list.filter(c => groupKeyOf(c.name, rows, kind) == null) },
+  ].filter(x => x.items.length)
+  const startNew = () => { setDeleting(null); setError(''); setEditing('new'); setDraft({ name: '', color: CATEGORY_COLORS[list.length % CATEGORY_COLORS.length], icon: 'tag', parent: fallback }) }
+  const startEdit = (c: Category) => { setDeleting(null); setError(''); setEditing(c.id); setDraft({ name: c.name, color: c.color, icon: c.icon || 'tag', parent: groupKeyOf(c.name, rows, kind) }) }
+  async function setNeed(c: Category, need: boolean) {
+    const err = await update(c.id, { need })
+    if (err) toast(err); else onChanged?.()
+  }
   const startDelete = (c: Category) => { setEditing(null); setError(''); setDeleting(c.id); setMoveTo('Other') }
 
   async function save() {
     setBusy(true); setError('')
-    const err = editing === 'new' ? await add({ kind, ...draft }) : await update(editing!, draft)
+    const row = rows.find(r => r.id === editing)
+    const { parent, ...rest } = draft
+    // Only your own sub-categories choose their category (and only once migration 045 is in)
+    const own = editing === 'new' || (!!row && !isSystemCategory(row.kind, row.name))
+    const err = editing === 'new' ? await add({ kind, ...rest, parent: hasMeta ? parent : null })
+      : await update(editing!, own && hasMeta && parent !== groupKeyOf(row!.name, rows, kind) ? draft : rest)
     setBusy(false)
     if (err) { setError(err); return }
     const renamed = editing !== 'new' && rows.find(r => r.id === editing)?.name !== draft.name.trim()
@@ -60,10 +76,20 @@ export default function ManageCategoriesSheet({ onClose, initialKind = 'expense'
       <div>
         <Label>Name</Label>
         <input autoFocus value={draft.name} disabled={locked} maxLength={40} onChange={e => setDraft(d => ({ ...d, name: e.target.value }))}
-          onKeyDown={e => { if (e.key === 'Enter') save() }} placeholder="e.g. Groceries, Kids, Pets"
+          onKeyDown={e => { if (e.key === 'Enter') save() }} placeholder="e.g. Pet care, School bus"
           className="wl-input" style={{ height: 42, fontSize: 14, background: locked ? 'var(--track)' : '#fff' }} />
         {locked && <div className="text-[11.5px] mt-1.5 flex items-center gap-1" style={{ color: 'var(--text3)' }}><Lock size={11} />Built-in name — totals elsewhere depend on it</div>}
       </div>
+      {!locked && (
+        <div>
+          <Label>Category</Label>
+          <select value={draft.parent ?? fallback} onChange={e => setDraft(d => ({ ...d, parent: e.target.value as GroupKey }))} disabled={!hasMeta}
+            aria-label="Category it belongs to" className="wl-input w-full" style={{ height: 42, fontSize: 14, background: hasMeta ? '#fff' : 'var(--track)' }}>
+            {GROUPS.filter(g => g.kind === kind).map(g => <option key={g.key} value={g.key}>{g.label}{!g.spending && kind === 'expense' ? ' (not spending)' : ''}</option>)}
+          </select>
+          {!hasMeta && <div className="text-[11.5px] mt-1.5" style={{ color: 'var(--text3)' }}>Run migration 045 to put your own sub-categories under a category; until then they sit under Other.</div>}
+        </div>
+      )}
       <div>
         <Label>Colour</Label>
         <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Colour">
@@ -105,7 +131,7 @@ export default function ManageCategoriesSheet({ onClose, initialKind = 'expense'
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-[18px] font-bold" style={{ color: 'var(--text)' }}>Categories</h2>
-              <p className="text-[12.5px] mt-0.5" style={{ color: 'var(--text3)' }}>Add your own, rename, recolour or remove. Renaming also updates past transactions.</p>
+              <p className="text-[12.5px] mt-0.5" style={{ color: 'var(--text3)' }}>Each category has its sub-categories. Add your own under any of them; mark each one a need or a want.</p>
             </div>
             <button onClick={onClose} aria-label="Close" className="w-8 h-8 -mr-1 rounded-lg flex items-center justify-center hover:bg-[var(--bg2)]" style={{ color: 'var(--text3)' }}><X size={18} /></button>
           </div>
@@ -119,7 +145,7 @@ export default function ManageCategoriesSheet({ onClose, initialKind = 'expense'
           )}
           {editing === 'new' ? editor(false) : (
             <button onClick={startNew} disabled={!persisted} className="wl-btn w-full disabled:opacity-50" style={{ height: 40, fontSize: 13, borderStyle: 'dashed', color: 'var(--accent2)' }}>
-              <Plus size={15} />Add {kind} category
+              <Plus size={15} />Add {kind === 'expense' ? 'a sub-category' : 'an income category'}
             </button>
           )}
         </div>
@@ -127,8 +153,14 @@ export default function ManageCategoriesSheet({ onClose, initialKind = 'expense'
         <div className="overflow-y-auto px-5 md:px-6 pb-2" style={{ borderTop: '1px solid var(--line)' }}>
           {status !== 'ready' ? (
             <div className="py-10 flex justify-center" style={{ color: 'var(--text3)' }}><Loader2 size={18} className="animate-spin" /></div>
-          ) : list.map((c, i) => {
+          ) : sections.map(sec => (
+            <div key={sec.key} className="pt-3">
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] pb-1" style={{ color: 'var(--text3)' }}>
+                <i className="w-2 h-2 rounded-sm" style={{ background: sec.color }} />{sec.label}{sec.note && <span className="normal-case tracking-normal font-normal"> · {sec.note}</span>}
+              </div>
+              {sec.items.map((c, i) => {
             const locked = isSystemCategory(c.kind, c.name)
+            const need = kind === 'expense' ? needOf(c.name, rows) : null
             const n = usage[c.name]
             if (editing === c.id) return <div key={c.id} className="py-3">{editor(locked)}</div>
             return (
@@ -144,6 +176,18 @@ export default function ManageCategoriesSheet({ onClose, initialKind = 'expense'
                       </div>
                     ) : null}
                   </div>
+                  {need != null && (
+                    <div className="inline-flex rounded-lg p-[2px] flex-shrink-0" style={{ background: 'var(--track)' }} role="group" aria-label={`${c.name}: need or want`}>
+                      {([true, false] as const).map(v => (
+                        <button key={String(v)} onClick={() => need !== v && setNeed(c, v)} disabled={!hasMeta} aria-pressed={need === v}
+                          title={hasMeta ? undefined : 'Run migration 045 to change this'}
+                          className="h-7 px-2 rounded-md text-[11.5px] font-semibold disabled:cursor-not-allowed"
+                          style={need === v ? { background: '#fff', color: v ? '#1D5FA8' : '#9A3412', boxShadow: '0 1px 2px rgba(15,23,42,.1)' } : { color: 'var(--text3)' }}>
+                          {v ? 'Need' : 'Want'}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <button onClick={() => startEdit(c)} disabled={!persisted} aria-label={`Edit ${c.name}`} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[var(--accent-bg)] disabled:opacity-30" style={{ color: 'var(--text3)' }}><Pencil size={14} /></button>
                   <button onClick={() => startDelete(c)} disabled={!persisted || locked} aria-label={`Delete ${c.name}`} title={locked ? 'Built-in categories can’t be deleted' : undefined}
                     className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#FDECE8] disabled:opacity-25" style={{ color: '#DC2626' }}><Trash2 size={14} /></button>
@@ -167,7 +211,9 @@ export default function ManageCategoriesSheet({ onClose, initialKind = 'expense'
                 )}
               </div>
             )
-          })}
+              })}
+            </div>
+          ))}
         </div>
 
         <div className="px-5 md:px-6 py-4" style={{ borderTop: '1px solid var(--line)' }}>
