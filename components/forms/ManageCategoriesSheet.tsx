@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { X, Plus, Pencil, Trash2, Lock, Loader2, AlertTriangle, Check, ArrowRight } from 'lucide-react'
 import { Segmented } from '@/components/ui/kit'
 import { CategoryIcon, CATEGORY_ICONS } from '@/components/ui/CategoryIcon'
-import { CATEGORY_COLORS, GROUPS, INVEST_KINDS, INVEST_KIND_ICON, groupKeyOf, needOf, isSystemCategory, type Category, type CatKind, type GroupKey } from '@/lib/categories'
+import { CATEGORY_COLORS, GROUPS, INVEST_KINDS, INVEST_KIND_ICON, groupKeyOf, needOf, isSystemCategory, examplesOf, type Category, type CatKind, type GroupKey } from '@/lib/categories'
 import { useCategoryStore } from '@/store/categoryStore'
 import { toast } from '@/components/ui/toaster'
 
@@ -160,6 +160,7 @@ export function CategoryManager({ kind, only, usage = {}, amountOf, onChanged }:
                       {c.name}
                       {!locked && <span className="text-[10px] font-bold px-1.5 py-[1px] rounded-full flex-shrink-0" style={{ background: 'var(--accent-bg)', color: 'var(--accent2)' }}>YOURS</span>}
                     </div>
+                    {examplesOf(c.name, kind) && <div className="text-[12px] leading-snug" style={{ color: 'var(--text3)' }}>{examplesOf(c.name, kind)}</div>}
                     {(locked || n || amount) ? (
                       <div className="text-[11.5px] flex items-center gap-1 flex-wrap" style={{ color: 'var(--text4)' }}>
                         {locked && <><Lock size={10} />Built-in</>}

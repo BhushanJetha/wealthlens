@@ -1,8 +1,9 @@
 'use client'
 import { useMemo, useState } from 'react'
-import { Search, X } from 'lucide-react'
+import { Search, X, HelpCircle } from 'lucide-react'
 import { CategoryIcon } from '@/components/ui/CategoryIcon'
-import { groupedCategories, groupOf, needOf, isGeneral, investKindOf, INVEST_KINDS, INVEST_KIND_ICON, type Category, type CatKind } from '@/lib/categories'
+import { groupedCategories, groupOf, needOf, isGeneral, investKindOf, examplesOf, INVEST_KINDS, INVEST_KIND_ICON, type Category, type CatKind } from '@/lib/categories'
+import CategoryGuide from './CategoryGuide'
 
 // Pick a sub-category, grouped under its category (Food › Groceries…), with a
 // search across both. The category comes with it — nothing else to choose.
@@ -16,11 +17,13 @@ export default function CategoryPicker({ rows, kind, value, onPick, extra, curre
   current?: Category | null            // the saved name when it isn't in the list (an import)
 }) {
   const [q, setQ] = useState('')
+  const [guide, setGuide] = useState(false)
   const groups = useMemo(() => groupedCategories(rows, kind), [rows, kind])
   const query = q.trim().toLowerCase()
   const shown = query
     ? groups.map(g => ({ ...g, items: g.group.label.toLowerCase().includes(query) ? g.items
-        : g.items.filter(c => c.name.toLowerCase().includes(query) || (c.name === 'Investment' && INVEST_KINDS.some(k => k.toLowerCase().includes(query)))) })).filter(g => g.items.length)
+        : g.items.filter(c => c.name.toLowerCase().includes(query) || examplesOf(c.name, kind).toLowerCase().includes(query)
+          || (c.name === 'Investment' && INVEST_KINDS.some(k => k.toLowerCase().includes(query)))) })).filter(g => g.items.length)
     : groups
   const picked = value ? groupOf(value, rows, kind) : null
   const need = kind === 'expense' && value ? needOf(value, rows) : null
@@ -49,12 +52,18 @@ export default function CategoryPicker({ rows, kind, value, onPick, extra, curre
         {q && <button type="button" onClick={() => setQ('')} aria-label="Clear search" className="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-lg" style={{ color: 'var(--text3)' }}><X size={14} /></button>}
       </div>
       {value && (
-        <div className="text-[12px] -mt-0.5" style={{ color: 'var(--text3)' }}>
+        <div className="text-[12px] -mt-0.5 flex items-start justify-between gap-2" style={{ color: 'var(--text3)' }}>
+          <span className="min-w-0">
           {picked ? <><b style={{ color: 'var(--text2)' }}>{picked.label}</b>{isGeneral(value) ? '' : <> › {investKind ?? value}</>}</> : <b style={{ color: 'var(--text2)' }}>{value}</b>}
           {need != null && <> · counts as a <b style={{ color: need ? '#1D5FA8' : '#9A3412' }}>{need ? 'need' : 'want'}</b></>}
           {kind === 'income' && value === 'Refund' && <> · money back, not counted as income</>}
+          {examplesOf(value, kind) && <span className="block" style={{ color: 'var(--text4)' }}>{examplesOf(value, kind)}</span>}
+          </span>
+          <button type="button" onClick={() => setGuide(true)} className="inline-flex items-center gap-1 font-semibold flex-shrink-0 whitespace-nowrap" style={{ color: 'var(--accent2)' }}><HelpCircle size={12} />What goes where?</button>
         </div>
       )}
+      {!value && <button type="button" onClick={() => setGuide(true)} className="self-start inline-flex items-center gap-1 text-[12px] font-semibold -mt-0.5" style={{ color: 'var(--accent2)' }}><HelpCircle size={12} />What goes where?</button>}
+      {guide && <CategoryGuide rows={rows} initialKind={kind} onClose={() => setGuide(false)} onPick={(n, k) => { if (k === kind) { onPick(n); setQ('') } }} />}
       <div className="flex flex-col gap-2 max-h-[300px] overflow-y-auto pr-0.5 -mr-0.5" role="radiogroup" aria-label="Category">
         {current && !query && (
           <div className="flex flex-wrap gap-1.5 items-center"><span className="text-[11px] font-semibold uppercase tracking-[0.05em] w-full" style={{ color: 'var(--text3)' }}>Saved as</span>{chip(current, current.name)}</div>

@@ -2,10 +2,11 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ChevronLeft, Lock } from 'lucide-react'
+import { ChevronLeft, Lock, HelpCircle } from 'lucide-react'
 import { PageHeader, Segmented } from '@/components/ui/kit'
 import { CategoryIcon } from '@/components/ui/CategoryIcon'
 import { CategoryManager } from '@/components/forms/ManageCategoriesSheet'
+import CategoryGuide from '@/components/forms/CategoryGuide'
 import { GROUPS, groupKeyOf, investKindOf, type CatKind } from '@/lib/categories'
 import { catOf, isSpend, myShare } from '@/lib/money'
 import { fmtMoney } from '@/lib/format'
@@ -25,6 +26,7 @@ export default function CategoriesClient({ txns, year }: { txns: any[]; year: st
   const { rows } = useCategoryStore()
   const [kind, setKind] = useState<CatKind>('expense')
   const [sel, setSel] = useState<string>('food')
+  const [guide, setGuide] = useState(false)
 
   // This year: transactions and amounts per sub-category, per category, and
   // per kind of investment
@@ -73,10 +75,14 @@ export default function CategoriesClient({ txns, year }: { txns: any[]; year: st
     <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
       <Link href="/dashboard/settings" className="inline-flex items-center gap-1 text-[12.5px] font-semibold -mb-1" style={{ color: 'var(--accent2)' }}><ChevronLeft size={14} />Settings</Link>
       <PageHeader title="Categories" sub="The categories are fixed, so every report adds up the same way. Everything under them is yours to shape." />
-      <div className="max-w-[320px]">
-        <Segmented full label="Category type" value={kind} onChange={pick}
-          options={[{ value: 'expense', label: 'Spending' }, { value: 'income', label: 'Income' }]} />
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="w-[320px] max-w-full">
+          <Segmented full label="Category type" value={kind} onChange={pick}
+            options={[{ value: 'expense', label: 'Spending' }, { value: 'income', label: 'Income' }]} />
+        </div>
+        <button onClick={() => setGuide(true)} className="wl-btn" style={{ height: 38 }}><HelpCircle size={14} />What goes where</button>
       </div>
+      {guide && <CategoryGuide rows={rows} initialKind={kind} onClose={() => setGuide(false)} />}
 
       {/* Phones: the categories as a row of chips */}
       <div className="md:hidden flex gap-1.5 overflow-x-auto no-scrollbar -mx-4 px-4" role="group" aria-label="Categories">{nav(true)}</div>

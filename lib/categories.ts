@@ -132,6 +132,80 @@ export function needOf(name: string, rows: Category[] = []): boolean | null {
   return d ? d[4] ?? true : true
 }
 
+// ── What goes where ─────────────────────────────────────────────────────────
+// A line for each built-in sub-category: what to put in it, with the usual
+// UAE / India names. Shown in the guide and in Settings, and searched by the
+// picker (typing "badminton" finds Sports & fitness).
+const EXAMPLES: Record<string, string> = {
+  'expense|Rent': 'Monthly rent, Ejari, housing fees',
+  'expense|Maintenance': 'Repairs, plumber, electrician, AC service, pest control, building service charges',
+  'expense|Household help': 'Maid, cook, driver, nanny, cleaning service',
+  'expense|Furnishing': 'Furniture, appliances, kitchenware, home décor, IKEA',
+  'expense|Food': 'Food you can’t place below',
+  'expense|Groceries': 'Supermarket, vegetables and fruit, milk, meat — Carrefour, Lulu, Spinneys, BigBasket',
+  'expense|Eating out': 'Restaurants, cafés, coffee, tea, juice — dining in or takeaway',
+  'expense|Delivery': 'Food ordered to your door — Talabat, Deliveroo, Swiggy, Zomato',
+  'expense|Utilities': 'Electricity, water, gas, district cooling — DEWA, ADDC, SEWA',
+  'expense|Mobile & internet': 'Phone plans, recharges, home Wi-Fi — du, e& (Etisalat), Jio, Airtel',
+  'expense|Subscription': 'Netflix, Spotify, YouTube Premium, iCloud, apps, newspapers',
+  'expense|Travel & transport': 'Any other getting around',
+  'expense|Fuel': 'Petrol, diesel, EV charging — ADNOC, ENOC, Emarat',
+  'expense|Taxi & metro': 'Careem, Uber, taxis, metro, bus, Nol top-ups, auto rickshaw',
+  'expense|Salik': 'Salik, Darb and FASTag tolls',
+  'expense|Parking & fines': 'Parking (RTA, Mawaqif, malls), traffic fines',
+  'expense|Car service': 'Servicing, tyres, car wash, registration',
+  'expense|Health': 'Doctor, hospital, dentist, tests, eye care',
+  'expense|Medicines': 'Pharmacy, prescriptions, vitamins',
+  'expense|Health insurance': 'Medical insurance you pay for yourself',
+  'expense|Education': 'School and college fees, tuition, books, uniforms, courses',
+  'expense|Childcare': 'Nursery, day care, babysitter, kids’ classes and toys',
+  'expense|Family Transfer': 'Money sent to parents or family — add it as Transfer › Family support',
+  'expense|Shopping': 'General shopping — Amazon, Noon, electronics, gadgets',
+  'expense|Clothes': 'Clothes, shoes, bags, tailoring',
+  'expense|Personal Care': 'Salon, barber, spa, cosmetics, grooming',
+  'expense|Sports & fitness': 'Gym, badminton, table tennis, swimming, yoga, court bookings, sports gear',
+  'expense|Entertainment': 'Movies, concerts, events, gaming, theme parks, hobbies',
+  'expense|Holidays': 'Hotels, holiday packages, tours, sightseeing',
+  'expense|Flights': 'Air tickets — trips home or holidays',
+  'expense|Tax Payment': 'Income tax, advance tax, property tax',
+  'expense|Visa & ID fees': 'Visa, Emirates ID, passport, OCI, attestation',
+  'expense|Insurance': 'Car, home or term life cover (not health, not LIC or ULIP plans)',
+  'expense|Bank charges': 'Card annual fee, late fee, service and transfer charges',
+  'expense|Gifts': 'Presents and flowers for others',
+  'expense|Donations & zakat': 'Charity, zakat, temple, church or mosque',
+  'expense|Event/Function': 'Weddings, birthdays, parties, festivals',
+  'expense|EMI/Loan': 'Home, car or personal loan instalments',
+  'expense|Loan on Card': 'Instalment plans and loans on a credit card',
+  'expense|Investment': 'Pick what it went into: mutual funds, stocks, FD, RD, gold, PPF / NPS, LIC or ULIP',
+  'expense|Home purchase': 'Down payment or builder instalments for a home you’re buying',
+  'expense|Other': 'Only when nothing else fits',
+  'income|Salary': 'Your monthly pay',
+  'income|Bonus': 'Bonus, incentives, commission',
+  'income|Allowances & reimbursements': 'Housing or travel allowance, expense claims paid back',
+  'income|Freelance': 'Side work, consulting, gigs',
+  'income|End-of-service gratuity': 'Gratuity when you leave a job',
+  'income|Interest': 'Savings, FD and RD interest',
+  'income|Dividend': 'Dividends from shares or funds',
+  'income|Rental': 'Rent you receive',
+  'income|Capital gains': 'Profit when you sell an investment (not what you put in)',
+  'income|Gift': 'Money given to you',
+  'income|Tax Refund': 'Income tax refunds',
+  'income|Cashback & rewards': 'Card cashback, reward points turned into money',
+  'income|One-off income': 'Anything earned once',
+  'income|Refund': 'Money back from a shop — not counted as income',
+  'income|Other': 'Anything else you earned',
+}
+export const examplesOf = (name: string, kind: CatKind = 'expense') => EXAMPLES[`${kind}|${name}`] ?? ''
+// Not categories at all: what to choose instead
+export const NOT_A_CATEGORY: { what: string; how: string }[] = [
+  { what: 'Paying a credit card bill', how: 'Transfer › Card bill' },
+  { what: 'Sending money home (UAE → India)', how: 'Transfer › UAE → India' },
+  { what: 'NRE → NRO, or between your own accounts', how: 'Transfer › NRE → NRO / My other account' },
+  { what: 'Money for parents or family', how: 'Transfer › Family support' },
+  { what: 'Taking cash from an ATM', how: 'Transfer › ATM cash' },
+  { what: 'Splitting a bill with friends', how: 'Add your expense, then Split it' },
+]
+
 // ── Investing, by what it went into ─────────────────────────────────────────
 // Every investment is saved under the one name Investment (the SIP and RD
 // automations, the Mutual funds page and the dues look for it), with its kind
