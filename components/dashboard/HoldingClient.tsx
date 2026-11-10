@@ -13,6 +13,8 @@ import { Segmented } from '@/components/ui/kit'
 import Pagination from './Pagination'
 import BatchPurchaseModal from '@/components/forms/BatchPurchaseModal'
 import SipsEditor from '@/components/forms/SipsEditor'
+import { VerifyBadge, VerifySheet } from './VerifyHolding'
+import type { VerifyType } from '@/lib/verify'
 import EditHoldingModal from '@/components/forms/EditHoldingModal'
 import EditLotModal from '@/components/forms/EditLotModal'
 import AddInvestmentModal from '@/components/forms/AddInvestmentModal'
@@ -127,7 +129,7 @@ export default function HoldingClient({ type, row, txns, kindTotal, accounts = [
     return yrs >= 0.9 ? Math.round((Math.pow(shown[shown.length - 1].v / shown[0].v, 1 / yrs) - 1) * 1000) / 10 : null
   })() : null
 
-  const [sheet, setSheet] = useState<null | 'buy' | 'edit' | 'edit2' | 'sip' | 'repick' | 'delete' | 'sell' | 'renew' | 'paidout'>(null)
+  const [sheet, setSheet] = useState<null | 'buy' | 'edit' | 'edit2' | 'sip' | 'repick' | 'delete' | 'sell' | 'renew' | 'paidout' | 'verify'>(null)
   const [menu, setMenu] = useState(false)
   const [editLot, setEditLot] = useState<any | null>(null)
   const [page, setPage] = useState(1)
@@ -154,6 +156,7 @@ export default function HoldingClient({ type, row, txns, kindTotal, accounts = [
             <div className="flex gap-1.5 mt-1.5 flex-wrap text-[12px]">
               <span className="rounded-md px-2 py-[3px] font-semibold" style={{ background: 'var(--accent-bg)', color: 'var(--accent2)' }}>{m.sub || meta.label}</span>
               {m.price != null && <span className="rounded-md px-2 py-[3px] font-semibold" style={{ background: '#E7F7EF', color: '#1E7A50' }}>{type === 'mutual_funds' ? 'NAV' : 'Price'} {price(m.price)}{priceDate ? ` · ${priceDate}` : ''}</span>}
+              {market && <VerifyBadge type={type as VerifyType} row={row} today={today} onClick={() => setSheet('verify')} />}
               {market && <button onClick={refreshPrice} disabled={quote.busy} className="rounded-md px-2 py-[3px] font-semibold inline-flex items-center gap-1 wl-hide-viewing" style={{ background: '#F1F0F7', color: 'var(--text2)' }}
                 aria-label={type === 'mutual_funds' ? 'Refresh the NAV' : 'Refresh the price'}><RefreshCw size={11} className={quote.busy ? 'animate-spin' : ''} />{quote.busy ? 'Updating…' : 'Refresh'}</button>}
             </div>
@@ -353,6 +356,7 @@ export default function HoldingClient({ type, row, txns, kindTotal, accounts = [
       {sheet === 'renew' && <RenewSheet row={row} amount={m.maturity?.amount ?? Number(row.principal) ?? 0} onClose={() => setSheet(null)} onSaved={done} />}
       {sheet === 'paidout' && <PaidOutSheet row={row} name={m.name} onClose={() => setSheet(null)} onSaved={done} />}
       {sheet === 'edit2' && <AddInvestmentModal defaultType={EDIT_TYPE[type] as any} editData={{ ...row, _type: EDIT_TYPE[type] }} onClose={done} />}
+      {sheet === 'verify' && <VerifySheet type={type as VerifyType} row={row} today={today} onClose={() => setSheet(null)} onSaved={done} />}
       {sheet === 'repick' && <RepickSheet row={row} onClose={() => setSheet(null)} onSaved={() => { done(); refreshPrice() }} />}
       {sheet === 'delete' && <DeleteSheet type={type} row={row} name={m.name} onClose={() => setSheet(null)} />}
     </div>

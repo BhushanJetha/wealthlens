@@ -32,6 +32,7 @@ import { recordSip, claimSipMonth, navOf } from '@/lib/sipAuto'
 import { sipsOf, type Sip } from '@/lib/sips'
 import SipsEditor from '@/components/forms/SipsEditor'
 import { localToday } from '@/lib/insights'
+import { VerifyBadge } from './VerifyHolding'
 
 // ─── constants ────────────────────────────────────────────────────────────────
 const TYPE_COLORS: Record<string, string> = {
@@ -655,7 +656,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
                 <span className="flex items-center gap-3 min-w-0">
                   <span className="w-9 h-9 rounded-[10px] flex items-center justify-center flex-shrink-0 text-[14px] font-bold" style={{ background: tc + '1A', color: tc }}>{String(f.fund_name).trim()[0]}</span>
                   <span className="min-w-0">
-                    <span className="block text-[13.5px] md:text-[14px] font-semibold truncate" style={{ color: 'var(--text)' }}>{f.fund_name}</span>
+                    <span className="flex items-center gap-1.5 text-[13.5px] md:text-[14px] font-semibold min-w-0" style={{ color: 'var(--text)' }}><span className="truncate">{f.fund_name}</span><VerifyBadge type="mutual_funds" row={f} today={localToday()} compact /></span>
                     <span className="block text-[11.5px] md:text-[12px] truncate mt-px" style={{ color: 'var(--text3)' }}>{meta}<span className="md:hidden"> · <b style={{ color: retColor }}>{ret == null ? 'no NAV' : `${ret >= 0 ? '+' : ''}${ret.toFixed(1)}%`}</b></span></span>
                   </span>
                 </span>

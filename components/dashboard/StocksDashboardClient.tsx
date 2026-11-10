@@ -24,6 +24,7 @@ import InvestmentTimeline from '@/components/dashboard/InvestmentTimeline'
 import InvestmentMatrix from '@/components/dashboard/InvestmentMatrix'
 import Pagination from '@/components/dashboard/Pagination'
 import { holdingHref, xirr } from '@/lib/holding'
+import { VerifyBadge } from './VerifyHolding'
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 function getReturn(s: any, prices: Record<string, number>): number {
@@ -437,7 +438,7 @@ export default function StocksDashboardClient({ stocks: initial }: { stocks: any
                 <span className="flex items-center gap-3 min-w-0">
                   <span className="w-9 h-9 rounded-[10px] flex items-center justify-center flex-shrink-0 text-[12px] font-bold" style={{ background: 'var(--accent-bg)', color: 'var(--accent2)' }}>{String(s.symbol ?? s.name ?? '?').slice(0, 3).toUpperCase()}</span>
                   <span className="min-w-0">
-                    <span className="block text-[13.5px] md:text-[14px] font-semibold truncate" style={{ color: 'var(--text)' }}>{s.name || s.symbol}</span>
+                    <span className="flex items-center gap-1.5 text-[13.5px] md:text-[14px] font-semibold min-w-0" style={{ color: 'var(--text)' }}><span className="truncate">{s.name || s.symbol}</span><VerifyBadge type="stocks" row={s} today={new Date().toLocaleDateString('en-CA')} compact /></span>
                     <span className="block text-[11.5px] md:text-[12px] truncate mt-px" style={{ color: 'var(--text3)' }}>{[s.symbol, s.sector].filter(Boolean).join(' · ')} · {Number(s.quantity)} shares<span className="md:hidden"> · <b style={{ color: retColor }}>{ret == null ? '—' : `${ret >= 0 ? '+' : ''}${ret.toFixed(1)}%`}</b></span></span>
                   </span>
                 </span>
