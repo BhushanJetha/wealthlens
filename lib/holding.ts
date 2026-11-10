@@ -3,7 +3,7 @@
 // could go. The holding page (/dashboard/investments/h/<type>/<id>) renders
 // this for every type, valued with the same functions as Net worth.
 import { holdingValue, holdingCost } from './netWorth'
-import { sipsOf } from './sips'
+import { sipsOf, sipInstalments } from './sips'
 
 export type HType = 'mutual_funds' | 'stocks' | 'etf_investments' | 'fixed_deposits' | 'recurring_deposits' | 'bond_investments'
   | 'ppf_epf_accounts' | 'nps_accounts' | 'gold_investments' | 'lic_policies'
@@ -102,11 +102,15 @@ export function holdingModel(type: HType, r: any, txns: any[], today: string, op
   const gain = value - cost, gainPct = cost > 0 && value !== cost ? gain / cost * 100 : null
   const mine = txns.filter(t => t.asset_id === r.id).sort((a, b) => String(a.txn_date).localeCompare(String(b.txn_date)))
 
-  // Purchases, with the holding you had before the first recorded one as "Opening"
+  // Purchases, with the holding you had before the first recorded one as
+  // "Opening". A purchase that repeats like a SIP is a SIP instalment.
+  const isSip = type === 'mutual_funds'
+    ? sipInstalments(mine.filter(t => t.txn_type === 'purchase' || t.txn_type === 'sip').map(t => ({ date: t.txn_date, amount: Number(t.amount) || 0 })), sipsOf(r, true).map(s => Number(s.amount)))
+    : () => false
   const lots: Lot[] = mine.map(t => ({
     id: t.id ?? null, date: String(t.txn_date).slice(0, 10), raw: t, amount: Number(t.amount) || 0,
     units: t.units != null ? Number(t.units) : null, price: t.nav != null ? Number(t.nav) : null,
-    kind: t.txn_type === 'sip' ? 'SIP' : BUY.has(t.txn_type) ? 'Lump sum' : SELL.has(t.txn_type) ? 'Sold' : t.txn_type === 'dividend' ? 'Dividend' : 'Other',
+    kind: t.txn_type === 'sip' || (t.txn_type === 'purchase' && isSip(Number(t.amount) || 0)) ? 'SIP' : BUY.has(t.txn_type) ? 'Lump sum' : SELL.has(t.txn_type) ? 'Sold' : t.txn_type === 'dividend' ? 'Dividend' : 'Other',
   }))
   const unitsNow = type === 'mutual_funds' ? Number(r.units) || 0 : type === 'stocks' ? Number(r.quantity) || 0 : type === 'etf_investments' ? Number(r.units) || 0 : null
   const avg = type === 'mutual_funds' ? Number(r.avg_nav) || null : type === 'stocks' || type === 'etf_investments' ? Number(r.avg_buy_price) || null : null

@@ -101,3 +101,22 @@ export function sipForPayment(f: any, amount: number, month: string): Sip | null
   return sipsOf(f).filter(near).sort((a, b) => Number(!!(a.last_month && a.last_month >= month)) - Number(!!(b.last_month && b.last_month >= month))
     || Math.abs(amount - a.amount) - Math.abs(amount - b.amount))[0] ?? null
 }
+
+// Which purchases are SIP instalments. Statements often call an instalment a
+// plain "Purchase"; it's a SIP when its amount comes back (within 1%) in 3 or
+// more different months, or is within 10% of one of the fund's SIPs.
+export function sipInstalments(buys: { date: string; amount: number }[], sipAmounts: number[] = []): (amount: number) => boolean {
+  const months = new Map<number, Set<string>>()
+  for (const b of buys) {
+    const a = Math.round(Number(b.amount) || 0)
+    if (a > 0) (months.get(a) ?? months.set(a, new Set()).get(a)!).add(String(b.date).slice(0, 7))
+  }
+  const repeated: number[] = []
+  months.forEach((ms, a) => {
+    // Amounts within 1% of each other count together (stamp duty takes a few rupees off)
+    let n = 0
+    months.forEach((ms2, a2) => { if (Math.abs(a2 - a) <= a * 0.01) n += ms2.size })
+    if (n >= 3) repeated.push(a)
+  })
+  return (amount: number) => repeated.some(c => Math.abs(amount - c) <= c * 0.01) || sipAmounts.some(s => s > 0 && Math.abs(amount - s) <= s * 0.1)
+}

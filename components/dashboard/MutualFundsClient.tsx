@@ -53,21 +53,6 @@ function getReturn(f: any, navs: Record<string, number>): number {
   return invested > 0 ? (Number(f.units) * nav - invested) / invested * 100 : 0
 }
 
-function pickBestScheme(schemes: any[], fundName: string): any | null {
-  if (!schemes?.length) return null
-  const lo = fundName.toLowerCase()
-  return schemes.map((s: any) => {
-    const sn = (s.schemeName || '').toLowerCase()
-    let score = 0
-    if (sn.includes('growth') && !sn.includes('idcw') && !sn.includes('dividend')) score += 30
-    if (sn.includes('idcw') || sn.includes('dividend')) score -= 20
-    if (sn.includes('direct')) score += 5
-    if (sn.includes('regular')) score -= 5
-    lo.split(/\s+/).filter((w: string) => w.length > 3).forEach((w: string) => { if (sn.includes(w)) score += 2 })
-    return { ...s, score }
-  }).sort((a: any, b: any) => b.score - a.score)[0]
-}
-
 function computeRating(ret: number | null, type: string) {
   if (ret === null) return { stars: 0, label: 'Unrated' }
   const bench: Record<string, number> = { equity: 12, debt: 7, hybrid: 10, elss: 12, index: 11, liquid: 6 }
@@ -126,6 +111,9 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
   const [liveNavs, setLiveNavs]       = useState<Record<string, number>>({})
   const [navLoading, setNavLoading]   = useState(false)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const [navError, setNavError] = useState('')
+  // Funds AMFI couldn't be matched to for sure: the closest schemes, to pick from
+  const [unmatched, setUnmatched] = useState<Record<string, any[]>>({})
   const [news, setNews]               = useState<any[]>([])
   const [newsLoading, setNewsLoading] = useState(true)
   const [expandedId, setExpandedId]   = useState<string | null>(null)
@@ -164,40 +152,23 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
   const [historyLoading, setHistoryLoading] = useState(false)
 
   // ── live NAV ─────────────────────────────────────────────────────────────────
-  async function fetchLiveNavs() {
-    setNavLoading(true)
-    const r: Record<string, number> = {}
-    const codes: Record<string, number> = { ...schemeCodes }
-    const updates: Array<{ id: string; nav: number; code: number }> = []
-    await Promise.allSettled(funds.map(async f => {
-      try {
-        // Use the cached scheme code first (exact match); only search by name if unknown
-        let code: number | null = codes[f.id] ?? (f.scheme_code ? Number(f.scheme_code) : null)
-        if (!code) {
-          const q = f.fund_name.split(' ').slice(0, 4).join(' ')
-          const schemes = await fetch(`/api/mf-nav?q=${encodeURIComponent(q)}`).then(x => x.json())
-          const best = pickBestScheme(Array.isArray(schemes) ? schemes : [], f.fund_name)
-          if (best) code = best.schemeCode
-        }
-        if (!code) return
-        codes[f.id] = code
-        const nd  = await fetch(`/api/mf-nav?schemeCode=${code}`).then(x => x.json())
-        const nav = Number(nd?.data?.[0]?.nav)
-        if (nav > 0) { r[f.id] = nav; updates.push({ id: f.id, nav, code }) }
-      } catch {}
-    }))
-    setLiveNavs(r)
-    setSchemeCodes(codes)
-    setLastUpdated(new Date())
-    setNavLoading(false)
-
-    // Persist last-fetched NAV (shown instantly next visit) + matched scheme code.
-    // Split into two updates so NAV still caches even before migration 013 adds scheme_code.
-    const nowIso = new Date().toISOString()
-    for (const u of updates) {
-      supabase.from('mutual_funds').update({ current_nav: u.nav, last_updated: nowIso }).eq('id', u.id).then(() => {}, () => {})
-      supabase.from('mutual_funds').update({ scheme_code: u.code }).eq('id', u.id).then(() => {}, () => {})
-    }
+  // NAVs from AMFI's official daily file, matched to each fund by its scheme
+  // code, ISIN or (only when it's clear) its name, and saved (app/api/prices).
+  // A fund that can't be matched keeps its NAV until you pick its scheme.
+  async function fetchLiveNavs(ids?: string[]) {
+    setNavLoading(true); setNavError('')
+    try {
+      const res = await fetch('/api/prices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'mf', ...(ids ? { ids } : {}) }) })
+      const j = await res.json()
+      if (!res.ok) { setNavError(j.error ?? 'NAVs couldn’t be updated just now.'); return }
+      const got: Record<string, any> = {}
+      for (const r of j.results ?? []) got[r.id] = r
+      setLiveNavs(prev => { const n = { ...prev }; for (const r of j.results ?? []) if (r.ok) n[r.id] = r.price; return n })
+      setSchemeCodes(prev => { const n = { ...prev }; for (const r of j.results ?? []) if (r.ok) n[r.id] = r.code; return n })
+      setFunds(prev => prev.map(f => got[f.id]?.ok ? { ...f, current_nav: got[f.id].price, nav_date: got[f.id].date, scheme_code: got[f.id].code } : f))
+      setUnmatched(prev => { const n = { ...prev }; for (const r of j.results ?? []) { if (r.ok) delete n[r.id]; else if (r.candidates) n[r.id] = r.candidates } return n })
+      setLastUpdated(new Date())
+    } catch { setNavError('NAVs couldn’t be updated just now.') } finally { setNavLoading(false) }
   }
 
   async function fetchHistoricalNavs() {
@@ -285,8 +256,9 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
     setSchemeCodes(prev => ({ ...prev, [fund.id]: code }))
     if (nav > 0) setLiveNavs(prev => ({ ...prev, [fund.id]: nav }))
     setFunds(prev => prev.map(f => f.id === fund.id ? { ...f, scheme_code: code, ...(nav > 0 ? { current_nav: nav } : {}) } : f))
-    if (nav > 0) supabase.from('mutual_funds').update({ current_nav: nav, last_updated: new Date().toISOString() }).eq('id', fund.id).then(() => {}, () => {})
-    supabase.from('mutual_funds').update({ scheme_code: code }).eq('id', fund.id).then(() => {}, () => {})
+    // Save the scheme, then take its NAV (and date) from AMFI
+    await supabase.from('mutual_funds').update({ scheme_code: code }).eq('id', fund.id)
+    fetchLiveNavs([fund.id])
     setRepickFund(null); setRepickResults([])
   }
   useEffect(() => {
@@ -309,6 +281,11 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
         setSipReminder({ fund: f, sip: s }); break outer
       }
     }
+  }, [funds])
+
+  const navAsOf = useMemo(() => {
+    const d = funds.map(f => String(f.nav_date ?? '')).filter(Boolean).sort().slice(-1)[0]
+    return d ? new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : ''
   }, [funds])
 
   // ── sort ──────────────────────────────────────────────────────────────────────
@@ -556,20 +533,34 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
         </Overlay>
       )}
 
-      <PageHeader title="Mutual funds" sub={navLoading ? 'Fetching live NAV…' : lastUpdated ? `NAV updated ${lastUpdated.toLocaleTimeString()}` : 'Live NAV ready'}
+      <PageHeader title="Mutual funds" sub={navLoading ? 'Getting the latest NAVs from AMFI…' : navAsOf ? `NAV of ${navAsOf} · from AMFI, the same in every app` : 'NAVs from AMFI'}
         onAdd={() => setShowAdd(true)} addLabel="Add fund"
         actions={<>
-          <button onClick={fetchLiveNavs} disabled={navLoading} className="wl-btn" style={{ height: 34 }}><RefreshCw size={13} className={navLoading ? 'animate-spin' : ''} />{navLoading ? 'Updating…' : 'Refresh NAV'}</button>
+          <button onClick={() => fetchLiveNavs()} disabled={navLoading} className="wl-btn" style={{ height: 34 }}><RefreshCw size={13} className={navLoading ? 'animate-spin' : ''} />{navLoading ? 'Updating…' : 'Refresh NAV'}</button>
           <button onClick={() => setShowImport(true)} className="wl-btn" style={{ height: 34 }}><FileUp size={13} />Import PDF</button>
           <Link href="/dashboard/learn" className="wl-btn" style={{ height: 34 }}><GraduationCap size={13} />Learn</Link>
           <button onClick={() => setShowAdd(true)} className="wl-btn wl-btn-primary" style={{ height: 34 }}><Plus size={14} />Add fund</button>
         </>} />
       {/* Phone: header actions are desktop-only */}
       <div className="md:hidden flex gap-1.5 overflow-x-auto no-scrollbar -mx-4 px-4">
-        <button onClick={fetchLiveNavs} disabled={navLoading} className="wl-chip flex-shrink-0">{navLoading ? 'Updating…' : 'Refresh NAV'}</button>
+        <button onClick={() => fetchLiveNavs()} disabled={navLoading} className="wl-chip flex-shrink-0">{navLoading ? 'Updating…' : 'Refresh NAV'}</button>
         <button onClick={() => setShowImport(true)} className="wl-chip flex-shrink-0">Import PDF</button>
         <Link href="/dashboard/learn" className="wl-chip flex-shrink-0">Learn</Link>
       </div>
+      {navError && <div className="wl-card px-4 py-3 text-[12.5px]" style={{ background: '#FFF7E6', borderColor: '#F8DDB8', color: '#92560B' }}>{navError} The values below use the last NAV saved.</div>}
+      {Object.keys(unmatched).length > 0 && (
+        <div className="wl-card px-4 py-3 flex flex-col gap-2" style={{ background: '#FFF8EC', borderColor: '#F6DDB4' }}>
+          <div className="text-[13px] font-semibold" style={{ color: '#7A4A06' }}>Pick the exact scheme for {Object.keys(unmatched).length === 1 ? 'this fund' : `these ${Object.keys(unmatched).length} funds`}</div>
+          <div className="text-[12.5px] leading-snug" style={{ color: '#8A5A12' }}>The name doesn’t say for sure whether it’s the Direct or Regular plan, Growth or IDCW — and each has a different NAV. Until you pick, its value uses the last NAV saved.</div>
+          {funds.filter(f => unmatched[f.id]).map(f => (
+            <div key={f.id} className="flex items-center justify-between gap-3 py-1" style={{ borderTop: '1px solid #F6E3C4' }}>
+              <span className="text-[13px] min-w-0 truncate" style={{ color: 'var(--text)' }}>{f.fund_name}</span>
+              <button onClick={() => { setRepickFund(f); setRepickQuery(String(f.fund_name).split(/\s+-\s+|\s+/).slice(0, 4).join(' ')); setRepickResults(unmatched[f.id].map((c: any) => ({ schemeCode: c.code, schemeName: [c.name, c.plan === 'direct' ? 'Direct' : c.plan === 'regular' ? 'Regular' : null, c.option].filter(Boolean).join(' · '), nav: c.nav }))) }}
+                className="wl-btn flex-shrink-0" style={{ height: 32, fontSize: 12.5 }}>Pick</button>
+            </div>
+          ))}
+        </div>
+      )}
       {funds.length > 0 && <InsightBar text={`${funds.length} fund${funds.length === 1 ? '' : 's'} worth ${fmt(currentValue)}${totalRet != null ? `, ${totalRet >= 0 ? 'up' : 'down'} ${Math.abs(totalRet).toFixed(1)}% on what you put in` : ''}. ${activeSIPs ? `${activeSIPs} SIP${activeSIPs === 1 ? '' : 's'} running.` : 'No SIPs running yet.'}`} prompt={`My mutual funds: ${funds.slice(0, 15).map(f => `${f.fund_name} (${f.fund_type})`).join(', ')}. Invested ${fmt(totalInvested)}, worth ${fmt(currentValue)}, ${activeSIPs} active SIPs.`} />}
       {funds.length > 0 && <AiActions actions={['Check my fund overlap', 'Is my SIP enough for my goals?']} context={`My mutual funds: ${funds.slice(0, 15).map(f => `${f.fund_name} (${f.fund_type})`).join(', ')}. Invested ${fmt(totalInvested)}, worth ${fmt(currentValue)}, ${activeSIPs} active SIPs.`} />}
 
@@ -850,7 +841,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
                   className="w-full text-left px-3 py-2 rounded-lg border text-[11px] transition-colors hover:brightness-95"
                   style={{ borderColor: 'var(--line)', background: 'var(--bg2)', color: 'var(--text)' }}>
                   {s.schemeName}
-                  <div className="text-[9px]" style={{ color: 'var(--text3)' }}>Code {s.schemeCode}</div>
+                  <div className="text-[9px]" style={{ color: 'var(--text3)' }}>Code {s.schemeCode}{s.nav ? ` · NAV ₹${Number(s.nav).toLocaleString('en-IN', { maximumFractionDigits: 4 })}` : ''}</div>
                 </button>
               ))}
             </div>

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { sipInstalments } from '@/lib/sips'
 import { createClient } from '@/lib/supabase/server'
 
 // ──── Local holdings statement parser (no AI) ─────────────────────────
@@ -84,7 +85,7 @@ function classifyTxn(desc: string): string {
   if (/redemption|redeem|withdrawal/.test(d)) return 'redemption'
   if (/switch\s*out/.test(d)) return 'switch_out'
   if (/switch\s*in/.test(d)) return 'switch_in'
-  if (/sip|systematic\s*investment/.test(d)) return 'sip'
+  if (/\bsip\b|systematic\s*investment|instal+ment/.test(d)) return 'sip'
   if (/dividend|idcw|payout|reinvest/.test(d)) return 'dividend'
   if (/stamp\s*duty|stt|tax/.test(d)) return 'charge'
   if (/purchase|investment|subscription/.test(d)) return 'purchase'
@@ -100,6 +101,12 @@ const FUND_KW = /fund|plan|growth|\betf\b|scheme|equity|debt|\bcap\b|bond|gold|s
 // "128EFDGG-Axis Large Cap Fund - Direct Plan - Growth" or "P8042-ICICI ...".
 function isSchemeLine(l: string): boolean {
   return /^[A-Z0-9]{4,12}-\s*[A-Za-z]/.test(l) && FUND_KW.test(l) && !NOTE_RE.test(l)
+}
+
+// The scheme's ISIN, printed on its line or just below — an exact match to its NAV (lib/amfi)
+function isinNear(lines: string[], i: number): string | null {
+  for (const l of lines.slice(i, i + 4)) { const m = l.match(/\bISIN\s*[:\-]?\s*(IN[A-Z0-9]{10})\b/i); if (m) return m[1].toUpperCase() }
+  return null
 }
 
 // Strip the scheme-code prefix and trailing registrar/ISIN/advisor metadata.
@@ -184,6 +191,7 @@ function extractHolding(fundName: string, folio: string | null, txnLines: string
       current_value:   current_value != null ? Math.round(current_value * 100) / 100 : null,
       currency,
       registrar:       null as string | null,   // set by caller (CAMS/KFintech)
+      isin:            null as string | null,   // set by caller, from the scheme's line
       // SIP fields are applied later (need the statement's latest activity for recency)
     },
     txns,
@@ -222,7 +230,7 @@ function parseMutualFundCAS(text: string) {
     const txnLines = lines.slice(i + 1, closeI)
     const valText  = lines.slice(closeI, Math.min(closeI + 5, lines.length)).join('\n')  // valuation sits on/after the closing line
     const res = extractHolding(cleanSchemeName(lines[i]), currentFolio, txnLines, valText, currency)
-    if (res) { res.holding.registrar = detectReg(lines[i]) ?? globalReg; entries.push(res); transactions.push(...res.txns) }
+    if (res) { res.holding.registrar = detectReg(lines[i]) ?? globalReg; res.holding.isin = isinNear(lines, i); entries.push(res); transactions.push(...res.txns) }
     i = closeI
   }
 
@@ -243,13 +251,18 @@ function parseMutualFundCAS(text: string) {
       for (let j = i + 1; j < lines.length; j++) { if (/closing\s+unit\s+balance/i.test(lines[j])) { closeI = j; break } }
       if (!name || closeI === -1) continue
       const res = extractHolding(name, folio, lines.slice(i + 1, closeI), lines.slice(closeI, Math.min(closeI + 5, lines.length)).join('\n'), currency)
-      if (res) { res.holding.registrar = detectReg(lines[i]) ?? globalReg; entries.push(res); transactions.push(...res.txns) }
+      if (res) { res.holding.registrar = detectReg(lines[i]) ?? globalReg; res.holding.isin = isinNear(lines, Math.max(0, i - 5)); entries.push(res); transactions.push(...res.txns) }
       i = closeI
     }
   }
 
   // The statement's latest activity = the recency anchor for "is this SIP still running"
   const asOf = transactions.map(t => t.date).filter(Boolean).sort().slice(-1)[0] ?? null
+  // Instalments the statement calls a plain "Purchase" are SIPs when they repeat like one (lib/sips)
+  for (const e of entries) {
+    const isSip = sipInstalments(e.txns.filter(t => t.type === 'purchase' || t.type === 'sip'))
+    for (const t of e.txns) if (t.type === 'purchase' && isSip(t.amount)) t.type = 'sip'
+  }
   const holdings = entries.map(e => ({ ...e.holding, ...detectSip(e.txns, asOf) }))
 
   return { holdings, transactions }

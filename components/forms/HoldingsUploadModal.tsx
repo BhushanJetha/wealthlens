@@ -212,6 +212,8 @@ export default function HoldingsUploadModal({ onClose, kind }: Props) {
           avg_nav:         avgNav,
           invested_amount: m.invested_amount,
           ...(m.current_nav != null ? { current_nav: m.current_nav } : {}),
+          // The exact scheme, for its NAV (migration 048; left out before it)
+          ...((m as any).isin ? { isin: (m as any).isin } : {}),
           ...(m.has_sip ? { has_sip: true, sip_amount: m.sip_amount, sip_date: m.sip_date } : {}),
           ...(m.registrar ? { source: m.registrar } : {}),
         }

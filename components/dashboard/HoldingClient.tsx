@@ -42,6 +42,34 @@ export default function HoldingClient({ type, row, txns, kindTotal, accounts = [
   useEffect(() => { setToday(localToday()) }, [])
   const [series, setSeries] = useState<{ date: string; v: number }[] | null>(null)
   const [livePrice, setLivePrice] = useState<number | null>(null)
+  // The latest NAV (AMFI) or share price, saved on the holding (app/api/prices)
+  const [quote, setQuote] = useState<{ busy: boolean; date?: string | null; scheme?: string; ticker?: string; unmatched?: boolean; error?: string }>({ busy: false })
+  // The date the price is for, and (a fund) the exact scheme it's matched to
+  const priceDate = (() => {
+    const d = quote.date ?? (type === 'mutual_funds' ? row.nav_date : row.last_updated)
+    if (!d) return ''
+    const t = Date.parse(String(d).length <= 10 ? `${d}T00:00:00Z` : String(d))
+    return Number.isFinite(t) ? new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', ...(String(d).length > 10 && type !== 'mutual_funds' ? { hour: '2-digit', minute: '2-digit' } : { timeZone: 'UTC' }) }) : ''
+  })()
+  const schemeLine = type === 'mutual_funds' ? (row.scheme_name || quote.scheme || '') : ''
+  async function refreshPrice() {
+    if (!market) return
+    setQuote(q => ({ ...q, busy: true, error: undefined }))
+    try {
+      const res = await fetch('/api/prices', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: type === 'mutual_funds' ? 'mf' : type === 'stocks' ? 'stock' : 'etf', ids: [row.id] }) })
+      const j = await res.json(), r = j.results?.[0]
+      if (!res.ok || !r) { setQuote({ busy: false, error: j.error ?? 'The price couldn’t be updated just now.' }); return }
+      if (r.ok) { setLivePrice(r.price); setQuote({ busy: false, date: r.date, scheme: r.scheme, ticker: r.ticker }); router.refresh() }
+      else setQuote({ busy: false, unmatched: !!r.candidates, error: r.candidates ? undefined : r.error })
+    } catch { setQuote({ busy: false, error: 'The price couldn’t be updated just now.' }) }
+  }
+  // On opening: a fund's NAV when the saved one is over 6 hours old; a share's price always
+  useEffect(() => {
+    if (!market) return
+    const old = !row.last_updated || Date.now() - Date.parse(row.last_updated) > 6 * 3600e3
+    if (type !== 'mutual_funds' || old || !row.nav_date) refreshPrice()
+  }, [row.id]) // eslint-disable-line react-hooks/exhaustive-deps
   const [range, setRange] = useState<Range>('3Y')
   const m = useMemo(() => holdingModel(type, row, txns, today, { price: livePrice }), [type, row, txns, today, livePrice])
   const cur = m.currency, money = (n: number) => fmtMoney(n, cur), short = (n: number) => fmtCompact(n, cur)
@@ -60,9 +88,7 @@ export default function HoldingClient({ type, row, txns, kindTotal, accounts = [
       if (off) return
       const pts = (j?.data ?? []).map((p: any) => c.kind === 'nav' ? { date: `${p.month}-01`, v: Number(p.nav) } : { date: p.date, v: Number(p.price) }).filter((p: any) => p.v > 0)
       setSeries(pts)
-      if (c.kind === 'nav' && pts.length) setLivePrice(pts[pts.length - 1].v)
     }).catch(() => !off && setSeries([]))
-    if (c.kind === 'price') fetch(`/api/stock-price?symbol=${encodeURIComponent(c.symbol)}`).then(r => r.json()).then(j => { if (!off && Number(j?.price) > 0) setLivePrice(Number(j.price)) }).catch(() => {})
     return () => { off = true }
   }, [m.chart?.kind, (m.chart as any)?.code, (m.chart as any)?.symbol]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -127,7 +153,9 @@ export default function HoldingClient({ type, row, txns, kindTotal, accounts = [
             <h1 className="text-[20px] md:text-[24px] font-bold tracking-[-0.01em] leading-tight" style={{ color: 'var(--text)' }}>{m.name}</h1>
             <div className="flex gap-1.5 mt-1.5 flex-wrap text-[12px]">
               <span className="rounded-md px-2 py-[3px] font-semibold" style={{ background: 'var(--accent-bg)', color: 'var(--accent2)' }}>{m.sub || meta.label}</span>
-              {m.price != null && <span className="rounded-md px-2 py-[3px] font-semibold" style={{ background: '#E7F7EF', color: '#1E7A50' }}>{type === 'mutual_funds' ? 'NAV' : 'Price'} {price(m.price)}{livePrice ? ' · live' : ''}</span>}
+              {m.price != null && <span className="rounded-md px-2 py-[3px] font-semibold" style={{ background: '#E7F7EF', color: '#1E7A50' }}>{type === 'mutual_funds' ? 'NAV' : 'Price'} {price(m.price)}{priceDate ? ` · ${priceDate}` : ''}</span>}
+              {market && <button onClick={refreshPrice} disabled={quote.busy} className="rounded-md px-2 py-[3px] font-semibold inline-flex items-center gap-1 wl-hide-viewing" style={{ background: '#F1F0F7', color: 'var(--text2)' }}
+                aria-label={type === 'mutual_funds' ? 'Refresh the NAV' : 'Refresh the price'}><RefreshCw size={11} className={quote.busy ? 'animate-spin' : ''} />{quote.busy ? 'Updating…' : 'Refresh'}</button>}
             </div>
           </div>
         </div>
@@ -149,6 +177,18 @@ export default function HoldingClient({ type, row, txns, kindTotal, accounts = [
           </div>
         </div>
       </div>
+
+      {/* Where the price comes from, so it can be checked against any other app */}
+      {market && (quote.unmatched || quote.error || schemeLine || quote.ticker) && (
+        <div className="rounded-xl px-3.5 py-2.5 text-[12.5px] flex items-center gap-x-3 gap-y-1 flex-wrap -mt-2"
+          style={quote.unmatched || quote.error ? { background: '#FFF8EC', border: '1px solid #F6DDB4', color: '#7A4A06' } : { background: '#FAFAFE', border: '1px solid var(--line)', color: 'var(--text3)' }}>
+          {quote.unmatched ? <span className="flex-1 min-w-0">We can’t tell for sure which scheme this is (Direct or Regular, Growth or IDCW — each has its own NAV). Pick it so the value is right.</span>
+            : quote.error ? <span className="flex-1 min-w-0">{quote.error} The value uses the last price saved.</span>
+            : type === 'mutual_funds' ? <span className="flex-1 min-w-0">NAV from AMFI{priceDate ? ` for ${priceDate}` : ''} · <b style={{ color: 'var(--text2)' }}>{schemeLine}</b>{row.scheme_code ? ` · code ${row.scheme_code}` : ''}. The same NAV shows in every app for this exact scheme.</span>
+            : <span className="flex-1 min-w-0">Price from {String(quote.ticker).endsWith('.BO') ? 'BSE' : String(quote.ticker).endsWith('.NS') ? 'NSE' : 'the exchange'} ({quote.ticker}){priceDate ? ` · ${priceDate}` : ''} — up to 15 minutes behind while the market is open.</span>}
+          {type === 'mutual_funds' && <button onClick={() => setSheet('repick')} className="font-semibold flex-shrink-0" style={{ color: 'var(--accent2)' }}>{quote.unmatched ? 'Pick the scheme' : 'Wrong fund?'}</button>}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-4 md:gap-5 wl-even">
         <section className={`${card} flex flex-col gap-3 min-w-0`}>
@@ -313,7 +353,7 @@ export default function HoldingClient({ type, row, txns, kindTotal, accounts = [
       {sheet === 'renew' && <RenewSheet row={row} amount={m.maturity?.amount ?? Number(row.principal) ?? 0} onClose={() => setSheet(null)} onSaved={done} />}
       {sheet === 'paidout' && <PaidOutSheet row={row} name={m.name} onClose={() => setSheet(null)} onSaved={done} />}
       {sheet === 'edit2' && <AddInvestmentModal defaultType={EDIT_TYPE[type] as any} editData={{ ...row, _type: EDIT_TYPE[type] }} onClose={done} />}
-      {sheet === 'repick' && <RepickSheet row={row} onClose={() => setSheet(null)} onSaved={done} />}
+      {sheet === 'repick' && <RepickSheet row={row} onClose={() => setSheet(null)} onSaved={() => { done(); refreshPrice() }} />}
       {sheet === 'delete' && <DeleteSheet type={type} row={row} name={m.name} onClose={() => setSheet(null)} />}
     </div>
   )

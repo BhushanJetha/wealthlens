@@ -54,8 +54,8 @@ export function kindOf(g: any): Kind {
   if (/medical|health|hospital/.test(n)) return 'health'
   if (/business|startup|venture/.test(n)) return 'business'
   if (/diwali|onam|eid|christmas|birthday|anniversar|festival|rakhi|raksha|pongal|navratri/.test(n)) return 'celebration'
-  if (/premium|lic|insurance|renewal|registration/.test(n)) return 'payment'
-  if (/gold|dhanteras|akshaya/.test(n)) return 'gold'
+  if (/premium|\blic\b|insurance|renewal|registration/.test(n)) return 'payment'
+  if (/\bgold\b|dhanteras|akshaya/.test(n)) return 'gold'
   return 'other'
 }
 export const PRIORITY: Record<number, string> = { 1: 'Must have', 2: 'Important', 3: 'Nice to have' }
