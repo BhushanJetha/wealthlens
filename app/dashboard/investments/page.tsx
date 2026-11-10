@@ -20,7 +20,7 @@ export default async function InvestmentsPage() {
 
   // SIPs whose day has come are recorded alongside these reads (from your
   // statement, or "record it for me"); the rest are asked on this page
-  const [auto, [stocksRes, mfRes, fdRes, rdRes, npsRes, licRes, goldRes, bondRes, etfRes, ppfRes, txnsRes, giRes, goalsRes, familyRes, invTxns]] = await withAutomation(supabase, user!.id, today, () => Promise.all([
+  const [auto, [stocksRes, mfRes, fdRes, rdRes, npsRes, licRes, goldRes, bondRes, etfRes, ppfRes, txnsRes, giRes, goalsRes, familyRes, invTxns, budgetsRes]] = await withAutomation(supabase, user!.id, today, () => Promise.all([
     supabase.from('stocks').select('*').eq('user_id', user!.id),
     supabase.from('mutual_funds').select('*').eq('user_id', user!.id),
     supabase.from('fixed_deposits').select('*').eq('user_id', user!.id).eq('is_active', true),
@@ -42,6 +42,8 @@ export default async function InvestmentsPage() {
     supabase.from('goals').select('id, name, icon, color, category, target_amount, target_date, status').eq('user_id', user!.id).eq('status', 'active'),
     supabase.from('family_members').select('id, name, relationship').eq('user_id', user!.id).eq('is_active', true).order('created_at'),
     loadInvTxns(),
+    // This month's budgets, to compare the planned SIPs and RDs with the Investment budget
+    supabase.from('budgets').select('id,category,currency,monthly_cap,month_year,holder_name').eq('user_id', user!.id).eq('month_year', today.slice(0, 7)),
   ]))
 
   return (
@@ -57,6 +59,7 @@ export default async function InvestmentsPage() {
       etfInvestments={etfRes.data ?? []}
       ppfEpf={ppfRes.data ?? []}
       invTxns={invTxns}
+      budgets={budgetsRes.data ?? []}
       transactions={txnsRes.data ?? []}
       goalInvestments={giRes.data ?? []}
       goals={goalsRes.data ?? []}

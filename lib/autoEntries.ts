@@ -5,7 +5,7 @@ import { daysBetween, normMerchant } from './insights'
 import { ruleTextFor } from './rules'
 import { emiInBank } from './loanAuto'
 import { sipInBank } from './sipAuto'
-import { rdInBank } from './rdAuto'
+import { rdInBank, rdStep } from './rdAuto'
 
 export const isAutoPending = (t: any) => t?.auto_status === 'pending'
 export const AUTO_KIND_TEXT: Record<string, string> = { repeat: 'Repeating expense', emi: 'Loan EMI', sip: 'SIP', rd: 'RD instalment', plan: 'Added by you' }
@@ -45,6 +45,12 @@ export async function rejectAuto(sb: any, t: any): Promise<string | null> {
   const { error } = await sb.from('transactions').delete().eq('id', t.id)
   if (error) return error.message
   if (ref.kind === 'emi' && ref.loan_txn_id) await sb.from('loan_transactions').delete().eq('id', ref.loan_txn_id)
+  // An RD counted the instalment when the month was entered (lib/rdAuto): it comes off
+  if (ref.kind === 'rd' && ref.id) {
+    const { data: r } = await sb.from('recurring_deposits').select('*').eq('id', ref.id).maybeSingle()
+    const step = r ? rdStep(r, -1) : {}
+    if (Object.keys(step).length) await sb.from('recurring_deposits').update(step).eq('id', ref.id)
+  }
   if (ref.kind === 'sip') {
     await adjustFund(sb, ref, -(Number(ref.units) || 0), -(Number(ref.amount) || 0))
     if (ref.inv_txn_id) await sb.from('investment_transactions').delete().eq('id', ref.inv_txn_id)

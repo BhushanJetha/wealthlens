@@ -62,7 +62,21 @@ export default function LoansClient({ loans, pendingEmis = [], pendingDrafts = [
   const totalOutstanding = filtered.reduce((a,l) => a + conv(Number(l.outstanding_amt), l.currency), 0)
   const totalEMI         = filtered.reduce((a,l) => a + conv(Number(l.emi_amount), l.currency), 0)
   const totalSanctioned  = filtered.reduce((a,l) => a + conv(Number(l.sanctioned_amt), l.currency), 0)
-  const paidPct   = totalSanctioned > 0 ? Math.max(0, (totalSanctioned - totalOutstanding) / totalSanctioned * 100) : 0
+  // What's been borrowed so far: the disbursements recorded, else what the
+  // loan says was disbursed, else (fully drawn) what was sanctioned — a loan
+  // still being disbursed hasn't "repaid" the part not drawn yet
+  const drawnOf = (l: any) => {
+    const recorded = loanTxns.filter(t => t.loan_id === l.id && t.kind === 'disbursement').reduce((a, t) => a + (Number(t.amount) || 0), 0)
+    return recorded > 0 ? recorded : Number(l.disbursed_amt) || Number(l.sanctioned_amt) || 0
+  }
+  const totalDrawn = filtered.reduce((a, l) => a + conv(Math.max(drawnOf(l), Number(l.outstanding_amt) || 0), l.currency), 0)
+  const paidPct   = totalDrawn > 0 ? Math.max(0, (totalDrawn - totalOutstanding) / totalDrawn * 100) : 0
+  // Borrowed this year: each disbursement the bank released, by loan and month
+  const year = String(today).slice(0, 4)
+  const drawnThisYear = filtered.map(l => {
+    const ds = loanTxns.filter(t => t.loan_id === l.id && t.kind === 'disbursement' && String(t.txn_date).slice(0, 4) === year)
+    return { l, total: ds.reduce((a, t) => a + conv(Number(t.amount) || 0, l.currency), 0), months: Array.from(new Set(ds.map(t => String(t.txn_date).slice(0, 7)))).sort(), n: ds.length }
+  }).filter(x => x.total > 0)
   const avgRate   = totalOutstanding > 0 ? filtered.reduce((a, l) => a + conv(Number(l.outstanding_amt), l.currency) * Number(l.interest_rate || 0), 0) / totalOutstanding : 0
 
   const byType = LOAN_CATEGORIES.map(cat => {
@@ -184,10 +198,27 @@ export default function LoansClient({ loans, pendingEmis = [], pendingDrafts = [
       {/* KPIs: same four tiles on both sizes */}
       <div className="max-md:order-3 grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
         <KpiTile label="Monthly EMIs" value={money(totalEMI)} delta={`${filtered.length} loan${filtered.length === 1 ? '' : 's'}`} tint={2} icon={CalendarClock} />
-        <KpiTile label="Paid off" value={`${paidPct.toFixed(0)}%`} delta={`${money(Math.max(totalSanctioned - totalOutstanding, 0))} repaid`} tone={paidPct >= 50 ? 'good' : 'neutral'} tint={1} icon={BadgeCheck} />
+        <KpiTile label="Paid off" value={`${paidPct.toFixed(0)}%`} delta={`${money(Math.max(totalDrawn - totalOutstanding, 0))} repaid of ${money(totalDrawn)} borrowed`} tone={paidPct >= 50 ? 'good' : 'neutral'} tint={1} icon={BadgeCheck} />
         <KpiTile label="Average rate" value={`${avgRate.toFixed(2)}%`} delta="Weighted by balance" tint={3} icon={Percent} />
         <KpiTile label="Debt-free by" value={filtered.length && path.clears ? path.freeBy : '—'} delta={filtered.length ? 'at current EMIs' : 'No loans'} tint={0} icon={Flag} />
       </div>
+
+      {drawnThisYear.length > 0 && (
+        <section className="wl-card max-md:order-5 px-4 md:px-5 py-4 flex flex-col gap-2">
+          <div className="flex items-baseline justify-between gap-3 flex-wrap">
+            <h2 className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Borrowed in {year}</h2>
+            <span className="text-[15px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{money(drawnThisYear.reduce((a, x) => a + x.total, 0))}</span>
+          </div>
+          {drawnThisYear.map(x => (
+            <Link key={x.l.id} href={`/dashboard/loans/detail/${x.l.id}`} className="flex items-center justify-between gap-3 py-1.5 text-[12.5px]" style={{ borderTop: '1px solid var(--track)' }}>
+              <span className="min-w-0"><span className="block font-medium truncate" style={{ color: 'var(--text)' }}>{x.l.name}</span>
+                <span className="block text-[11.5px]" style={{ color: 'var(--text4)' }}>{x.n} disbursement{x.n === 1 ? '' : 's'} · {x.months.map(m => new Date(`${m}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })).join(', ')}</span></span>
+              <b className="tabular-nums flex-shrink-0" style={{ color: 'var(--text)' }}>{money(x.total)}</b>
+            </Link>
+          ))}
+          <p className="text-[11.5px] leading-snug" style={{ color: 'var(--text4)' }}>Borrowed money isn’t spending or income: it adds to what you owe (above). If a tranche came into your own bank account, that bank entry shows on Expense report as loan money received.</p>
+        </section>
+      )}
 
       {filtered.length > 0 && <LoanNeedsPanel className="max-md:order-5" loans={filtered} pendingEmis={pendingEmis} pendingDrafts={pendingDrafts} loanTxns={loanTxns} today={today} />}
 

@@ -1,7 +1,8 @@
 // RD instalments (migration 037): on the day each month the instalment enters
-// your transactions as an investment. The RD's value already grows by date
-// (lib/netWorth), so this is the money leaving your account. A debit in your
-// statement ticks the month off instead; a month is never entered twice.
+// your transactions as an investment, and the RD gains that month: an RD kept
+// as "months paid" or "amount so far" goes up by one instalment (one counted
+// by date already grows by itself — lib/netWorth). A debit in your statement
+// ticks the month off instead; a month is never entered twice.
 import { ymOf, addMonths, daysBetween } from './insights'
 import { dateIn, autoTag } from './recurring'
 import { catOf } from './money'
@@ -34,13 +35,23 @@ export function rdInBank(d: RdDue, txns: any[]): any | null {
       || (catOf(t) === 'Investment' && words.some(w => `${t.merchant ?? ''} ${t.description ?? ''}`.toLowerCase().includes(w))))) ?? null
 }
 
-async function claim(supabase: any, r: any, month: string): Promise<boolean> {
-  let q = supabase.from('recurring_deposits').update({ rd_last_month: month }).eq('id', r.id)
+// What one more (or one fewer) instalment does to an RD kept as months paid / amount so far
+export function rdStep(r: any, by: 1 | -1): Record<string, number> {
+  const monthly = Number(r.monthly_amount) || 0, tenure = Number(r.tenure_months) || Infinity, out: Record<string, number> = {}
+  if (Number(r.months_paid) > 0) out.months_paid = Math.max(0, Math.min(tenure, Number(r.months_paid) + by))
+  if (Number(r.current_amount) > 0 && monthly > 0) out.current_amount = Math.max(0, Math.min(tenure * monthly, Number(r.current_amount) + by * monthly))
+  return out
+}
+// Mark a month's instalment paid — only if it still isn't — and count it on the RD
+export async function claimRdMonth(supabase: any, r: any, month: string): Promise<boolean> {
+  const step = rdStep(r, 1)
+  let q = supabase.from('recurring_deposits').update({ rd_last_month: month, ...step }).eq('id', r.id)
   q = r.rd_last_month ? q.eq('rd_last_month', r.rd_last_month) : q.is('rd_last_month', null)
   const { data, error } = await q.select('id')
-  if (!error && data?.length) { r.rd_last_month = month; return true }
+  if (!error && data?.length) { Object.assign(r, { rd_last_month: month, ...step }); return true }
   return false
 }
+const claim = claimRdMonth
 
 export async function runRds(supabase: any, userId: string, today: string, rds: any[], txns: any[]) {
   let writes = 0

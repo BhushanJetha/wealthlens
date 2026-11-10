@@ -7,6 +7,7 @@
 import { HTYPES, holdingName, type HType } from './holding'
 import { type InvestKind } from './categories'
 import { sipForPayment, claimSip, unclaimSip } from './sips'
+import { claimRdMonth, rdStep } from './rdAuto'
 
 export type LinkType = HType | 'loan'
 export interface LinkRef {
@@ -88,6 +89,7 @@ export async function recordLinked(supabase: any, userId: string, pay: { txn_dat
     // done, so the SIP / RD / EMI automation doesn't add it again
     const sip = o.type === 'mutual_funds' ? sipForPayment(r, amount, month) : null
     if (sip) { if (!(sip.last_month && sip.last_month >= month)) await claimSip(supabase, r, sip.id, month); return { ref: base } }
+    // (a new RD was added with this month's instalment in what it says so far: just mark the month)
     const col = o.type === 'recurring_deposits' ? 'rd_last_month' : o.type === 'loan' ? 'emi_last_month' : null
     if (col && !(r[col] && r[col] >= month)) await claim(supabase, TABLE(o.type), col, r, month)
     return { ref: base }
@@ -117,8 +119,9 @@ export async function recordLinked(supabase: any, userId: string, pay: { txn_dat
   }
   if (o.type === 'recurring_deposits') {
     if (r.rd_last_month && r.rd_last_month >= month) return { ref: base, note: 'this month’s instalment was already recorded' }
-    if (!(await claim(supabase, 'recurring_deposits', 'rd_last_month', r, month))) return { ref: base, note: 'this month’s instalment was already recorded' }
-    return { ref: { ...base, recorded: true, month, prev_month: r.rd_last_month ?? null } }
+    const prev = r.rd_last_month ?? null
+    if (!(await claimRdMonth(supabase, r, month))) return { ref: base, note: 'this month’s instalment was already recorded' }
+    return { ref: { ...base, recorded: true, month, prev_month: prev } }
   }
   if (o.type === 'loan') {
     if (r.emi_last_month && r.emi_last_month >= month) return { ref: base, note: 'this month’s EMI was already recorded' }
@@ -155,6 +158,10 @@ export async function undoLinked(supabase: any, ref: LinkRef | null | undefined,
   if (ref.month && ref.type === 'mutual_funds' && ref.sip_id) {
     const { data: f } = await supabase.from('mutual_funds').select('*').eq('id', ref.id).maybeSingle()
     if (f) await unclaimSip(supabase, f, ref.sip_id, ref.month, ref.prev_month ?? null)
+  } else if (ref.month && ref.type === 'recurring_deposits') {
+    // The month goes back, and the instalment it counted on the RD
+    const { data: r } = await supabase.from('recurring_deposits').select('*').eq('id', ref.id).maybeSingle()
+    if (r && r.rd_last_month === ref.month) await supabase.from('recurring_deposits').update({ rd_last_month: ref.prev_month ?? null, ...rdStep(r, -1) }).eq('id', ref.id).eq('rd_last_month', ref.month)
   } else if (ref.month) {
     const col = ref.type === 'mutual_funds' ? 'sip_last_month' : ref.type === 'recurring_deposits' ? 'rd_last_month' : ref.type === 'loan' ? 'emi_last_month' : null
     if (col) await supabase.from(TABLE(ref.type)).update({ [col]: ref.prev_month ?? null }).eq('id', ref.id).eq(col, ref.month)

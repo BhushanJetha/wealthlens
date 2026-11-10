@@ -649,6 +649,7 @@ export default function LoanDetailClient({ loan, txns, plan = [] }: { loan: any;
               <button onClick={closeModal} style={{ color: 'var(--text3)' }}><X size={16} /></button>
             </div>
             <div className="p-5 space-y-3">
+              {adding === 'disbursement' && <div className="text-[12px] leading-snug rounded-lg px-3 py-2" style={{ background: 'var(--accent-bg)', color: 'var(--accent2)' }}>A tranche dated after {loan.outstanding_live?.asOf ?? loan.outstanding_as_of ?? 'the balance you saved'} adds to what you owe on this loan; earlier ones are already in your saved balance.</div>}
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="block text-[11px] font-medium font-semibold mb-1" style={{ color: 'var(--text3)' }}>Date</label><input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} className="wl-input w-full text-[12px]" style={{ background: '#FAFAFE', border: '1px solid var(--line)', color: 'var(--text)' }} /></div>
                 <div><label className="block text-[11px] font-medium font-semibold mb-1" style={{ color: 'var(--text3)' }}>Amount ({sym.trim()})</label><input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} autoFocus min="0" step="0.01" className="wl-input w-full text-[12px]" style={{ background: '#FAFAFE', border: '1px solid var(--line)', color: 'var(--text)' }} /></div>

@@ -24,6 +24,7 @@ import { holdingValue as V, holdingCost as C } from '@/lib/netWorth'
 import { investmentFlows, flowMonths, flowYears, FLOW_KEYS, type FlowKey } from '@/lib/investFlows'
 import InvestFlowChart from './InvestFlowChart'
 import InvestGrowthDashboard from './InvestGrowthDashboard'
+import PlannedInvestments from './PlannedInvestments'
 
 const COLORS = ['#3D7A58','#3B7DD8','#D4920A','#C96A3A','#7C5CBF','#2E7D52','#B45309','#0891B2','#6D28D9']
 // One fixed colour per investment type, used by every chart and list here
@@ -102,7 +103,7 @@ function last5Years() {
 export default function InvestmentsClient({
   stocks, mutualFunds, fixedDeposits, recurringDeposits, npsAccounts, licPolicies,
   goldInvestments = [], bondInvestments = [], etfInvestments = [], ppfEpf = [], invTxns = [], transactions = [],
-  goalInvestments = [], goals = [], familyMembers = [], pendingSips = [], pendingDrafts = [], today,
+  goalInvestments = [], goals = [], familyMembers = [], pendingSips = [], pendingDrafts = [], today, budgets = [],
 }: any) {
   const { view, fxRate: FX } = useViewStore()
   const { selectedHolder, setSelectedHolder } = useHolderStore()
@@ -580,6 +581,7 @@ export default function InvestmentsClient({
                 </button>
               </section>
 
+              <PlannedInvestments className="max-md:order-7" funds={fMF} rds={fRD} budgets={budgets} month={String(today).slice(0, 7)} />
               <InvestNeedsPanel className="max-md:order-7" funds={fMF} stocks={fSt} deposits={fFD} rds={fRD} invTxns={invTxns}
                 pendingSips={pendingSips} pendingDrafts={pendingDrafts} today={today} total={totalCurr} conv={conv} />
             </div>

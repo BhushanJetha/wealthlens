@@ -76,38 +76,49 @@ export function applyPaidEmis(loans: any[], paid: Record<string, PaidEmi>) {
 }
 
 // Live outstanding (migration 028): outstanding_amt is the balance on
-// outstanding_as_of; each EMI recorded after that takes off its principal
-// (its own split, else EMI − a month's interest on the running balance) and
-// each prepayment comes off in full. Null before the migration.
-export interface LiveOutstanding { value: number; saved: number; asOf: string; emis: number; principal: number; interest: number }
+// outstanding_as_of (or, when that was never set, the day the loan was
+// added); after it, each disbursement the bank releases adds to what you owe,
+// each EMI takes off its principal (its own split, else EMI − a month's
+// interest on the running balance) and each prepayment comes off in full.
+export interface LiveOutstanding { value: number; saved: number; asOf: string; emis: number; principal: number; interest: number; drawn: number }
+export const balanceDate = (loan: any): string | null => {
+  const d = loan.outstanding_as_of ?? loan.created_at
+  return d ? String(d).slice(0, 10) : null
+}
+const MOVES = ['emi', 'prepayment', 'disbursement']
 export function liveOutstanding(loan: any, loanTxns: any[]): LiveOutstanding | null {
-  const asOf = loan.outstanding_as_of ? String(loan.outstanding_as_of).slice(0, 10) : null
-  const saved = Number(loan.outstanding_amt) || 0
-  if (!asOf || saved <= 0) return null
-  const r = (Number(loan.interest_rate) || 0) / 1200
-  let bal = saved, principal = 0, interest = 0, emis = 0
-  const after = loanTxns.filter(t => t.loan_id === loan.id && t.txn_date > asOf && (t.kind === 'emi' || t.kind === 'prepayment'))
+  const asOf = balanceDate(loan)
+  const saved = Math.max(0, Number(loan.outstanding_amt) || 0)
+  if (!asOf) return null
+  const after = loanTxns.filter(t => t.loan_id === loan.id && t.txn_date > asOf && MOVES.includes(t.kind))
     .sort((a, b) => a.txn_date.localeCompare(b.txn_date))
+  if (saved <= 0 && !after.some(t => t.kind === 'disbursement')) return null
+  const r = (Number(loan.interest_rate) || 0) / 1200
+  let bal = saved, principal = 0, interest = 0, emis = 0, drawn = 0
   for (const t of after) {
     const amt = Number(t.amount) || 0
+    if (t.kind === 'disbursement') { bal += amt; drawn += amt; continue }
     if (t.kind === 'prepayment') { const p = Math.min(amt, bal); bal -= p; principal += p; continue }
     const i = t.interest != null ? Number(t.interest) : bal * r
     const p = Math.min(t.principal != null ? Number(t.principal) : Math.max(amt - i, 0), bal)
     bal -= p; principal += p; interest += i; emis++
   }
-  return { value: Math.max(0, Math.round(bal)), saved, asOf, emis, principal: Math.round(principal), interest: Math.round(interest) }
+  return { value: Math.max(0, Math.round(bal)), saved, asOf, emis, principal: Math.round(principal), interest: Math.round(interest), drawn: Math.round(drawn) }
 }
 
 // What a loan still owed on `date`: its saved outstanding moved by the
-// principal repaid between outstanding_as_of and that day (either way)
+// principal repaid, and the disbursements drawn, between its balance date and
+// that day (either way)
 export function loanOwedOn(loan: any, loanTxns: any[], date: string): number {
-  const asOf = loan.outstanding_as_of ? String(loan.outstanding_as_of).slice(0, 10) : null
+  const asOf = balanceDate(loan)
   const saved = Math.max(0, Number(loan.outstanding_amt) || 0)
   if (!asOf || asOf === date) return saved
   const [lo, hi] = asOf < date ? [asOf, date] : [date, asOf]
-  const repaid = loanTxns.filter(t => t.loan_id === loan.id && t.txn_date > lo && t.txn_date <= hi && (t.kind === 'emi' || t.kind === 'prepayment'))
+  const between = loanTxns.filter(t => t.loan_id === loan.id && t.txn_date > lo && t.txn_date <= hi)
+  const repaid = between.filter(t => t.kind === 'emi' || t.kind === 'prepayment')
     .reduce((s, t) => s + (t.kind === 'emi' && t.principal != null ? Number(t.principal) : Math.max(0, (Number(t.amount) || 0) - (Number(t.interest) || 0))), 0)
-  return Math.max(0, asOf < date ? saved - repaid : saved + repaid)
+  const drawn = between.filter(t => t.kind === 'disbursement').reduce((s, t) => s + (Number(t.amount) || 0), 0)
+  return Math.max(0, asOf < date ? saved - repaid + drawn : saved + repaid - drawn)
 }
 
 // The part of a card's balance on `date` that is its card loans, for banks
@@ -125,11 +136,11 @@ export function loansInCardBalance(cardId: string, date: string, loans: any[], l
 export async function withPaidEmi(supabase: any, userId: string, loans: any[]): Promise<any[]> {
   if (!loans?.length) return loans ?? []
   const since = new Date(Date.now() - 200 * 864e5).toISOString().slice(0, 10)
-  const asOfs = loans.map(l => l.outstanding_as_of).filter(Boolean).map((d: string) => String(d).slice(0, 10)).sort()
+  const asOfs = loans.map(balanceDate).filter(Boolean).map((d: any) => String(d)).sort()
   const ltSince = asOfs[0] && asOfs[0] < since ? asOfs[0] : since
   const ids = loans.map(l => l.id)
   const [lt, byCat, byType] = await Promise.all([
-    supabase.from('loan_transactions').select('loan_id,kind,txn_date,amount,principal,interest').in('loan_id', ids).in('kind', ['emi', 'prepayment']).gte('txn_date', ltSince),
+    supabase.from('loan_transactions').select('loan_id,kind,txn_date,amount,principal,interest').in('loan_id', ids).in('kind', MOVES).gte('txn_date', ltSince),
     supabase.from('transactions').select('merchant,description,amount,currency,txn_date').eq('user_id', userId)
       .in('category', ['EMI/Loan', 'Loan on Card']).gte('txn_date', since).limit(500),
     supabase.from('transactions').select('merchant,description,amount,currency,txn_date').eq('user_id', userId)
@@ -137,7 +148,7 @@ export async function withPaidEmi(supabase: any, userId: string, loans: any[]): 
   ])
   const bank = [...(byCat.data ?? []), ...(byType.data ?? [])]
   const rows = lt.data ?? []
-  return applyPaidEmis(loans, lastPaidEmis(loans, rows.filter((t: any) => t.txn_date >= since), bank)).map(l => {
+  return applyPaidEmis(loans, lastPaidEmis(loans, rows.filter((t: any) => t.txn_date >= since && t.kind !== 'disbursement'), bank)).map(l => {
     const live = liveOutstanding(l, rows)
     return live ? { ...l, outstanding_amt: live.value, outstanding_live: live } : l
   })
