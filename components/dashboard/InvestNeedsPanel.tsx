@@ -10,6 +10,7 @@ import { dateIn } from '@/lib/recurring'
 import { holdingValue } from '@/lib/netWorth'
 import type { SipDue } from '@/lib/sipAuto'
 import PendingConfirms from './PendingConfirms'
+import { sipsOf, saveSips, type Sip } from '@/lib/sips'
 
 const SEV: Record<string, string> = { high: '#DC2626', medium: '#D97706', low: '#6A55E8', good: '#16A34A' }
 const ELSS_LOCK_YEARS = 3
@@ -26,19 +27,20 @@ export default function InvestNeedsPanel({ funds, stocks, deposits, rds, invTxns
   const [error, setError] = useState('')
   const ids = new Set(funds.map(f => f.id))
   const pending = pendingSips.filter(d => ids.has(d.fund.id))
-  const sipFunds = funds.filter(f => f.has_sip && Number(f.sip_amount) > 0 && Number(f.sip_date) > 0)
+  // Every SIP of every fund (a fund can have several — lib/sips)
+  const sipRows = funds.flatMap(f => sipsOf(f).map(s => ({ f, s })))
   const ready = funds.length === 0 || 'sip_last_month' in funds[0]
   const rdRows = rds.filter(r => 'rd_last_month' in r && r.is_active !== false)
   const month = ymOf(today)
 
   const needs: { id: string; sev: string; title: string; detail: string; href: string }[] = []
   // SIPs in the next 7 days (not already recorded this month)
-  for (const f of sipFunds) {
-    let d = dateIn(month, Number(f.sip_date))
-    if (d < today || (f.sip_last_month && f.sip_last_month >= month)) d = dateIn(ymOf(addDaysTo(`${month}-28`, 7)), Number(f.sip_date))
+  for (const { f, s } of sipRows) {
+    let d = dateIn(month, s.day)
+    if (d < today || (s.last_month && s.last_month >= month)) d = dateIn(ymOf(addDaysTo(`${month}-28`, 7)), s.day)
     const days = daysBetween(today, d)
-    if (days >= 0 && days <= 7) needs.push({ id: `sip-${f.id}`, sev: 'low', href: '/dashboard/investments/mutual-funds',
-      title: `${f.fund_name} SIP ${days === 0 ? 'today' : days === 1 ? 'tomorrow' : `on ${fmtDay(d)}`}`, detail: `${fmtMoney(Number(f.sip_amount), f.currency ?? 'INR')} — keep it in the bank account it's paid from` })
+    if (days >= 0 && days <= 7) needs.push({ id: `sip-${f.id}-${s.id}`, sev: 'low', href: '/dashboard/investments/mutual-funds',
+      title: `${f.fund_name} SIP ${days === 0 ? 'today' : days === 1 ? 'tomorrow' : `on ${fmtDay(d)}`}`, detail: `${fmtMoney(Number(s.amount), f.currency ?? 'INR')} — keep it in the bank account it's paid from` })
   }
   // Deposits maturing in 30 days, or matured in the last 15
   for (const x of [...deposits.map(f => ({ ...f, _k: 'FD', _href: '/dashboard/investments/fixed-deposits' })), ...rds.map(r => ({ ...r, _k: 'RD', _href: '/dashboard/investments/recurring-deposits' }))]) {
@@ -79,11 +81,11 @@ export default function InvestNeedsPanel({ funds, stocks, deposits, rds, invTxns
   for (const [id, e] of Object.entries(unlock)) needs.push({ id: `elss-${id}`, sev: 'good', href: '/dashboard/investments/mutual-funds',
     title: `${fmtMoney(e.amt, e.cur)} of ${e.name} unlocks by ${fmtDay(e.by)}`, detail: 'Bought 3 years ago — free to keep, switch or withdraw (80C was claimed when you bought)' })
 
-  async function setAuto(f: any, auto: boolean) {
-    setBusy(f.id); setError('')
-    const { error } = await createClient().from('mutual_funds').update({ sip_auto: auto }).eq('id', f.id)
+  async function setAuto(f: any, s: Sip, auto: boolean) {
+    setBusy(`${f.id}-${s.id}`); setError('')
+    const err = await saveSips(createClient(), { ...f }, sipsOf(f, true).map(x => (x.id === s.id ? { ...x, auto } : x)))
     setBusy(null)
-    if (error) setError(error.message); else router.refresh()
+    if (err) setError(err); else router.refresh()
   }
 
   async function setRdAuto(r: any, auto: boolean) {
@@ -117,21 +119,21 @@ export default function InvestNeedsPanel({ funds, stocks, deposits, rds, invTxns
         {open === 0 && <li className="text-[12.5px] py-3" style={{ color: 'var(--text3)' }}>All good — nothing due, maturing or out of date.</li>}
       </ul>
 
-      {sipFunds.length + rdRows.length > 0 && (
+      {sipRows.length + rdRows.length > 0 && (
         <div className="mt-2.5 pt-2.5" style={{ borderTop: '1px solid var(--track)' }}>
           <div className="text-[11.5px] font-semibold mb-1" style={{ color: 'var(--text2)' }}>SIP &amp; RD entries</div>
           {!ready ? (
             <p className="text-[12px] leading-snug" style={{ color: 'var(--text3)' }}>Run migration 028 in Supabase: each SIP then gets recorded on its day — units, invested amount and the monthly chart.</p>
           ) : (<>
-            {sipFunds.map(f => (
-              <div key={f.id} className="flex items-center gap-2.5 py-1.5 text-[12.5px]">
+            {sipRows.map(({ f, s }) => (
+              <div key={`${f.id}-${s.id}`} className="flex items-center gap-2.5 py-1.5 text-[12.5px]">
                 <span className="flex-1 min-w-0 truncate" style={{ color: 'var(--text)' }}>{f.fund_name}
-                  <span style={{ color: 'var(--text4)' }}> · {fmtMoney(Number(f.sip_amount), f.currency ?? 'INR')} on the {f.sip_date}</span></span>
-                <button onClick={() => setAuto(f, !f.sip_auto)} disabled={busy === f.id}
-                  title={f.sip_auto ? 'Recorded on the SIP day, no review — tap to review each one' : 'Entered on the SIP day, waiting for your approval — tap to skip the review'}
+                  <span style={{ color: 'var(--text4)' }}> · {fmtMoney(Number(s.amount), f.currency ?? 'INR')} on the {s.day}{s.note ? ` · ${s.note}` : ''}</span></span>
+                <button onClick={() => setAuto(f, s, !s.auto)} disabled={busy === `${f.id}-${s.id}`}
+                  title={s.auto ? 'Recorded on the SIP day, no review — tap to review each one' : 'Entered on the SIP day, waiting for your approval — tap to skip the review'}
                   className="rounded-full px-2 h-[26px] text-[11px] font-semibold flex items-center gap-1 flex-shrink-0"
-                  style={f.sip_auto ? { background: '#E7F7EF', color: '#1E7A50' } : { background: 'var(--accent-bg)', color: 'var(--accent2)' }}>
-                  {f.sip_auto ? <><Zap size={11} />Auto</> : <><Hand size={11} />Review</>}
+                  style={s.auto ? { background: '#E7F7EF', color: '#1E7A50' } : { background: 'var(--accent-bg)', color: 'var(--accent2)' }}>
+                  {s.auto ? <><Zap size={11} />Auto</> : <><Hand size={11} />Review</>}
                 </button>
               </div>
             ))}

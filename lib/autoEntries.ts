@@ -80,7 +80,7 @@ export async function reconcileAuto(sb: any, txns: any[], src: { loans: any[]; f
       if (loan) hit = emiInBank({ loan, month: ref.month, date, amount, principal: 0, interest: 0 }, pool, src.loans)
     } else if (ref.kind === 'sip') {
       const fund = src.funds.find(f => f.id === ref.id)
-      if (fund) hit = sipInBank({ fund, month: ref.month, date, amount, nav: Number(ref.nav) || 0 }, pool)
+      if (fund) hit = sipInBank({ fund, date, amount }, pool)
     } else if (ref.kind === 'rd') {
       const rd = src.rds.find(r => r.id === ref.id)
       if (rd) hit = rdInBank({ rd, month: ref.month, date, amount }, pool)

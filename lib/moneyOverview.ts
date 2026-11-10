@@ -13,6 +13,7 @@ import { nextExpected, type IncomePlan } from './incomePlans'
 import { ruleTextFor } from './rules'
 import { policyEvery, reservedFor, type Bill } from './bigBills'
 import { isCounted, sameName } from './regular'
+import { sipsOf } from './sips'
 
 export type DueKind = 'emi' | 'card' | 'premium' | 'sip' | 'bill' | 'repeat'
 export interface Due {
@@ -112,14 +113,15 @@ export function buildDues(inp: {
   for (const b of (inp.bills ?? []).filter(b => b.goal && !b.policy && inView(b.currency) && within(b.due) && !(inp.recurring ?? []).some(r => r.is_active && r.currency === b.currency && sameName(r.merchant, b.name)))) {
     out.push({ id: `big-${b.key}`, date: b.due, label: b.name, sub: 'Big bill', amount: b.amount, currency: b.currency, kind: 'bill', payFrom: null, payFromSource: null, href: '/dashboard/bills', category: b.category, why: 'A big bill you added' })
   }
-  for (const m of inp.mutualFunds.filter(m => m.has_sip && Number(m.sip_amount) > 0 && m.sip_date && inView(m.currency ?? 'INR'))) {
+  // Each SIP on each fund (lib/sips), on its own day, until its month is recorded
+  for (const m of inp.mutualFunds.filter(m => inView(m.currency ?? 'INR'))) for (const s of sipsOf(m)) {
     for (const ym of [ymOf(today), addMonths(ymOf(today), 1)]) {
-      const d = `${ym}-${String(Math.min(Number(m.sip_date), daysInMonth(ym))).padStart(2, '0')}`
-      if (!within(d) || (m.sip_last_month && ym <= m.sip_last_month)) continue
+      const d = `${ym}-${String(Math.min(s.day, daysInMonth(ym))).padStart(2, '0')}`
+      if (!within(d) || (s.last_month && ym <= s.last_month)) continue
       const words = String(m.fund_name ?? '').toLowerCase().split(/\s+/).filter(w => w.length >= 4).slice(0, 2)
       const t = latest(inp.txns.filter(t => catOf(t) === 'Investment' && words.length && words.every(w => `${t.merchant ?? ''} ${t.description ?? ''}`.toLowerCase().includes(w))))
-      out.push({ id: `sip-${m.id}-${ym}`, date: d, label: `SIP · ${m.fund_name}`, sub: 'Mutual fund', amount: Number(m.sip_amount), currency: m.currency ?? 'INR',
-        kind: 'sip', payFrom: t?.account_id ?? null, payFromSource: t ? 'history' : null, href: '/dashboard/investments/mutual-funds' })
+      out.push({ id: `sip-${m.id}-${s.id}-${ym}`, date: d, label: `SIP · ${m.fund_name}`, sub: s.note || 'Mutual fund', amount: Number(s.amount), currency: m.currency ?? 'INR',
+        kind: 'sip', payFrom: s.account_id ?? t?.account_id ?? null, payFromSource: s.account_id ? 'set' : t ? 'history' : null, href: '/dashboard/investments/mutual-funds' })
     }
   }
   for (const r of (inp.rds ?? []).filter(r => r.is_active !== false && Number(r.monthly_amount) > 0 && r.start_date && inView(r.currency ?? 'INR'))) {

@@ -29,6 +29,8 @@ import Pagination from '@/components/dashboard/Pagination'
 import { holdingHref, xirr } from '@/lib/holding'
 import { useRouter } from 'next/navigation'
 import { recordSip, claimSipMonth, navOf } from '@/lib/sipAuto'
+import { sipsOf, type Sip } from '@/lib/sips'
+import SipsEditor from '@/components/forms/SipsEditor'
 import { localToday } from '@/lib/insights'
 
 // ─── constants ────────────────────────────────────────────────────────────────
@@ -146,9 +148,8 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
   const [repickSearching, setRepickSearching] = useState(false)
   const [deleting, setDeleting]       = useState(false)
   const [sipModal, setSipModal]       = useState<any | null>(null)
-  const [sipForm, setSipForm]         = useState({ has_sip: false, sip_amount: '', sip_date: '5' })
-  const [sipSaving, setSipSaving]     = useState(false)
-  const [sipReminder, setSipReminder] = useState<any | null>(null)
+  // One SIP due today (a fund can have several — lib/sips)
+  const [sipReminder, setSipReminder] = useState<{ fund: any; sip: Sip } | null>(null)
   const [markingPaid, setMarkingPaid] = useState(false)
   const [addLotsFund, setAddLotsFund] = useState<any | null>(null)
   const [editLot, setEditLot]         = useState<{ fund: any; lot: any } | null>(null)
@@ -301,13 +302,11 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
     const today = new Date(); const day = today.getDate()
     const mk = `${today.getFullYear()}-${today.getMonth() + 1}`
     const ym = localToday().slice(0, 7)
-    for (const f of funds) {
-      if (!f.has_sip || !f.sip_date) continue
+    outer: for (const f of funds) for (const s of sipsOf(f)) {
       // Tracked in the database (migration 028): done once recorded or skipped this month
-      if ('sip_last_month' in f && f.sip_last_month && f.sip_last_month >= ym) continue
-      const sd = Number(f.sip_date)
-      if (day >= sd && day <= sd + 1 && !localStorage.getItem(`sip-${f.id}-${mk}`)) {
-        setSipReminder(f); break
+      if ('sip_last_month' in f && s.last_month && s.last_month >= ym) continue
+      if (day >= s.day && day <= s.day + 1 && !localStorage.getItem(`sip-${f.id}-${s.id}-${mk}`)) {
+        setSipReminder({ fund: f, sip: s }); break outer
       }
     }
   }, [funds])
@@ -373,7 +372,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
   const totalRet        = investedWithNav > 0 ? (currentWithNav - investedWithNav) / investedWithNav * 100 : null
   const absRet          = currentWithNav - investedWithNav
   const hasAnyNav       = fundsWithNav.length > 0
-  const activeSIPs      = funds.filter(f => f.has_sip && f.sip_amount).length
+  const activeSIPs      = funds.reduce((a, f) => a + sipsOf(f).length, 0)
 
   const byType = useMemo(() => {
     const m: Record<string, number> = {}
@@ -389,28 +388,17 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
   }, [funds, liveNavs, currentValue])
 
   // ── SIP ───────────────────────────────────────────────────────────────────────
-  function openSipModal(f: any) {
-    setSipForm({ has_sip: !!f.has_sip, sip_amount: f.sip_amount ? String(f.sip_amount) : '', sip_date: f.sip_date ? String(f.sip_date) : '5' })
-    setSipModal(f)
-  }
-  async function saveSip() {
-    if (!sipModal) return
-    setSipSaving(true)
-    const payload = { has_sip: sipForm.has_sip, sip_amount: sipForm.has_sip && sipForm.sip_amount ? Number(sipForm.sip_amount) : null, sip_date: sipForm.has_sip && sipForm.sip_date ? Number(sipForm.sip_date) : null }
-    const { error } = await supabase.from('mutual_funds').update(payload).eq('id', sipModal.id)
-    if (!error) { setFunds(prev => prev.map(f => f.id === sipModal.id ? { ...f, ...payload } : f)); setSipModal(null) }
-    setSipSaving(false)
-  }
-  async function markSipPaid(fund: any, status: 'paid' | 'skipped') {
+  function openSipModal(f: any) { setSipModal(f) }
+  async function markSipPaid({ fund, sip }: { fund: any; sip: Sip }, status: 'paid' | 'skipped') {
     setMarkingPaid(true)
     // With migration 028 the month is tracked in the database (lib/sipAuto),
     // so the automatic recording on Investments never adds it again
     if ('sip_last_month' in fund) {
-      const ds = localToday(), d = { fund: { ...fund }, month: ds.slice(0, 7), date: ds, amount: Number(fund.sip_amount), nav: liveNavs[fund.id] ?? navOf(fund) }
+      const ds = localToday(), d = { fund: { ...fund }, sip, month: ds.slice(0, 7), date: ds, amount: Number(sip.amount), nav: liveNavs[fund.id] ?? navOf(fund) }
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         if (status === 'paid') await recordSip(supabase, user.id, d, { moneyRow: true })
-        else await claimSipMonth(supabase, d.fund, d.month)
+        else await claimSipMonth(supabase, d)
         setFunds(prev => prev.map(f => f.id === fund.id ? d.fund : f))
       }
       setSipReminder(null); setMarkingPaid(false); router.refresh()
@@ -422,17 +410,17 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         const nav = liveNavs[fund.id] ?? Number(fund.current_nav ?? fund.avg_nav)
-        const newUnits = nav > 0 ? Number(fund.units) + Number(fund.sip_amount) / nav : Number(fund.units)
+        const newUnits = nav > 0 ? Number(fund.units) + Number(sip.amount) / nav : Number(fund.units)
         await Promise.all([
-          supabase.from('transactions').insert({ user_id: user.id, txn_date: ds, merchant: fund.fund_name, description: `Monthly SIP - ${fund.fund_name}`, category: 'Investment', sub_category: 'SIP', amount: Number(fund.sip_amount), currency: fund.currency ?? 'INR', country: fund.country ?? 'India', txn_type: 'expense', source: 'manual' }),
-          supabase.from('mutual_funds').update({ units: newUnits, invested_amount: Number(fund.invested_amount) + Number(fund.sip_amount) }).eq('id', fund.id),
+          supabase.from('transactions').insert({ user_id: user.id, txn_date: ds, merchant: fund.fund_name, description: `Monthly SIP - ${fund.fund_name}`, category: 'Investment', sub_category: 'SIP', amount: Number(sip.amount), currency: fund.currency ?? 'INR', country: fund.country ?? 'India', txn_type: 'expense', source: 'manual' }),
+          supabase.from('mutual_funds').update({ units: newUnits, invested_amount: Number(fund.invested_amount) + Number(sip.amount) }).eq('id', fund.id),
           // Dated record so the monthly investment chart shows this SIP
-          supabase.from('investment_transactions').insert({ user_id: user.id, asset_type: 'mutual_fund', asset_id: fund.id, asset_name: fund.fund_name, txn_date: ds, txn_type: 'sip', amount: Number(fund.sip_amount), units: nav > 0 ? Number(fund.sip_amount) / nav : null, nav, currency: fund.currency ?? 'INR', source: 'buy_action' }).then(() => {}, () => {}),
+          supabase.from('investment_transactions').insert({ user_id: user.id, asset_type: 'mutual_fund', asset_id: fund.id, asset_name: fund.fund_name, txn_date: ds, txn_type: 'sip', amount: Number(sip.amount), units: nav > 0 ? Number(sip.amount) / nav : null, nav, currency: fund.currency ?? 'INR', source: 'buy_action' }).then(() => {}, () => {}),
         ])
-        setFunds(prev => prev.map(f => f.id === fund.id ? { ...f, units: Number(f.units) + Number(fund.sip_amount) / nav, invested_amount: Number(f.invested_amount) + Number(fund.sip_amount) } : f))
+        setFunds(prev => prev.map(f => f.id === fund.id ? { ...f, units: Number(f.units) + Number(sip.amount) / nav, invested_amount: Number(f.invested_amount) + Number(sip.amount) } : f))
       }
     }
-    localStorage.setItem(`sip-${fund.id}-${mk}`, status)
+    localStorage.setItem(`sip-${fund.id}-${sip.id}-${mk}`, status)
     setSipReminder(null); setMarkingPaid(false)
     if (status === 'paid') router.refresh()
   }
@@ -497,11 +485,11 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
           <Modal title="SIP due today" onClose={() => setSipReminder(null)}>
             <div className="p-4 rounded-xl" style={{ background: 'var(--sage-bg)', border: '1px solid var(--sage)30' }}>
               <div className="text-[12px]" style={{ color: 'var(--text3)' }}>Monthly SIP due today</div>
-              <div className="text-[14px] font-bold mt-1" style={{ color: 'var(--text)' }}>{sipReminder.fund_name}</div>
+              <div className="text-[14px] font-bold mt-1" style={{ color: 'var(--text)' }}>{sipReminder.fund.fund_name}</div>
               <div className="text-[22px] font-bold tabular-nums mt-1" style={{ color: 'var(--sage)' }}>
-                {sym}{Number(sipReminder.sip_amount).toLocaleString('en-IN')}
+                {sym}{Number(sipReminder.sip.amount).toLocaleString('en-IN')}
               </div>
-              <div className="text-[11px] mt-1" style={{ color: 'var(--text3)' }}>SIP date: {sipReminder.sip_date}th of every month</div>
+              <div className="text-[11px] mt-1" style={{ color: 'var(--text3)' }}>SIP date: {sipReminder.sip.day}th of every month{sipReminder.sip.note ? ` · ${sipReminder.sip.note}` : ''}</div>
             </div>
             <div className="flex gap-3">
               <button onClick={() => markSipPaid(sipReminder, 'paid')} disabled={markingPaid}
@@ -519,35 +507,9 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
         </Overlay>
       )}
 
-      {/* SIP Config */}
-      {sipModal && (
-        <Overlay>
-          <Modal title="Configure SIP" onClose={() => setSipModal(null)}>
-            <div className="text-[11px] font-semibold truncate" style={{ color: 'var(--text3)' }}>{sipModal.fund_name}</div>
-            <label className="flex items-center gap-3 cursor-pointer py-2">
-              <input type="checkbox" checked={sipForm.has_sip} onChange={e => setSipForm(p => ({ ...p, has_sip: e.target.checked }))} className="w-4 h-4 accent-green-600" />
-              <span className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>I have a SIP in this fund</span>
-            </label>
-            {sipForm.has_sip && (
-              <div className="space-y-3">
-                <div>
-                  <label className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Monthly SIP Amount (₹)</label>
-                  <input type="number" value={sipForm.sip_amount} onChange={e => setSipForm(p => ({ ...p, sip_amount: e.target.value }))} placeholder="5000" className="wl-input mt-1 w-full" style={{ background: 'var(--bg2)' }} />
-                </div>
-                <div>
-                  <label className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>SIP Date (1–28)</label>
-                  <input type="number" min={1} max={28} value={sipForm.sip_date} onChange={e => setSipForm(p => ({ ...p, sip_date: e.target.value }))} className="wl-input mt-1 w-full" style={{ background: 'var(--bg2)' }} />
-                  <div className="text-[10px] mt-1" style={{ color: 'var(--text3)' }}>You'll see a reminder on this day each month</div>
-                </div>
-              </div>
-            )}
-            <div className="flex gap-2">
-              <button onClick={() => setSipModal(null)} className="flex-1 py-2.5 rounded-xl border text-[12px] font-semibold" style={{ borderColor: 'var(--line)', color: 'var(--text3)', background: 'var(--bg2)' }}>Cancel</button>
-              <button onClick={saveSip} disabled={sipSaving} className="flex-1 py-2.5 rounded-xl text-white text-[12px] font-bold" style={{ background: 'var(--sage)' }}>{sipSaving ? 'Saving…' : 'Save SIP'}</button>
-            </div>
-          </Modal>
-        </Overlay>
-      )}
+      {/* SIPs: as many as the fund has */}
+      {sipModal && <SipsEditor fund={sipModal} onClose={() => setSipModal(null)}
+        onSaved={f => { setFunds(prev => prev.map(x => (x.id === f.id ? f : x))); setSipModal(null); router.refresh() }} />}
 
       {/* Lumpsum */}
       {lumpsumFund && (
@@ -695,7 +657,7 @@ export default function MutualFundsClient({ funds: initialFunds }: { funds: any[
             const ret = eff != null && invested > 0 ? (val - invested) / invested * 100 : null
             const tc = TYPE_COLORS[f.fund_type] ?? '#6B7280'
             const share = currentValue > 0 ? val / currentValue * 100 : 0
-            const meta = [TYPE_LABELS[f.fund_type] ?? f.fund_type, f.has_sip && f.sip_amount ? `SIP ₹${Number(f.sip_amount).toLocaleString('en-IN')}` : null].filter(Boolean).join(' · ')
+            const meta = [TYPE_LABELS[f.fund_type] ?? f.fund_type, f.has_sip && f.sip_amount ? `${sipsOf(f).length > 1 ? `${sipsOf(f).length} SIPs` : 'SIP'} ₹${Number(f.sip_amount).toLocaleString('en-IN')}` : null].filter(Boolean).join(' · ')
             const retColor = ret == null ? 'var(--text3)' : ret >= 0 ? 'var(--pos-text)' : '#B4231A'
             return (
               <Link key={f.id} href={holdingHref('mutual_funds', f.id)} className="grid grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(0,3fr)_repeat(3,minmax(0,1fr))_minmax(0,1.3fr)_20px] gap-3 px-4 md:px-5 py-3 items-center hover:bg-[#FAFAFE] transition-colors" style={{ borderBottom: '1px solid #F1F0F7' }}>

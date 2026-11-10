@@ -3,6 +3,7 @@
 // could go. The holding page (/dashboard/investments/h/<type>/<id>) renders
 // this for every type, valued with the same functions as Net worth.
 import { holdingValue, holdingCost } from './netWorth'
+import { sipsOf } from './sips'
 
 export type HType = 'mutual_funds' | 'stocks' | 'etf_investments' | 'fixed_deposits' | 'recurring_deposits' | 'bond_investments'
   | 'ppf_epf_accounts' | 'nps_accounts' | 'gold_investments' | 'lic_policies'
@@ -71,7 +72,7 @@ export interface HoldingModel {
   units: number | null; avg: number | null; price: number | null; since: string | null
   facts: [string, string][]; lots: Lot[]; maturity: Maturity | null; tax: Tax | null
   sales: Sale[]; open: OpenLot[]; gainKind: GainKind | null
-  rate: number; sip: { amount: number; day: number | null } | null
+  rate: number; sip: { amount: number; day: number | null; list: { amount: number; day: number; auto: boolean; note?: string | null }[] } | null
   chart: { kind: 'nav'; code: number | null } | { kind: 'price'; symbol: string } | null
   share?: number
 }
@@ -172,7 +173,9 @@ export function holdingModel(type: HType, r: any, txns: any[], today: string, op
     sub = [String(r.fund_type ?? '').replace(/^\w/, c => c.toUpperCase()), r.plan_type].filter(Boolean).join(' · ') || 'Mutual fund'
     add('Invested', money(cost)); add('Units', num(Number(r.units) || 0, 3)); add('Average NAV', avg ? `₹${avg.toFixed(2)}` : null); add('Folio', r.folio_number || null)
     rate = rateOf(isGold(r) ? 'gold' : r.fund_type); chart = { kind: 'nav', code: r.scheme_code ? Number(r.scheme_code) : null }
-    if (r.has_sip && Number(r.sip_amount) > 0) sip = { amount: Number(r.sip_amount), day: Number(r.sip_date) || null }
+    // Every SIP on the fund (lib/sips): the total a month, the earliest day, and each one
+    const list = sipsOf(r)
+    if (list.length) sip = { amount: list.reduce((a, s) => a + Number(s.amount), 0), day: Math.min(...list.map(s => s.day)), list: list.map(s => ({ amount: Number(s.amount), day: s.day, auto: s.auto, note: s.note })) }
   } else if (type === 'stocks' || type === 'etf_investments') {
     sub = type === 'stocks' ? [r.symbol, r.exchange, r.sector].filter(Boolean).join(' · ') : [r.symbol, r.etf_type].filter(Boolean).join(' · ') || 'ETF'
     add('Invested', money(cost)); add(type === 'stocks' ? 'Shares' : 'Units', num(unitsNow ?? 0, 3)); add('Average price', avg ? `${cur === 'AED' ? 'AED ' : '₹'}${avg.toFixed(2)}` : null)

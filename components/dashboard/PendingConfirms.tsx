@@ -7,6 +7,7 @@ import { fmtDay } from '@/lib/insights'
 import { addOccurrence, claimMonth, type Occurrence } from '@/lib/recurring'
 import { recordEmi, claimEmiMonth, type EmiDue } from '@/lib/loanAuto'
 import { recordSip, claimSipMonth, type SipDue } from '@/lib/sipAuto'
+import { saveSips } from '@/lib/sips'
 import { approveAuto, rejectAuto, AUTO_KIND_TEXT } from '@/lib/autoEntries'
 import AddTransactionModal from '@/components/forms/AddTransactionModal'
 
@@ -49,7 +50,11 @@ export default function PendingConfirms({ pending, accName = () => null }: { pen
     setBusy(`d|${t.id}`); setError('')
     const { error } = await supabase.from('transactions').update({ account_id: id }).eq('id', t.id)
     const link = PAY_FROM[t.auto_ref?.kind]
-    if (!error && link && t.auto_ref?.id) await supabase.from(link[0]).update({ [link[1]]: id }).eq('id', t.auto_ref.id)
+    // A fund's SIPs each have their own account (lib/sips)
+    if (!error && t.auto_ref?.kind === 'sip' && t.auto_ref?.sip_id) {
+      const { data: f } = await supabase.from('mutual_funds').select('*').eq('id', t.auto_ref.id).maybeSingle()
+      if (f && Array.isArray(f.sips)) await saveSips(supabase, f, f.sips.map((s: any) => (s.id === t.auto_ref.sip_id ? { ...s, account_id: id } : s)))
+    } else if (!error && link && t.auto_ref?.id) await supabase.from(link[0]).update({ [link[1]]: id }).eq('id', t.auto_ref.id)
     setBusy(null)
     if (error) setError(error.message); else router.refresh()
   }
@@ -68,10 +73,10 @@ export default function PendingConfirms({ pending, accName = () => null }: { pen
       run: async (add: boolean, uid: string) => add ? recordEmi(supabase, uid, d, { moneyRow: true, note: 'Confirmed by you' }) : (await claimEmiMonth(supabase, d.loan, d.month)) ? null : 'Already done',
     })),
     ...(pending.sips ?? []).map(d => ({
-      key: `s|${d.fund.id}|${d.month}`, yes: 'Yes', no: 'Skipped',
+      key: `s|${d.fund.id}|${d.sip.id}|${d.month}`, yes: 'Yes', no: 'Skipped',
       title: `Did your ${d.fund.fund_name} SIP go through? ${fmtMoney(d.amount, d.fund.currency ?? 'INR')}`,
       detail: `Due ${fmtDay(d.date)}${d.nav > 0 ? ` · about ${(d.amount / d.nav).toFixed(2)} units at NAV ${d.nav.toFixed(2)}` : ''}`,
-      run: async (add: boolean, uid: string) => add ? recordSip(supabase, uid, d, { moneyRow: true }) : (await claimSipMonth(supabase, d.fund, d.month)) ? null : 'Already done',
+      run: async (add: boolean, uid: string) => add ? recordSip(supabase, uid, d, { moneyRow: true }) : (await claimSipMonth(supabase, d)) ? null : 'Already done',
     })),
   ].filter(r => !done.has(r.key))
 

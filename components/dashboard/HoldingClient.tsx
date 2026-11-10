@@ -12,6 +12,7 @@ import { toast } from '@/components/ui/toaster'
 import { Segmented } from '@/components/ui/kit'
 import Pagination from './Pagination'
 import BatchPurchaseModal from '@/components/forms/BatchPurchaseModal'
+import SipsEditor from '@/components/forms/SipsEditor'
 import EditHoldingModal from '@/components/forms/EditHoldingModal'
 import EditLotModal from '@/components/forms/EditLotModal'
 import AddInvestmentModal from '@/components/forms/AddInvestmentModal'
@@ -132,7 +133,7 @@ export default function HoldingClient({ type, row, txns, kindTotal, accounts = [
         </div>
         <div className="flex gap-2 flex-wrap wl-hide-viewing">
           {editable && <button onClick={() => setSheet('buy')} className="wl-btn wl-btn-primary" style={{ height: 40 }}><Plus size={15} />Buy more</button>}
-          {type === 'mutual_funds' && <button onClick={() => setSheet('sip')} className="wl-btn" style={{ height: 40 }}><CalendarClock size={15} />{m.sip ? 'Change SIP' : 'Start a SIP'}</button>}
+          {type === 'mutual_funds' && <button onClick={() => setSheet('sip')} className="wl-btn" style={{ height: 40 }}><CalendarClock size={15} />{m.sip ? (m.sip.list.length > 1 ? 'SIPs' : 'Change SIP') : 'Start a SIP'}</button>}
           {market && (m.units ?? 0) > 0 && <button onClick={() => setSheet('sell')} className="wl-btn" style={{ height: 40 }}>{type === 'mutual_funds' ? 'Redeem' : 'Sell'}</button>}
           {editable ? <button onClick={() => setSheet('edit')} className="wl-btn" style={{ height: 40 }}><Pencil size={14} />Edit</button>
             : EDIT_TYPE[type] ? <button onClick={() => setSheet('edit2')} className="wl-btn" style={{ height: 40 }}><Pencil size={14} />Edit</button>
@@ -197,7 +198,17 @@ export default function HoldingClient({ type, row, txns, kindTotal, accounts = [
             <section className={card}>
               <H2 right={<span className="text-[11.5px] font-semibold rounded-md px-2 py-[3px]" style={m.sip ? { background: '#E7F7EF', color: '#1E7A50' } : { background: '#F1F0F7', color: 'var(--text3)' }}>{m.sip ? 'Running' : 'None'}</span>}>SIP</H2>
               {m.sip ? <>
-                <div className="text-[19px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{money(m.sip.amount)} <span className="text-[12.5px] font-medium" style={{ color: 'var(--text3)' }}>{m.sip.day ? `on the ${m.sip.day}${['th', 'st', 'nd', 'rd'][(m.sip.day % 10 > 3 || [11, 12, 13].includes(m.sip.day)) ? 0 : m.sip.day % 10]} of each month` : 'a month'}</span></div>
+                <div className="text-[19px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{money(m.sip.amount)} <span className="text-[12.5px] font-medium" style={{ color: 'var(--text3)' }}>{m.sip.list.length > 1 ? `a month · ${m.sip.list.length} SIPs` : m.sip.day ? `on the ${ordinalDay(m.sip.day)} of each month` : 'a month'}</span></div>
+                {m.sip.list.length > 1 && (
+                  <div className="mt-2 flex flex-col">
+                    {m.sip.list.map((s, i) => (
+                      <div key={i} className="flex justify-between gap-2 py-1.5 text-[12.5px]" style={{ borderTop: i ? '1px solid var(--track)' : 'none', color: 'var(--text2)' }}>
+                        <span className="min-w-0 truncate">On the {ordinalDay(s.day)}{s.note ? ` · ${s.note}` : ''}{s.auto ? ' · auto' : ''}</span>
+                        <b className="tabular-nums flex-shrink-0" style={{ color: 'var(--text)' }}>{money(s.amount)}</b>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="text-[12px] mt-1" style={{ color: 'var(--text3)' }}>{m.lots.filter(l => l.kind === 'SIP').length} instalments recorded · {money(m.lots.filter(l => l.kind === 'SIP').reduce((s, l) => s + l.amount, 0))} through SIP</div>
               </> : <p className="text-[12.5px]" style={{ color: 'var(--text3)' }}>No SIP on this fund. Start one to invest a fixed amount each month.</p>}
             </section>
@@ -297,7 +308,7 @@ export default function HoldingClient({ type, row, txns, kindTotal, accounts = [
       {sheet === 'buy' && <BatchPurchaseModal kind={kindFor} existing={row} onClose={done} />}
       {sheet === 'edit' && <EditHoldingModal kind={kindFor} row={row} onClose={done} />}
       {editLot && <EditLotModal kind={kindFor} holding={row} lot={editLot} onClose={() => { setEditLot(null); router.refresh() }} />}
-      {sheet === 'sip' && <SipSheet row={row} onClose={() => setSheet(null)} onSaved={done} />}
+      {sheet === 'sip' && <SipsEditor fund={row} onClose={() => setSheet(null)} onSaved={done} />}
       {sheet === 'sell' && <SellSheet type={type} row={row} m={m} accounts={accounts} today={today} onClose={() => setSheet(null)} onSaved={done} />}
       {sheet === 'renew' && <RenewSheet row={row} amount={m.maturity?.amount ?? Number(row.principal) ?? 0} onClose={() => setSheet(null)} onSaved={done} />}
       {sheet === 'paidout' && <PaidOutSheet row={row} name={m.name} onClose={() => setSheet(null)} onSaved={done} />}
@@ -307,6 +318,8 @@ export default function HoldingClient({ type, row, txns, kindTotal, accounts = [
     </div>
   )
 }
+
+const ordinalDay = (n: number) => `${n}${['th', 'st', 'nd', 'rd'][(n % 10 > 3 || [11, 12, 13].includes(n % 100)) ? 0 : n % 10]}`
 
 function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
@@ -319,31 +332,6 @@ function Sheet({ title, onClose, children }: { title: string; onClose: () => voi
         <div className="px-5 pb-5 overflow-y-auto flex flex-col gap-3">{children}</div>
       </div>
     </div>
-  )
-}
-
-function SipSheet({ row, onClose, onSaved }: { row: any; onClose: () => void; onSaved: () => void }) {
-  const [on, setOn] = useState(!!row.has_sip)
-  const [amount, setAmount] = useState(row.sip_amount ? String(row.sip_amount) : '')
-  const [day, setDay] = useState(row.sip_date ? String(row.sip_date) : '5')
-  const [busy, setBusy] = useState(false)
-  async function save() {
-    if (on && !(Number(amount) > 0)) { toast('Enter the SIP amount.', 'error'); return }
-    setBusy(true)
-    const { error } = await createClient().from('mutual_funds').update({ has_sip: on, sip_amount: on ? Number(amount) : null, sip_date: on ? Math.min(28, Math.max(1, Number(day) || 5)) : null }).eq('id', row.id)
-    setBusy(false)
-    if (error) { toast(error.message, 'error'); return }
-    toast(on ? 'SIP saved' : 'SIP stopped'); onSaved()
-  }
-  return (
-    <Sheet title="SIP" onClose={onClose}>
-      <Segmented label="SIP" value={on ? 'on' : 'off'} onChange={v => setOn(v === 'on')} full options={[{ value: 'on', label: 'Running' }, { value: 'off', label: 'No SIP' }]} />
-      {on && <div className="grid grid-cols-2 gap-2.5">
-        <label className="block"><span className="block text-[12px] font-semibold mb-1" style={{ color: 'var(--text2)' }}>Each month (₹)</span><input inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value.replace(/[^0-9.]/g, ''))} className="wl-input w-full" style={{ height: 44 }} /></label>
-        <label className="block"><span className="block text-[12px] font-semibold mb-1" style={{ color: 'var(--text2)' }}>On day</span><input inputMode="numeric" value={day} onChange={e => setDay(e.target.value.replace(/\D/g, ''))} className="wl-input w-full" style={{ height: 44 }} /></label>
-      </div>}
-      <button onClick={save} disabled={busy} className="wl-btn wl-btn-primary justify-center disabled:opacity-60" style={{ height: 44 }}>{busy ? 'Saving…' : 'Save'}</button>
-    </Sheet>
   )
 }
 

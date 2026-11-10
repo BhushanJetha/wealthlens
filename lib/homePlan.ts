@@ -15,6 +15,7 @@ import type { RecurringTxn } from './recurring'
 import { policyEvery, type Bill } from './bigBills'
 import { datesAhead } from './recurringGoals'
 import { isCounted, sameMoney, sameName } from './regular'
+import { sipsOf } from './sips'
 
 const FREQ: Record<string, number> = { monthly: 1, quarterly: 3, semi_annual: 6, annual: 12 }
 
@@ -74,9 +75,10 @@ export function monthCommitments(inp: { ym: string; today: string; view: View; t
     const amount = due && ymOf(due) === ym ? Number(c.outstanding_bal) || 0 : charged
     if (amount > 0) out.push({ id: `card-${c.id}`, label: `${c.name} bill`, amount, currency: c.currency, kind: 'card' })
   }
-  for (const m of inp.mutualFunds) {
-    if (m.has_sip && Number(m.sip_amount) > 0 && m.sip_date && inView(m.currency ?? 'INR') && !(m.sip_last_month && ym <= m.sip_last_month))
-      out.push({ id: `sip-${m.id}`, label: `SIP · ${m.fund_name}`, amount: Number(m.sip_amount), currency: m.currency ?? 'INR', kind: 'sip' })
+  // Each SIP on each fund (lib/sips), until its month is recorded
+  for (const m of inp.mutualFunds) for (const s of sipsOf(m)) {
+    if (inView(m.currency ?? 'INR') && !(s.last_month && ym <= s.last_month))
+      out.push({ id: `sip-${m.id}-${s.id}`, label: `SIP · ${m.fund_name}${s.note ? ` (${s.note})` : ''}`, amount: Number(s.amount), currency: m.currency ?? 'INR', kind: 'sip' })
   }
   for (const r of inp.rds) {
     if (r.is_active === false || !(Number(r.monthly_amount) > 0) || !r.start_date || !inView(r.currency ?? 'INR')) continue

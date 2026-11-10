@@ -6,6 +6,7 @@
 // automations see the month as done (never recorded twice).
 import { HTYPES, holdingName, type HType } from './holding'
 import { type InvestKind } from './categories'
+import { sipForPayment, claimSip, unclaimSip } from './sips'
 
 export type LinkType = HType | 'loan'
 export interface LinkRef {
@@ -15,6 +16,7 @@ export interface LinkRef {
   units?: number             // units / shares it added
   month?: string             // the SIP / RD / EMI month it marked done
   prev_month?: string | null // what that month marker was before
+  sip_id?: string            // which of the fund's SIPs it was (lib/sips)
   recorded: boolean          // false: linked only (nothing changed on the other side)
 }
 
@@ -84,15 +86,17 @@ export async function recordLinked(supabase: any, userId: string, pay: { txn_dat
   if (opts.fresh) {
     // Just added with this payment in it: nothing to add, but this month is
     // done, so the SIP / RD / EMI automation doesn't add it again
-    const col = o.type === 'mutual_funds' && r.has_sip && near(amount, Number(r.sip_amount) || 0) ? 'sip_last_month'
-      : o.type === 'recurring_deposits' ? 'rd_last_month' : o.type === 'loan' ? 'emi_last_month' : null
+    const sip = o.type === 'mutual_funds' ? sipForPayment(r, amount, month) : null
+    if (sip) { if (!(sip.last_month && sip.last_month >= month)) await claimSip(supabase, r, sip.id, month); return { ref: base } }
+    const col = o.type === 'recurring_deposits' ? 'rd_last_month' : o.type === 'loan' ? 'emi_last_month' : null
     if (col && !(r[col] && r[col] >= month)) await claim(supabase, TABLE(o.type), col, r, month)
     return { ref: base }
   }
   if (o.type === 'mutual_funds' || o.type === 'stocks' || o.type === 'etf_investments') {
     // A fund's SIP for a month that's already in (the automation or a statement): link only
-    const sipLike = o.type === 'mutual_funds' && r.has_sip && near(amount, Number(r.sip_amount) || 0)
-    if (sipLike && r.sip_last_month && r.sip_last_month >= month) return { ref: base, note: 'this month’s SIP was already recorded' }
+    // One of the fund's SIPs (by amount): if its month is already in (the automation or a statement), link only
+    const sip = o.type === 'mutual_funds' ? sipForPayment(r, amount, month) : null, sipLike = !!sip
+    if (sip && sip.last_month && sip.last_month >= month) return { ref: { ...base, sip_id: sip.id }, note: 'this month’s SIP was already recorded' }
     const units = opts.units && opts.units > 0 ? opts.units : o.price > 0 ? amount / o.price : 0
     if (!(units > 0)) return { error: 'Enter how many units this bought.' }
     const asset = HTYPES[o.type].asset ?? 'mutual_fund'
@@ -108,7 +112,7 @@ export async function recordLinked(supabase: any, userId: string, pay: { txn_dat
         : { units: (Number(r.units) || 0) + units, avg_buy_price: ((Number(r.units) || 0) * (Number(r.avg_buy_price) || 0) + amount) / ((Number(r.units) || 0) + units) }
     await supabase.from(o.type).update(upd).eq('id', r.id)
     const ref: LinkRef = { ...base, recorded: true, inv_txn_id: it?.id, units }
-    if (sipLike && (!r.sip_last_month || r.sip_last_month < month) && await claim(supabase, 'mutual_funds', 'sip_last_month', r, month)) { ref.month = month; ref.prev_month = r.sip_last_month ?? null }
+    if (sip && await claimSip(supabase, r, sip.id, month)) { ref.month = month; ref.prev_month = sip.last_month ?? null; ref.sip_id = sip.id }
     return { ref }
   }
   if (o.type === 'recurring_deposits') {
@@ -148,7 +152,10 @@ export async function undoLinked(supabase: any, ref: LinkRef | null | undefined,
   }
   if (ref.loan_txn_id) await supabase.from('loan_transactions').delete().eq('id', ref.loan_txn_id)
   // The month marker goes back only if nothing has moved it on since
-  if (ref.month) {
+  if (ref.month && ref.type === 'mutual_funds' && ref.sip_id) {
+    const { data: f } = await supabase.from('mutual_funds').select('*').eq('id', ref.id).maybeSingle()
+    if (f) await unclaimSip(supabase, f, ref.sip_id, ref.month, ref.prev_month ?? null)
+  } else if (ref.month) {
     const col = ref.type === 'mutual_funds' ? 'sip_last_month' : ref.type === 'recurring_deposits' ? 'rd_last_month' : ref.type === 'loan' ? 'emi_last_month' : null
     if (col) await supabase.from(TABLE(ref.type)).update({ [col]: ref.prev_month ?? null }).eq('id', ref.id).eq(col, ref.month)
   }

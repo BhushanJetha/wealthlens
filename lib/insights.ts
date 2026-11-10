@@ -5,6 +5,7 @@ import { isSpend, catOf, labelOf, isIncome as isIncomeIn, spendGroup, prepareMon
 import { viewAmount, NW_RULES, type View } from './netWorth'
 import { fdMaturity, holdingHref } from './holding'
 import { budgetLabel, budgetLines, spendByCategory, carryIn, FIXED, type Cur } from './budgets'
+import { sipsOf } from './sips'
 
 // ─── Dates (string-based so server/browser time zones can't shift a day) ─────
 export const ymOf = (d: string) => d?.slice(0, 7) ?? ''
@@ -409,10 +410,10 @@ export function buildHomeInsights(inp: InsightInput): HomeInsights {
   for (const f of (inp.fixedDeposits ?? []).filter(f => inView(f.currency))) {
     if (within(f.maturity_date)) upcoming.push({ id: `u-fd-${f.id}`, date: f.maturity_date, label: `${f.name} matures`, sub: f.bank_name ?? 'Fixed deposit', amount: Number(f.maturity_amt) || Number(f.principal) || 0, currency: f.currency, kind: 'fd' })
   }
-  for (const m of (inp.mutualFunds ?? []).filter(m => m.has_sip && Number(m.sip_amount) > 0 && m.sip_date && inView(m.currency ?? 'INR'))) {
-    const ym = Number(today.slice(8, 10)) <= Number(m.sip_date) ? thisMonth : addMonths(thisMonth, 1)
-    const d = `${ym}-${String(Math.min(Number(m.sip_date), daysInMonth(ym))).padStart(2, '0')}`
-    if (within(d)) upcoming.push({ id: `u-sip-${m.id}`, date: d, label: `SIP · ${m.fund_name}`, sub: 'Mutual fund', amount: Number(m.sip_amount), currency: m.currency ?? 'INR', kind: 'sip' })
+  for (const m of (inp.mutualFunds ?? []).filter(m => inView(m.currency ?? 'INR'))) for (const s of sipsOf(m)) {
+    const ym = Number(today.slice(8, 10)) <= s.day ? thisMonth : addMonths(thisMonth, 1)
+    const d = `${ym}-${String(Math.min(s.day, daysInMonth(ym))).padStart(2, '0')}`
+    if (within(d)) upcoming.push({ id: `u-sip-${m.id}-${s.id}`, date: d, label: `SIP · ${m.fund_name}`, sub: s.note || 'Mutual fund', amount: Number(s.amount), currency: m.currency ?? 'INR', kind: 'sip' })
   }
   upcoming.sort((a, b) => a.date.localeCompare(b.date))
 

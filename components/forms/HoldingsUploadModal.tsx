@@ -107,9 +107,10 @@ export default function HoldingsUploadModal({ onClose, kind }: Props) {
       const parsedMf: any[] = data.mutual_funds ?? []
       if (parsedMf.length > 0) {
         const { data: existing } = await supabase
-          .from('mutual_funds').select('id, folio_number, fund_name').eq('user_id', user!.id)
+          .from('mutual_funds').select('id, folio_number, fund_name, has_sip').eq('user_id', user!.id)
         const folioName = new Map<string, string>()  // `${folio}|${name}` → id
         const byName    = new Map<string, string>()  // name → id (fallback)
+        const withSip   = new Set((existing ?? []).filter(e => e.has_sip).map(e => e.id))
         ;(existing ?? []).forEach(e => {
           const nn = norm(e.fund_name)
           if (e.folio_number) folioName.set(`${String(e.folio_number).trim()}|${nn}`, e.id)
@@ -120,7 +121,8 @@ export default function HoldingsUploadModal({ onClose, kind }: Props) {
           const existingId =
             (m.folio_number && folioName.get(`${String(m.folio_number).trim()}|${nn}`)) ||
             byName.get(nn) || null
-          return { ...m, selected: true, existingId }
+          // A fund that already has its SIPs set up keeps them (lib/sips); the statement only fills in a missing one
+          return { ...m, selected: true, existingId, ...(existingId && withSip.has(existingId) ? { has_sip: false } : {}) }
         }))
       } else setMfRows([])
 
