@@ -20,6 +20,7 @@ import { runRds } from './rdAuto'
 import { reconcileAuto, isAutoPending } from './autoEntries'
 import { aliasesOf } from './regular'
 import { getAedInr } from './fx'
+import { applyPayCycle, payDayOf } from './payCycle'
 
 export interface Automation {
   recurring: RecurringTxn[]; recurringReady: boolean
@@ -65,7 +66,7 @@ async function keepEstimates(supabase: any, userId: string): Promise<number> {
 
 export async function runAutomation(supabase: any, userId: string, today: string): Promise<Automation> {
   const since = addDaysTo(today, -100)
-  const [read, loansRes, ltRes, fundsRes, itRes, rulesRes, rdsRes, answersRes] = await Promise.all([
+  const [read, loansRes, ltRes, fundsRes, itRes, rulesRes, rdsRes, answersRes, userRes] = await Promise.all([
     fetchAllRows((a, b) => supabase.from('transactions').select('*').eq('user_id', userId).gte('txn_date', since)
       .order('txn_date', { ascending: false }).order('id').range(a, b), 5),
     supabase.from('home_loans').select('*').eq('user_id', userId).eq('is_active', true),
@@ -75,7 +76,11 @@ export async function runAutomation(supabase: any, userId: string, today: string
     supabase.from('recurring_txns').select('*').eq('user_id', userId).order('created_at'),
     supabase.from('recurring_deposits').select('*').eq('user_id', userId).eq('is_active', true),
     supabase.from('big_bill_skips').select('key').eq('user_id', userId),
+    supabase.auth.getUser(),
   ])
+  // A salary that's for next month (lib/payCycle): new credits are put in the month they count for
+  const payRows = read.filter((t: any) => t.txn_type === 'income' && 'counts_for_month' in t)
+  if (payRows.length) await applyPayCycle(supabase, userId, payDayOf(userRes?.data?.user?.user_metadata), payRows).catch(() => null)
   const [matched, kept] = await Promise.all([matchOwnTransfers(supabase, read), keepEstimates(supabase, userId)])
   // Migration 037 is in when the rows carry its column
   const review = read.some(t => 'auto_status' in t)

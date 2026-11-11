@@ -4,6 +4,8 @@
 // Shared by the Goals list, goal pages and Home. Every return is an
 // assumption and is labelled as one; each goal stays in its own currency.
 
+import { rdPaidIn } from './netWorth'
+
 export type Cur = 'AED' | 'INR'
 export type Horizon = 'short' | 'mid' | 'long'
 
@@ -106,13 +108,9 @@ export function investmentValue(type: string, rec: any): number {
   if (type === 'mutual_funds') return (Number(rec.units) || 0) * (Number(rec.current_nav ?? rec.avg_nav) || 0)
   if (type === 'etf_investments') return (Number(rec.units) || 0) * (Number(rec.current_price || rec.avg_buy_price) || 0) || Number(rec.invested_amount) || 0
   if (type === 'fixed_deposits') return Number(rec.principal) || 0
-  if (type === 'recurring_deposits') {
-    if (rec.current_amount != null) return Number(rec.current_amount) || 0
-    const s = String(rec.start_date ?? rec.created_at ?? '').slice(0, 7)
-    const [y, m] = s.split('-').map(Number), now = new Date()
-    const months = y ? Math.max(0, (now.getFullYear() - y) * 12 + now.getMonth() + 1 - m) : 0
-    return months * (Number(rec.monthly_amount) || 0)
-  }
+  // An RD: what's been paid in, the same as on Investments (lib/netWorth)
+  if (type === 'recurring_deposits') return rdPaidIn(rec)
+  if (type === 'ppf_epf_accounts') return Number(rec.current_balance ?? rec.balance) || 0
   if (type === 'nps_accounts') return Number(rec.corpus_amount ?? rec.invested_amount) || 0
   if (type === 'lic_policies') return Number(rec.total_paid) || 0
   if (type === 'gold_investments') return rec.quantity_grams && rec.current_price_per_gram ? Number(rec.quantity_grams) * Number(rec.current_price_per_gram) : Number(rec.invested_amount) || 0

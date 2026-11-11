@@ -284,12 +284,12 @@ export const loadBillReads = (supabase: any, uid: string) => Promise.all([
 // What a bill's money can be kept in: your investments (an RD or FD kept for
 // it, a fund…), with what other goals already use of each, and the links
 export interface Holding { type: string; id: string; name: string; currency: Cur; value: number }
-const HOLDING_TABLES = ['recurring_deposits', 'fixed_deposits', 'mutual_funds', 'bond_investments', 'etf_investments', 'gold_investments', 'stocks', 'nps_accounts'] as const
-const holdingName = (t: string, r: any) => t === 'mutual_funds' ? r.fund_name : t === 'stocks' ? `${r.name ?? r.symbol}` : t === 'etf_investments' ? r.etf_name ?? r.name : r.name ?? r.bank_name
+const HOLDING_TABLES = ['recurring_deposits', 'fixed_deposits', 'mutual_funds', 'bond_investments', 'etf_investments', 'gold_investments', 'stocks', 'nps_accounts', 'ppf_epf_accounts', 'lic_policies'] as const
+const holdingName = (t: string, r: any) => t === 'mutual_funds' ? r.fund_name : t === 'stocks' ? `${r.name ?? r.symbol}` : t === 'etf_investments' ? r.etf_name ?? r.name : t === 'lic_policies' ? r.policy_name ?? r.plan_name ?? r.name : r.name ?? r.account_type ?? r.bank_name
 export async function loadBillHoldings(supabase: any, uid: string): Promise<{ holdings: Holding[]; links: any[] }> {
   const [linksRes, ...rows] = await Promise.all([
     supabase.from('goal_investments').select('goal_id,investment_type,investment_id,allocation_pct').eq('user_id', uid),
-    ...HOLDING_TABLES.map(t => { const q = supabase.from(t).select('*').eq('user_id', uid); return ['fixed_deposits', 'recurring_deposits'].includes(t) ? q.eq('is_active', true) : q }),
+    ...HOLDING_TABLES.map(t => { const q = supabase.from(t).select('*').eq('user_id', uid); return ['fixed_deposits', 'recurring_deposits', 'lic_policies'].includes(t) ? q.eq('is_active', true) : q }),
   ])
   const holdings = HOLDING_TABLES.flatMap((t, i) => (rows[i].data ?? []).map((r: any) => ({ type: t, id: r.id, name: String(holdingName(t, r) ?? 'Investment'), currency: curOf(r.currency), value: investmentValue(t, r) })))
   return { holdings, links: linksRes.data ?? [] }

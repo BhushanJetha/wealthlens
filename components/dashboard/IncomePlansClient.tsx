@@ -12,6 +12,7 @@ import { DAY_RULE_TEXT, nextExpected, planDate, type DayRule, type IncomePlan, t
 import { isNre, isNro, kindOf } from '@/lib/ledger'
 import { toast } from '@/components/ui/toaster'
 import { PageHeader, Segmented } from '@/components/ui/kit'
+import { salaryDays, applyPayCycle } from '@/lib/payCycle'
 
 const VARIANCE = [0, 2, 5, 10, 25]
 const TITLE: Record<PlanKind, string> = { income: 'Income I expect', remit: 'UAE → India', nre_nro: 'NRE → NRO' }
@@ -20,7 +21,7 @@ const blank = (kind: PlanKind, x: Partial<IncomePlan> = {}): any => ({
   account_id: '', counter_account_id: '', day_rule: 'fixed' as DayRule, day_of_month: 25, variance_pct: 5, ...x,
 })
 
-export default function IncomePlansClient({ ready, today, plans, accounts, txns }: { ready: boolean; today: string; plans: IncomePlan[]; accounts: any[]; txns: any[] }) {
+export default function IncomePlansClient({ ready, today, plans, accounts, txns, payDay: savedPayDay = null }: { ready: boolean; today: string; plans: IncomePlan[]; accounts: any[]; txns: any[]; payDay?: number | null }) {
   const router = useRouter()
   const supabase = createClient()
   const { fxRate: FX } = useViewStore()
@@ -104,6 +105,7 @@ export default function IncomePlansClient({ ready, today, plans, accounts, txns 
   }
 
   return frame(<>
+    <PayCycleCard txns={txns} saved={savedPayDay} onSaved={() => router.refresh()} />
     {suggestions.length > 0 && (
       <section className="rounded-[18px] px-4 md:px-5 py-4 wl-hide-viewing" style={{ background: '#F0EDFF', border: '1px solid #DAD3FF' }}>
         <h2 className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Found in your transactions</h2>
@@ -162,4 +164,52 @@ export default function IncomePlansClient({ ready, today, plans, accounts, txns 
       </div>
     )}
   </>)
+}
+
+
+// Month-end salary for next month (lib/payCycle): a salary credit on or after
+// the day you choose counts in the next month's income, so the month it pays
+// for doesn't look short until the 30th. The bank still shows its real date.
+function PayCycleCard({ txns, saved, onSaved }: { txns: any[]; saved: number | null; onSaved: () => void }) {
+  const seen = salaryDays(txns)
+  const [day, setDay] = useState<number>(saved ?? (seen && seen.day >= 20 ? Math.min(28, seen.day) : 25))
+  const [busy, setBusy] = useState(false)
+  const on = saved != null
+  const suggest = !on && !!seen && seen.lateShare >= 0.5
+  async function save(next: number | null) {
+    setBusy(true)
+    const sb = createClient()
+    const { data: { user } } = await sb.auth.getUser()
+    const { error } = await sb.auth.updateUser({ data: { pay_cycle: next ? { day: next } : null } })
+    const res = error || !user ? { changed: 0, error: error?.message ?? 'Please sign in again.' } : await applyPayCycle(sb, user.id, next)
+    setBusy(false)
+    if (res.error) { toast(res.error, 'error'); return }
+    toast(next ? `Salary from the ${next}${next === 1 ? 'st' : 'th'} on now counts for the next month${res.changed ? ` · ${res.changed} credit${res.changed === 1 ? '' : 's'} moved` : ''}` : 'Salary counts in the month it arrives again')
+    onSaved()
+  }
+  return (
+    <section className="wl-card px-4 md:px-5 py-4 flex flex-col gap-2.5" style={suggest ? { background: '#F0EDFF', borderColor: '#DAD3FF' } : undefined}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Salary at the end of the month</h2>
+          <p className="text-[12.5px] leading-snug" style={{ color: 'var(--text2)' }}>
+            {suggest ? <>Your salary usually lands around the {seen!.day}{seen!.day === 1 ? 'st' : 'th'}. Count it for the next month, so the month it pays for starts with it — instead of showing in the minus until it comes.</>
+              : <>A salary that arrives at the month’s end usually pays for the next month. Count it there, and each month starts with the salary that pays for it.</>}
+          </p>
+        </div>
+        <button role="switch" aria-checked={on} aria-label="Count month-end salary for the next month" disabled={busy} onClick={() => save(on ? null : day)}
+          className="relative w-[42px] h-[24px] rounded-full transition-colors flex-shrink-0 mt-0.5 disabled:opacity-60" style={{ background: on ? 'var(--accent)' : '#CBD0DC' }}>
+          <span className="absolute top-[3px] w-[18px] h-[18px] rounded-full bg-white shadow transition-[left]" style={{ left: on ? 21 : 3 }} />
+        </button>
+      </div>
+      <label className="flex items-center gap-2 text-[12.5px] flex-wrap" style={{ color: 'var(--text2)' }}>
+        Salary from the
+        <select value={day} onChange={e => { const d = Number(e.target.value); setDay(d); if (on) save(d) }} disabled={busy} className="wl-input" style={{ height: 34, width: 76, fontSize: 13 }}>
+          {Array.from({ length: 17 }, (_, i) => 15 + i).map(d => <option key={d} value={d}>{d}{d === 21 || d === 31 ? 'st' : d === 22 ? 'nd' : d === 23 ? 'rd' : 'th'}</option>)}
+        </select>
+        on counts for the next month
+      </label>
+      <p className="text-[11.5px]" style={{ color: 'var(--text4)' }}>Your bank balance still shows it on the day it came in. Only monthly income, what you saved, budgets and plans count it for the next month.</p>
+    </section>
+  )
 }

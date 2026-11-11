@@ -12,6 +12,7 @@ import { toast } from '@/components/ui/toaster'
 import { billGoalRow, payBill, potFor, setAsideBill, skipBill, takeBack, type Bill, type Holding } from '@/lib/bigBills'
 import { nextDueDate } from '@/lib/occasions'
 import { repeatRow, type RecurringTxn } from '@/lib/recurring'
+import HoldingPicker from '@/components/forms/HoldingPicker'
 
 const label = 'block text-[12px] font-semibold mb-1'
 const FIELD = { height: 44 }
@@ -181,7 +182,7 @@ export const TEMPLATES: { name: string; every: number; category: string; currenc
 ]
 const EVERY = [1, 3, 6, 12]
 
-const HOLDING_LABEL: Record<string, string> = { recurring_deposits: 'RD', fixed_deposits: 'FD', mutual_funds: 'Fund', bond_investments: 'Bond', etf_investments: 'ETF', gold_investments: 'Gold', stocks: 'Share', nps_accounts: 'NPS' }
+const HOLDING_LABEL: Record<string, string> = { recurring_deposits: 'RD', fixed_deposits: 'FD', mutual_funds: 'Fund', bond_investments: 'Bond', etf_investments: 'ETF', gold_investments: 'Gold', stocks: 'Share', nps_accounts: 'NPS', ppf_epf_accounts: 'PPF / EPF', lic_policies: 'LIC' }
 
 export function BillFormSheet({ draft, bill, repeat, accounts, categories, holdings = [], goalLinks = [], contributions = [], onClose }: {
   draft: BillDraft; bill: Bill | null; repeat: RecurringTxn | null; accounts: any[]; categories: string[]
@@ -319,11 +320,8 @@ export function BillFormSheet({ draft, bill, repeat, accounts, categories, holdi
         </Field>
         {!monthlyEntry && (savings.length > 0 || keepable.length > 0) && (
           <Field name="Kept in">
-            <select value={kept} onChange={e => setKept(e.target.value)} className="wl-input w-full" style={FIELD}>
-              <option value="">Nothing yet: I set money aside here</option>
-              {keepable.length > 0 && <optgroup label="An investment">{keepable.map(h => <option key={h.type + h.id} value={`inv:${h.type}:${h.id}`}>{HOLDING_LABEL[h.type] ?? 'Investment'} · {h.name} · {fmtMoney(h.value, h.currency)}{freeOf(h) < 100 ? ` · ${freeOf(h)}% free` : ''}</option>)}</optgroup>}
-              {savings.length > 0 && <optgroup label="A savings account">{savings.map(a => <option key={a.id} value={`acc:${a.id}`}>{a.name}</option>)}</optgroup>}
-            </select>
+            <HoldingPicker currency={f.currency} accounts={savings} value={kept} onChange={setKept} noneLabel="Nothing yet: I set money aside here"
+              holdings={keepable.map(h => ({ ...h, free: freeOf(h) }))} />
             <span className="block text-[12px] mt-1 leading-snug" style={{ color: 'var(--text3)' }}>Its value counts towards this bill, so you set aside only what it doesn’t cover.</span>
           </Field>
         )}
@@ -332,11 +330,8 @@ export function BillFormSheet({ draft, bill, repeat, accounts, categories, holdi
       {fromPolicy && (savings.length > 0 || keepable.length > 0) && <>
         {(savings.length > 0 || keepable.length > 0) && (
           <Field name="Kept in">
-            <select value={kept} onChange={e => setKept(e.target.value)} className="wl-input w-full" style={FIELD}>
-              <option value="">Nothing yet: I set money aside here</option>
-              {keepable.length > 0 && <optgroup label="An investment">{keepable.map(h => <option key={h.type + h.id} value={`inv:${h.type}:${h.id}`}>{HOLDING_LABEL[h.type] ?? 'Investment'} · {h.name} · {fmtMoney(h.value, h.currency)}{freeOf(h) < 100 ? ` · ${freeOf(h)}% free` : ''}</option>)}</optgroup>}
-              {savings.length > 0 && <optgroup label="A savings account">{savings.map(a => <option key={a.id} value={`acc:${a.id}`}>{a.name}</option>)}</optgroup>}
-            </select>
+            <HoldingPicker currency={f.currency} accounts={savings} value={kept} onChange={setKept} noneLabel="Nothing yet: I set money aside here"
+              holdings={keepable.map(h => ({ ...h, free: freeOf(h) }))} />
             <span className="block text-[12px] mt-1 leading-snug" style={{ color: 'var(--text3)' }}>Its value counts towards this bill, so you set aside only what it doesn’t cover.</span>
           </Field>
         )}

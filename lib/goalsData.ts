@@ -9,7 +9,7 @@ import { activeLoansWithEmi } from './loans'
 import { getAedInr } from './fx'
 import { isMissingTable } from './supabase/missingTable'
 
-export const INVESTMENT_TABLES = ['stocks', 'mutual_funds', 'fixed_deposits', 'recurring_deposits', 'nps_accounts', 'lic_policies', 'gold_investments', 'bond_investments', 'etf_investments'] as const
+export const INVESTMENT_TABLES = ['stocks', 'mutual_funds', 'fixed_deposits', 'recurring_deposits', 'nps_accounts', 'lic_policies', 'gold_investments', 'bond_investments', 'etf_investments', 'ppf_epf_accounts'] as const
 
 export async function loadGoalsData(supabase: any, uid: string) {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' })

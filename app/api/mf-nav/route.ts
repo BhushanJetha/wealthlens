@@ -23,6 +23,28 @@ export async function GET(req: NextRequest) {
 
   if (!schemeCode) return NextResponse.json({ error: 'schemeCode or q required' }, { status: 400 })
 
+  // The NAV units were allotted at on a day: that day's NAV, or the next one
+  // published (a holiday or weekend moves allotment to the next working day)
+  const onDate = req.nextUrl.searchParams.get('date')
+  if (onDate && /^\d{4}-\d{2}-\d{2}$/.test(onDate)) {
+    try {
+      const key = `${schemeCode}-all`, hit = HIS_CACHE.get(key)
+      let all: Array<{ date: string; nav: string }> = hit && Date.now() - hit.ts < 6 * 3600e3 ? hit.data : []
+      if (!all.length) {
+        const res = await fetch(`https://api.mfapi.in/mf/${schemeCode}`, { signal: AbortSignal.timeout(10000) })
+        if (!res.ok) throw new Error(`MFAPI ${res.status}`)
+        all = (await res.json())?.data ?? []
+        HIS_CACHE.set(key, { data: all, ts: Date.now() })
+      }
+      const iso = (d: string) => { const [dd, mm, yyyy] = d.split('-'); return `${yyyy}-${mm}-${dd}` }
+      const after = all.map(d => ({ date: iso(d.date), nav: Number(d.nav) })).filter(d => d.date >= onDate && d.nav > 0).sort((a, b) => a.date.localeCompare(b.date))
+      if (!after.length) return NextResponse.json({ error: 'That day’s NAV isn’t out yet — it comes the same evening.', pending: true }, { status: 404 })
+      return NextResponse.json({ date: after[0].date, nav: after[0].nav, asked: onDate })
+    } catch {
+      return NextResponse.json({ error: 'NAV unavailable just now' }, { status: 503 })
+    }
+  }
+
   // Historical NAV for MoM/YoY chart
   if (months) {
     const cacheKey = `${schemeCode}-his-${months}`

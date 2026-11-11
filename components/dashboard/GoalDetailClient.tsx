@@ -356,7 +356,7 @@ export default function GoalDetailClient({ goalId, data }: { goalId: string; dat
       )}
 
       {sheet === 'edit' && <AddGoalModal editData={g} accounts={data.accounts} members={data.members} onClose={() => setSheet(null)} />}
-      {sheet === 'link' && <LinkInvestmentModal goalId={g.id} goal={g} allInvestments={data.investments} linked={links} otherLinks={data.links.filter(l => l.goal_id !== g.id && data.goals.find(x => x.id === l.goal_id)?.status !== 'cancelled')} goalNames={Object.fromEntries(data.goals.map(x => [x.id, x.name]))} onClose={() => setSheet(null)} />}
+      {sheet === 'link' && <LinkInvestmentModal goalId={g.id} goal={g} allInvestments={data.investments} accounts={data.accounts} linked={links} otherLinks={data.links.filter(l => l.goal_id !== g.id && data.goals.find(x => x.id === l.goal_id)?.status !== 'cancelled')} goalNames={Object.fromEntries(data.goals.map(x => [x.id, x.name]))} onClose={() => setSheet(null)} />}
       {sheet === 'money' && <AddMoneySheet goal={g} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); router.refresh() }} />}
       {sheet === 'achieve' && <AchieveSheet goal={g} value={v.value} linkCount={links.length} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); router.refresh() }} />}
     </div>

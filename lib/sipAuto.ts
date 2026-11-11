@@ -8,6 +8,7 @@ import { ymOf, addMonths, daysBetween } from './insights'
 import { dateIn, autoTag } from './recurring'
 import { catOf } from './money'
 import { sipsOf, claimSip, type Sip } from './sips'
+import { insertEstimated } from './allotment'
 
 export interface SipDue { fund: any; sip: Sip; month: string; date: string; amount: number; nav: number; evidence?: any }
 
@@ -55,13 +56,13 @@ export async function recordSip(supabase: any, userId: string, d: SipDue, opts: 
   if (!(await claimSipMonth(supabase, d))) return 'Already recorded'
   const f = d.fund, paidOn = d.evidence?.txn_date ?? d.date, amount = Number(d.evidence?.amount) || d.amount
   const units = d.nav > 0 ? amount / d.nav : 0
-  const inv = supabase.from('investment_transactions').insert({
-    user_id: userId, asset_type: 'mutual_fund', asset_id: f.id, asset_name: f.fund_name, folio_number: f.folio_number ?? null,
-    txn_date: paidOn, txn_type: 'sip', amount, units: units || null, nav: d.nav || null, currency: f.currency ?? 'INR', source: 'sip_auto',
-  })
+  // Units at the latest NAV for now: estimated until you confirm the day they were allotted (lib/allotment)
   const [, invRes] = await Promise.all([
     supabase.from('mutual_funds').update({ units: (Number(f.units) || 0) + units, invested_amount: (Number(f.invested_amount) || 0) + amount }).eq('id', f.id),
-    opts.tag ? inv.select('id').single() : inv,
+    insertEstimated(supabase, {
+      user_id: userId, asset_type: 'mutual_fund', asset_id: f.id, asset_name: f.fund_name, folio_number: f.folio_number ?? null,
+      txn_date: paidOn, txn_type: 'sip', amount, units: units || null, nav: d.nav || null, currency: f.currency ?? 'INR', source: 'sip_auto',
+    }, !!opts.tag),
   ])
   if (opts.moneyRow) await supabase.from('transactions').insert({
     user_id: userId, txn_date: paidOn, merchant: f.fund_name, description: `Monthly SIP - ${f.fund_name}`, category: 'Investment', sub_category: 'SIP',

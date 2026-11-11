@@ -13,6 +13,7 @@ import { Segmented } from '@/components/ui/kit'
 import Pagination from './Pagination'
 import BatchPurchaseModal from '@/components/forms/BatchPurchaseModal'
 import SipsEditor from '@/components/forms/SipsEditor'
+import { confirmAllotment, unitsAt } from '@/lib/allotment'
 import { VerifyBadge, VerifySheet } from './VerifyHolding'
 import type { VerifyType } from '@/lib/verify'
 import EditHoldingModal from '@/components/forms/EditHoldingModal'
@@ -132,6 +133,8 @@ export default function HoldingClient({ type, row, txns, kindTotal, accounts = [
   const [sheet, setSheet] = useState<null | 'buy' | 'edit' | 'edit2' | 'sip' | 'repick' | 'delete' | 'sell' | 'renew' | 'paidout' | 'verify'>(null)
   const [menu, setMenu] = useState(false)
   const [editLot, setEditLot] = useState<any | null>(null)
+  const [allotLot, setAllotLot] = useState<any | null>(null)        // a SIP with estimated units to confirm
+  const estimatedLots = m.lots.filter(l => l.raw?.estimated)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [lotFilter, setLotFilter] = useState<'all' | 'SIP' | 'Lump sum'>('all')
@@ -291,17 +294,25 @@ export default function HoldingClient({ type, row, txns, kindTotal, accounts = [
             <h2 className="text-[14.5px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>{type === 'stocks' ? 'Your buys' : 'Your purchases'} <span className="font-normal" style={{ color: 'var(--text3)' }}>· {m.lots.length}</span></h2>
             {m.lots.some(l => l.kind === 'SIP') && <Segmented label="Show" value={lotFilter} onChange={v => { setLotFilter(v); setPage(1) }} options={[{ value: 'all', label: 'All' }, { value: 'SIP', label: 'SIP' }, { value: 'Lump sum', label: 'Lump sum' }]} />}
           </div>
+          {estimatedLots.length > 0 && (
+            <div className="mx-4 md:mx-5 mb-3 rounded-xl px-3.5 py-2.5 text-[12.5px] flex items-center gap-3 flex-wrap" style={{ background: '#FFF8EC', border: '1px solid #F6DDB4', color: '#7A4A06' }}>
+              <span className="flex-1 min-w-0">{estimatedLots.length} instalment{estimatedLots.length === 1 ? ' has' : 's have'} estimated units (the NAV on the SIP day). Tell us the day the units were allotted and they’re worked out from that day’s NAV.</span>
+              <button onClick={() => setAllotLot(estimatedLots[0].raw)} className="wl-btn flex-shrink-0" style={{ height: 32, fontSize: 12.5 }}>Confirm{estimatedLots.length > 1 ? ' the first' : ''}</button>
+            </div>
+          )}
           <div className="hidden md:grid grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_repeat(3,minmax(0,1fr))_36px] gap-3 px-5 py-2 text-[11px] font-semibold uppercase tracking-[.05em]" style={{ background: '#FAFAFE', borderTop: '1px solid var(--line)', borderBottom: '1px solid var(--line)', color: 'var(--text3)' }}>
             <span>Date</span><span>Type</span><span className="text-right">Units</span><span className="text-right">{type === 'mutual_funds' ? 'NAV' : 'Price'}</span><span className="text-right">Amount</span><span />
           </div>
           {paged.map((l, i) => (
             <div key={(l.id ?? 'open') + i} className="grid grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_repeat(3,minmax(0,1fr))_36px] gap-x-3 gap-y-0.5 px-4 md:px-5 py-2.5 items-center text-[13px]" style={{ borderBottom: '1px solid #F1F0F7' }}>
               <span className="font-medium" style={{ color: 'var(--text)' }}>{fmtDate(l.date)}<span className="md:hidden ml-1.5 text-[11.5px] font-semibold rounded-md px-1.5 py-[2px]" style={{ background: LOT_TINT[l.kind].bg, color: LOT_TINT[l.kind].c }}>{l.kind}</span></span>
-              <span className="hidden md:block"><span className="text-[11.5px] font-semibold rounded-md px-2 py-[3px]" style={{ background: LOT_TINT[l.kind].bg, color: LOT_TINT[l.kind].c }}>{l.kind}</span></span>
+              <span className="hidden md:flex items-center gap-1.5 flex-wrap"><span className="text-[11.5px] font-semibold rounded-md px-2 py-[3px]" style={{ background: LOT_TINT[l.kind].bg, color: LOT_TINT[l.kind].c }}>{l.kind}</span>
+                {l.raw?.estimated && <button onClick={() => setAllotLot(l.raw)} className="text-[11px] font-semibold rounded-md px-1.5 py-[2px] wl-hide-viewing" style={{ background: '#FFF3E0', color: '#9A5A08' }} title="Units estimated — confirm the allotment day">Estimated · confirm</button>}</span>
               <span className="hidden md:block text-right tabular-nums" style={{ color: 'var(--text2)' }}>{l.units != null ? l.units.toLocaleString('en-IN', { maximumFractionDigits: 3 }) : '—'}</span>
               <span className="hidden md:block text-right tabular-nums" style={{ color: 'var(--text2)' }}>{l.price != null ? price(l.price) : '—'}</span>
               <span className="text-right font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{money(l.amount)}</span>
-              <span className="md:hidden text-[11.5px] tabular-nums col-span-2" style={{ color: 'var(--text3)' }}>{l.units != null ? `${l.units.toLocaleString('en-IN', { maximumFractionDigits: 3 })} units` : ''}{l.price != null ? ` at ${price(l.price)}` : ''}</span>
+              <span className="md:hidden text-[11.5px] tabular-nums col-span-2" style={{ color: 'var(--text3)' }}>{l.units != null ? `${l.units.toLocaleString('en-IN', { maximumFractionDigits: 3 })} units` : ''}{l.price != null ? ` at ${price(l.price)}` : ''}
+                {l.raw?.estimated && <button onClick={() => setAllotLot(l.raw)} className="ml-1.5 font-semibold" style={{ color: '#9A5A08' }}>· estimated, confirm</button>}</span>
               <span className="hidden md:flex justify-end">{l.raw && editable && l.kind !== 'Sold' && <button onClick={() => setEditLot(l.raw)} aria-label="Edit this purchase" className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[var(--bg2)]" style={{ color: 'var(--text3)' }}><Pencil size={13} /></button>}</span>
             </div>
           ))}
@@ -350,6 +361,7 @@ export default function HoldingClient({ type, row, txns, kindTotal, accounts = [
 
       {sheet === 'buy' && <BatchPurchaseModal kind={kindFor} existing={row} onClose={done} />}
       {sheet === 'edit' && <EditHoldingModal kind={kindFor} row={row} onClose={done} />}
+      {allotLot && <AllotSheet txn={allotLot} fund={row} onClose={() => setAllotLot(null)} onSaved={() => { setAllotLot(null); router.refresh() }} />}
       {editLot && <EditLotModal kind={kindFor} holding={row} lot={editLot} onClose={() => { setEditLot(null); router.refresh() }} />}
       {sheet === 'sip' && <SipsEditor fund={row} onClose={() => setSheet(null)} onSaved={done} />}
       {sheet === 'sell' && <SellSheet type={type} row={row} m={m} accounts={accounts} today={today} onClose={() => setSheet(null)} onSaved={done} />}
@@ -360,6 +372,56 @@ export default function HoldingClient({ type, row, txns, kindTotal, accounts = [
       {sheet === 'repick' && <RepickSheet row={row} onClose={() => setSheet(null)} onSaved={() => { done(); refreshPrice() }} />}
       {sheet === 'delete' && <DeleteSheet type={type} row={row} name={m.name} onClose={() => setSheet(null)} />}
     </div>
+  )
+}
+
+// The day a SIP's units were allotted: that day's NAV (from the fund's history),
+// or the units on your statement, make them exact (lib/allotment)
+function AllotSheet({ txn, fund, onClose, onSaved }: { txn: any; fund: any; onClose: () => void; onSaved: () => void }) {
+  const amount = Number(txn.amount) || 0
+  const [date, setDate] = useState(String(txn.txn_date).slice(0, 10))
+  const [nav, setNav] = useState<{ nav: number; date: string } | null>(null)
+  const [msg, setMsg] = useState('')
+  const [units, setUnits] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    let off = false
+    setNav(null); setMsg('')
+    if (!fund.scheme_code) { setMsg('Match the fund’s exact scheme first (Wrong fund? on this page), or type the units from your statement.'); return }
+    fetch(`/api/mf-nav?schemeCode=${fund.scheme_code}&date=${date}`).then(r => r.json()).then(j => {
+      if (off) return
+      if (Number(j?.nav) > 0) setNav({ nav: Number(j.nav), date: j.date }); else setMsg(j?.error ?? 'No NAV found for that day.')
+    }).catch(() => !off && setMsg('The NAV couldn’t be fetched just now.'))
+    return () => { off = true }
+  }, [date, fund.scheme_code])
+  const calc = nav ? unitsAt(amount, nav.nav) : 0
+  const typed = Number(units)
+  async function save() {
+    setBusy(true)
+    const err = await confirmAllotment(createClient(), txn, fund, typed > 0 ? { date: nav?.date ?? date, units: typed, nav: nav?.nav } : { date: nav!.date, nav: nav!.nav })
+    setBusy(false)
+    if (err) { toast(err, 'error'); return }
+    toast('Units confirmed'); onSaved()
+  }
+  const was = Number(txn.units) || 0, now = typed > 0 ? typed : calc
+  return (
+    <Sheet title="When were the units allotted?" onClose={onClose}>
+      <p className="text-[12.5px] leading-snug" style={{ color: 'var(--text2)' }}>{fund.fund_name} · {fmtMoney(amount, fund.currency === 'AED' ? 'AED' : 'INR')} paid on {fmtDate(String(txn.txn_date).slice(0, 10))}. Units are allotted at the NAV of the day the money reaches the fund — often a day or two later, or after a holiday.</p>
+      <label className="block"><span className="block text-[12px] font-semibold mb-1" style={{ color: 'var(--text2)' }}>Allotment date (from your statement or the fund’s message)</span>
+        <input type="date" value={date} onChange={e => setDate(e.target.value)} className="wl-input w-full" style={{ height: 44 }} /></label>
+      <div className="rounded-xl px-3.5 py-2.5 text-[12.5px] flex flex-col gap-1" style={{ background: '#FAFAFE', border: '1px solid var(--line)', color: 'var(--text2)' }}>
+        {nav ? <>
+          <span>NAV on {fmtDate(nav.date)}{nav.date !== date ? ' (the next working day)' : ''}: <b>₹{nav.nav.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</b></span>
+          <span>Units: {fmtMoney(amount, 'INR')} less 0.005% stamp duty ÷ NAV = <b>{calc.toLocaleString('en-IN', { maximumFractionDigits: 3 })}</b></span>
+        </> : <span style={{ color: 'var(--text3)' }}>{msg || 'Looking up the NAV…'}</span>}
+        <span style={{ color: 'var(--text3)' }}>Estimated so far: {was.toLocaleString('en-IN', { maximumFractionDigits: 3 })} units</span>
+      </div>
+      <label className="block"><span className="block text-[12px] font-semibold mb-1" style={{ color: 'var(--text2)' }}>Or the units on your statement <span className="font-normal" style={{ color: 'var(--text4)' }}>(optional, used as is)</span></span>
+        <input inputMode="decimal" value={units} onChange={e => setUnits(e.target.value.replace(/[^0-9.]/g, ''))} placeholder={calc ? String(calc) : '0.000'} className="wl-input w-full" style={{ height: 44 }} /></label>
+      <button onClick={save} disabled={busy || !(now > 0)} className="wl-btn wl-btn-primary justify-center disabled:opacity-60" style={{ height: 44 }}>
+        {busy ? 'Saving…' : now > 0 ? `Confirm ${now.toLocaleString('en-IN', { maximumFractionDigits: 3 })} units${Math.abs(now - was) >= 0.001 ? ` (${now > was ? '+' : '−'}${Math.abs(now - was).toFixed(3)})` : ''}` : 'Confirm'}
+      </button>
+    </Sheet>
   )
 }
 

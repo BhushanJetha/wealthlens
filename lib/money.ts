@@ -348,7 +348,13 @@ export function prepareMoney(txns: any[], opts: { fx: number; cardIds?: Set<stri
   const remits = pairRemittances(marked, opts.fx)
   const landed = new Set(remits.map(r => r.in).filter(Boolean))
   const own = ownCredits(marked.filter(t => !landed.has(t)))
-  const base = marked.map(t => t.txn_type === 'income' && (landed.has(t) || own.has(t)) ? { ...t, _ownIn: true } : t)
+  const base = marked.map(t => {
+    const r = t.txn_type === 'income' && (landed.has(t) || own.has(t)) ? { ...t, _ownIn: true } : t
+    // Income that's for another month (a month-end salary for the next month —
+    // lib/payCycle) counts there; `_paidOn` keeps the day it really arrived
+    const cf = r.txn_type === 'income' ? String(r.counts_for_month ?? '') : ''
+    return /^\d{4}-\d{2}$/.test(cf) && cf !== String(r.txn_date).slice(0, 7) ? { ...r, txn_date: `${cf}-01`, _paidOn: r.txn_date } : r
+  })
   const rows = remits.map(r => ({
     id: r.id, txn_date: r.landedOn, amount: r.inr, currency: 'INR', country: 'India', txn_type: 'income',
     category: INDIA_INCOME, merchant: r.aed ? `From UAE · AED ${Math.round(r.aed).toLocaleString('en-US')}` : 'Received in NRE',

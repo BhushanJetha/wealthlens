@@ -10,12 +10,14 @@ type AllInvestments = Record<string, any[]>
 const TYPE_LABELS: Record<string, string> = {
   stocks: 'Stocks', mutual_funds: 'Mutual Funds', fixed_deposits: 'Fixed Deposits',
   recurring_deposits: 'Recurring Deposits', nps_accounts: 'NPS', lic_policies: 'LIC',
-  gold_investments: 'Gold', bond_investments: 'Bonds', etf_investments: 'ETF',
+  gold_investments: 'Gold', bond_investments: 'Bonds', etf_investments: 'ETF', ppf_epf_accounts: 'PPF / EPF',
 }
+// The kinds to choose from first, in this order (then the holdings of that kind)
+const KIND_ORDER = ['recurring_deposits', 'fixed_deposits', 'mutual_funds', 'stocks', 'etf_investments', 'gold_investments', 'bond_investments', 'ppf_epf_accounts', 'nps_accounts', 'lic_policies']
 const TYPE_EMOJIS: Record<string, string> = {
   stocks: '📊', mutual_funds: '💹', fixed_deposits: '🏦',
   recurring_deposits: '🔄', nps_accounts: '🛡️', lic_policies: '📋',
-  gold_investments: '🥇', bond_investments: '💵', etf_investments: '📈',
+  gold_investments: '🥇', bond_investments: '💵', etf_investments: '📈', ppf_epf_accounts: '🏛️',
 }
 
 function getInvName(type: string, rec: any): string {
@@ -36,6 +38,7 @@ function getInvCurrentValue(type: string, rec: any): number {
   }
   if (type === 'nps_accounts') return rec.corpus_amount ?? rec.invested_amount ?? 0
   if (type === 'lic_policies') return rec.total_paid ?? 0
+  if (type === 'ppf_epf_accounts') return Number(rec.current_balance ?? rec.balance) || 0
   if (type === 'gold_investments') return rec.quantity_grams && rec.current_price_per_gram ? rec.quantity_grams * rec.current_price_per_gram : rec.invested_amount ?? 0
   return rec.invested_amount ?? 0
 }
@@ -54,12 +57,16 @@ interface Props {
   // Links on your other goals: what they already use of each investment
   otherLinks?: (LinkedItem & { goal_id: string })[]
   goalNames?: Record<string, string>
+  accounts?: any[]                  // bank & cash accounts: one can hold the goal's money
   onClose: () => void
 }
 
-export default function LinkInvestmentModal({ goalId, goal, allInvestments, linked, otherLinks = [], goalNames = {}, onClose }: Props) {
+export default function LinkInvestmentModal({ goalId, goal, allInvestments, linked, otherLinks = [], goalNames = {}, accounts = [], onClose }: Props) {
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
+  // What to map first: a bank account, or a kind of investment (RD, FD, fund…)
+  const [kind, setKind] = useState<string>('all')
+  const [account, setAccount] = useState<string | null>(goal.account_id ?? null)
   const [error, setError] = useState('')
   const supabase = createClient()
   const router = useRouter()
@@ -120,12 +127,15 @@ export default function LinkInvestmentModal({ goalId, goal, allInvestments, link
     setSelected(prev => ({ ...prev, [key]: Math.min(Math.max(1, freeOf(key)), Math.max(1, Math.round(pct))) }))
   }
 
-  // Filter by search
+  // Filter by the kind picked and the search
   const filtered = useMemo(() => {
-    if (!search) return allItems
+    const ofKind = kind === 'all' ? allItems : allItems.filter(i => i.type === kind)
+    if (!search) return ofKind
     const q = search.toLowerCase()
-    return allItems.filter(i => i.name.toLowerCase().includes(q) || TYPE_LABELS[i.type]?.toLowerCase().includes(q))
-  }, [allItems, search])
+    return ofKind.filter(i => i.name.toLowerCase().includes(q) || TYPE_LABELS[i.type]?.toLowerCase().includes(q))
+  }, [allItems, search, kind])
+  const bankAccounts = accounts.filter(a => (a.currency ?? 'INR') === goalCurrency && a.account_type !== 'credit_card' && a.is_active !== false)
+  const kinds = KIND_ORDER.filter(t => allItems.some(i => i.type === t))
 
   // Top recommendations (not yet selected)
   const recommendations = useMemo(() =>
@@ -181,7 +191,10 @@ export default function LinkInvestmentModal({ goalId, goal, allInvestments, link
         }),
       ])
 
-      const failed = results.find(r => r.error)
+      // The bank account kept for it (one), when that changed
+      const accRes = (account ?? null) !== (goal.account_id ?? null)
+        ? await supabase.from('goals').update({ account_id: account }).eq('id', goalId).eq('user_id', user.id) : { error: null }
+      const failed = [...results, accRes].find(r => r.error)
       if (failed?.error) {
         setError(failed.error.message ?? 'Save failed. Please try again.')
         setSaving(false)
@@ -234,10 +247,33 @@ export default function LinkInvestmentModal({ goalId, goal, allInvestments, link
             </div>
           </div>
 
+          {/* What do you want to map? */}
+          <div className="px-5 pt-3 flex gap-1.5 flex-wrap" role="group" aria-label="What to map">
+            {[{ k: 'all', l: 'All', n: allItems.length }, ...(bankAccounts.length ? [{ k: 'account', l: 'Bank account', n: bankAccounts.length }] : []), ...kinds.map(t => ({ k: t, l: TYPE_LABELS[t], n: allItems.filter(i => i.type === t).length }))].map(x => (
+              <button key={x.k} onClick={() => setKind(x.k)} aria-pressed={kind === x.k} className="wl-chip gap-1.5" style={{ height: 30 }}>
+                {x.l}<span className="text-[10.5px] tabular-nums" style={{ color: kind === x.k ? 'var(--accent)' : 'var(--text4)' }}>{x.n}</span>
+              </button>
+            ))}
+          </div>
+
           {/* Scrollable content */}
           <div className="flex-1 overflow-y-auto p-5 space-y-4">
+            {/* A bank account kept for this goal: its balance counts towards it */}
+            {kind === 'account' && (
+              <div className="space-y-1.5">
+                <p className="text-[11.5px]" style={{ color: 'var(--text3)' }}>Pick the savings account you keep this goal’s money in — its balance counts towards the goal.</p>
+                {[{ id: null as string | null, name: 'No bank account', bal: null as number | null }, ...bankAccounts.map(a => ({ id: a.id as string | null, name: a.name as string, bal: Number(a.current_balance) || 0 }))].map(a => (
+                  <button key={a.id ?? 'none'} onClick={() => setAccount(a.id)} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left"
+                    style={{ border: account === a.id ? `1.5px solid ${goal.color}` : '1px solid var(--border)', background: account === a.id ? `${goal.color}08` : 'transparent' }}>
+                    <div className="w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0" style={{ borderColor: account === a.id ? goal.color : 'var(--border)', background: account === a.id ? goal.color : 'transparent' }}>{account === a.id && <CheckCircle2 size={11} color="#fff" />}</div>
+                    <span className="flex-1 min-w-0 text-[12px] font-medium truncate" style={{ color: 'var(--text)' }}>{a.name}</span>
+                    {a.bal != null && <span className="text-[11px] tabular-nums" style={{ color: 'var(--text3)' }}>{fmt(a.bal, goalCurrency)}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
             {/* Recommendations */}
-            {recommendations.length > 0 && !search && (
+            {kind === 'all' && recommendations.length > 0 && !search && (
               <div>
                 <div className="flex items-center gap-2 mb-2">
                   <Star size={12} style={{ color: 'var(--gold)' }} />
@@ -271,7 +307,7 @@ export default function LinkInvestmentModal({ goalId, goal, allInvestments, link
             )}
 
             {/* All investments by type */}
-            {Object.entries(byType).map(([type, items]) => (
+            {kind !== 'account' && Object.entries(byType).map(([type, items]) => (
               <div key={type}>
                 <div className="flex items-center gap-2 mb-1.5">
                   <span className="text-sm">{TYPE_EMOJIS[type]}</span>
@@ -336,7 +372,7 @@ export default function LinkInvestmentModal({ goalId, goal, allInvestments, link
               </div>
             ))}
 
-            {filtered.length === 0 && (
+            {kind !== 'account' && filtered.length === 0 && (
               <div className="text-center py-8" style={{ color: 'var(--text3)' }}>
                 <Search size={24} className="mx-auto mb-2 opacity-40" />
                 <p className="text-[12px]">{search ? 'No investments match your search' : `No ${goalCurrency === 'AED' ? 'UAE (AED)' : 'India (INR)'} investments found for this goal.`}</p>

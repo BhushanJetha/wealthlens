@@ -8,6 +8,7 @@ import { HTYPES, holdingName, type HType } from './holding'
 import { type InvestKind } from './categories'
 import { sipForPayment, claimSip, unclaimSip } from './sips'
 import { claimRdMonth, rdStep } from './rdAuto'
+import { insertEstimated } from './allotment'
 
 export type LinkType = HType | 'loan'
 export interface LinkRef {
@@ -102,10 +103,12 @@ export async function recordLinked(supabase: any, userId: string, pay: { txn_dat
     const units = opts.units && opts.units > 0 ? opts.units : o.price > 0 ? amount / o.price : 0
     if (!(units > 0)) return { error: 'Enter how many units this bought.' }
     const asset = HTYPES[o.type].asset ?? 'mutual_fund'
-    const { data: it, error } = await supabase.from('investment_transactions').insert({
-      user_id: userId, asset_type: asset, asset_id: r.id, asset_name: o.name, folio_number: r.folio_number ?? null,
-      txn_date: pay.txn_date, txn_type: sipLike ? 'sip' : 'purchase', amount, units, nav: amount / units, currency: r.currency ?? pay.currency, source: 'linked',
-    }).select('id').single()
+    // A fund's units from the latest NAV are an estimate until the allotment day is confirmed (lib/allotment)
+    const row = { user_id: userId, asset_type: asset, asset_id: r.id, asset_name: o.name, folio_number: r.folio_number ?? null,
+      txn_date: pay.txn_date, txn_type: sipLike ? 'sip' : 'purchase', amount, units, nav: amount / units, currency: r.currency ?? pay.currency, source: 'linked' }
+    const { data: it, error } = o.type === 'mutual_funds' && !(opts.units && opts.units > 0)
+      ? await insertEstimated(supabase, row, true)
+      : await supabase.from('investment_transactions').insert(row).select('id').single()
     if (error) return { error: error.message }
     const upd = o.type === 'mutual_funds'
       ? { units: (Number(r.units) || 0) + units, invested_amount: (Number(r.invested_amount) || 0) + amount }
