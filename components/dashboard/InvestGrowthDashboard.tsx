@@ -16,10 +16,11 @@ const fmtDate = (d: string) => new Date(`${d.slice(0, 10)}T00:00:00Z`).toLocaleD
 // Investments › Growth: what you put in, by month or year and by kind, as a
 // chart with its table; each kind with its value and return; your biggest
 // holdings and what matures in the next year. Every row opens its page.
-export default function InvestGrowthDashboard({ flows, kinds, holdings, conv, colors, names, money, short, today }: {
+export default function InvestGrowthDashboard({ flows, kinds, holdings, conv, colors, names, money, short, today, onOpen }: {
   flows: Map<string, FlowRow>; kinds: KindRow[]; holdings: Partial<Record<HType, any[]>>
   conv: (amt: number, cur: string) => number; colors: Record<FlowKey, string>; names: Record<FlowKey, string>
   money: (n: number) => string; short: (n: number) => string; today: string
+  onOpen?: (key: string, by: 'month' | 'year') => void   // a row's payments, on the Invested tab
 }) {
   const [by, setBy] = useState<'month' | 'year'>('month')
   const [n, setN] = useState(12)
@@ -97,13 +98,15 @@ export default function InvestGrowthDashboard({ flows, kinds, holdings, conv, co
               <thead><tr style={{ background: '#FAFAFE', color: 'var(--text3)' }}>
                 <th className={`${th} text-left pl-4 md:pl-5`}>{by === 'month' ? 'Month' : 'Year'}</th>
                 {cols.map(k => <th key={k} className={`${th} text-right`}><Link href={kinds.find(x => x.key === k)?.href ?? '#'} className="hover:underline">{names[k]}</Link></th>)}
-                {cols.length > 1 && <th className={`${th} text-right pr-4 md:pr-5`}>Total</th>}
+                {cols.length > 1 && <th className={`${th} text-right ${onOpen ? '' : 'pr-4 md:pr-5'}`}>Total</th>}
+                {onOpen && <th className={`${th} pr-4 md:pr-5`}><span className="sr-only">Details</span></th>}
               </tr></thead>
               <tbody>{[...rows].reverse().filter(r => totalOf(r) > 0).map(r => (
                 <tr key={r.key} style={{ borderTop: '1px solid var(--track)' }}>
                   <td className="px-3 pl-4 md:pl-5 py-2 font-medium whitespace-nowrap" style={{ color: 'var(--text)' }}>{periodLabel(r.key)}</td>
                   {cols.map(k => <td key={k} className="px-3 py-2 text-right" style={{ color: r[k] > 0 ? 'var(--text2)' : 'var(--text4)' }}>{r[k] > 0 ? money(r[k]) : '—'}</td>)}
-                  {cols.length > 1 && <td className="px-3 pr-4 md:pr-5 py-2 text-right font-semibold" style={{ color: 'var(--text)' }}>{money(totalOf(r))}</td>}
+                  {cols.length > 1 && <td className={`px-3 ${onOpen ? '' : 'pr-4 md:pr-5'} py-2 text-right font-semibold`} style={{ color: 'var(--text)' }}>{money(totalOf(r))}</td>}
+                  {onOpen && <td className="px-3 pr-4 md:pr-5 py-1 text-right"><button onClick={() => onOpen(r.key, by)} className="inline-flex items-center gap-0.5 h-9 font-semibold whitespace-nowrap" style={{ color: 'var(--accent2)' }} aria-label={`What went in, ${periodLabel(r.key)}`}>Details<ChevronRight size={14} /></button></td>}
                 </tr>
               ))}</tbody>
             </table>

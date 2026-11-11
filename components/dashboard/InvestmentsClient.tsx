@@ -10,7 +10,7 @@ import {
   TrendingUp, TrendingDown, Plus, ChevronRight,
   AlertTriangle, CheckCircle2, Zap, Target, Shield,
   Wallet, Activity, HeartPulse, LayoutGrid, BarChart2,
-  Flag, Link as LinkIcon, Unlink, Users, GraduationCap,
+  Flag, Link as LinkIcon, Unlink, Users, GraduationCap, ReceiptText,
 } from 'lucide-react'
 import AddInvestmentModal from '@/components/forms/AddInvestmentModal'
 import InvestNeedsPanel from './InvestNeedsPanel'
@@ -25,6 +25,8 @@ import { investmentFlows, flowMonths, flowYears, FLOW_KEYS, type FlowKey } from 
 import InvestFlowChart from './InvestFlowChart'
 import InvestGrowthDashboard from './InvestGrowthDashboard'
 import PlannedInvestments from './PlannedInvestments'
+import InvestedTab, { presetPeriod, type Period } from './InvestedTab'
+import { investmentEntries, investmentOuts } from '@/lib/investEntries'
 
 const COLORS = ['#3D7A58','#3B7DD8','#D4920A','#C96A3A','#7C5CBF','#2E7D52','#B45309','#0891B2','#6D28D9']
 // One fixed colour per investment type, used by every chart and list here
@@ -78,6 +80,7 @@ const INV_LINKS = [
 
 const TABS = [
   { key: 'overview', label: 'Overview',      icon: LayoutGrid  },
+  { key: 'invested', label: 'Invested',      icon: ReceiptText },
   { key: 'trends',   label: 'Growth',        icon: BarChart2   },
   { key: 'income',   label: 'Income Rule',   icon: Wallet      },
   { key: 'health',   label: 'Health Report', icon: HeartPulse  },
@@ -110,6 +113,8 @@ export default function InvestmentsClient({
   const [showAdd, setShowAdd] = useState(false)
   const [showManageFamily, setShowManageFamily] = useState(false)
   const [tab, setTab] = useState<TabKey>('overview')
+  const nowMonth = (today ?? new Date().toISOString()).slice(0, 7)
+  const [invPeriod, setInvPeriod] = useState<Period>(() => presetPeriod('last', nowMonth))
   const { openAdvisor } = useUiStore()
   const sym = view === 'uae' ? 'AED' : '₹'
 
@@ -171,6 +176,12 @@ export default function InvestmentsClient({
     stocks: fSt, mutualFunds: fMF, etf: fEtf, fixedDeposits: fFD, recurringDeposits: fRD,
     nps: fNPS, lic: fLIC, ppfEpf: fPPF, gold: fGold, bonds: fBond, invTxns,
   }, conv), [fSt, fMF, fEtf, fFD, fRD, fNPS, fLIC, fPPF, fGold, fBond, invTxns, view, FX])
+  // The same payments one by one, and the sales, for the Invested tab
+  const invEntries = useMemo(() => tab !== 'invested' ? [] : investmentEntries({
+    stocks: fSt, mutualFunds: fMF, etf: fEtf, fixedDeposits: fFD, recurringDeposits: fRD,
+    nps: fNPS, lic: fLIC, ppfEpf: fPPF, gold: fGold, bonds: fBond, invTxns,
+  }, conv), [tab, fSt, fMF, fEtf, fFD, fRD, fNPS, fLIC, fPPF, fGold, fBond, invTxns, view, FX]) // eslint-disable-line react-hooks/exhaustive-deps
+  const invOuts = useMemo(() => tab !== 'invested' ? [] : investmentOuts({ stocks: fSt, mutualFunds: fMF, etf: fEtf, invTxns }, conv), [tab, fSt, fMF, fEtf, invTxns, view, FX]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const monthlyData = useMemo(() => flowMonths(flows, 12).map(r => ({
     ...r, month: r.key,
@@ -699,8 +710,16 @@ export default function InvestmentsClient({
       ))}
 
       {/* ═══════════ GROWTH: chart + table by month or year, each kind, biggest holdings, maturing ═══════════ */}
+      {/* ═══════════ INVESTED: one period, kind by kind, holding by holding, payment by payment ═══════════ */}
+      {tab === 'invested' && (
+        <InvestedTab entries={invEntries} outs={invOuts} funds={fMF} holdings={{ mutual_funds: mutualFunds ?? [], stocks: stocks ?? [] }} conv={conv}
+          colors={TYPE_COLORS} names={TYPE_NAMES} cur={view === 'uae' ? 'AED' : 'INR'} today={today ?? new Date().toISOString().slice(0, 10)}
+          period={invPeriod} onPeriod={setInvPeriod} />
+      )}
+
       {tab === 'trends' && (
         <InvestGrowthDashboard flows={flows} kinds={TYPES} conv={conv} colors={TYPE_COLORS} names={TYPE_NAMES} today={today ?? new Date().toISOString().slice(0, 10)}
+          onOpen={(key, by) => { setInvPeriod(by === 'month' ? { from: key, to: key } : { from: `${key}-01`, to: key === nowMonth.slice(0, 4) ? nowMonth : `${key}-12` }); setTab('invested'); window.scrollTo({ top: 0 }) }}
           money={n => fmtV(n, sym)} short={n => fmtS(n, sym)}
           holdings={{ mutual_funds: fMF, stocks: fSt, etf_investments: fEtf, fixed_deposits: fFD, recurring_deposits: fRD, bond_investments: fBond, ppf_epf_accounts: fPPF, nps_accounts: fNPS, gold_investments: fGold, lic_policies: fLIC }} />
       )}

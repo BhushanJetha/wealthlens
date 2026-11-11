@@ -11,11 +11,12 @@ export default async function InvestmentsPage() {
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
   const cutoff = sixMonthsAgo.toISOString().slice(0, 10)
 
-  // Dated purchases / SIPs for the monthly chart. A CAS import can hold
-  // thousands of rows and Supabase returns 1,000 per request, so page through.
+  // Dated purchases / SIPs / sales for the monthly chart and the Invested tab
+  // (each one, to edit). A CAS import can hold thousands of rows and Supabase
+  // returns 1,000 per request, so page through.
   // (A missing table — migration 012 not run — just means no records.)
   const loadInvTxns = () => fetchAll((a, b) => supabase.from('investment_transactions')
-    .select('asset_type, asset_id, txn_date, txn_type, amount')
+    .select('*')
     .eq('user_id', user!.id).order('txn_date', { ascending: true }).order('id').range(a, b), 20).then(r => r.data)
 
   // SIPs whose day has come are recorded alongside these reads (from your
