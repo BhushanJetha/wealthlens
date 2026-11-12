@@ -114,7 +114,7 @@ export default function InvestmentsClient({
   const [showManageFamily, setShowManageFamily] = useState(false)
   const [tab, setTab] = useState<TabKey>('overview')
   const nowMonth = (today ?? new Date().toISOString()).slice(0, 7)
-  const [invPeriod, setInvPeriod] = useState<Period>(() => presetPeriod('last', nowMonth))
+  const [invPeriod, setInvPeriod] = useState<Period>(() => presetPeriod('m3', nowMonth))
   const { openAdvisor } = useUiStore()
   const sym = view === 'uae' ? 'AED' : '₹'
 

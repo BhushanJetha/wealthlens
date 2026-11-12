@@ -1,37 +1,53 @@
 'use client'
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Pencil, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, Pencil, Trash2 } from 'lucide-react'
 import { fmtMoney } from '@/lib/format'
 import { HTYPES, holdingHref } from '@/lib/holding'
 import { addMonth, monthsBetween, missingSips, FLOW_KEYS, type FlowKey, type InvEntry } from '@/lib/investEntries'
 import { Sheet, EditPaymentSheet, DeletePaymentSheet } from '@/components/forms/EditPaymentSheet'
 
 export interface Period { from: string; to: string }   // months, YYYY-MM
-const PRESETS = ['this', 'last', 'last3', 'year', 'custom'] as const
+const PRESETS = ['this', 'last', 'm3', 'm6', 'm12', 'm24', 'custom'] as const
 type Preset = (typeof PRESETS)[number]
-const PRESET_LABEL: Record<Preset, string> = { this: 'This month', last: 'Last month', last3: 'Last 3 months', year: 'This year', custom: 'Pick months' }
+const PRESET_LABEL: Record<Preset, string> = { this: 'This month', last: 'Last month', m3: 'Last 3 months', m6: 'Last 6 months', m12: 'Last 12 months', m24: 'Last 2 years', custom: 'Pick months' }
+const SPAN: Partial<Record<Preset, number>> = { m3: 3, m6: 6, m12: 12, m24: 24 }
+// "Last N months" counts this month: in November, the last 3 are Sep, Oct and Nov
 export function presetPeriod(p: Exclude<Preset, 'custom'>, now: string): Period {
   if (p === 'this') return { from: now, to: now }
   if (p === 'last') return { from: addMonth(now, -1), to: addMonth(now, -1) }
-  if (p === 'last3') return { from: addMonth(now, -2), to: now }
-  return { from: `${now.slice(0, 4)}-01`, to: now }
+  return { from: addMonth(now, 1 - SPAN[p]!), to: now }
 }
-const monthName = (m: string, opts: Intl.DateTimeFormatOptions = { month: 'long', year: 'numeric' }) => new Date(`${m}-01T00:00:00Z`).toLocaleDateString('en-GB', { ...opts, timeZone: 'UTC' })
+const monthName = (m: string, opts: Intl.DateTimeFormatOptions = { month: 'long', year: 'numeric' }) => new Date(`${m}-01T00:00:00Z`).toLocaleDateString('en-GB', { ...opts, timeZone: 'UTC' }).replace('Sept', 'Sep')
 export const periodLabel = (p: Period) => p.from === p.to ? monthName(p.from)
   : p.from.slice(0, 4) === p.to.slice(0, 4) ? `${monthName(p.from, { month: 'short' })} – ${monthName(p.to, { month: 'short', year: 'numeric' })}`
   : `${monthName(p.from, { month: 'short', year: 'numeric' })} – ${monthName(p.to, { month: 'short', year: 'numeric' })}`
-const shortDate = (d: string) => new Date(`${d.slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })
 const longDate = (d: string) => new Date(`${d.slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
 const ordinal = (n: number) => `${n}${['th', 'st', 'nd', 'rd'][(n % 10 > 3 || [11, 12, 13].includes(n % 100)) ? 0 : n % 10]}`
 const editable = (e: InvEntry) => !!e.txn?.id && (e.type === 'mutual_funds' || e.type === 'stocks')
 const REGULAR = new Set(['SIP', 'Instalment'])
+const sum = (es: InvEntry[]) => es.reduce((s, e) => s + e.amount, 0)
+const KIND_BG = '#FAFAFE', FOOT_BG = '#F4F2FF', LINE = '1px solid var(--track)'
 
-// Investments › Invested: for a month (or any months) what went into each
-// investment — kind by kind, holding by holding, payment by payment — what was
-// taken out, and planned SIPs with no payment. Each fund or share payment can
-// be edited or deleted here. The same payments make up the Growth tab's totals.
+interface Row { id: string; type: string; name: string; es: InvEntry[]; byMonth: Map<string, number>; total: number; hows: string[]; est: number }
+const rowOf = (es: InvEntry[]): Row => {
+  const byMonth = new Map<string, number>()
+  es.forEach(e => byMonth.set(e.month, (byMonth.get(e.month) ?? 0) + e.amount))
+  return { id: es[0].holding.id, type: es[0].type, name: es[0].name, es, byMonth, total: sum(es), est: es.filter(e => e.estimated).length,
+    hows: Array.from(new Set(es.map(e => (e.how === 'Added' ? 'When added' : e.how)))) }
+}
+const rowsOf = (es: InvEntry[]) => {
+  const by = new Map<string, InvEntry[]>()
+  es.forEach(e => by.set(`${e.type}:${e.holding.id}`, [...(by.get(`${e.type}:${e.holding.id}`) ?? []), e]))
+  return Array.from(by.values()).map(rowOf).sort((a, b) => b.total - a.total)
+}
+
+// Investments › Invested: one table for any months — each kind and, under it,
+// each fund / share / deposit, with what went in every month (newest first),
+// its total on the right and each month's total at the bottom; then what was
+// taken out. Tap a row or an amount for its payments, and edit or delete a
+// fund or share payment there. The same payments make up the Growth tab's totals.
 export default function InvestedTab({ entries, outs, funds, holdings, conv, colors, names, cur, today, period, onPeriod }: {
   entries: InvEntry[]; outs: InvEntry[]; funds: any[]; holdings: { mutual_funds: any[]; stocks: any[] }; conv: (amt: number, cur: string) => number
   colors: Record<FlowKey, string>; names: Record<FlowKey, string>; cur: string; today: string
@@ -40,58 +56,78 @@ export default function InvestedTab({ entries, outs, funds, holdings, conv, colo
   const router = useRouter()
   const now = today.slice(0, 7)
   const money = (n: number) => fmtMoney(n, cur)
-  const preset: Preset = (['this', 'last', 'last3', 'year'] as const).find(p => { const x = presetPeriod(p, now); return x.from === period.from && x.to === period.to }) ?? 'custom'
+  const preset: Preset = (PRESETS.filter(p => p !== 'custom') as Exclude<Preset, 'custom'>[]).find(p => { const x = presetPeriod(p, now); return x.from === period.from && x.to === period.to }) ?? 'custom'
   const [custom, setCustom] = useState(preset === 'custom')
-  const [open, setOpen] = useState<Record<string, boolean>>({})
-  const [drawer, setDrawer] = useState<{ type: string; id: string } | null>(null)
+  const [closed, setClosed] = useState<Record<string, boolean>>({})
+  const [drawer, setDrawer] = useState<{ type: string; id: string; month?: string } | null>(null)
   const [edit, setEdit] = useState<InvEntry | null>(null)
   const [del, setDel] = useState<InvEntry | null>(null)
-  const single = period.from === period.to
   const span = monthsBetween(period.from, period.to) + 1
   const step = (n: number) => {
     const to = addMonth(period.to, n * span)
     if (to > now) return
     onPeriod({ from: addMonth(period.from, n * span), to })
   }
+  // Columns: the months, newest first
+  const months = useMemo(() => Array.from({ length: span }, (_, i) => addMonth(period.to, -i)), [period.to, span])
+  const multi = months.length > 1
+  const colLabel = (m: string) => monthName(m, months.length > 6 ? { month: 'short', year: '2-digit' } : { month: 'short', year: 'numeric' })
 
   const inP = (e: InvEntry) => e.month >= period.from && e.month <= period.to
   const mine = useMemo(() => entries.filter(inP).sort((a, b) => a.date.localeCompare(b.date)), [entries, period]) // eslint-disable-line react-hooks/exhaustive-deps
   const taken = useMemo(() => outs.filter(inP).sort((a, b) => a.date.localeCompare(b.date)), [outs, period]) // eslint-disable-line react-hooks/exhaustive-deps
-  const missing = useMemo(() => single && period.from <= now ? missingSips(funds, entries, period.from, today, conv) : [], [single, period, funds, entries, today, conv]) // eslint-disable-line react-hooks/exhaustive-deps
-  const putIn = mine.reduce((s, e) => s + e.amount, 0)
-  const out = taken.reduce((s, e) => s + e.amount, 0)
-  const regular = mine.filter(e => REGULAR.has(e.how)).reduce((s, e) => s + e.amount, 0)
-  const missed = missing.reduce((s, x) => s + x.amount, 0)
+  // Planned SIPs with no payment, for the latest month shown
+  const missMonth = period.to <= now ? period.to : null
+  const missing = useMemo(() => missMonth ? missingSips(funds, entries, missMonth, today, conv) : [], [missMonth, funds, entries, today, conv]) // eslint-disable-line react-hooks/exhaustive-deps
+  const putIn = sum(mine), out = sum(taken)
+  const regular = sum(mine.filter(e => REGULAR.has(e.how)))
+  const missed = multi ? 0 : missing.reduce((s, x) => s + x.amount, 0)
   const holdingsCount = new Set(mine.map(e => e.holding.id)).size
+  const monthTotal = (es: InvEntry[], m: string) => sum(es.filter(e => e.month === m))
 
-  // Kind → holding → its payments, biggest first
+  // Kind → its holdings, biggest first
   const kinds = useMemo(() => FLOW_KEYS.map(k => {
     const list = mine.filter(e => e.key === k)
-    const byHolding = new Map<string, InvEntry[]>()
-    list.forEach(e => byHolding.set(e.holding.id, [...(byHolding.get(e.holding.id) ?? []), e]))
-    const rows = Array.from(byHolding.values()).map(es => ({ es, total: es.reduce((s, e) => s + e.amount, 0) })).sort((a, b) => b.total - a.total)
-    return { k, total: list.reduce((s, e) => s + e.amount, 0), count: list.length, rows }
+    return { k, list, total: sum(list), rows: rowsOf(list) }
   }).filter(x => x.total > 0).sort((a, b) => b.total - a.total), [mine])
+  const outRows = useMemo(() => rowsOf(taken), [taken])
   const empty = FLOW_KEYS.filter(k => !kinds.some(x => x.k === k) && entries.some(e => e.key === k))
   // Whole-number shares that add up to 100
   const pcts = (() => {
     if (!(putIn > 0)) return {} as Record<string, number>
-    const raw = kinds.map(x => ({ k: x.k, v: x.total / putIn * 100 })), fl = raw.map(r => ({ ...r, f: Math.floor(r.v) }))
+    const fl = kinds.map(x => ({ k: x.k, v: x.total / putIn * 100, f: Math.floor(x.total / putIn * 100) }))
     let left = 100 - fl.reduce((s, r) => s + r.f, 0)
     fl.slice().sort((a, b) => (b.v - b.f) - (a.v - a.f)).forEach(r => { if (left > 0) { r.f++; left-- } })
     return Object.fromEntries(fl.map(r => [r.k, r.f]))
   })()
 
-  const sub = (es: InvEntry[]) => {
-    if (es.length === 1) { const e = es[0]; return [e.how === 'Added' ? 'When added' : e.note?.startsWith(e.how) ? null : e.how, e.note && e.how !== 'Added' ? e.note : null, shortDate(e.date)].filter(Boolean).join(' · ') }
-    if (es.length <= 3) return es.map(e => `${e.how} ${shortDate(e.date)} ${money(e.amount)}`).join(' · ')
-    const hows = Array.from(new Set(es.map(e => e.how)))
-    return `${es.length} payments · ${hows.join(', ')}`
-  }
-  const tag = (t: string, warn = false) => <span key={t} className="text-[11px] font-semibold rounded-full px-2 py-[3px] whitespace-nowrap" style={warn ? { background: '#FFF4DE', color: '#7A5300' } : { background: 'var(--bg2)', color: 'var(--text2)' }}>{t}</span>
+  const tag = (t: string, warn = false) => <span key={t} className="text-[10.5px] font-semibold rounded-full px-1.5 py-[2px] whitespace-nowrap" style={warn ? { background: '#FFF4DE', color: '#7A5300' } : { background: 'var(--bg2)', color: 'var(--text2)' }}>{t}</span>
   const done = () => { setEdit(null); setDel(null); router.refresh() }
+  const allOpen = !Object.values(closed).some(Boolean)
 
-  const d = drawer ? { es: [...mine, ...taken].filter(e => e.holding.id === drawer.id && e.type === drawer.type).sort((a, b) => a.date.localeCompare(b.date)) } : null
+  // Sticky first and last columns, so names and totals stay in view while the months scroll
+  const first = 'sticky left-0 z-[1] text-left px-3 md:px-4 min-w-[150px] max-w-[190px] md:min-w-[230px] md:max-w-[300px]'
+  const last = 'sticky right-0 z-[1] text-right px-3 md:px-4 whitespace-nowrap'
+  const cell = 'text-right px-3 whitespace-nowrap'
+  const amt = (v: number, onClick?: () => void, strong = false, neg = false) => v > 0
+    ? (onClick ? <button onClick={onClick} className="tabular-nums hover:underline min-h-[32px]" style={{ color: neg ? '#B4231A' : strong ? 'var(--text)' : 'var(--text2)', fontWeight: strong ? 700 : 500 }}>{neg ? '−' : ''}{money(v)}</button>
+      : <span className="tabular-nums" style={{ color: neg ? '#B4231A' : 'var(--text)', fontWeight: strong ? 700 : 600 }}>{neg ? '−' : ''}{money(v)}</span>)
+    : <span style={{ color: 'var(--text4)' }}>—</span>
+
+  const holdingRow = (r: Row, neg = false) => (
+    <tr key={`${r.type}:${r.id}`}>
+      <th scope="row" className={`${first} py-2 font-normal bg-white`} style={{ boxShadow: '1px 0 0 var(--track)', borderTop: LINE }}>
+        <button onClick={() => setDrawer({ type: r.type, id: r.id })} className="text-left pl-5 md:pl-6 w-full min-h-[40px] group">
+          <span className="block text-[13px] font-medium leading-snug group-hover:underline" style={{ color: 'var(--text)' }}>{r.name}</span>
+          <span className="flex items-center gap-1 flex-wrap mt-0.5"><span className="text-[11.5px]" style={{ color: 'var(--text3)' }}>{r.hows.join(', ')}</span>{r.est > 0 && tag(`${r.est} estimated`, true)}</span>
+        </button>
+      </th>
+      {months.map(m => <td key={m} className={`${cell} py-2`} style={{ borderTop: LINE }}>{amt(r.byMonth.get(m) ?? 0, () => setDrawer({ type: r.type, id: r.id, month: m }), false, neg)}</td>)}
+      {multi && <td className={`${last} py-2 bg-white`} style={{ boxShadow: '-1px 0 0 var(--track)', borderTop: LINE }}>{amt(r.total, undefined, true, neg)}</td>}
+    </tr>
+  )
+
+  const d = drawer ? { es: [...mine, ...taken].filter(e => e.holding.id === drawer.id && e.type === drawer.type && (!drawer.month || e.month === drawer.month)).sort((a, b) => a.date.localeCompare(b.date)) } : null
   const dh = d?.es[0]
 
   return (
@@ -120,7 +156,8 @@ export default function InvestedTab({ entries, outs, funds, holdings, conv, colo
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3">
-        <div className="wl-card px-4 py-3.5"><div className="text-[12px]" style={{ color: 'var(--text3)' }}>Put in</div><div className="text-[20px] md:text-[24px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{money(putIn)}</div><div className="text-[12px]" style={{ color: 'var(--text3)' }}>{mine.length ? `${mine.length} payment${mine.length === 1 ? '' : 's'} into ${holdingsCount} holding${holdingsCount === 1 ? '' : 's'}` : 'Nothing put in'}</div></div>
+        <div className="wl-card px-4 py-3.5"><div className="text-[12px]" style={{ color: 'var(--text3)' }}>Put in</div><div className="text-[20px] md:text-[24px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{money(putIn)}</div>
+          <div className="text-[12px]" style={{ color: 'var(--text3)' }}>{!mine.length ? 'Nothing put in' : multi ? `About ${money(putIn / months.length)} a month` : `${mine.length} payment${mine.length === 1 ? '' : 's'} into ${holdingsCount} holding${holdingsCount === 1 ? '' : 's'}`}</div></div>
         <div className="wl-card px-4 py-3.5"><div className="text-[12px]" style={{ color: 'var(--text3)' }}>Taken out</div><div className="text-[20px] md:text-[24px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{money(out)}</div><div className="text-[12px] truncate" style={{ color: 'var(--text3)' }}>{taken.length ? `${taken.length} sale${taken.length === 1 ? '' : 's'}${taken.length === 1 ? ` · ${taken[0].name}` : ''}` : 'No sales'}</div></div>
         <div className="wl-card px-4 py-3.5"><div className="text-[12px]" style={{ color: 'var(--text3)' }}>Net added</div><div className="text-[20px] md:text-[24px] font-bold tabular-nums" style={{ color: putIn - out >= 0 ? 'var(--accent2)' : '#B4231A' }}>{money(putIn - out)}</div><div className="text-[12px]" style={{ color: 'var(--text3)' }}>Put in − taken out</div></div>
         <div className="wl-card px-4 py-3.5 flex flex-col gap-1">
@@ -131,97 +168,106 @@ export default function InvestedTab({ entries, outs, funds, holdings, conv, colo
         </div>
       </div>
 
-      {putIn > 0 && (
-        <section className="wl-card p-4 md:p-5 flex flex-col gap-3">
-          <div className="flex justify-between items-baseline gap-3 flex-wrap"><h2 className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Where it went</h2><span className="text-[12px]" style={{ color: 'var(--text3)' }}>{money(putIn)} put in, by kind</span></div>
-          <div role="img" aria-label={kinds.map(x => `${names[x.k]} ${pcts[x.k]}%`).join(', ')} className="flex gap-[2px] h-3.5">
-            {kinds.map((x, i) => <div key={x.k} style={{ flex: `${x.total} 1 0`, background: colors[x.k], borderRadius: `${i === 0 ? 4 : 0}px ${i === kinds.length - 1 ? 4 : 0}px ${i === kinds.length - 1 ? 4 : 0}px ${i === 0 ? 4 : 0}px` }} />)}
+      <section className="wl-card overflow-hidden">
+        <div className="px-4 md:px-5 pt-4 pb-3 flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>What went in{multi ? ', month by month' : ''}</h2>
+            <p className="text-[12px] mt-0.5" style={{ color: 'var(--text3)' }}>Tap an investment or an amount to see its payments, and edit or delete one.</p>
           </div>
-          <div className="flex gap-x-5 gap-y-1.5 flex-wrap text-[12.5px]">
-            {kinds.map(x => <span key={x.k} className="inline-flex items-center gap-2" style={{ color: 'var(--text2)' }}><i className="w-2.5 h-2.5 rounded-[3px]" style={{ background: colors[x.k] }} />{names[x.k]} <b className="tabular-nums" style={{ color: 'var(--text)' }}>{money(x.total)}</b><span style={{ color: 'var(--text3)' }}>{pcts[x.k]}%</span></span>)}
-          </div>
-        </section>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-4 md:gap-5 items-start">
-        <div className="flex flex-col gap-3.5 min-w-0">
-          {kinds.map(x => {
-            const isOpen = open[x.k] ?? true
-            return (
-              <section key={x.k} className="wl-card overflow-hidden">
-                <button onClick={() => setOpen(o => ({ ...o, [x.k]: !isOpen }))} aria-expanded={isOpen} className="w-full flex items-center gap-3 px-4 md:px-5 py-3.5 text-left">
-                  <i className="w-2.5 h-2.5 rounded-[3px] flex-shrink-0" style={{ background: colors[x.k] }} />
-                  <span className="flex-1 min-w-0"><span className="block text-[14.5px] font-semibold" style={{ color: 'var(--text)' }}>{names[x.k]}</span>
-                    <span className="block text-[12px]" style={{ color: 'var(--text3)' }}>{x.count} payment{x.count === 1 ? '' : 's'} into {x.rows.length} {x.rows.length === 1 ? 'holding' : 'holdings'}</span></span>
-                  <span className="text-right flex-shrink-0"><span className="block text-[15.5px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{money(x.total)}</span><span className="block text-[11.5px]" style={{ color: 'var(--text3)' }}>{pcts[x.k]}% of put in</span></span>
-                  {isOpen ? <ChevronUp size={17} style={{ color: 'var(--text3)' }} /> : <ChevronDown size={17} style={{ color: 'var(--text3)' }} />}
-                </button>
-                {isOpen && x.rows.map(({ es, total }) => {
-                  const e = es[0], est = es.filter(y => y.estimated).length, hows = Array.from(new Set(es.map(y => y.how === 'Added' ? 'When added' : y.how)))
+          {kinds.length > 0 && <button onClick={() => setClosed(allOpen ? Object.fromEntries([...kinds.map(x => x.k), 'out'].map(k => [k, true])) : {})} className="text-[12.5px] font-semibold h-9" style={{ color: 'var(--accent2)' }}>{allOpen ? 'Show kinds only' : 'Show every investment'}</button>}
+        </div>
+        {!kinds.length && !taken.length ? <p className="px-5 pb-10 pt-4 text-center text-[13px]" style={{ color: 'var(--text3)' }}>Nothing put into investments in {periodLabel(period)}.</p> : (
+          <div className="overflow-x-auto" style={{ borderTop: '1px solid var(--line)' }}>
+            <table className="w-full text-[13px] border-separate" style={{ borderSpacing: 0 }}>
+              <thead>
+                <tr style={{ color: 'var(--text3)' }}>
+                  <th scope="col" className={`${first} py-2.5 text-[11px] font-semibold uppercase tracking-[.05em]`} style={{ background: KIND_BG, boxShadow: '1px 0 0 var(--track)' }}>Investment</th>
+                  {months.map(m => <th key={m} scope="col" className={`${cell} py-2.5 text-[11px] font-semibold uppercase tracking-[.04em]`} style={{ background: KIND_BG }}>{colLabel(m)}</th>)}
+                  {multi && <th scope="col" className={`${last} py-2.5 text-[11px] font-semibold uppercase tracking-[.05em]`} style={{ background: KIND_BG, boxShadow: '-1px 0 0 var(--track)' }}>Total</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {kinds.map(x => {
+                  const open = !closed[x.k]
                   return (
-                    <button key={e.holding.id} onClick={() => setDrawer({ type: e.type, id: e.holding.id })} className="w-full flex items-center gap-3 px-4 md:px-5 py-2.5 min-h-[52px] text-left hover:bg-[#FAFAFE]" style={{ borderTop: '1px solid var(--track)' }}>
-                      <span className="flex-1 min-w-0"><span className="block text-[13.5px] font-medium md:truncate" style={{ color: 'var(--text)' }}>{e.name}</span>
-                        <span className="block text-[12px] md:truncate" style={{ color: 'var(--text3)' }}>{sub(es)}</span>
-                        <span className="flex gap-1.5 mt-1 md:hidden">{est > 0 && tag(`${est} estimated`, true)}</span></span>
-                      <span className="hidden md:flex gap-1.5">{est > 0 && tag(`${est} estimated`, true)}{hows.slice(0, 2).map(t => tag(es.length > 1 && t !== 'When added' ? `${es.filter(y => y.how === t).length} ${t === 'SIP' ? 'SIPs' : t}` : t))}</span>
-                      <span className="w-[86px] text-right text-[13.5px] font-semibold tabular-nums flex-shrink-0" style={{ color: 'var(--text)' }}>{money(total)}</span>
-                      <ChevronRight size={15} style={{ color: 'var(--text4)' }} />
-                    </button>
+                    <Fragment key={x.k}>
+                      <tr style={{ background: KIND_BG }}>
+                        <th scope="row" className={`${first} py-2.5`} style={{ background: KIND_BG, boxShadow: '1px 0 0 var(--track)', borderTop: '1px solid var(--line)' }}>
+                          <button onClick={() => setClosed(c => ({ ...c, [x.k]: open }))} aria-expanded={open} className="flex items-center gap-2 w-full text-left min-h-[36px]">
+                            <ChevronDown size={15} className="flex-shrink-0 transition-transform" style={{ color: 'var(--text3)', transform: open ? 'none' : 'rotate(-90deg)' }} />
+                            <i className="w-2.5 h-2.5 rounded-[3px] flex-shrink-0" style={{ background: colors[x.k] }} />
+                            <span className="min-w-0"><span className="block text-[13.5px] font-semibold" style={{ color: 'var(--text)' }}>{names[x.k]}</span>
+                              <span className="block text-[11.5px] font-normal" style={{ color: 'var(--text3)' }}>{x.rows.length} {x.rows.length === 1 ? 'holding' : 'holdings'} · {pcts[x.k]}% of put in</span></span>
+                          </button>
+                        </th>
+                        {months.map(m => <td key={m} className={`${cell} py-2.5`} style={{ borderTop: '1px solid var(--line)' }}>{amt(monthTotal(x.list, m), undefined, true)}</td>)}
+                        {multi && <td className={`${last} py-2.5`} style={{ background: KIND_BG, boxShadow: '-1px 0 0 var(--track)', borderTop: '1px solid var(--line)' }}>{amt(x.total, undefined, true)}</td>}
+                      </tr>
+                      {open && x.rows.map(r => holdingRow(r))}
+                    </Fragment>
                   )
                 })}
-              </section>
-            )
-          })}
-          {!kinds.length && <div className="wl-card px-5 py-10 text-center text-[13px]" style={{ color: 'var(--text3)' }}>Nothing put into investments in {periodLabel(period)}.</div>}
-          {kinds.length > 0 && empty.length > 0 && <p className="text-[12px] px-1" style={{ color: 'var(--text3)' }}>Nothing went into {empty.map(k => names[k]).join(', ').replace(/, ([^,]*)$/, ' or $1')} in {periodLabel(period)}.</p>}
-        </div>
+                {outRows.length > 0 && (
+                  <Fragment>
+                    <tr style={{ background: KIND_BG }}>
+                      <th scope="row" className={`${first} py-2.5`} style={{ background: KIND_BG, boxShadow: '1px 0 0 var(--track)', borderTop: '1px solid var(--line)' }}>
+                        <button onClick={() => setClosed(c => ({ ...c, out: !c.out }))} aria-expanded={!closed.out} className="flex items-center gap-2 w-full text-left min-h-[36px]">
+                          <ChevronDown size={15} className="flex-shrink-0 transition-transform" style={{ color: 'var(--text3)', transform: !closed.out ? 'none' : 'rotate(-90deg)' }} />
+                          <span className="min-w-0"><span className="block text-[13.5px] font-semibold" style={{ color: 'var(--text)' }}>Taken out</span><span className="block text-[11.5px] font-normal" style={{ color: 'var(--text3)' }}>Sales and redemptions</span></span>
+                        </button>
+                      </th>
+                      {months.map(m => <td key={m} className={`${cell} py-2.5`} style={{ borderTop: '1px solid var(--line)' }}>{amt(monthTotal(taken, m), undefined, true, true)}</td>)}
+                      {multi && <td className={`${last} py-2.5`} style={{ background: KIND_BG, boxShadow: '-1px 0 0 var(--track)', borderTop: '1px solid var(--line)' }}>{amt(out, undefined, true, true)}</td>}
+                    </tr>
+                    {!closed.out && outRows.map(r => holdingRow(r, true))}
+                  </Fragment>
+                )}
+              </tbody>
+              <tfoot>
+                {([['Total put in', (m?: string) => m ? monthTotal(mine, m) : putIn, false], ...(out > 0 ? [['Taken out', (m?: string) => m ? monthTotal(taken, m) : out, true], ['Net added', (m?: string) => m ? monthTotal(mine, m) - monthTotal(taken, m) : putIn - out, false]] : [])] as [string, (m?: string) => number, boolean][]).map(([label, f, neg], i) => (
+                  <tr key={label}>
+                    <th scope="row" className={`${first} py-2.5 text-[13px] font-bold`} style={{ background: FOOT_BG, color: 'var(--text)', boxShadow: '1px 0 0 var(--track)', borderTop: i ? '1px solid #E4E0FB' : '1.5px solid #D9D3FA' }}>{label}</th>
+                    {months.map(m => { const v = f(m); return <td key={m} className={`${cell} py-2.5 font-bold tabular-nums`} style={{ background: FOOT_BG, borderTop: i ? '1px solid #E4E0FB' : '1.5px solid #D9D3FA', color: v === 0 ? 'var(--text4)' : neg || v < 0 ? '#B4231A' : 'var(--text)' }}>{v === 0 ? '—' : `${neg ? '−' : ''}${money(v)}`}</td> })}
+                    {multi && (() => { const v = f(); return <td className={`${last} py-2.5 font-bold tabular-nums`} style={{ background: FOOT_BG, boxShadow: '-1px 0 0 var(--track)', borderTop: i ? '1px solid #E4E0FB' : '1.5px solid #D9D3FA', color: neg || v < 0 ? '#B4231A' : 'var(--accent2)' }}>{`${neg ? '−' : ''}${money(v)}`}</td> })()}
+                  </tr>
+                ))}
+              </tfoot>
+            </table>
+          </div>
+        )}
+        {kinds.length > 0 && empty.length > 0 && <p className="px-4 md:px-5 py-2.5 text-[12px]" style={{ color: 'var(--text3)', borderTop: '1px solid var(--track)' }}>Nothing went into {empty.map(k => names[k]).join(', ').replace(/, ([^,]*)$/, ' or $1')} in {periodLabel(period)}.</p>}
+      </section>
 
-        <div className="flex flex-col gap-3.5 min-w-0">
-          {taken.length > 0 && (
-            <section className="wl-card overflow-hidden">
-              <div className="flex justify-between items-baseline px-4 md:px-5 pt-4 pb-2.5"><h2 className="text-[14.5px] font-semibold" style={{ color: 'var(--text)' }}>Taken out</h2><span className="text-[14.5px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{money(out)}</span></div>
-              {taken.map(e => (
-                <button key={e.id} onClick={() => setDrawer({ type: e.type, id: e.holding.id })} className="w-full flex items-center gap-2.5 px-4 md:px-5 py-2.5 min-h-[48px] text-left hover:bg-[#FAFAFE]" style={{ borderTop: '1px solid var(--track)' }}>
-                  <i className="w-2.5 h-2.5 rounded-[3px] flex-shrink-0" style={{ background: colors[e.key] }} />
-                  <span className="flex-1 min-w-0"><span className="block text-[13.5px] font-medium truncate" style={{ color: 'var(--text)' }}>{e.name}</span><span className="block text-[12px]" style={{ color: 'var(--text3)' }}>{e.how}{e.units ? ` ${+e.units.toFixed(3)} ${e.type === 'stocks' ? 'shares' : 'units'}` : ''} · {shortDate(e.date)}</span></span>
-                  <span className="text-[13.5px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{money(e.amount)}</span>
-                </button>
-              ))}
-              <p className="px-4 md:px-5 py-2.5 text-[11.5px]" style={{ color: 'var(--text3)', borderTop: '1px solid var(--track)' }}>Sales and redemptions, kept apart so “Put in” stays what you actually invested.</p>
-            </section>
-          )}
-          {missing.length > 0 && (
-            <section className="rounded-[14px] p-4 md:px-5 flex flex-col gap-2.5" style={{ background: '#FFF9EC', border: '1px solid #F2DFB3' }}>
-              <h2 className="text-[14.5px] font-semibold" style={{ color: 'var(--text)' }}>Planned, but no payment found</h2>
-              {missing.map((x, i) => (
-                <Link key={i} href={holdingHref('mutual_funds', x.fund.id)} className="flex items-center gap-2.5 min-h-[44px]">
-                  <span className="flex-1 min-w-0"><span className="block text-[13.5px] font-medium truncate" style={{ color: 'var(--text)' }}>{x.name} · SIP</span><span className="block text-[12px]" style={{ color: 'var(--text3)' }}>Due on the {ordinal(x.day)}</span></span>
-                  <span className="text-[13.5px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{money(x.amount)}</span>
-                  <ChevronRight size={15} style={{ color: 'var(--text4)' }} />
-                </Link>
-              ))}
-              <p className="text-[11.5px] leading-snug" style={{ color: '#6B5418' }}>Not counted in “Put in”. Paid it? Link its bank payment to the fund from Expenses, or record it on the fund’s page.</p>
-            </section>
-          )}
-          <section className="wl-card p-4 md:px-5 flex flex-col gap-2">
-            <h2 className="text-[14.5px] font-semibold" style={{ color: 'var(--text)' }}>What’s counted</h2>
-            <ul className="list-disc pl-[18px] text-[12.5px] leading-relaxed" style={{ color: 'var(--text2)' }}>
-              <li>Fund and share buys and SIPs, on their dates</li>
-              <li>RD instalments and new FDs</li>
-              <li>ETFs, gold, bonds, PPF / EPF, NPS and LIC premiums</li>
-            </ul>
-            <p className="text-[12px] leading-snug" style={{ color: 'var(--text3)' }}>Not counted: price changes, interest, dividends and maturities. PPF, NPS and LIC follow their schedule, not bank records.</p>
-            <p className="text-[12px] leading-snug" style={{ color: 'var(--text3)' }}>Wrong amount or investment? Open it and use Edit or Delete on the payment.</p>
+      <div className={`grid grid-cols-1 ${missing.length ? 'lg:grid-cols-2' : ''} gap-4 md:gap-5 items-start`}>
+        {missing.length > 0 && missMonth && (
+          <section className="rounded-[14px] p-4 md:px-5 flex flex-col gap-2.5" style={{ background: '#FFF9EC', border: '1px solid #F2DFB3' }}>
+            <h2 className="text-[14.5px] font-semibold" style={{ color: 'var(--text)' }}>Planned for {monthName(missMonth)}, but no payment found</h2>
+            {missing.map((x, i) => (
+              <Link key={i} href={holdingHref('mutual_funds', x.fund.id)} className="flex items-center gap-2.5 min-h-[44px]">
+                <span className="flex-1 min-w-0"><span className="block text-[13.5px] font-medium truncate" style={{ color: 'var(--text)' }}>{x.name} · SIP</span><span className="block text-[12px]" style={{ color: 'var(--text3)' }}>Due on the {ordinal(x.day)}</span></span>
+                <span className="text-[13.5px] font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{money(x.amount)}</span>
+                <ChevronRight size={15} style={{ color: 'var(--text4)' }} />
+              </Link>
+            ))}
+            <p className="text-[11.5px] leading-snug" style={{ color: '#6B5418' }}>Not counted in “Put in”. Paid it? Link its bank payment to the fund from Expenses, or record it on the fund’s page.</p>
           </section>
-        </div>
+        )}
+        <section className="wl-card p-4 md:px-5 flex flex-col gap-1.5">
+          <h2 className="text-[14.5px] font-semibold" style={{ color: 'var(--text)' }}>What’s counted</h2>
+          <p className="text-[12.5px] leading-relaxed" style={{ color: 'var(--text2)' }}>Fund and share buys and SIPs on their dates, RD instalments, new FDs, ETFs, gold, bonds, PPF / EPF, NPS and LIC premiums. Not counted: price changes, interest, dividends and maturities.</p>
+          <p className="text-[12px] leading-snug" style={{ color: 'var(--text3)' }}>PPF, NPS and LIC follow their schedule, not bank records. Each month’s total here is the same as on the Growth tab.</p>
+        </section>
       </div>
 
       {d && dh && (
-        <Sheet title={dh.name} sub={`${HTYPES[dh.type].label} · ${periodLabel(period)}`} onClose={() => setDrawer(null)}
-          footer={<Link href={holdingHref(dh.type, dh.holding.id)} className="text-[13.5px] font-semibold inline-flex items-center gap-1 min-h-[44px]" style={{ color: 'var(--accent2)' }}>Open its page, every month<ChevronRight size={15} /></Link>}>
+        <Sheet title={dh.name} sub={`${HTYPES[dh.type].label} · ${drawer?.month ? monthName(drawer.month) : periodLabel(period)}`} onClose={() => setDrawer(null)}
+          footer={<>
+            <Link href={holdingHref(dh.type, dh.holding.id)} className="text-[13.5px] font-semibold inline-flex items-center gap-1 min-h-[44px]" style={{ color: 'var(--accent2)' }}>Open its page<ChevronRight size={15} /></Link>
+            {drawer?.month && multi && <button onClick={() => setDrawer({ type: drawer.type, id: drawer.id })} className="ml-auto text-[13px] font-semibold min-h-[44px]" style={{ color: 'var(--text2)' }}>All of {periodLabel(period)}</button>}
+          </>}>
           {(() => {
-            const ins = d.es.filter(e => !taken.includes(e)), sum = ins.reduce((s, e) => s + e.amount, 0), units = ins.reduce((s, e) => s + (e.txn ? Number(e.units) || 0 : 0), 0)
-            return ins.length > 0 && <div><div className="text-[12px]" style={{ color: 'var(--text3)' }}>Put in</div><div className="text-[26px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{money(sum)}</div>
+            const ins = d.es.filter(e => !taken.includes(e)), units = ins.reduce((s, e) => s + (e.txn ? Number(e.units) || 0 : 0), 0)
+            return ins.length > 0 && <div><div className="text-[12px]" style={{ color: 'var(--text3)' }}>Put in</div><div className="text-[26px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{money(sum(ins))}</div>
               <div className="text-[12.5px]" style={{ color: 'var(--text2)' }}>{ins.length} payment{ins.length === 1 ? '' : 's'}{units > 0 ? ` · ${units.toLocaleString('en-IN', { maximumFractionDigits: 3 })} ${dh.type === 'stocks' ? 'shares' : 'units'} bought` : ''}</div></div>
           })()}
           {d.es.map(e => {
@@ -254,7 +300,7 @@ export default function InvestedTab({ entries, outs, funds, holdings, conv, colo
         </Sheet>
       )}
       {edit && <EditPaymentSheet entry={edit} holdings={holdings[edit.type as 'mutual_funds' | 'stocks'] ?? []} onClose={() => setEdit(null)} onDone={done} onDelete={() => { setDel(edit); setEdit(null) }} />}
-      {del && <DeletePaymentSheet entry={del} periodTotal={putIn} periodLabel={periodLabel(period)} onClose={() => setDel(null)} onDone={done} />}
+      {del && <DeletePaymentSheet entry={del} periodTotal={drawer?.month ? monthTotal(mine, drawer.month) : putIn} periodLabel={drawer?.month ? monthName(drawer.month) : periodLabel(period)} onClose={() => setDel(null)} onDone={done} />}
     </div>
   )
 }
