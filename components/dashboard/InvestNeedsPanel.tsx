@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ChevronRight, Zap, Hand } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { fmtMoney } from '@/lib/format'
-import { fmtDay, daysBetween, ymOf, addDaysTo } from '@/lib/insights'
+import { fmtDay, daysBetween, ymOf, addDaysTo, staleHoldings } from '@/lib/insights'
 import { dateIn } from '@/lib/recurring'
 import { holdingValue } from '@/lib/netWorth'
 import type { SipDue } from '@/lib/sipAuto'
@@ -53,10 +53,9 @@ export default function InvestNeedsPanel({ funds, stocks, deposits, rds, invTxns
       detail: `${amt ? `${fmtMoney(amt, x.currency ?? 'INR')} · ` : ''}decide: renew, move it to a goal, or invest it` })
   }
   // Prices not refreshed for a while
-  const age = (rows: any[]) => Math.max(0, ...rows.filter(r => Number(r.units ?? r.quantity) > 0 && r.last_updated).map(r => daysBetween(String(r.last_updated).slice(0, 10), today)))
-  const mfAge = age(funds), stAge = age(stocks)
-  if (mfAge > 3) needs.push({ id: 'mf-age', sev: 'low', href: '/dashboard/investments/mutual-funds', title: `Fund prices are ${mfAge} days old`, detail: 'Open Mutual funds to fetch today’s NAVs — values here use the last saved price' })
-  if (stAge > 3) needs.push({ id: 'st-age', sev: 'low', href: '/dashboard/stocks', title: `Stock prices are ${stAge} days old`, detail: 'Open Stocks to fetch live prices' })
+  const mf = staleHoldings(funds, today, 'mutual_funds'), st = staleHoldings(stocks, today, 'stocks')
+  if (mf) needs.push({ id: 'mf-age', sev: 'low', href: mf.href ?? '/dashboard/investments/mutual-funds', title: mf.title('Fund', 'NAV'), detail: mf.detail('Mutual funds') })
+  if (st) needs.push({ id: 'st-age', sev: 'low', href: st.href ?? '/dashboard/stocks', title: st.title('Stock', 'price'), detail: st.detail('Stocks') })
   // One holding too big a share
   const holdings = [
     ...funds.map(f => ({ name: f.fund_name, v: conv(holdingValue.mf(f), f.currency ?? 'INR'), href: '/dashboard/investments/mutual-funds' })),

@@ -233,13 +233,15 @@ export default function HoldingsUploadModal({ onClose, kind }: Props) {
 
       // ── Stocks ────────────────────────────────────────────────────────
       const stockInserts: any[] = []
+      // A price from the statement is dated today, so it isn't flagged as old
+      const priced = new Date().toISOString()
       for (const s of stockRows.filter(r => r.selected)) {
         const country = s.currency === 'AED' ? 'UAE' : 'India'
         if (s.existingId) {
           const { error } = await supabase.from('stocks').update({
             quantity:      s.quantity,
             avg_buy_price: s.avg_buy_price,
-            ...(s.current_price != null ? { current_price: s.current_price } : {}),
+            ...(s.current_price != null ? { current_price: s.current_price, last_updated: priced } : {}),
             ...(s.sector ? { sector: s.sector } : {}),
           }).eq('id', s.existingId)
           if (error) throw new Error(error.message)
@@ -252,7 +254,7 @@ export default function HoldingsUploadModal({ onClose, kind }: Props) {
             exchange:      s.exchange || 'NSE',
             quantity:      s.quantity,
             avg_buy_price: s.avg_buy_price,
-            ...(s.current_price != null ? { current_price: s.current_price } : {}),
+            ...(s.current_price != null ? { current_price: s.current_price, last_updated: priced } : {}),
             sector:        s.sector,
             currency:      s.currency,
             country,

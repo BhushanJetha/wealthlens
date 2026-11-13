@@ -309,15 +309,11 @@ export function buildHomeInsights(inp: InsightInput): HomeInsights {
     detail: 'Import the latest statement to keep everything up to date',
     action: 'upload', actionLabel: 'Import',
   })
-  // Stale market prices
-  const staleDays = (rows: any[]) => {
-    const ages = rows.filter(r => Number(r.units ?? r.quantity) > 0 && r.last_updated).map(r => daysBetween(String(r.last_updated).slice(0, 10), today))
-    return ages.length ? Math.max(...ages) : 0
-  }
-  const mfAge = staleDays((inp.mutualFunds ?? []).filter(m => inView(m.currency ?? 'INR')))
-  if (mfAge > 3) attention.push({ id: 'mf-stale', severity: 'low', title: `Fund prices are ${mfAge} days old`, detail: 'Open Mutual funds to refresh NAVs — net worth uses the last saved price', href: '/dashboard/investments/mutual-funds', actionLabel: 'Refresh' })
-  const stAge = staleDays((inp.stocks ?? []).filter(s => inView(s.currency)))
-  if (stAge > 3) attention.push({ id: 'st-stale', severity: 'low', title: `Stock prices are ${stAge} days old`, detail: 'Open Stocks to refresh live prices', href: '/dashboard/stocks', actionLabel: 'Refresh' })
+  // Stale market prices: which holdings, and how old the oldest is
+  const mf = staleHoldings((inp.mutualFunds ?? []).filter(m => inView(m.currency ?? 'INR')), today, 'mutual_funds')
+  if (mf) attention.push({ id: 'mf-stale', severity: 'low', title: mf.title('Fund', 'NAV'), detail: mf.detail('Mutual funds'), href: mf.href ?? '/dashboard/investments/mutual-funds', actionLabel: 'Refresh' })
+  const st = staleHoldings((inp.stocks ?? []).filter(s => inView(s.currency)), today, 'stocks')
+  if (st) attention.push({ id: 'st-stale', severity: 'low', title: st.title('Stock', 'price'), detail: st.detail('Stocks'), href: st.href ?? '/dashboard/stocks', actionLabel: 'Refresh' })
 
   attention.sort((a, b) => SEV_RANK[a.severity] - SEV_RANK[b.severity] || (a.date ?? '9').localeCompare(b.date ?? '9'))
 
@@ -486,6 +482,25 @@ export function snapshotValue(s: Snapshot, view: View) {
   const uae = Number(s.uae_assets) - Number(s.uae_liab)
   const india = Number(s.india_assets) - Number(s.india_liab)
   return view === 'uae' ? uae : view === 'india' ? india : india + uae * Number(s.fx)
+}
+
+// Holdings whose saved price is more than 3 days old (held, with a price date):
+// named, so the one that doesn't refresh (often a symbol or scheme that isn't
+// found) can be fixed; with just one, it opens that holding.
+export function staleHoldings(rows: any[], today: string, type: 'stocks' | 'mutual_funds') {
+  const old = rows.filter(r => Number(r.units ?? r.quantity) > 0 && r.last_updated)
+    .map(r => ({ r, age: daysBetween(String(r.last_updated).slice(0, 10), today) }))
+    .filter(x => x.age > 3).sort((a, b) => b.age - a.age)
+  if (!old.length) return null
+  const name = (r: any) => (type === 'stocks' ? r.name || r.symbol : r.fund_name) || 'One holding', age = old[0].age
+  const names = old.slice(0, 3).map(x => name(x.r)).join(', ') + (old.length > 3 ? ` and ${old.length - 3} more` : '')
+  return {
+    age, count: old.length, href: old.length === 1 ? holdingHref(type, old[0].r.id) : null,
+    title: (kind: string, what: string) => old.length === 1 ? `${name(old[0].r)}: ${what} ${age} days old` : `${old.length} ${kind.toLowerCase()} ${what}s are up to ${age} days old`,
+    detail: (page: string) => old.length === 1
+      ? `Refresh it on its page. If it stays old, its ${type === 'stocks' ? 'symbol' : 'scheme'} may not be found — use ${type === 'stocks' ? 'Edit to fix the symbol' : 'Wrong fund? to match it'}.`
+      : `${names}. Open ${page} to refresh; any that stay old may have a ${type === 'stocks' ? 'symbol' : 'scheme'} that isn’t found.`,
+  }
 }
 
 // Series for the chart + change vs ~30 days ago (or the oldest snapshot ≥ 7 days old)
