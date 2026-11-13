@@ -2,15 +2,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
-import { Plus, Upload, Mic, Sparkles, TrendingUp, Wallet, Target, ExternalLink, ArrowDownLeft, ArrowUpRight, PiggyBank, ChevronRight, Landmark, CreditCard, Banknote, type LucideIcon } from 'lucide-react'
+import { Plus, Upload, Mic, Sparkles, TrendingUp, Wallet, ChevronRight, type LucideIcon } from 'lucide-react'
 import { useViewStore } from '@/store/viewStore'
 import { useUiStore } from '@/store/uiStore'
 import { useHolderStore } from '@/store/holderStore'
 import { holderMatches } from '@/hooks/useFamily'
 import { computeNetWorth, viewAmount, type Holdings } from '@/lib/netWorth'
-import { buildHomeInsights, netWorthHistory, estimateNetWorthBack, localToday, fmtDay, type Snapshot, type Attention, type HomeInsights, type ForecastPoint } from '@/lib/insights'
-import { healthScore, type Tone } from '@/lib/healthScore'
+import { buildHomeInsights, localToday, type Snapshot, type Attention } from '@/lib/insights'
 import { goalCurrentValue } from '@/lib/goalProgress'
 import { fmtMoney, fmtCompact } from '@/lib/format'
 import { newGoalHref } from '@/lib/goalInterests'
@@ -18,17 +16,13 @@ import AddTransactionModal from '@/components/forms/AddTransactionModal'
 import TransactionVoiceModal from '@/components/forms/TransactionVoiceModal'
 import NotificationsPanel from '@/components/layout/NotificationsPanel'
 import { MobileControls, SearchButton, AskAiButton } from '@/components/layout/MobileHeader'
-import { KpiTile, PALETTE, type Tone as KTone } from '@/components/ui/kit'
 import { buildDues, expectedIncome, balanceWarnings, safeToSpend } from '@/lib/moneyOverview'
 import { spendRoom } from '@/lib/spendRoom'
 import { nextWeek, homePlan, earnedIncoming, cashDues, usualSpendLeft } from '@/lib/homePlan'
-import { friendBalances, friendTotals } from '@/lib/friends'
 import type { RecurringTxn } from '@/lib/recurring'
 import PendingConfirms, { pendingCount, type Pending } from './PendingConfirms'
 import IncomeChecks, { incomeCheckCount } from './IncomeChecks'
 import { plannedIncoming, mergeExpected, declaredIncome, declaredPayday, type IncomePlan } from '@/lib/incomePlans'
-import SpendRoomPanel from './SpendRoomPanel'
-import { FreeToSpendCard, NextWeekCard, PlanCard, BigBillsStrip } from './HomeCards'
 import BillReminders, { billReminderCount } from './BillReminders'
 import LandedChecks, { landedCheckCount } from './LandedChecks'
 import type { Bill } from '@/lib/bigBills'
@@ -36,6 +30,8 @@ import { payFirstDue, type PayFirstMode } from '@/lib/plan'
 import { buildGoals } from '@/lib/goalsView'
 import { PayFirstRow } from './plan/PlanParts'
 import { foundRegular, pendingCharges } from '@/lib/regular'
+import HomeTrends from './HomeTrends'
+import { FreeBanner, NextMonthCard, BudgetsCard, DueWeekCard, GoalRingsCard, LoansCard, NeedsYouBar } from './HomeNow'
 
 interface Props {
   firstName: string | null
@@ -60,7 +56,6 @@ interface Props {
 }
 
 const MONTHS_LONG = ['January','February','March','April','May','June','July','August','September','October','November','December']
-const TONE_COLOR: Record<Tone, string> = { good: 'var(--income)', warn: 'var(--gold)', bad: 'var(--expense)', none: 'var(--text3)' }
 const SEV_DOT: Record<Attention['severity'], string> = { high: '#DC2626', medium: '#D97706', low: '#6A55E8' }
 
 export default function DashboardClient(p: Props) {
@@ -69,6 +64,7 @@ export default function DashboardClient(p: Props) {
   const { selectedHolder: holder } = useHolderStore()
   const { setUploadOpen, openAdvisor, openAdd } = useUiStore()
   const [modal, setModal] = useState<null | 'add' | 'voice'>(null)
+  const [needsOpen, setNeedsOpen] = useState(false)
   const cur = view === 'uae' ? 'AED' : 'INR'
   const money = (n: number) => fmtMoney(n, cur)
   const short = (n: number) => fmtCompact(n, cur)
@@ -108,8 +104,6 @@ export default function DashboardClient(p: Props) {
   }, [p.holdings, holder])
 
   const nw = useMemo(() => computeNetWorth(h, view, FX), [h, view, FX])
-  const hist = useMemo(() => netWorthHistory(holder ? [] : p.snapshots, view, today), [p.snapshots, view, today, holder])
-
   const ins = useMemo(() => buildHomeInsights({
     view, fx: FX, today, focusMonth,
     txns: p.transactions,
@@ -119,21 +113,6 @@ export default function DashboardClient(p: Props) {
     cash: nw.cash,
     invested: nw.investments,
   }), [view, FX, today, focusMonth, p, h, nw])
-  // Months before tracking began, estimated from monthly savings (family view only)
-  const nwEst = useMemo(() => holder ? [] : estimateNetWorthBack(hist.series[0] ?? { date: today, value: nw.netWorth }, today, ins.savedByMonth),
-    [holder, nw.netWorth, today, ins.savedByMonth, hist.series])
-
-  const health = useMemo(() => {
-    const conv = (v: number, c: string) => view === 'consolidated' ? (c === 'AED' ? v * FX : v) : (view === 'uae' ? (c === 'AED' ? v : 0) : (c === 'AED' ? 0 : v))
-    return healthScore({
-      savingsRate: ins.trend.savingsRate,
-      runwayMonths: ins.runway.months,
-      monthlyEmi: h.loans.reduce((a, l) => a + conv(Number(l.emi_amount) || 0, l.currency), 0),
-      monthlyIncome: ins.trend.avgIncome,
-      termCover: p.insurance.filter(x => x.policy_type === 'term_life').reduce((a, x) => a + conv(Number(x.sum_assured) || 0, x.currency), 0),
-    })
-  }, [ins, h.loans, p.insurance, view, FX])
-
   // Goals: progress from linked investments (same as the Goals tab)
   const goals = useMemo(() => {
     const conv = (v: number, c: string) => view === 'consolidated' && c === 'AED' ? v * FX : v
@@ -159,9 +138,6 @@ export default function DashboardClient(p: Props) {
   const viewLabel = view === 'uae' ? 'UAE · AED' : view === 'india' ? 'India · INR' : 'Consolidated · INR'
   const holderLabel = !holder ? 'Whole family' : holder === 'Self' ? (p.firstName || 'You') : holder
   const onAdded = () => router.refresh()
-
-  const review = weeklyReview(ins, health.score)
-  const reviewPrompt = 'Write my weekly money review: what went well, what needs attention, and the single best next action.'
 
   // ── What matters now: free to spend, reminders, the plan ahead ──
   const reviewOk = useMemo(() => ({ today, view, FX }), [today, view, FX])
@@ -206,39 +182,12 @@ export default function DashboardClient(p: Props) {
   const plan = useMemo(() => homePlan({ today, view, fx: FX, cash: nw.cash, dues, incoming, budgetsLeft, avgIncome: declaredIncome(p.plans, view, FX, p.transactions) ?? ins.trend.avgIncome, plans: p.plans,
     txns: p.transactions, accounts: h.accounts, loans: h.loans, insurance: p.insurance, mutualFunds: h.mutualFunds, rds: h.recurringDeposits ?? [], recurring: p.recurring, events: p.events, lic: h.lic, bills: p.bills, usual, answers: p.billSkips }),
     [today, view, FX, nw.cash, dues, incoming, budgetsLeft, ins.trend.avgIncome, p, h]) // eslint-disable-line react-hooks/exhaustive-deps
-  const friendPair = useMemo(() => {
-    const t = friendTotals(friendBalances(p.friends, p.splits, p.friendTxns))
-    const show = (r: Record<'AED' | 'INR', number>) => (view === 'consolidated' ? ['AED', 'INR'] as const : view === 'uae' ? ['AED'] as const : ['INR'] as const)
-      .filter(c => r[c] > 0.004).map(c => fmtCompact(r[c], c)).join(' + ') || null
-    return { receive: show(t.toReceive), pay: show(t.toPay) }
-  }, [p.friends, p.splits, p.friendTxns, view])
   const accName = (id: string | null) => h.accounts.find((a: any) => a.id === id)?.name ?? null
+  // How many things need you, and the first few, for the one row on top
+  const waiting = pendingCount(p.pending) + incomeCheckCount(p.plans, p.transactions, today, FX) + billReminderCount(billsHere, p.transactions, today, p.billSkips)
+    + (foundCount > 0 ? 1 : 0) + landedCheckCount(p.transactions, today, FX) + (payDue ? 1 : 0)
+  const needTitles = [...(pendingCount(p.pending) ? [`${pendingCount(p.pending)} to confirm`] : []), ...(payDue ? ['Pay yourself first'] : []), ...ins.attention.map(a => a.title)]
 
-  // Eight numbers, each opening its detail. Income lands late in the month, so
-  // only compare it once the month is complete; spending compares against the usual pace to date.
-  const pctDiff = (v: number, b: number | null) => b && b > 0 ? Math.round((v - b) / b * 1000) / 10 : null
-  const incPct = ins.income.comparable ? pctDiff(ins.income.value, ins.income.baseline) : null
-  const spendPct = ins.spend.comparable ? pctDiff(ins.spend.value, ins.spend.baseline) : null
-  // The same two figures net worth takes off
-  const owedOn = (key: string) => nw.liabRows.find(r => r.key === key)?.value ?? 0
-  const gain = nw.investments.value - nw.investments.cost
-  const nwChange = hist.ref ? nw.netWorth - hist.ref.value : null
-  const kpis: { label: string; value: string; delta: string; tone: KTone; icon: LucideIcon; href: string }[] = [
-    { label: 'Net worth', value: short(nw.netWorth), delta: nwChange != null ? `${nwChange >= 0 ? '▲' : '▼'} ${short(Math.abs(nwChange))} since ${fmtDay(hist.ref.date)}` : `${short(nw.totalAssets)} owned · ${short(nw.totalLiab)} owed`, tone: nwChange == null ? 'neutral' : nwChange >= 0 ? 'good' : 'bad', icon: Landmark, href: '/dashboard/net-worth' },
-    { label: 'Bank & cash', value: short(nw.cash), delta: `${viewAccounts.filter((a: any) => a.account_type !== 'credit_card').length} accounts`, tone: 'neutral', icon: Wallet, href: '/dashboard/accounts' },
-    { label: 'Came in', value: short(ins.income.value),
-      delta: incPct != null ? `${incPct >= 0 ? '▲' : '▼'} ${Math.abs(incPct)}% vs usual` : ins.income.baseline ? `Usually ${short(ins.income.baseline)}` : 'This month',
-      tone: incPct == null ? 'neutral' : incPct >= 0 ? 'good' : 'bad', icon: ArrowDownLeft, href: '/dashboard/income' },
-    { label: 'Spent', value: short(ins.spend.value),
-      delta: spendPct != null ? `${spendPct > 0 ? '▲' : '▼'} ${Math.abs(spendPct)}% vs usual pace` : 'This month',
-      tone: spendPct == null ? 'neutral' : spendPct > 0 ? 'bad' : 'good', icon: ArrowUpRight, href: '/dashboard/expenses/report' },
-    { label: 'Saved', value: short(ins.saved.value),
-      delta: ins.saved.rate != null ? `${ins.saved.rate}% of income · target 20%` : 'Waiting for income',
-      tone: ins.saved.rate == null ? 'neutral' : ins.saved.rate >= 20 ? 'good' : 'bad', icon: PiggyBank, href: '/dashboard/reports' },
-    { label: 'Investments', value: short(nw.investments.value), delta: nw.investments.cost > 0 ? `${gain >= 0 ? '▲' : '▼'} ${short(Math.abs(gain))} ${gain >= 0 ? 'gain' : 'loss'}` : 'Nothing added yet', tone: nw.investments.cost > 0 ? (gain >= 0 ? 'good' : 'bad') : 'neutral', icon: TrendingUp, href: '/dashboard/investments' },
-    { label: 'Card bills', value: short(owedOn('cards')), delta: 'Owed on cards', tone: 'neutral', icon: CreditCard, href: '/dashboard/cards' },
-    { label: 'Loans', value: short(owedOn('loans')), delta: 'Still to repay', tone: 'neutral', icon: Banknote, href: '/dashboard/loans' },
-  ]
 
   return (
     <div className="max-w-[1280px] mx-auto flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
@@ -275,14 +224,10 @@ export default function DashboardClient(p: Props) {
         <QuickActions openAdd={openAdd} upload={() => setUploadOpen(true)} voice={() => setModal('voice')} advisor={() => openAdvisor()} />
         <Onboarding onImport={() => setUploadOpen(true)} goalInterests={p.goalInterests} />
       </>) : (<>
-      {/* 1 · What's free, and what needs you now */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_1fr] gap-3.5 md:gap-4">
-        <div className="flex flex-col gap-3.5 md:gap-4 min-w-0">
-          <FreeToSpendCard className="lg:flex-1" cards={rooms.map(r => ({ cur: r.cur, amount: r.sts.amount, cash: r.sts.cash, due: r.sts.dueBefore + r.sts.unlinked, reserved: r.sts.reserved, until: r.sts.until, perDay: r.sts.perDay, payday: r.sts.payday }))} />
-          <QuickActions openAdd={openAdd} upload={() => setUploadOpen(true)} voice={() => setModal('voice')} advisor={() => openAdvisor()} />
-        </div>
-        <AttentionCard items={ins.attention} pending={p.pending} accName={accName} onImport={() => setUploadOpen(true)} plans={p.plans} txns={p.transactions} today={today} fx={FX} bills={billsHere} billSkips={p.billSkips} accounts={h.accounts} foundCount={foundCount} payDue={payDue} payFirst={p.payFirst} />
-      </div>
+      {/* What needs you: one row; the full list opens below it */}
+      <NeedsYouBar count={ins.attention.length + waiting} titles={needTitles} open={needsOpen} onToggle={() => setNeedsOpen(o => !o)} />
+      {needsOpen && <AttentionCard items={ins.attention} pending={p.pending} accName={accName} onImport={() => setUploadOpen(true)} plans={p.plans} txns={p.transactions} today={today} fx={FX} bills={billsHere} billSkips={p.billSkips} accounts={h.accounts} foundCount={foundCount} payDue={payDue} payFirst={p.payFirst} />}
+      <QuickActions openAdd={openAdd} upload={() => setUploadOpen(true)} voice={() => setModal('voice')} advisor={() => openAdvisor()} />
       {p.plansReady && p.plans.length === 0 && (
         <Link href="/dashboard/settings/income" className="wl-card px-4 py-3 flex items-center gap-3 wl-hide-viewing" style={{ background: '#F0EDFF', borderColor: '#DAD3FF' }}>
           <Wallet size={17} className="flex-shrink-0" style={{ color: 'var(--accent)' }} />
@@ -291,44 +236,23 @@ export default function DashboardClient(p: Props) {
         </Link>
       )}
 
-      {/* 2 · The numbers: tap any for its detail */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
-        {kpis.map((k, i) => <KpiTile key={k.label} label={k.label} value={k.value} delta={k.delta} tone={k.tone} tint={i} icon={k.icon} href={k.href} />)}
+      {/* The period you pick: tiles, money flows, where it went, what you own and owe, and next month's plan */}
+      <HomeTrends view={view} fx={FX} today={today} live={{ nw: nw.netWorth, own: nw.totalAssets, owe: nw.totalLiab }}
+        holderNote={holder ? 'trends are for the whole family' : null} side={<NextMonthCard plan={plan} money={money} />} />
+
+      {/* Right now: doesn't change with the period */}
+      <div className="flex flex-wrap items-baseline justify-between gap-2 mt-1">
+        <h2 className="text-[17px] font-bold" style={{ color: 'var(--text)' }}>Right now</h2>
+        <span className="text-[12.5px]" style={{ color: 'var(--text3)' }}>Doesn’t change with the period above</span>
       </div>
-
-      {/* 3 · Next week, and the plan ahead */}
-      <NextWeekCard today={today} items={week.items} later={week.later} warnings={warnings} money={money} friends={friendPair}
-        dueTotal={cashDues(week.out, h.accounts).reduce((s, d) => s + toView(d.amount, d.currency), 0)} inTotal={week.in.reduce((s, i) => s + toView(i.amount, i.currency), 0)} />
-      <PlanCard plan={plan} money={money} />
-      <BigBillsStrip bills={billsHere} />
-      <SpendRoomPanel rooms={rooms} flat more={<MoreLink href="/dashboard/money">All</MoreLink>} />
-
-      {/* 4 · Progress */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-3.5 md:gap-4">
-        <NetWorthCard nw={nw} hist={hist} est={nwEst} historyReady={p.historyReady} holderLabel={holder ? holderLabel : null}
-          savingsRate={ins.trend.savingsRate} money={money} short={short} />
-        <div className="flex flex-col gap-3.5 md:gap-4 min-w-0">
-          <GoalsCard goals={goals} short={short} interests={p.goalInterests} className="flex-1" />
-          <HealthCard score={health.score} parts={health.parts} />
-        </div>
-      </div>
-      <CashFlowCard forecast={ins.forecast} short={short} money={money} />
-
-      {/* 5 · To read when you have a minute */}
-      <section className="rounded-[18px] md:rounded-[20px] bg-review text-white px-4 md:px-[22px] py-3.5 md:py-[18px] flex flex-col md:flex-row gap-2.5 md:gap-4 md:items-center">
-        <div className="flex-1">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: '#DAD3FF' }}>✦ Your weekly review</div>
-          <p className="text-[12.5px] md:text-[14px] leading-[1.55] mt-1 md:mt-[5px]" style={{ color: '#E6E0FF' }}>{review}</p>
-        </div>
-        <button onClick={() => openAdvisor(reviewPrompt)}
-          className="self-start md:self-auto flex-shrink-0 rounded-full px-4 py-2 text-[12.5px] font-semibold"
-          style={{ background: '#fff', color: '#2E2470' }}>
-          Ask AI for more
-        </button>
-      </section>
-      <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_1fr] gap-3.5 md:gap-4">
-        <NewsCard holdings={h} />
-        <LearnCard ins={ins} hasSip={h.mutualFunds.some(x => x.has_sip)} />
+      <FreeBanner cards={rooms.map(r => ({ cur: r.cur, amount: r.sts.amount, cash: r.sts.cash, due: r.sts.dueBefore + r.sts.unlinked, reserved: r.sts.reserved, until: r.sts.until, perDay: r.sts.perDay, payday: r.sts.payday }))}
+        endOfMonth={plan.rest.endOfMonth} afterUsual={plan.rest.budgetsLeft > 0 ? plan.rest.afterBudgets : null} days={plan.rest.days} money={money} />
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5 md:gap-4">
+        <BudgetsCard lines={rooms.flatMap(r => r.lines.map(l => ({ ...l, cur: r.cur })))} />
+        <DueWeekCard today={today} items={week.items} later={week.later} warnings={warnings} money={money}
+          dueTotal={cashDues(week.out, h.accounts).reduce((s, d) => s + toView(d.amount, d.currency), 0)} />
+        <GoalRingsCard goals={goals} short={short} />
+        <LoansCard loans={h.loans} toView={toView} money={money} />
       </div>
       </>)}
 
@@ -351,20 +275,6 @@ function QuickActions({ openAdd, upload, voice, advisor }: { openAdd: () => void
   )
 }
 
-// Rule-based weekly summary; "Ask AI for more" hands the same question to the advisor
-function weeklyReview(ins: HomeInsights, score: number) {
-  const bits: string[] = []
-  if (ins.trend.savingsRate != null) bits.push(`Over the last 3 months you saved ${Math.max(ins.trend.savingsRate, 0)}% of income${ins.trend.savingsRate < 20 ? ' against a 20% target' : ', above the 20% target'}.`)
-  const up = ins.insights.find(i => i.id === 'up')
-  const pace = ins.insights.find(i => i.id === 'pace')
-  if (up) bits.push(`${up.title}.`)
-  else if (pace) bits.push(`${pace.title}.`)
-  const urgent = ins.attention.filter(a => a.severity !== 'low').length
-  bits.push(urgent ? `${urgent} item${urgent === 1 ? '' : 's'} need${urgent === 1 ? 's' : ''} attention this week.` : 'Nothing urgent this week.')
-  bits.push(`Health score ${score}/100.`)
-  return bits.join(' ')
-}
-
 // ─── Cards ────────────────────────────────────────────────────────────────────
 
 function Card({ children, className = '', ...rest }: React.HTMLAttributes<HTMLElement>) {
@@ -382,102 +292,6 @@ function CardTitle({ id, children, right }: { id?: string; children: React.React
 
 function MoreLink({ href, children }: { href: string; children: React.ReactNode }) {
   return <Link href={href} className="text-[12.5px] font-semibold hover:underline" style={{ color: 'var(--accent)' }}>{children} →</Link>
-}
-
-function NetWorthCard({ nw, hist, est, historyReady, holderLabel, savingsRate, money, short, className = '' }: {
-  nw: ReturnType<typeof computeNetWorth>; hist: ReturnType<typeof netWorthHistory>; est: ForecastPoint[]; historyReady: boolean
-  holderLabel: string | null; savingsRate: number | null; money: (n: number) => string; short: (n: number) => string; className?: string
-}) {
-  const change = hist.ref ? nw.netWorth - hist.ref.value : null
-  const changePct = hist.ref && hist.ref.value !== 0 ? Math.round(change! / Math.abs(hist.ref.value) * 1000) / 10 : null
-  const up = (change ?? 0) >= 0
-  // The live number replaces today's stored point so the line ends where the hero does
-  const series = useMemo(() => {
-    const s = hist.series.slice(0, -1)
-    return [...s, { date: hist.series[hist.series.length - 1]?.date ?? 'today', value: Math.round(nw.netWorth) }]
-  }, [hist.series, nw.netWorth])
-  // Estimated month-ends (dashed) run into the tracked line (solid); the first
-  // tracked point carries both so the two lines meet
-  const rows = useMemo(() => [
-    ...est.map(p => ({ date: p.date, est: p.value } as { date: string; value?: number; est?: number })),
-    ...series.map((p, i) => (i === 0 && est.length ? { ...p, est: p.value } : { ...p })),
-  ], [est, series])
-  const labels = rows.length >= 3 ? [rows[0], rows[Math.floor(rows.length / 2)], rows[rows.length - 1]] : []
-
-  return (
-    <section aria-labelledby="nw-title"
-      className={`rounded-[22px] bg-hero text-white p-4 md:px-6 md:py-[22px] ${className}`}
-      style={{ boxShadow: 'var(--shadow-hero)' }}>
-      <div id="nw-title" className="text-[10.5px] md:text-[11px] font-semibold uppercase tracking-[0.05em]" style={{ color: '#CFC8FA' }}>
-        Net worth · {holderLabel ?? 'Family'}
-      </div>
-      <div className="flex flex-col md:flex-row md:items-baseline md:gap-3 mt-0.5 md:mt-1 mb-0.5">
-        <div className="text-[30px] md:text-[34px] font-bold tabular-nums" style={{ letterSpacing: '-0.02em' }}>{money(nw.netWorth)}</div>
-        {change != null && (
-          <div className="text-[12.5px] md:text-[13px] font-semibold" style={{ color: up ? '#8EF0BF' : '#FFB4A6' }}>
-            {up ? '▲' : '▼'} {short(Math.abs(change))}{changePct != null ? ` (${Math.abs(changePct)}%)` : ''} since {fmtDay(hist.ref!.date)}
-          </div>
-        )}
-      </div>
-      {change == null && (
-        <div className="text-[12.5px]" style={{ color: '#CFC8FA' }}>
-          {holderLabel ? 'Trend shows the whole family — switch to Family to see it.'
-            : est.length ? "Earlier months are estimated from what you saved each month (dashed); market moves aren't included."
-            : historyReady ? 'Tracking started — your trend appears after a few days.'
-            : 'Run migration 023 in Supabase to start tracking net-worth history.'}
-        </div>
-      )}
-
-      {rows.length >= 2 && (
-        <>
-          <div className="h-[90px] md:h-[150px] mt-2 md:mt-2.5 -mx-1" aria-label="Net worth over time">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={rows} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
-                <XAxis dataKey="date" hide />
-                <YAxis hide domain={['dataMin', 'dataMax']} />
-                <Tooltip cursor={{ stroke: 'rgba(255,255,255,.4)', strokeWidth: 1 }}
-                  content={({ active, payload }: any) => {
-                    const r = active && payload?.[0]?.payload
-                    if (!r) return null
-                    return (
-                      <div style={{ background: '#fff', border: '1px solid var(--line)', borderRadius: 10, fontSize: 12, padding: '6px 10px', color: 'var(--text)' }}>
-                        <div style={{ color: 'var(--text3)' }}>{r.date === 'today' ? 'Today' : fmtDay(String(r.date))}</div>
-                        <div className="font-semibold tabular-nums">{money(Number(r.value ?? r.est))}{r.value == null ? ' · estimated' : ''}</div>
-                      </div>
-                    )
-                  }} />
-                <Area type="monotone" dataKey="est" stroke="rgba(255,255,255,.7)" strokeWidth={2} strokeDasharray="5 4" fill="rgba(255,255,255,.07)" fillOpacity={1} isAnimationActive={false}
-                  dot={false} activeDot={{ r: 4, stroke: '#5B47E0', strokeWidth: 2, fill: '#fff' }} />
-                <Area type="monotone" dataKey="value" stroke="#fff" strokeWidth={2.5} fill="rgba(255,255,255,.14)" fillOpacity={1} isAnimationActive={false}
-                  dot={false} activeDot={{ r: 4, stroke: '#5B47E0', strokeWidth: 2, fill: '#fff' }} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-          {labels.length > 0 && (
-            <div className="hidden md:flex justify-between text-[11px] mt-1.5" style={{ color: '#B7B2F0' }}>
-              {labels.map((l, i) => <span key={i}>{l.date === 'today' ? 'Today' : fmtDay(l.date)}</span>)}
-            </div>
-          )}
-        </>
-      )}
-
-      <div className="hidden md:grid grid-cols-3 gap-3 mt-3.5 pt-3.5" style={{ borderTop: '1px solid rgba(255,255,255,.18)' }}>
-        {([
-          ['Assets', short(nw.totalAssets), '#fff'],
-          ['Liabilities', short(nw.totalLiab), nw.totalLiab > 0 ? '#FFB4A6' : '#fff'],
-          ['Savings rate', savingsRate != null ? `${savingsRate}%` : '—', savingsRate == null ? '#CFC8FA' : savingsRate >= 20 ? '#8EF0BF' : '#FFD38A'],
-        ] as const).map(([l, v, c]) => (
-          <div key={l}>
-            <div className="text-[11.5px]" style={{ color: '#CFC8FA' }}>{l}</div>
-            <div className="text-[16px] font-semibold tabular-nums" style={{ color: c }}>{v}</div>
-          </div>
-        ))}
-      </div>
-      <div className="mt-3 hidden md:flex justify-end">
-        <Link href="/dashboard/net-worth" className="text-[12.5px] font-semibold hover:underline" style={{ color: '#fff' }}>Net worth breakdown →</Link>
-      </div>
-    </section>
-  )
 }
 
 function AttentionCard({ items, pending, accName, onImport, plans, txns, today, fx, bills, billSkips, accounts, foundCount, payDue, payFirst, className = '' }: { bills: Bill[]; billSkips: string[]; accounts: any[]; foundCount: number; payDue: any; payFirst: PayFirstMode; items: Attention[]; pending: Pending; accName: (id: string | null) => string | null; onImport: () => void; plans: IncomePlan[]; txns: any[]; today: string; fx: number; className?: string }) {
@@ -539,58 +353,6 @@ function AttentionCard({ items, pending, accName, onImport, plans, txns, today, 
   )
 }
 
-function Donut({ score, big }: { score: number; big?: boolean }) {
-  return (
-    <div className="relative flex-shrink-0" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={score} aria-label="Financial health score">
-      <svg viewBox="0 0 36 36" className={`${big ? 'w-[92px] h-[92px]' : 'w-[72px] h-[72px]'} -rotate-90`}>
-        <circle cx="18" cy="18" r="15.9155" fill="none" stroke="var(--accent-bg)" strokeWidth="3.5" />
-        <circle cx="18" cy="18" r="15.9155" fill="none" stroke="var(--accent)" strokeWidth="3.5" strokeLinecap="round" strokeDasharray={`${score} ${100 - score}`} />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <div className={`${big ? 'text-[24px]' : 'text-[20px]'} font-bold leading-none`} style={{ color: 'var(--text)' }}>{score}</div>
-        {big && <div className="text-[10px] mt-0.5" style={{ color: 'var(--text3)' }}>of 100</div>}
-      </div>
-    </div>
-  )
-}
-
-function healthSummary(score: number, parts: { label: string; value: string; tone: Tone }[]) {
-  const verdict = score >= 80 ? 'Strong' : score >= 60 ? 'Good' : score >= 40 ? 'Fair' : 'Needs work'
-  const weak = parts.find(p => p.tone === 'bad') ?? parts.find(p => p.tone === 'warn')
-  return weak ? `${verdict}. Weakest: ${weak.label.toLowerCase()} at ${weak.value}.` : `${verdict}. All four pillars look healthy.`
-}
-
-function HealthCard({ score, parts, className = '' }: { score: number; parts: { label: string; value: string; tone: Tone }[]; className?: string }) {
-  return (
-    <Card aria-labelledby="health-title" className={className}>
-      {/* Phone: compact donut + one-line summary */}
-      <Link href="/dashboard/financial-health" className="md:hidden flex gap-3.5 items-center">
-        <Donut score={score} />
-        <span>
-          <span className="block text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Financial health</span>
-          <span className="block text-[12px] leading-snug mt-0.5" style={{ color: 'var(--text3)' }}>{healthSummary(score, parts)}</span>
-        </span>
-      </Link>
-      <div className="hidden md:block">
-      <CardTitle id="health-title" right={<MoreLink href="/dashboard/financial-health">Details</MoreLink>}>Financial health</CardTitle>
-      <div className="flex flex-wrap gap-4 items-center mt-3">
-        <Donut score={score} big />
-        <ul className="flex-1 flex flex-col gap-[7px] min-w-[170px]">
-          {parts.map(pt => (
-            <li key={pt.label} className="flex justify-between gap-2 text-[12px]">
-              <span className="whitespace-nowrap" style={{ color: 'var(--text2)' }}>{pt.label}</span>
-              <span className="font-semibold whitespace-nowrap" style={{ color: TONE_COLOR[pt.tone] }}>{pt.value}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
-      </div>
-    </Card>
-  )
-}
-
-const GOAL_COLORS = PALETTE
-
 // Goals picked during onboarding, offered as one-click "set up this goal"
 function InterestChips({ interests }: { interests: string[] }) {
   return (
@@ -599,165 +361,6 @@ function InterestChips({ interests }: { interests: string[] }) {
         <Link key={g} href={newGoalHref(g)} className="wl-chip gap-1" style={{ height: 28 }}><Plus size={12} />{g}</Link>
       ))}
     </div>
-  )
-}
-
-function GoalsCard({ goals, short, interests, className = '' }: { goals: any[]; short: (n: number) => string; interests: string[]; className?: string }) {
-  return (
-    <Card aria-labelledby="goals-title" className={`flex flex-col ${className}`}>
-      <CardTitle id="goals-title" right={goals.length > 0 && <MoreLink href="/dashboard/goals">All goals</MoreLink>}>Goals</CardTitle>
-      {goals.length === 0 ? (
-        <div className="flex-1 flex flex-col items-center justify-center text-center py-6 gap-2">
-          <Target size={24} style={{ color: 'var(--text4)' }} />
-          {interests.length > 0 ? (<>
-            <div className="text-[12.5px]" style={{ color: 'var(--text3)' }}>Set a target for what you&apos;re working towards — linked investments track it automatically.</div>
-            <div className="mt-1 flex justify-center"><InterestChips interests={interests} /></div>
-          </>) : (<>
-            <div className="text-[12.5px]" style={{ color: 'var(--text3)' }}>Set a goal and link investments to track it automatically.</div>
-            <Link href="/dashboard/goals" className="wl-btn wl-btn-sm mt-1">Create a goal</Link>
-          </>)}
-        </div>
-      ) : (
-        <ul className="flex flex-col gap-3 mt-3">
-          {goals.map((g, i) => (
-            <li key={g.id}>
-              <div className="flex justify-between text-[12.5px] mb-[5px] gap-2">
-                <Link href={`/dashboard/goals/${g.id}`} className="font-semibold truncate hover:underline" style={{ color: 'var(--text)' }}>{g.name}</Link>
-                <span style={{ color: 'var(--text3)' }}>{g.pct}%</span>
-              </div>
-              <div className="h-1.5 rounded-full" style={{ background: '#F1F5F9' }}
-                role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={g.pct} aria-label={`${g.name} progress`}>
-                <div className="h-full rounded-full" style={{ width: `${g.pct}%`, background: GOAL_COLORS[i % GOAL_COLORS.length] }} />
-              </div>
-              <div className="text-[11px] mt-1" style={{ color: 'var(--text4)' }}>{short(g.current)} of {short(g.target)}</div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </Card>
-  )
-}
-
-function CashFlowCard({ forecast, short, money, className = '' }: { forecast: HomeInsights['forecast']; short: (n: number) => string; money: (n: number) => string; className?: string }) {
-  const shortfall = forecast ? forecast.low.value < 0 : false
-  return (
-    <Card aria-labelledby="cf-title" className={className}>
-      <CardTitle id="cf-title" right={forecast && (
-        <span className="text-[11px] font-semibold" style={{ color: shortfall ? 'var(--expense)' : 'var(--income)' }}>
-          {shortfall ? 'Shortfall ahead' : 'No shortfall'}
-        </span>
-      )}>30-day cash flow</CardTitle>
-      {!forecast ? (
-        <div className="text-[12.5px] py-8 text-center" style={{ color: 'var(--text3)' }}>Add bank balances and a few months of transactions to see a forecast.</div>
-      ) : (
-        <>
-          <div className="h-[84px] mt-3 mb-1.5 -mx-1" aria-label="Projected balance for the next 30 days">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={forecast.points} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
-                <XAxis dataKey="date" hide />
-                <YAxis hide domain={['dataMin', 'dataMax']} />
-                {shortfall && <ReferenceLine y={0} stroke="var(--border2)" strokeDasharray="3 3" />}
-                <Tooltip cursor={{ stroke: 'var(--border2)', strokeWidth: 1 }}
-                  contentStyle={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '6px 10px' }}
-                  labelFormatter={(d: any) => fmtDay(String(d))}
-                  formatter={(v: any) => [money(Number(v)), 'Projected balance']} />
-                <Line type="monotone" dataKey="value" stroke={shortfall ? '#DC2626' : '#16A34A'} strokeWidth={2.2} dot={false} isAnimationActive={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-          <p className="text-[12px] leading-snug" style={{ color: 'var(--text3)' }}>
-            Lowest point <b style={{ color: 'var(--text)' }}>{short(forecast.low.value)}</b> on {fmtDay(forecast.low.date)}
-            {forecast.lowAfter ? `, after ${forecast.lowAfter}` : ''}. Estimate from your usual income and spending.
-          </p>
-          <div className="mt-2.5"><MoreLink href="/dashboard/cashflow">Full forecast</MoreLink></div>
-        </>
-      )}
-    </Card>
-  )
-}
-
-interface NewsItem { title: string; link: string; pubDate: string; source: string }
-
-function timeAgo(iso: string) {
-  const mins = Math.max(1, Math.round((Date.now() - new Date(iso).getTime()) / 60000))
-  if (!isFinite(mins)) return ''
-  return mins < 60 ? `${mins}m` : mins < 1440 ? `${Math.round(mins / 60)}h` : `${Math.round(mins / 1440)}d`
-}
-
-function NewsCard({ holdings, className = '' }: { holdings: Holdings; className?: string }) {
-  const terms = useMemo(() => Array.from(new Set([
-    ...holdings.mutualFunds.map(f => String(f.fund_name || '').split(' ').slice(0, 2).join(' ')),
-    ...holdings.stocks.map(s => String(s.name || s.symbol || '')),
-  ].filter(t => t.length > 2))).slice(0, 12), [holdings])
-  const [items, setItems] = useState<NewsItem[] | null>(null)
-
-  useEffect(() => {
-    let live = true
-    fetch(`/api/market-news${terms.length ? `?terms=${encodeURIComponent(terms.join(','))}` : ''}`)
-      .then(r => r.json()).then(d => { if (live) setItems((d.articles ?? []).slice(0, 3)) })
-      .catch(() => { if (live) setItems([]) })
-    return () => { live = false }
-  }, [terms])
-
-  const tagOf = (t: string) => terms.find(term => t.toLowerCase().includes(term.toLowerCase().split(' ')[0]))
-
-  return (
-    <Card aria-labelledby="news-title" className={className}>
-      <CardTitle id="news-title" right={<MoreLink href="/dashboard/news"><span className="md:hidden">All</span><span className="hidden md:inline">All news</span></MoreLink>}>
-        <span className="md:hidden">News for you</span><span className="hidden md:inline">Market news for your holdings</span>
-      </CardTitle>
-      {items === null ? (
-        <ul className="mt-2">{[0, 1, 2].map(i => <li key={i} className="h-12 my-2 rounded-lg animate-pulse" style={{ background: 'var(--bg2)' }} />)}</ul>
-      ) : items.length === 0 ? (
-        <div className="text-[12.5px] py-6 text-center" style={{ color: 'var(--text3)' }}>No fresh headlines right now.</div>
-      ) : (
-        <ul className="mt-1.5">
-          {items.map((a, i) => {
-            const tag = tagOf(a.title)
-            return (
-              <li key={i} className="py-2.5" style={{ borderTop: '1px solid #F1F5F9' }}>
-                <a href={a.link} target="_blank" rel="noopener noreferrer" className="group block">
-                  <div className="text-[13.5px] font-semibold leading-snug group-hover:underline" style={{ color: 'var(--text)' }}>
-                    {a.title} <ExternalLink size={11} className="inline -mt-0.5 opacity-50" />
-                  </div>
-                  <div className="text-[11.5px] mt-1 flex items-center gap-2 flex-wrap" style={{ color: 'var(--text3)' }}>
-                    {a.source}{a.pubDate ? ` · ${timeAgo(a.pubDate)}` : ''}
-                    {tag && <span className="text-[10.5px] font-semibold px-2 py-0.5 rounded-full" style={{ background: 'var(--accent-bg)', color: 'var(--accent2)' }}>Affects · {tag}</span>}
-                  </div>
-                </a>
-              </li>
-            )
-          })}
-        </ul>
-      )}
-    </Card>
-  )
-}
-
-// Two lessons chosen from what's going on in the user's data
-function LearnCard({ ins, hasSip, className = '' }: { ins: HomeInsights; hasSip: boolean; className?: string }) {
-  const picks: { mod: string; color: string; title: string; why: string; href: string }[] = []
-  const has = (prefix: string) => ins.attention.some(a => a.id.startsWith(prefix))
-  if (has('card') || has('util')) picks.push({ mod: 'Credit cards', color: '#D97706', title: 'Statement date vs due date', why: has('card') ? 'Your card bill is due soon.' : 'Card utilisation is above 30%.', href: '/dashboard/cards/learn' })
-  if (has('bud')) picks.push({ mod: 'Budgets', color: '#2563EB', title: 'Budgets are plans, not punishments', why: 'A category is over budget this month.', href: '/dashboard/budgets/learn' })
-  if (hasSip) picks.push({ mod: 'Investments', color: '#16A34A', title: 'What a SIP really does', why: 'You invest through SIPs every month.', href: '/dashboard/learn' })
-  if (ins.runway.months != null && ins.runway.months < 6) picks.push({ mod: 'Goals', color: '#7C3AED', title: 'Build a safety net first', why: `Your emergency fund covers ${ins.runway.months} months.`, href: '/dashboard/goals/learn' })
-  picks.push({ mod: 'Expenses', color: '#6A55E8', title: 'Why categories beat totals', why: 'See where every dirham and rupee goes.', href: '/dashboard/expenses/learn' })
-
-  return (
-    <Card aria-labelledby="learn-title" className={`flex flex-col md:gap-2.5 ${className}`}>
-      <CardTitle id="learn-title" right={<MoreLink href="/dashboard/learn"><span className="md:hidden">All</span><span className="hidden md:inline">Learn hub</span></MoreLink>}>
-        <span className="md:hidden">Learn, picked for you</span><span className="hidden md:inline">Learn, picked from your data</span>
-      </CardTitle>
-      {picks.slice(0, 2).map((pk, i) => (
-        <Link key={pk.title} href={pk.href}
-          className={`block py-2.5 md:px-3.5 md:py-3 md:rounded-[10px] md:bg-[var(--bg2)] md:border md:border-[var(--border)] transition-colors md:hover:border-[var(--accent-border)] max-md:border-t max-md:border-[#F1F5F9] ${i === 0 ? 'max-md:mt-2' : ''}`}>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.05em]" style={{ color: pk.color }}>{pk.mod}</div>
-          <div className="text-[13.5px] font-semibold my-0.5" style={{ color: 'var(--text)' }}>{pk.title}</div>
-          <div className="text-[12px]" style={{ color: 'var(--text3)' }}>{pk.why}</div>
-        </Link>
-      ))}
-    </Card>
   )
 }
 

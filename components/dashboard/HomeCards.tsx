@@ -140,8 +140,8 @@ const Line = ({ label, value, strong, ink, onOpen }: { label: string; value: str
 }
 
 // What's behind one of the plan's numbers
-interface PlanDetail { title: string; intro: string; rows: PlanRow[]; total: string; foot?: { text: string; href: string; link: string } }
-function PlanDetailSheet({ d, onClose }: { d: PlanDetail; onClose: () => void }) {
+export interface PlanDetail { title: string; intro: string; rows: PlanRow[]; total: string; foot?: { text: string; href: string; link: string } }
+export function PlanDetailSheet({ d, onClose }: { d: PlanDetail; onClose: () => void }) {
   return (
     <Sheet title={d.title} onClose={onClose}>
       <p className="text-[12.5px] leading-snug" style={{ color: 'var(--text3)' }}>{d.intro}</p>
