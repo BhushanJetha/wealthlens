@@ -33,7 +33,7 @@ export async function GET(req: Request) {
     opt(sb.from('gold_investments').select('*').eq('user_id', uid)),
     opt(sb.from('bond_investments').select('*').eq('user_id', uid)),
     fetchAllRows((a, b) => sb.from('investment_transactions').select('asset_type,asset_id,txn_date,txn_type,amount').eq('user_id', uid).order('txn_date').order('id').range(a, b), 30),
-    // Every loan, closed ones too: they were owed in the months they ran
+    // Loans (the active ones count, as on the Loans page)
     opt(sb.from('home_loans').select('*').eq('user_id', uid)),
     opt(sb.from('loan_transactions').select('loan_id,kind,txn_date,amount,principal,interest').eq('user_id', uid)),
     fetchAllRows((a, b) => sb.from('net_worth_snapshots').select('snap_date,fx,uae_assets,uae_liab,india_assets,india_liab,breakdown').eq('user_id', uid).gte('snap_date', from).order('snap_date').range(a, b), 5),

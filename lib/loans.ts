@@ -106,19 +106,38 @@ export function liveOutstanding(loan: any, loanTxns: any[]): LiveOutstanding | n
   return { value: Math.max(0, Math.round(bal)), saved, asOf, emis, principal: Math.round(principal), interest: Math.round(interest), drawn: Math.round(drawn) }
 }
 
-// What a loan still owed on `date`: its saved outstanding moved by the
-// principal repaid, and the disbursements drawn, between its balance date and
-// that day (either way)
+// What a loan still owed on `date`, the same way as liveOutstanding: from its
+// saved outstanding on the balance date, forward (each EMI takes off its
+// principal — its own split, else EMI − a month's interest on the running
+// balance; a prepayment comes off in full; a disbursement adds) or backward
+// (each undone). Today it equals the live outstanding on the Loans page.
 export function loanOwedOn(loan: any, loanTxns: any[], date: string): number {
   const asOf = balanceDate(loan)
   const saved = Math.max(0, Number(loan.outstanding_amt) || 0)
   if (!asOf || asOf === date) return saved
+  const r = (Number(loan.interest_rate) || 0) / 1200
   const [lo, hi] = asOf < date ? [asOf, date] : [date, asOf]
-  const between = loanTxns.filter(t => t.loan_id === loan.id && t.txn_date > lo && t.txn_date <= hi)
-  const repaid = between.filter(t => t.kind === 'emi' || t.kind === 'prepayment')
-    .reduce((s, t) => s + (t.kind === 'emi' && t.principal != null ? Number(t.principal) : Math.max(0, (Number(t.amount) || 0) - (Number(t.interest) || 0))), 0)
-  const drawn = between.filter(t => t.kind === 'disbursement').reduce((s, t) => s + (Number(t.amount) || 0), 0)
-  return Math.max(0, asOf < date ? saved - repaid + drawn : saved + repaid - drawn)
+  const between = loanTxns.filter(t => t.loan_id === loan.id && t.txn_date > lo && t.txn_date <= hi && MOVES.includes(t.kind))
+    .sort((a, b) => a.txn_date.localeCompare(b.txn_date))
+  let bal = saved
+  if (asOf < date) {
+    for (const t of between) {
+      const amt = Number(t.amount) || 0
+      if (t.kind === 'disbursement') { bal += amt; continue }
+      if (t.kind === 'prepayment') { bal -= Math.min(amt, bal); continue }
+      const i = t.interest != null ? Number(t.interest) : bal * r
+      bal -= Math.min(t.principal != null ? Number(t.principal) : Math.max(amt - i, 0), bal)
+    }
+  } else {
+    for (const t of [...between].reverse()) {
+      const amt = Number(t.amount) || 0
+      if (t.kind === 'disbursement') { bal = Math.max(0, bal - amt); continue }
+      if (t.kind === 'prepayment') { bal += amt; continue }
+      // Before the EMI: its principal back on; with no split, the balance whose month's interest it paid
+      bal = t.principal != null ? bal + Number(t.principal) : t.interest != null ? bal + Math.max(amt - Number(t.interest), 0) : (bal + amt) / (1 + r)
+    }
+  }
+  return Math.max(0, Math.round(bal))
 }
 
 // The part of a card's balance on `date` that is its card loans, for banks

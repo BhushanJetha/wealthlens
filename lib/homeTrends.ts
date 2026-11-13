@@ -60,9 +60,9 @@ export function buildTrends(inp: {
     months.forEach((m, i) => { cur[c].invested[i] = flows.get(m)?.total ?? 0 })
   }
 
-  // Owed on each loan at each month's end; nothing before it started
+  // Owed on each active loan at each month's end (as the Loans page counts them); nothing before it started
   const thisMonth = today.slice(0, 7)
-  for (const l of inp.loans) {
+  for (const l of inp.loans.filter(x => x.is_active !== false)) {
     const c: Cur = l.currency === 'AED' ? 'AED' : 'INR', start = String(l.loan_start_date ?? '').slice(0, 10)
     months.forEach((m, i) => {
       const d = m === thisMonth ? today : monthEnd(m)
