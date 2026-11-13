@@ -252,7 +252,7 @@ export default function DashboardClient(p: Props) {
         <DueWeekCard today={today} items={week.items} later={week.later} warnings={warnings} money={money}
           dueTotal={cashDues(week.out, h.accounts).reduce((s, d) => s + toView(d.amount, d.currency), 0)} />
         <GoalRingsCard goals={goals} short={short} />
-        <LoansCard loans={h.loans} toView={toView} money={money} />
+        <LoansCard loans={h.loans} toView={toView} money={money} homes={p.holdings.otherAssets ?? []} today={today} />
       </div>
       </>)}
 

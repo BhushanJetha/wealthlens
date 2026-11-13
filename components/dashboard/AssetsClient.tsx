@@ -1,7 +1,8 @@
 'use client'
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Home, Landmark, Scale, Boxes, RefreshCw, Plus, Briefcase } from 'lucide-react'
+import Link from 'next/link'
+import { Home, Landmark, Scale, Boxes, RefreshCw, Plus, Briefcase, ChevronRight } from 'lucide-react'
 import { useViewStore } from '@/store/viewStore'
 import { createClient } from '@/lib/supabase/client'
 import { fmtMoney, fmtCompact } from '@/lib/format'
@@ -103,6 +104,35 @@ export default function AssetsClient({ today, assets, ready, gratuity, loans }: 
     </li>
   )
 
+  // A home: worth, your share against the bank's, what's still to pay — tap for its page
+  const homeCard = (r: typeof rows[number]) => {
+    const yours = Math.max(0, r.shown - r.owed), pctY = r.shown > 0 ? Math.round(yours / r.shown * 100) : 0
+    const steps: any[] = Array.isArray(r.a.schedule) ? r.a.schedule : []
+    return (
+      <li key={r.a.id}>
+        <Link href={`/dashboard/assets/${r.a.id}`} className="flex flex-col gap-2 py-3" style={{ borderTop: '1px solid var(--track)' }}>
+          <span className="flex items-start gap-3">
+            <span className="w-9 h-9 rounded-xl flex items-center justify-center text-[17px] flex-shrink-0" style={{ background: 'var(--bg2)' }}>{r.k.icon}</span>
+            <span className="flex-1 min-w-0">
+              <span className="block text-[13.5px] font-semibold truncate" style={{ color: 'var(--text)' }}>{r.a.name}</span>
+              <span className="block text-[11.5px] truncate" style={{ color: 'var(--text4)' }}>{[r.a.status === 'construction' ? 'Under construction' : r.k.label, r.loan?.name, r.a.value_as_of && `your estimate, ${fmtDay(r.a.value_as_of)} ${String(r.a.value_as_of).slice(0, 4)}`].filter(Boolean).join(' · ')}</span>
+            </span>
+            <span className="text-right flex-shrink-0"><span className="block text-[14px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{short(r.shown)}</span><span className="block text-[11px]" style={{ color: 'var(--text4)' }}>worth today</span></span>
+            <ChevronRight size={15} className="mt-1 flex-shrink-0" style={{ color: 'var(--text4)' }} />
+          </span>
+          {r.loan && r.shown > 0 && (<>
+            <span className="flex gap-[2px] h-2.5 ml-12" role="img" aria-label={`You ${pctY} percent, the bank ${100 - pctY} percent`}>
+              <span style={{ flex: `${yours} 1 0`, background: 'linear-gradient(90deg,#16A34A,#0F766E)', borderRadius: '5px 0 0 5px' }} />
+              <span style={{ flex: `${r.owed} 1 0`, background: '#FCA5A5', borderRadius: '0 5px 5px 0' }} />
+            </span>
+            <span className="flex justify-between text-[12px] ml-12"><span><b style={{ color: '#15803D' }}>{short(yours)} yours</b> · {pctY}%</span><span style={{ color: '#B4231A' }}>{short(r.owed)} owed</span></span>
+          </>)}
+          {steps.length > 0 && r.a.status === 'construction' && <span className="text-[11.5px] ml-12 rounded-lg px-2.5 py-1.5" style={{ background: '#FFF9EC', color: '#7A5300' }}>See what’s still to pay the builder ›</span>}
+        </Link>
+      </li>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
       <PageHeader title="Property & assets" sub="Homes, land, vehicles, jewellery and investments held elsewhere — all part of your net worth" onAdd={ready ? () => setSheet({}) : undefined} addLabel="Add asset"
@@ -149,8 +179,8 @@ export default function AssetsClient({ today, assets, ready, gratuity, loans }: 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 md:gap-4 wl-even">
         <div className="flex flex-col gap-3.5 md:gap-4 min-w-0">
           <Panel title="Property & land" right={ready ? <button onClick={() => setSheet({ defaults: { kind: 'property' } })} className="text-[12px] font-semibold flex items-center gap-1" style={{ color: 'var(--accent)' }}><Plus size={13} />Add</button> : undefined}>
-            {property.length ? <ul className="mt-1">{property.map(row)}</ul>
-              : <p className="text-[12.5px] mt-2 leading-snug" style={{ color: 'var(--text3)' }}>Your flat in India, a plot, a home in the UAE. Link the loan on it to see how much is really yours.</p>}
+            {property.length ? <ul className="mt-1">{property.map(homeCard)}</ul>
+              : <p className="text-[12.5px] mt-2 leading-snug" style={{ color: 'var(--text3)' }}>Your flat in India, a plot, a home in the UAE. Link the loan on it and add its payment steps to see how much is really yours, and what’s still to pay.</p>}
           </Panel>
           <Panel title="Investments held elsewhere" right={investments.some(r => r.a.symbol) ? <button onClick={refreshPrices} disabled={busy === 'prices'} className="text-[12px] font-semibold flex items-center gap-1 disabled:opacity-60" style={{ color: 'var(--accent)' }}><RefreshCw size={13} className={busy === 'prices' ? 'animate-spin' : ''} />Prices</button> : undefined}>
             {investments.length ? <ul className="mt-1">{investments.map(row)}</ul>

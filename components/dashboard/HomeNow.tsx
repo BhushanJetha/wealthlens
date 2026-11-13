@@ -8,6 +8,7 @@ import type { HomePlan, Reminder } from '@/lib/homePlan'
 import type { BalanceWarning } from '@/lib/moneyOverview'
 import type { RoomLine } from '@/lib/spendRoom'
 import { PlanDetailSheet, type FreeCard, type PlanDetail } from './HomeCards'
+import { otherAssetValue } from '@/lib/otherAssets'
 
 const MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const SHORT = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
@@ -166,12 +167,15 @@ export function GoalRingsCard({ goals, short }: { goals: { id: string; name: str
 }
 
 // Each loan: what's left, how much is paid off, when it ends
-export function LoansCard({ loans, toView, money }: { loans: any[]; toView: (n: number, c: string) => number; money: (n: number) => string }) {
+export function LoansCard({ loans, toView, money, homes = [], today }: { loans: any[]; toView: (n: number, c: string) => number; money: (n: number) => string; homes?: any[]; today: string }) {
   const rows = loans.map(l => {
     const owed = Math.max(0, Number(l.outstanding_amt) || 0), drawn = Math.max(Number(l.disbursed_amt) || Number(l.sanctioned_amt) || 0, owed)
     const start = String(l.loan_start_date ?? ''), months = Number(l.tenure_months) || 0
     const end = /^\d{4}-\d{2}/.test(start) && months ? (() => { const t = Number(start.slice(0, 4)) * 12 + Number(start.slice(5, 7)) - 1 + months; return `${MON[t % 12].slice(0, 3)} ${Math.floor(t / 12)}` })() : null
-    return { id: l.id, name: l.name || l.bank_name || 'Loan', cur: l.currency === 'AED' ? 'AED' : 'INR', owed, paid: drawn > 0 ? Math.round((drawn - owed) / drawn * 100) : 0, end }
+    // The home it bought, and how much of it is yours
+    const home = homes.find(h => h.loan_id === l.id), hv = home ? otherAssetValue(home, today).value : 0
+    return { id: l.id, name: l.name || l.bank_name || 'Loan', cur: l.currency === 'AED' ? 'AED' : 'INR', owed, paid: drawn > 0 ? Math.round((drawn - owed) / drawn * 100) : 0, end,
+      home: home && hv > 0 ? { id: home.id, name: home.name, pct: Math.max(0, Math.round((hv - owed) / hv * 100)) } : null }
   }).filter(r => r.owed > 0).sort((a, b) => toView(b.owed, b.cur) - toView(a.owed, a.cur))
   const emi = loans.reduce((s, l) => s + toView(Number(l.emi_amount) || 0, l.currency), 0)
   return (
@@ -179,10 +183,10 @@ export function LoansCard({ loans, toView, money }: { loans: any[]; toView: (n: 
       {rows.length === 0 ? <p className="text-[12.5px] py-3" style={{ color: 'var(--text3)' }}>No loans to repay.</p> : (
         <div className="flex flex-col gap-3.5">
           {rows.slice(0, 3).map(r => (
-            <Link key={r.id} href="/dashboard/loans" className="block rounded-lg -mx-1.5 px-1.5 py-0.5 hover:bg-[#FAFAFE]">
+            <Link key={r.id} href={r.home ? `/dashboard/assets/${r.home.id}` : `/dashboard/loans/detail/${r.id}`} className="block rounded-lg -mx-1.5 px-1.5 py-0.5 hover:bg-[#FAFAFE]">
               <div className="flex justify-between gap-2 text-[13px]"><span className="font-medium truncate" style={{ color: 'var(--text)' }}>{r.name}</span><span className="flex-shrink-0" style={{ color: 'var(--text3)' }}><b style={{ color: 'var(--text)' }}>{fmtCompact(r.owed, r.cur)}</b> left</span></div>
               <div className="h-2 rounded-full mt-1.5" style={{ background: 'var(--track)' }}><div className="h-full rounded-full" style={{ width: `${Math.max(2, r.paid)}%`, background: '#2FB67C' }} /></div>
-              <div className="text-[11.5px] mt-1" style={{ color: 'var(--text3)' }}>{r.paid}% paid off{r.end ? ` · ends ${r.end}` : ''}</div>
+              <div className="text-[11.5px] mt-1" style={{ color: 'var(--text3)' }}>{r.paid}% paid off{r.end ? ` · ends ${r.end}` : ''}{r.home && <> · <b style={{ color: '#15803D' }}>{r.home.name} {r.home.pct}% yours</b></>}</div>
             </Link>
           ))}
         </div>

@@ -8,6 +8,8 @@ import { amortize, simulatePayoff } from '@/lib/amortization'
 import { loanJourney } from '@/lib/loans'
 import { ComposedChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceDot } from 'recharts'
 import Pagination from '@/components/dashboard/Pagination'
+import LoanLedger from '@/components/dashboard/LoanLedger'
+import { otherAssetValue } from '@/lib/otherAssets'
 import {
   ChevronLeft, Building2, Plus, Trash2, Loader2, Pencil, Check, X,
   TrendingDown, Coins, Home, Wallet, CalendarClock, Upload,
@@ -17,7 +19,7 @@ import {
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
 
-export default function LoanDetailClient({ loan, txns, plan = [] }: { loan: any; txns: any[]; plan?: any[] }) {
+export default function LoanDetailClient({ loan, txns, plan = [], property = null }: { loan: any; txns: any[]; plan?: any[]; property?: any | null }) {
   const router = useRouter()
   const supabase = createClient()
   const sym = loan.currency === 'AED' ? 'AED ' : '₹'
@@ -259,7 +261,7 @@ export default function LoanDetailClient({ loan, txns, plan = [] }: { loan: any;
 
   const TABS: { key: typeof tab; label: string; icon: any }[] = [
     ...(isHome ? [{ key: 'plan' as const, label: 'Payment Plan', icon: ListChecks }, { key: 'own' as const, label: 'Own Contribution', icon: Wallet }] : []),
-    { key: 'loan', label: 'Loan / Disbursements', icon: Landmark },
+    { key: 'loan', label: 'Bank releases', icon: Landmark },
     { key: 'emi', label: 'EMIs Paid', icon: CalendarClock },
     { key: 'schedule', label: 'Schedule & Prepay', icon: TrendingDown },
   ]
@@ -429,7 +431,30 @@ export default function LoanDetailClient({ loan, txns, plan = [] }: { loan: any;
         </section>
       )}
 
-      {isHome && (
+      <LoanLedger loan={loan} txns={txns} />
+
+      {/* The home this loan bought: its page brings the loan, your money and the builder's payments together */}
+      {property && (() => {
+        const v = otherAssetValue(property, todayISO()).value, owed = Number(loan.outstanding_amt) || 0, pctYours = v > 0 ? Math.max(0, Math.round((v - owed) / v * 100)) : 0
+        const sanc = Number(loan.sanctioned_amt) || 0
+        return (
+          <Link href={`/dashboard/assets/${property.id}`} className="wl-card max-md:order-6 px-4 md:px-5 py-4 flex flex-col gap-3 hover:shadow-md transition-shadow">
+            <div className="flex items-center gap-3">
+              <span className="w-10 h-10 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ background: '#E6F4F2', color: '#0F766E' }}><Home size={18} /></span>
+              <div className="flex-1 min-w-0"><div className="text-[12px]" style={{ color: 'var(--text3)' }}>Bought with this loan</div><div className="text-[14.5px] font-bold truncate" style={{ color: 'var(--text)' }}>{property.name}</div></div>
+              <span className="text-[12.5px] font-semibold" style={{ color: 'var(--accent)' }}>Open ›</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <Mini label="Worth today" value={short(v)} color="var(--text)" />
+              <Mini label="Yours" value={`${pctYours}%`} color="#16A34A" />
+              <Mini label={sanc > effectiveDisbursed ? 'To release' : 'Released'} value={short(sanc > effectiveDisbursed ? sanc - effectiveDisbursed : effectiveDisbursed)} color={sanc > effectiveDisbursed ? '#B96A0B' : 'var(--text)'} />
+            </div>
+            <p className="text-[12px]" style={{ color: 'var(--text3)' }}>Its cost, your own money and the payments to the builder are on the property page; this loan’s releases and EMIs show there too.</p>
+          </Link>
+        )
+      })()}
+
+      {isHome && !property && (
         <section className="wl-card max-md:order-6 px-4 md:px-5 py-4">
           <div className="flex items-center justify-between gap-2 mb-3">
             <h2 className="text-[14px] font-semibold flex items-center gap-2" style={{ color: 'var(--text)' }}><Home size={15} style={{ color: 'var(--accent)' }} />Property</h2>
@@ -471,7 +496,13 @@ export default function LoanDetailClient({ loan, txns, plan = [] }: { loan: any;
       </div>
 
       <section className="max-md:order-7 wl-card px-4 md:px-5 py-4 md:py-[18px]">
-        {tab === 'plan' && (<>
+        {tab === 'plan' && property && Array.isArray(property.schedule) && property.schedule.length > 0 && (
+          <div className="flex flex-col gap-2 py-2">
+            <p className="text-[13px]" style={{ color: 'var(--text2)' }}>The builder’s payment steps are kept on <b>{property.name}</b> now, where your own payments and this loan’s releases tick them off.</p>
+            <Link href={`/dashboard/assets/${property.id}`} className="wl-btn self-start" style={{ height: 38 }}>Open the property’s payments ›</Link>
+          </div>
+        )}
+        {tab === 'plan' && !(property && Array.isArray(property.schedule) && property.schedule.length > 0) && (<>
           {head(<>Builder&apos;s slab-wise plan · funded <b style={{ color: 'var(--text)' }}>{money(planPaid)}</b>{planTotal > 0 ? ` of ${money(planTotal)}` : ''}</>, addBtn('Add slab', openPlanAdd))}
           {slabs.length === 0 ? (
             <Empty text="No payment plan yet. Add the builder's milestones (on booking, plinth, each floor slab…). As you record disbursements and your own payments, each slab is marked paid." />

@@ -1,18 +1,19 @@
 'use client'
 import { useState } from 'react'
-import { X, Loader2, Trash2 } from 'lucide-react'
+import { X, Loader2, Trash2, Plus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { fmtMoney } from '@/lib/format'
 import { OTHER_KINDS, otherKind, type OtherKind } from '@/lib/otherAssets'
 import { Segmented } from '@/components/ui/kit'
+import { propertyModel, stepsOf, type Payer } from '@/lib/property'
 
 // Typical yearly change, shown as a hint only (never filled in for you)
 const GROWTH_HINT: Partial<Record<OtherKind, string>> = { property: 'e.g. 5', land: 'e.g. 6', vehicle: 'e.g. −12', jewellery: 'leave empty', business: 'leave empty' }
 
 // Add or edit a property, vehicle, jewellery or other investment (other_assets,
 // migration 032). Estimates are labelled as yours; priced holdings are units × price.
-export default function AssetSheet({ asset, defaults, loans, onClose, onSaved }: {
-  asset?: any; defaults?: Record<string, any>; loans: any[]; onClose: () => void; onSaved: () => void
+export default function AssetSheet({ asset, defaults, loans, txns = [], plan = [], onClose, onSaved }: {
+  asset?: any; defaults?: Record<string, any>; loans: any[]; txns?: any[]; plan?: any[]; onClose: () => void; onSaved: () => void
 }) {
   const start = asset ?? defaults ?? {}
   const [kind, setKind] = useState<OtherKind>((start.kind as OtherKind) ?? 'property')
@@ -32,6 +33,14 @@ export default function AssetSheet({ asset, defaults, loans, onClose, onSaved }:
   const [loanId, setLoanId] = useState<string>(start.loan_id ?? '')
   const [nominee, setNominee] = useState<string>(start.nominee ?? '')
   const [notes, setNotes] = useState<string>(start.notes ?? '')
+  // A home: ready or being built, what it cost in parts, and the payments to the builder or seller (migration 051)
+  const [status, setStatus] = useState<string>(start.status ?? 'ready')
+  const [possession, setPossession] = useState<string>(start.possession_date ?? '')
+  const cb = start.cost_breakup ?? {}
+  const [stamp, setStamp] = useState<string>(cb.stamp != null ? String(cb.stamp) : '')
+  const [other, setOther] = useState<string>(cb.other != null ? String(cb.other) : '')
+  const [steps, setSteps] = useState<{ id: string; label: string; due: string; amount: string; payer: Payer }[]>(
+    () => stepsOf(start, start.loan_id && plan.length && plan[0]?.loan_id === start.loan_id ? plan : []).map(x => ({ id: x.id, label: x.label, due: x.due ?? '', amount: String(x.amount || ''), payer: x.payer })))
   const [busy, setBusy] = useState(false)
   const [confirmDel, setConfirmDel] = useState(false)
   const [error, setError] = useState('')
@@ -48,16 +57,27 @@ export default function AssetSheet({ asset, defaults, loans, onClose, onSaved }:
     setBusy(true); setError('')
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
+    const costTotal = (Number(paid) || 0) + (Number(stamp) || 0) + (Number(other) || 0)
+    const homeCols: Record<string, any> = isProperty ? {
+      status: status === 'construction' ? 'construction' : 'ready', possession_date: status === 'construction' ? possession || null : null,
+      cost_breakup: Number(stamp) || Number(other) ? { price: Number(paid) || 0, stamp: Number(stamp) || 0, other: Number(other) || 0 } : null,
+      schedule: steps.filter(x => x.label.trim() && Number(x.amount) > 0).map(x => ({ id: x.id, label: x.label.trim(), due: x.due || null, amount: Number(x.amount), payer: x.payer })),
+    } : {}
     const row: Record<string, any> = {
       kind, name: name.trim(), currency: cur, country: cur === 'INR' ? 'India' : 'UAE',
       current_value: priced ? (total ?? 0) : Number(value), value_as_of: priced ? new Date().toISOString().slice(0, 10) : asOf || null,
-      growth_pct: priced ? null : num(growth), purchase_price: num(paid), purchase_date: bought || null,
+      growth_pct: priced ? null : num(growth), purchase_price: isProperty && costTotal > 0 ? costTotal : num(paid), purchase_date: bought || null,
       units: priced ? num(units) : null, price: priced ? num(price) : null, symbol: priced ? symbol.trim().toUpperCase() || null : null,
       platform: platform.trim() || null, unvested_units: kind === 'esop' ? num(unvested) : null, next_vest_date: kind === 'esop' ? vestDate || null : null,
       loan_id: isProperty ? loanId || null : null, nominee: nominee.trim() || null, notes: notes.trim() || null, updated_at: new Date().toISOString(),
     }
-    const res = asset ? await supabase.from('other_assets').update(row).eq('id', asset.id)
-      : await supabase.from('other_assets').insert({ ...row, user_id: user!.id })
+    const write = (r: Record<string, any>) => asset ? supabase.from('other_assets').update(r).eq('id', asset.id) : supabase.from('other_assets').insert({ ...r, user_id: user!.id })
+    let res = await write({ ...row, ...homeCols })
+    // Before migration 051 the home's parts can't be kept: save the rest, and say so
+    if (res.error && isProperty && /cost_breakup|possession_date|schedule|status|own_payments/.test(res.error.message ?? '')) {
+      res = await write(row)
+      if (!res.error) { setBusy(false); setError('Saved — but the cost parts and payment steps need migration 051 (supabase/migrations/051_property_payments.sql). Run it in Supabase, then save again.'); return }
+    }
     setBusy(false)
     if (res.error) { setError(/other_assets/.test(res.error.message) ? 'Run migration 032 in Supabase to add property and other assets.' : res.error.message); return }
     onSaved()
@@ -160,20 +180,81 @@ export default function AssetSheet({ asset, defaults, loans, onClose, onSaved }:
                 <Label>Changes % a year (optional)</Label>
                 <input value={growth} onChange={e => setGrowth(e.target.value.replace(/[^0-9.\-]/g, ''))} inputMode="decimal" placeholder={GROWTH_HINT[kind] ?? 'leave empty'} className={field} style={{ height: 42 }} aria-label="Yearly change" />
               </div>
-              {money('Bought for (optional)', paid, setPaid, 'Purchase price')}
+              {money(isProperty ? 'Price' : 'Bought for (optional)', paid, setPaid, 'Purchase price')}
             </div>
+            {isProperty && (<>
+              <div className="grid grid-cols-2 gap-3">
+                {money('Stamp duty & registration', stamp, setStamp, 'Stamp duty and registration')}
+                {money('Other charges', other, setOther, 'Other charges')}
+              </div>
+              {(Number(stamp) || Number(other)) > 0 && <div className="flex justify-between text-[13px] rounded-xl px-3 py-2.5" style={{ background: 'var(--bg2)' }}><span style={{ color: 'var(--text2)' }}>Total cost</span><b className="tabular-nums">{show((Number(paid) || 0) + (Number(stamp) || 0) + (Number(other) || 0))}</b></div>}
+              <div>
+                <Label>Is it ready?</Label>
+                <div className="flex gap-2 flex-wrap items-center">
+                  <Segmented label="Status" value={status} onChange={(v: string) => setStatus(v)} options={[{ value: 'ready', label: 'Ready' }, { value: 'construction', label: 'Under construction' }]} />
+                  {status === 'construction' && <label className="flex items-center gap-2 text-[12.5px]" style={{ color: 'var(--text2)' }}>Possession<input type="date" value={possession} onChange={e => setPossession(e.target.value)} className="wl-input" style={{ height: 38 }} aria-label="Possession date" /></label>}
+                </div>
+              </div>
+            </>)}
             <p className="text-[11.5px] -mt-1.5" style={{ color: 'var(--text4)' }}>Your own estimate, shown as one. A yearly change moves it on from the “as of” date — update the value now and then.</p>
           </>)}
 
           {isProperty && myLoans.length > 0 && (
             <div>
-              <Label>Loan on it (optional)</Label>
+              <Label>Bought with a loan? (optional)</Label>
               <select value={loanId} onChange={e => setLoanId(e.target.value)} className={field} style={{ height: 42 }} aria-label="Loan on it">
                 <option value="">No loan</option>
                 {myLoans.map(l => <option key={l.id} value={l.id}>{l.name} · {fmtMoney(Number(l.outstanding_amt) || 0, l.currency ?? 'INR')} left</option>)}
               </select>
             </div>
           )}
+          {isProperty && (() => {
+            // What's paid so far, and the steps, from what the loan and you have paid (lib/property)
+            const draft = { ...(asset ?? {}), loan_id: loanId || null, current_value: Number(value) || 0, purchase_price: Number(paid) || 0,
+              cost_breakup: { price: Number(paid) || 0, stamp: Number(stamp) || 0, other: Number(other) || 0 },
+              schedule: steps.filter(x => Number(x.amount) > 0).map(x => ({ ...x, amount: Number(x.amount) })) }
+            const ln = loanId ? loans.find(l => l.id === loanId) ?? null : null
+            const pm = propertyModel({ asset: draft, loan: ln, txns: ln ? txns : [], today: new Date().toISOString().slice(0, 10) })
+            const set = (i: number, patch: Partial<typeof steps[number]>) => setSteps(xs => xs.map((x, k) => (k === i ? { ...x, ...patch } : x)))
+            return (
+              <div className="flex flex-col gap-2.5">
+                <div className="flex justify-between items-baseline"><Label>Payment steps to the {status === 'construction' ? 'builder' : 'seller'}</Label>{pm.stillToPay > 0.5 && <span className="text-[12px]" style={{ color: 'var(--text3)' }}>{show(pm.stillToPay)} left</span>}</div>
+                {steps.length === 0 && <p className="text-[12px] -mt-1" style={{ color: 'var(--text3)' }}>Booking, agreement, each slab, possession — with who pays. Steps already paid are ticked off from what you and the loan paid.</p>}
+                {steps.map((x, i) => {
+                  const st = pm.schedule[i]
+                  return (
+                    <div key={x.id} className="rounded-xl p-2.5 flex flex-col gap-2" style={{ border: '1px solid var(--line)', background: st && st.left <= 0.5 ? '#F6FBF8' : '#fff' }}>
+                      <div className="grid grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 items-center">
+                        <input value={x.label} onChange={e => set(i, { label: e.target.value })} placeholder="Step" aria-label="Step" className={field} style={{ height: 38 }} />
+                        <input type="date" value={x.due} onChange={e => set(i, { due: e.target.value })} aria-label="Due" className={field} style={{ height: 38 }} />
+                        <input value={x.amount} onChange={e => set(i, { amount: e.target.value.replace(/[^0-9.]/g, '') })} inputMode="decimal" placeholder="Amount" aria-label="Amount" className={field} style={{ height: 38 }} />
+                        <button onClick={() => setSteps(xs => xs.filter((_, k) => k !== i))} aria-label="Remove step" className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ color: 'var(--text3)' }}><X size={15} /></button>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap text-[12px]">
+                        <span style={{ color: 'var(--text3)' }}>Paid by</span>
+                        {([['loan', 'The loan'], ['self', 'Me'], ['both', 'Both']] as const).map(([v, l]) => (
+                          <button key={v} onClick={() => set(i, { payer: v })} aria-pressed={x.payer === v} className="h-8 px-2.5 rounded-full text-[12px]"
+                            style={x.payer === v ? { border: `1px solid ${v === 'self' ? '#15803D' : '#0F766E'}`, background: v === 'self' ? '#E7F6EE' : '#E6F4F2', color: v === 'self' ? '#15803D' : '#0F766E', fontWeight: 600 } : { border: '1px solid var(--line)', color: 'var(--text2)' }}>{l}</button>
+                        ))}
+                        {st && <span className="ml-auto font-semibold" style={{ color: st.left <= 0.5 ? '#15803D' : '#7A5300' }}>{st.left <= 0.5 ? 'Paid' : st.paidLoan + st.paidOwn > 0.5 ? `${show(st.left)} left` : 'To pay'}</span>}
+                      </div>
+                    </div>
+                  )
+                })}
+                <button onClick={() => setSteps(xs => [...xs, { id: globalThis.crypto?.randomUUID?.() ?? `s${Date.now()}`, label: '', due: '', amount: '', payer: loanId ? 'loan' : 'self' }])} className="self-start h-9 px-3 rounded-[10px] text-[13px] font-semibold flex items-center gap-1" style={{ border: '1px dashed var(--accent-border)', color: 'var(--accent2)', background: '#FAF9FF' }}><Plus size={14} />Add a step</button>
+                {pm.cost.total > 0 && (
+                  <div className="rounded-xl px-3.5 py-3 flex flex-col gap-1.5 text-[12.5px]" style={{ background: 'var(--bg2)' }}>
+                    <div className="flex justify-between"><span style={{ color: 'var(--text2)' }}>Your money paid{ln ? ' (on the loan)' : ''}</span><b className="tabular-nums">{show(pm.ownPaid)}</b></div>
+                    {ln && <div className="flex justify-between"><span style={{ color: 'var(--text2)' }}>Loan released</span><b className="tabular-nums">{show(pm.loan?.drawn ?? 0)}</b></div>}
+                    <div className="flex justify-between"><span style={{ color: 'var(--text2)' }}>Still to pay{pm.stillLoan > 0.5 ? ` (loan ${show(pm.stillLoan)}, you ${show(pm.stillYou)})` : ''}</span><b className="tabular-nums">{show(pm.stillToPay)}</b></div>
+                    {(() => { const sum = pm.ownPaid + (pm.loan?.drawn ?? 0) + pm.stillToPay, ok = Math.abs(sum - pm.cost.total) <= Math.max(1, pm.cost.total * 0.005)
+                      return <div className="flex justify-between pt-1.5" style={{ borderTop: '1px solid var(--line)' }}><span className="font-semibold">{ok ? 'Adds up to the total cost' : `Adds up to ${show(sum)}, not the total ${show(pm.cost.total)}`}</span><b style={{ color: ok ? '#15803D' : '#B45309' }}>{ok ? '✓' : 'Check the steps'}</b></div> })()}
+                  </div>
+                )}
+                {ln && <p className="text-[11.5px] leading-snug" style={{ color: 'var(--text4)' }}>Your own payments and the bank’s releases are kept on the {ln.name}; add them there or with “Record a payment” on the property.</p>}
+              </div>
+            )
+          })()}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Nominee</Label>
