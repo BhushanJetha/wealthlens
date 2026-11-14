@@ -3,7 +3,7 @@
 // bills paid, and money sent from the UAE to India. The same rules as Home and
 // Reports (lib/money): saved = income − spent − EMIs, card bills are a move,
 // money landing from the UAE is income in the India view only.
-import { isIncome, spendGroup, catOf, labelOf, CC_BILL, type View } from './money'
+import { isIncome, spendGroup, catOf, labelOf, CC_BILL, cashOut, type View, type CashOut } from './money'
 import { groupKeyOf, needOf, type Category } from './categories'
 
 export interface MoneyMonth {
@@ -15,9 +15,15 @@ export interface MoneyMonth {
   cardBills: number; cardBillCount: number
   sentAed: number; sentInr: number; sentCount: number  // UAE → India, by the month it landed
   count: number                                        // entries counted (spending and income)
+  out: CashOut                                         // what left your bank & cash (lib/money cashOut)
 }
+const NO_OUT: CashOut = { direct: 0, cardBills: 0, emis: 0, invested: 0, sentHome: 0, onCards: 0, cardLoanEmis: 0, friends: 0 }
+// Everything that left your bank & cash: spending paid from the bank, card
+// bills (they pay for what was bought on cards, which isn't added again),
+// EMIs, investing, money sent to India (UAE view) and to friends
+export const outTotal = (o: CashOut) => o.direct + o.cardBills + o.emis + o.invested + o.sentHome + o.friends
 const blank = (): MoneyMonth => ({ income: 0, incomeBy: {}, spent: 0, emi: 0, invested: 0, groups: {}, needs: 0, wants: 0, cats: {}, merchants: {},
-  cardBills: 0, cardBillCount: 0, sentAed: 0, sentInr: 0, sentCount: 0, count: 0 })
+  cardBills: 0, cardBillCount: 0, sentAed: 0, sentInr: 0, sentCount: 0, count: 0, out: { ...NO_OUT } })
 
 export function moneyMonths(prepared: any[], o: { months: string[]; view: View; fx: number; rows?: Category[]; cardIds?: Set<string> }): MoneyMonth[] {
   const at = new Map(o.months.map((m, i) => [m, i]))
@@ -67,6 +73,10 @@ export function moneyMonths(prepared: any[], o: { months: string[]; view: View; 
     const e = m.merchants[key] ?? (m.merchants[key] = { name, amount: 0, count: 0 })
     e.amount += v; e.count++
   }
+  // What left your bank & cash, each month (the same as Reports › Expenses)
+  const byMonth: any[][] = o.months.map(() => [])
+  for (const t of prepared) { const i = at.get(String(t.txn_date).slice(0, 7)); if (i != null) byMonth[i].push(t) }
+  byMonth.forEach((rowsM, i) => { out[i].out = cashOut(rowsM, { view: o.view, isCard: t => !!t.account_id && cards.has(t.account_id), amount: t => val(t) ?? 0 }) })
   return out
 }
 
@@ -75,6 +85,7 @@ export function sumMonths(ms: MoneyMonth[]): MoneyMonth {
   const s = blank()
   for (const m of ms) {
     for (const k of ['income', 'spent', 'emi', 'invested', 'needs', 'wants', 'cardBills', 'cardBillCount', 'sentAed', 'sentInr', 'sentCount', 'count'] as const) (s as any)[k] += m[k]
+    for (const k of Object.keys(NO_OUT) as (keyof CashOut)[]) s.out[k] += m.out[k]
     for (const [k, v] of Object.entries(m.incomeBy)) s.incomeBy[k] = (s.incomeBy[k] ?? 0) + v
     for (const [k, v] of Object.entries(m.groups)) s.groups[k] = (s.groups[k] ?? 0) + v
     for (const [k, v] of Object.entries(m.cats)) s.cats[k] = (s.cats[k] ?? 0) + v

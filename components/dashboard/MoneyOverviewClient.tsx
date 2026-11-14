@@ -17,7 +17,7 @@ import { findReviewItems, reviewCount } from '@/lib/review'
 import { rankCards } from '@/lib/cardCycle'
 import { GROUPS, groupKeyOf, type Category } from '@/lib/categories'
 import { friendBalances, friendTotals } from '@/lib/friends'
-import { moneyMonths, sumMonths, topGroups, entriesFor, type Pick } from '@/lib/moneyTrends'
+import { moneyMonths, sumMonths, topGroups, entriesFor, outTotal, type Pick } from '@/lib/moneyTrends'
 import { MONTH, mLabel, monthsUpTo, windowOf, sumOf, periodLabel, periodWord, fromFirst } from '@/lib/period'
 import type { RecurringTxn } from '@/lib/recurring'
 import PendingConfirms, { pendingCount, type Pending } from './PendingConfirms'
@@ -26,7 +26,7 @@ import BillReminders, { billReminderCount } from './BillReminders'
 import LandedChecks, { landedCheckCount } from './LandedChecks'
 import type { Bill } from '@/lib/bigBills'
 import { foundRegular, pendingCharges } from '@/lib/regular'
-import type { IncomePlan } from '@/lib/incomePlans'
+import { plannedIncoming, mergeExpected, type IncomePlan } from '@/lib/incomePlans'
 import { PageHeader, Panel } from '@/components/ui/kit'
 import { BankLogo } from '@/components/ui/BankCards'
 import { usePeriod, PeriodLine, PeriodChips, TrendTile, badgeOf, NONE, Card, type Pt } from './charts/parts'
@@ -146,11 +146,35 @@ export default function MoneyOverviewClient(p: Props) {
   const avgRate = c.sentAed > 0 ? c.sentInr / c.sentAed : null
   const fmtA = (x: number) => fmtCompact(x, 'AED')
 
+  // Income still to land this month (what you declared in Settings › Income,
+  // else what usually arrives), when the period reaches this month. Money
+  // landing in India from the UAE is a move outside the India view.
+  const REMIT_IN = /cat:(NRE Received|Received from UAE|Inward Remittance|NRI Transfer)-/
+  const daysLeft = Number(new Date(Date.UTC(Number(now.slice(0, 4)), Number(now.slice(5)), 0)).getUTCDate()) - Number(today.slice(8, 10))
+  const toCome = useMemo(() => {
+    if (!w.isNow) return []
+    const planned = plannedIncoming(plans, { today, view, fx: FX, txns: p.transactions, days: daysLeft })
+    const detected = expectedIncome(p.transactions, accounts, today, daysLeft).filter(e => view === 'india' || !REMIT_IN.test(e.id))
+    return mergeExpected(planned, detected, plans, view).filter((e: any) => String(e.date).slice(0, 7) === now)
+      .map((e: any) => ({ ...e, v: viewAmount(Number(e.amount) || 0, e.currency, view, FX) })).filter((e: any) => e.v > 0)
+  }, [w.isNow, plans, today, view, FX, p.transactions, accounts, daysLeft, now]) // eslint-disable-line react-hooks/exhaustive-deps
+  const comingSum = toCome.reduce((a: number, e: any) => a + e.v, 0)
+  const wentOut = outTotal(c.out), wentOutPrev = pv ? outTotal(pv.out) : null
+  const cardsNote = c.out.onCards > 0 ? ` ${money(c.out.onCards)} of your spending was on cards: it leaves your bank as the card bill, so it’s counted once, there.` : ''
+
   const kpis = [
-    { label: 'Came in', color: '#6A55E8', how: { rows: Object.entries(c.incomeBy).sort((a, b) => b[1] - a[1]).map(([k, v]) => [GROUPS.find(g => g.key === k)?.label ?? 'Other', money(v)]) as [string, string][], total: ['= Came in', money(c.income)] as [string, string],
-        note: `${uae ? '' : view === 'india' ? 'Money arriving from the UAE counts as income in this view, as earned. ' : 'Money sent from the UAE to India isn’t counted again when it lands. '}Not income: refunds, a friend paying you back, money back from selling an investment, and moves between your own accounts.` }, raw: c.income, value: short(c.income), sub: w.len > 1 ? `About ${short(c.income / w.len)} a month` : 'Salary and other income', d: thisBadge ?? badgeOf(c.income, pv?.income, true), spark: series(m => m.income), href: '/dashboard/income' },
-    { label: 'Spent', color: '#F29A2E', how: { rows: [['Needs', money(c.needs)], ['Wants', money(c.wants)]] as [string, string][], total: ['= Spent', money(c.spent)] as [string, string],
-        note: `Loan EMIs (${money(c.emi)}) and investing are shown on their own, not as spending. Split bills count your share only. Left out on purpose: card bills (the spending was counted when you used the card), moves between your own accounts, and refunds (they lower Spent; they aren’t income).` }, raw: c.spent, value: short(c.spent), sub: `+ ${short(c.emi)} in EMIs`, d: thisBadge ?? badgeOf(c.spent, pv?.spent, false), spark: series(m => m.spent), href: '/dashboard/expenses' },
+    { label: comingSum > 0 ? 'Coming in' : 'Came in', color: '#6A55E8', how: { rows: [
+        ...Object.entries(c.incomeBy).sort((a, b) => b[1] - a[1]).map(([k, v]) => [`${GROUPS.find(g => g.key === k)?.label ?? 'Other'}${comingSum > 0 ? ' (arrived)' : ''}`, money(v)]),
+        ...toCome.map((e: any) => [`+ ${e.label}, due ${fmtDay(e.date)}`, money(e.v)]),
+      ] as [string, string][], total: [comingSum > 0 ? '= This month, all in' : '= Came in', money(c.income + comingSum)] as [string, string],
+        note: `${uae ? '' : view === 'india' ? 'Money arriving from the UAE counts as income in this view, as earned. ' : 'Money sent from the UAE to India isn’t counted again when it lands. '}Not income: refunds, a friend paying you back, money back from selling an investment, and moves between your own accounts.` }, raw: c.income + comingSum, value: short(c.income + comingSum), sub: comingSum > 0 ? `${short(c.income)} arrived · ${short(comingSum)} still to come` : w.len > 1 ? `About ${short(c.income / w.len)} a month` : 'Salary and other income', d: thisBadge ?? badgeOf(c.income, pv?.income, true), spark: series(m => m.income), href: '/dashboard/income' },
+    { label: 'Went out', color: '#F29A2E', how: { rows: [
+        ['Spent from bank & cash', money(c.out.direct)], ['Credit card bills paid', money(c.out.cardBills)], ['Loan EMIs', money(c.out.emis)], ['Invested', money(c.out.invested)],
+        ...(c.out.sentHome ? [['Sent to India', money(c.out.sentHome)]] : []), ...(c.out.friends ? [[c.out.friends > 0 ? 'Lent to friends, less paid back' : 'Friends paid you back', `${c.out.friends < 0 ? '−' : ''}${money(Math.abs(c.out.friends))}`]] : []),
+      ] as [string, string][], total: ['= Went out of your accounts', money(wentOut)] as [string, string],
+        note: `Your spending by category (the chart below) was ${money(c.spent)}.${cardsNote} ${view === 'consolidated' ? 'Money sent from the UAE to India stays yours in this view, so it isn’t counted as going out. ' : ''}Moves between your own accounts aren’t counted.` },
+      raw: wentOut, value: short(wentOut), sub: `Spending ${short(c.spent)} · card bills, EMIs${c.out.sentHome ? ', India' : ''} included`, d: thisBadge ?? badgeOf(wentOut, wentOutPrev, false),
+      spark: series(m => outTotal(m.out)), href: '/dashboard/reports' },
     { label: 'Card bills paid', color: '#3B8EF0', raw: c.cardBills, value: short(c.cardBills), sub: 'A move: card spending is counted when you buy', d: { t: `${c.cardBillCount} bill${c.cardBillCount === 1 ? '' : 's'}`, s: NONE }, spark: series(m => m.cardBills), href: '/dashboard/cards' },
     { label: uae ? 'Sent to India' : 'From the UAE', color: '#8B5CF6', raw: sent, value: short(sent), sub: c.sentAed > 0 ? (uae ? `At ₹${avgRate!.toFixed(1)} a dirham on average` : `${fmtA(c.sentAed)} at ₹${avgRate!.toFixed(1)} a dirham`) : 'Nothing sent home in this period', d: thisBadge ?? badgeOf(sent, sentPrev, true), spark: series(m => (uae ? m.sentAed : m.sentInr)), href: '/dashboard/transfers' },
     { label: 'Bank & cash', color: '#2FB67C', raw: cash, value: short(cash), sub: `In ${banks.length} account${banks.length === 1 ? '' : 's'} today`, d: { t: 'today', s: NONE }, spark: [], href: '/dashboard/accounts', mini: banks.length > 0 ? { kind: 'split' as const, parts: banks.map((a, i) => ({ value: viewAmount(Number(a.current_balance) || 0, a.currency, view, FX), color: ['#2FB67C', '#16A34A', '#0F766E', '#34D399', '#065F46'][i % 5] })) } : undefined },
