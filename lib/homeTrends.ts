@@ -19,11 +19,12 @@ export interface CurSeries {
   loans: number[]       // owed at the month's end (today for this month)
   groups: Record<string, number>[]   // spending by category group
 }
-export interface SnapPoint { date: string; fx: number; uaeA: number; uaeL: number; indA: number; indL: number; inv: number | null }
+export interface SnapPoint { date: string; fx: number; uaeA: number; uaeL: number; indA: number; indL: number; inv: number | null; grp?: Record<string, number> | null }
 export interface Trends { months: string[]; fx: number; cur: Record<Cur, CurSeries>; snaps: (SnapPoint | null)[]; first: string | null }
 
 // Asset groups that are investments (the rest is cash and property), lib/netWorth ASSET_GROUPS
 const INVEST_GROUPS = ['mf', 'equity', 'gold', 'retirement', 'deposits', 'other']
+const ALL_GROUPS = [...INVEST_GROUPS, 'cash', 'property']
 
 export const monthsUpTo = (ym: string, n: number) => Array.from({ length: n }, (_, i) => {
   const [y, m] = ym.split('-').map(Number), t = y * 12 + (m - 1) - (n - 1 - i)
@@ -78,7 +79,8 @@ export function buildTrends(inp: {
     const i = at.get(String(s.snap_date).slice(0, 7))
     if (i == null) continue
     const b = s.breakdown ?? {}, inv = INVEST_GROUPS.some(k => b[k] != null) ? INVEST_GROUPS.reduce((a, k) => a + (Number(b[k]) || 0), 0) : null
-    snaps[i] = { date: String(s.snap_date), fx: Number(s.fx) || fx, uaeA: Number(s.uae_assets) || 0, uaeL: Number(s.uae_liab) || 0, indA: Number(s.india_assets) || 0, indL: Number(s.india_liab) || 0, inv }
+    const grp = ALL_GROUPS.some(k => b[k] != null) ? Object.fromEntries(ALL_GROUPS.map(k => [k, Number(b[k]) || 0])) : null
+    snaps[i] = { date: String(s.snap_date), fx: Number(s.fx) || fx, uaeA: Number(s.uae_assets) || 0, uaeL: Number(s.uae_liab) || 0, indA: Number(s.india_assets) || 0, indL: Number(s.india_liab) || 0, inv, grp }
   }
   return { months, fx, cur, snaps, first }
 }
@@ -87,6 +89,7 @@ export function buildTrends(inp: {
 export interface ViewSeries {
   income: number[]; spent: number[]; emi: number[]; saved: number[]; invested: number[]; loans: number[]; groups: Record<string, number>[]
   own: (number | null)[]; owe: (number | null)[]; nw: (number | null)[]; inv: (number | null)[]   // from snapshots; null before tracking began
+  grp: (Record<string, number> | null)[]   // what you own by asset group (both countries together only)
 }
 // One view's numbers: a country in its own currency, or both in rupees at today's rate
 // (snapshots at the rate of their day). The India view counts money landing from the UAE
@@ -112,6 +115,7 @@ export function viewTrends(t: Trends, view: View, fx = t.fx): ViewSeries {
     own, owe, nw: own.map((x, i) => (x == null ? null : x - (owe[i] ?? 0))),
     // The split into investments is kept for both countries together only
     inv: view === 'consolidated' ? t.snaps.map(s => s?.inv ?? null) : t.snaps.map(() => null),
+    grp: view === 'consolidated' ? t.snaps.map(s => s?.grp ?? null) : t.snaps.map(() => null),
   }
 }
 

@@ -1,27 +1,13 @@
 'use client'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { fmtMoney, fmtCompact } from '@/lib/format'
 import { GROUPS } from '@/lib/categories'
 import { viewTrends, smoothPath, smoothBack, niceStep, type Trends, type ViewSeries } from '@/lib/homeTrends'
+import { MON, MONTH, mLabel, rangeOf, sumOf, pctChange as pct, periodName, type PeriodKey } from '@/lib/period'
+import { usePeriod, PeriodChips, TrendTile, GOOD, BAD, NONE, useHover, chg, Tooltip, LegendChip, Axis, Labels, Dot, type Pt } from './charts/parts'
 
 type View = 'uae' | 'india' | 'consolidated'
-type PeriodKey = 'this' | 'last' | 'q' | 'm6' | 'm12' | 'y2'
-const PERIODS: [PeriodKey, string][] = [['this', 'This month'], ['last', 'Last month'], ['q', 'Last quarter'], ['m6', 'Last 6 months'], ['m12', 'Last 12 months'], ['y2', 'Last 2 years']]
-const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-const MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-const addM = (ym: string, n: number) => { const [y, m] = ym.split('-').map(Number), t = y * 12 + (m - 1) + n; return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}` }
-const mLabel = (ym: string) => `${MON[Number(ym.slice(5)) - 1]} ${ym.slice(2, 4)}`
-// The months a period covers. "Last N months" counts this one; last quarter is the last full calendar quarter.
-function rangeOf(p: PeriodKey, now: string): [string, string] {
-  if (p === 'this') return [now, now]
-  if (p === 'last') return [addM(now, -1), addM(now, -1)]
-  if (p === 'q') { const qs = addM(now, -((Number(now.slice(5)) - 1) % 3)); return [addM(qs, -3), addM(qs, -1)] }
-  return [addM(now, -({ m6: 5, m12: 11, y2: 23 }[p])), now]
-}
-const sumOf = (arr: number[], a: number, b: number) => { let s = 0; for (let i = Math.max(0, a); i <= b; i++) s += arr[i] ?? 0; return s }
-const GOOD = { background: '#E7F6EE', color: '#15803D' }, BAD = { background: '#FDECEA', color: '#B4231A' }, NONE = { background: '#F1F2F6', color: '#5F657A' }
-const pct = (c: number, p: number) => (p ? (c - p) / Math.abs(p) * 100 : 0)
 
 // Home, top half: what came in, went out, was saved and invested, loans and
 // net worth, for the period picked — six tiles, money flows, where the
@@ -34,12 +20,10 @@ export default function HomeTrends({ view, fx, today, live, holderNote, side }: 
   const cur = view === 'uae' ? 'AED' : 'INR'
   const money = (n: number) => fmtMoney(n, cur), short = (n: number) => fmtCompact(n, cur)
   const now = today.slice(0, 7)
-  const [period, setPeriod] = useState<PeriodKey>('m6')
+  const [period, pick] = usePeriod()
   const [mode, setMode] = useState<'month' | 'year'>('month')
   const [data, setData] = useState<Trends | null>(null)
   const [failed, setFailed] = useState(false)
-  useEffect(() => { try { const p = localStorage.getItem('wl-home-period') as PeriodKey | null; if (p && PERIODS.some(x => x[0] === p)) setPeriod(p) } catch {} }, [])
-  const pick = (p: PeriodKey) => { setPeriod(p); try { localStorage.setItem('wl-home-period', p) } catch {} }
   // 25 months covers a year and the year before it; two years and year on year need five
   const need = mode === 'year' || period === 'y2' ? 60 : 25
   useEffect(() => {
@@ -51,14 +35,7 @@ export default function HomeTrends({ view, fx, today, live, holderNote, side }: 
   }, [need]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const v = useMemo(() => (data ? viewTrends(data, view, fx) : null), [data, view, fx])
-  const chips = (
-    <div role="group" aria-label="Period" className="flex gap-1 p-1 rounded-[14px] bg-white overflow-x-auto no-scrollbar max-w-full" style={{ border: '1px solid var(--line)' }}>
-      {PERIODS.map(([k, l]) => (
-        <button key={k} onClick={() => pick(k)} aria-pressed={period === k} className="h-9 px-3.5 rounded-[10px] text-[13px] whitespace-nowrap flex-shrink-0"
-          style={period === k ? { background: 'var(--accent)', color: '#fff', fontWeight: 600 } : { color: 'var(--text2)' }}>{l}</button>
-      ))}
-    </div>
-  )
+  const chips = <PeriodChips value={period} onChange={pick} />
   if (!data || !v) return (
     <div className="flex flex-col gap-3.5 md:gap-[18px]">
       <div className="flex justify-end">{chips}</div>
@@ -147,20 +124,20 @@ function Body({ data, v, period, mode, setMode, chips, money, short, now, today,
     <div className="flex flex-col gap-3.5 md:gap-[18px]">
       <div className="flex flex-wrap items-center justify-between gap-2.5">
         <div className="min-w-0">
-          <h2 className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Overview · {PERIODS.find(x => x[0] === period)![1].toLowerCase()}</h2>
+          <h2 className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Overview · {periodName(period).toLowerCase()}</h2>
           <p className="text-[12px]" style={{ color: 'var(--text3)' }}>{len > 1 ? `${mLabel(M[a])} – ${mLabel(M[b])}` : `${MONTH[Number(M[b].slice(5)) - 1]} ${M[b].slice(0, 4)}${isNow ? ', so far' : ''}`}{holderNote ? ` · ${holderNote}` : ''}</p>
         </div>
         {chips}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2.5 md:gap-3">
-        {kpis.map((k, i) => <Tile key={k.label} {...k} gid={`kg${i}`} />)}
+        {kpis.map((k, i) => <TrendTile key={k.label} {...k} gid={`kg${i}`} />)}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-3.5 md:gap-4 items-stretch">
         <FlowsChart pts={pts} I={flow(v.income)} S={flow(v.spent)} E={flow(v.emi)} V={flow(v.invested)} money={money} short={short} modeSwitch={modeSwitch}
           sub={`${yearly ? 'Each year’s total' : 'Each month'} · ${span}${isNow ? (yearly ? ' · this year so far' : ` · ${MON[Number(now.slice(5)) - 1]} so far`) : ''}`}
-          totals={{ inc: c.inc, out: c.sp + c.em, sv: c.sv }} periodName={PERIODS.find(x => x[0] === period)![1].toLowerCase()} />
+          totals={{ inc: c.inc, out: c.sp + c.em, sv: c.sv }} periodName={periodName(period).toLowerCase()} />
         <SpendDonut rows={groups} total={c.sp} short={short} sub={`Spending by category, ${periodWord}`} />
       </div>
 
@@ -172,85 +149,6 @@ function Body({ data, v, period, mode, setMode, chips, money, short, now, today,
     </div>
   )
 }
-
-// ── A tile: the figure, its change, and its trend ──
-function Tile({ label, color, value, sub, d, spark, href, gid }: { label: string; color: string; value: string; sub: string; d: { t: string; s: React.CSSProperties }; spark: number[]; href: string; gid: string }) {
-  const vals = spark.map((x, i) => ({ x: i, y: x })).filter(pt => Number.isFinite(pt.y))
-  const lo = Math.min(...vals.map(pt => pt.y)), hi = Math.max(...vals.map(pt => pt.y)), r = hi - lo || 1, n = spark.length
-  const P = vals.map(pt => ({ x: n > 1 ? pt.x * 100 / (n - 1) : 50, y: 26 - (pt.y - lo) / r * 20 }))
-  const line = P.length > 1 ? smoothPath(P) : ''
-  return (
-    <Link href={href} className="wl-card flex flex-col gap-1 pt-3.5 px-3.5 md:px-4 overflow-hidden hover:shadow-md transition-shadow min-w-0">
-      <div className="flex items-center justify-between gap-1.5">
-        <span className="inline-flex items-center gap-1.5 text-[12px] font-medium truncate" style={{ color: 'var(--text2)' }}><i className="w-2 h-2 rounded-[3px] flex-shrink-0" style={{ background: color }} />{label}</span>
-        <span className="text-[11px] font-semibold px-1.5 py-[2px] rounded-full whitespace-nowrap" style={d.s}>{d.t}</span>
-      </div>
-      <div className="text-[20px] md:text-[23px] font-bold tabular-nums tracking-[-0.02em] truncate" style={{ color: 'var(--text)' }}>{value}</div>
-      <div className="text-[11.5px] leading-snug min-h-[30px]" style={{ color: 'var(--text3)' }}>{sub}</div>
-      <svg viewBox="0 0 100 30" preserveAspectRatio="none" className="block -mx-3.5 md:-mx-4 h-10" style={{ width: 'calc(100% + 2rem)' }} aria-hidden="true">
-        <defs><linearGradient id={gid} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity={0.28} /><stop offset="100%" stopColor={color} stopOpacity={0} /></linearGradient></defs>
-        {line && <path d={`${line} L${P[P.length - 1].x.toFixed(1)} 30 L${P[0].x.toFixed(1)} 30 Z`} fill={`url(#${gid})`} />}
-        {line && <path d={line} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />}
-      </svg>
-    </Link>
-  )
-}
-
-// ── Shared chart bits ──
-interface Pt { label: string; title: string; ix: number[]; sel: boolean }
-function useHover() {
-  const [h, setH] = useState<number | null>(null)
-  const ref = useRef<HTMLDivElement>(null)
-  const move = (n: number) => (e: React.PointerEvent) => {
-    const r = ref.current?.getBoundingClientRect(); if (!r) return
-    setH(Math.max(0, Math.min(n - 1, Math.floor((e.clientX - r.left) / r.width * n))))
-  }
-  return { h, ref, move, leave: () => setH(null) }
-}
-const chg = (vals: (number | null)[], i: number, upGood: boolean) => {
-  const pv = i > 0 ? vals[i - 1] : null, cv = vals[i]
-  if (pv == null || !pv || cv == null) return { t: '', c: '#C9CBE0' }
-  const d = pct(cv, pv)
-  return { t: `${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(0)}%`, c: (d >= 0) === upGood ? '#7EE2A8' : '#FF9C93' }
-}
-function Tooltip({ left, title, rows }: { left: number; title: string; rows: { label: string; color: string; value: string; ch: { t: string; c: string } }[] }) {
-  return (
-    <div className="absolute top-1 z-10 pointer-events-none rounded-xl px-3 py-2.5 min-w-[196px]" style={{ left: `${left}%`, transform: left > 58 ? 'translateX(calc(-100% - 14px))' : 'translateX(14px)', background: '#14172B', color: '#fff', boxShadow: '0 10px 28px rgba(20,23,43,.22)' }}>
-      <div className="text-[12px] font-bold mb-1.5">{title}</div>
-      {rows.map(r => (
-        <div key={r.label} className="flex items-center gap-2 text-[12px] leading-[1.75]">
-          <i className="w-2 h-2 rounded-[2px] flex-shrink-0" style={{ background: r.color }} /><span className="flex-1" style={{ color: '#C9CBE0' }}>{r.label}</span>
-          <b className="tabular-nums">{r.value}</b><span className="w-10 text-right text-[11px]" style={{ color: r.ch.c }}>{r.ch.t}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
-function LegendChip({ on, toggle, label, total, swatch, change }: { on: boolean; toggle: () => void; label: string; total: string; swatch: React.CSSProperties; change?: { t: string; good: boolean } }) {
-  return (
-    <button onClick={toggle} aria-pressed={on} className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-full text-[12.5px]"
-      style={on ? { background: '#fff', border: '1px solid #D9DCE6', color: 'var(--text)' } : { background: '#F5F6FA', border: '1px dashed #D9DCE6', color: '#8A8FA3', textDecoration: 'line-through' }}>
-      <span style={swatch} />{label}<b className="tabular-nums">{total}</b>
-      {change && <span className="text-[11.5px] font-semibold" style={{ color: change.good ? '#15803D' : '#B4231A' }}>{change.t}</span>}
-    </button>
-  )
-}
-const Axis = ({ ticks }: { ticks: { y: number; label: string; zero: boolean }[] }) => (<>
-  {ticks.map(t => (
-    <div key={t.y}>
-      <div className="absolute left-0 right-0" style={{ top: t.y, borderTop: `1px ${t.zero ? 'solid #B9BDCB' : 'dashed #E9EBF1'}` }} />
-      <div className="absolute w-[44px] text-right text-[10.5px] tabular-nums -translate-y-1/2" style={{ left: -52, top: t.y, color: '#8A8FA3' }}>{t.label}</div>
-    </div>
-  ))}
-</>)
-const Labels = ({ pts }: { pts: Pt[] }) => (
-  <div className="flex ml-[52px] mt-1">
-    {pts.map((pt, i) => <div key={i} className="flex-1 min-w-0 text-center text-[11px] whitespace-nowrap" style={{ color: 'var(--text3)', fontWeight: pt.sel ? 700 : 400 }}>{pts.length <= 12 || i % 3 === 0 || i === pts.length - 1 ? pt.label : ''}</div>)}
-  </div>
-)
-const Dot = ({ left, top, color }: { left: number; top: number; color: string }) => (
-  <span className="absolute w-3 h-3 -ml-1.5 -mt-1.5 rounded-full pointer-events-none" style={{ left: `${left}%`, top, background: color, border: '2.5px solid #fff', boxShadow: '0 1px 4px rgba(20,23,43,.25)' }} />
-)
 
 // ── Money flows: income over a filled spending area; the band between them is
 // what you saved; investing as columns ──

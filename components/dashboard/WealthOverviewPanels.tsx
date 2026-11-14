@@ -41,7 +41,7 @@ export function WealthNeeds({ needs }: { needs: Overview['needs'] }) {
 
 // How quickly your money can be reached, the AED / ₹ split (with what a 10%
 // fall in the rupee would do), and protection — in the view's currency
-export function WealthPanels({ o, view, fx }: { o: Overview; view: string; fx: number }) {
+export function WealthPanels({ o, view, fx, hideProtection }: { o: Overview; view: string; fx: number; hideProtection?: boolean }) {
   const cur = view === 'uae' ? 'AED' : 'INR'
   const show = (inr: number) => fmtCompact(view === 'uae' ? inr / fx : inr, cur)
   const total = o.access.reduce((s, a) => s + a.value, 0)
@@ -50,7 +50,7 @@ export function WealthPanels({ o, view, fx }: { o: Overview; view: string; fx: n
   const rupeeHit = c.inr / fx * 0.1   // in AED, if ₹ falls 10%
   const staying = o.returnPlan === 'no' || o.returnPlan === 'later'
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3.5 md:gap-4 wl-even">
+    <div className={`grid grid-cols-1 ${hideProtection ? 'lg:grid-cols-2' : 'lg:grid-cols-3'} gap-3.5 md:gap-4 wl-even`}>
       <Panel title={<span className="flex items-center gap-1.5"><Timer size={15} style={{ color: 'var(--accent)' }} />How quickly you can reach it</span>}>
         <div className="flex h-3 rounded-full overflow-hidden gap-[2px] mt-3" role="img" aria-label={o.access.map(a => `${a.label} ${show(a.value)}`).join(', ')}>
           {o.access.filter(a => a.value > 0).map(a => <div key={a.key} style={{ width: `${a.value / (total || 1) * 100}%`, background: a.color }} />)}
@@ -91,7 +91,7 @@ export function WealthPanels({ o, view, fx }: { o: Overview; view: string; fx: n
         </p>
       </Panel>
 
-      <Panel title={<span className="flex items-center gap-1.5"><ShieldCheck size={15} style={{ color: 'var(--accent)' }} />Is it protected?</span>}>
+      {!hideProtection && <Panel title={<span className="flex items-center gap-1.5"><ShieldCheck size={15} style={{ color: 'var(--accent)' }} />Is it protected?</span>}>
         <ul className="mt-2 flex flex-col gap-2 text-[12.5px]">
           <li className="flex justify-between gap-2">
             <span style={{ color: 'var(--text2)' }}>Life cover</span>
@@ -112,7 +112,7 @@ export function WealthPanels({ o, view, fx }: { o: Overview; view: string; fx: n
           <Link href="/dashboard/insurance" style={{ color: 'var(--accent)' }}>Insurance</Link>
           <Link href="/dashboard/nominees" style={{ color: 'var(--accent)' }}>Nominees</Link>
         </div>
-      </Panel>
+      </Panel>}
     </div>
   )
 }

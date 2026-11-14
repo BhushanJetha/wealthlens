@@ -1,23 +1,17 @@
 import { createClient, getSessionUser } from '@/lib/supabase/server'
-import NetWorthClient from '@/components/dashboard/NetWorthClient'
+import WealthOverviewClient from '@/components/dashboard/wealth/WealthOverviewClient'
 import { loadPortfolioData } from '@/lib/portfolio/data'
 import { buildPortfolio } from '@/lib/portfolio/build'
 import { ACCESS, type Access } from '@/lib/portfolio/holdings'
 
-// Wealth overview: net worth (same holdings and history as Home) plus what
-// needs you, how quickly your money can be reached, the AED / ₹ split and
-// whether it's protected — from the shared portfolio engine.
+// Wealth overview: every holding (the same as Home), what needs you, your mix
+// against its target, how quickly money can be reached, the AED / ₹ split
+// and whether it's protected — from the shared portfolio engine. The history
+// comes from Home's trends (/api/home/trends).
 export default async function NetWorthPage() {
   const supabase = createClient()
   const user = await getSessionUser(supabase)
-  const uid = user!.id
-  const histFrom = new Date(Date.now() - 400 * 86400000).toISOString().slice(0, 10)
-
-  const [d, hist] = await Promise.all([
-    loadPortfolioData(supabase, uid, { txMonths: 13 }),
-    supabase.from('net_worth_snapshots').select('snap_date,fx,uae_assets,uae_liab,india_assets,india_liab,breakdown')
-      .eq('user_id', uid).gte('snap_date', histFrom).order('snap_date', { ascending: true }),
-  ])
+  const d = await loadPortfolioData(supabase, user!.id)
   const p = buildPortfolio(d)
   const overview = {
     needs: p.needs.slice(0, 8),
@@ -27,15 +21,15 @@ export default async function NetWorthPage() {
     protection: { gap: p.protection.gap, cover: p.protection.cover, need: p.protection.need, dependents: p.protection.dependents, health: p.protection.health },
     nominees: { missing: p.nominees.missing, total: p.nominees.rows.length, ready: p.nominees.ready },
     keepInr: p.add.keep,
+    drift: p.drift, mixTotal: p.add.mix.total, targetSource: p.target.source,
+    essentials: p.essentials, policies: d.insurance.length + (d.holdings.lic ?? []).length,
   }
 
   return (
-    <NetWorthClient
+    <WealthOverviewClient
       today={d.today}
       failed={d.failed}
       {...d.holdings}
-      transactions={d.transactions}
-      snapshots={hist.data ?? []}
       otherAssets={d.holdings.otherAssets ?? []}
       gratuity={d.holdings.gratuity}
       overview={overview}
