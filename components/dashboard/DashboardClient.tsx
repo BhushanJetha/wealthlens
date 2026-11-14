@@ -33,6 +33,7 @@ import { foundRegular, pendingCharges } from '@/lib/regular'
 import HomeTrends from './HomeTrends'
 import { FreeBanner, NextMonthCard, BudgetsCard, DueWeekCard, GoalRingsCard, LoansCard, NeedsYouBar } from './HomeNow'
 import { useTodo } from './todo/useTodo'
+import type { BuilderDue } from '@/lib/property'
 
 interface Props {
   firstName: string | null
@@ -49,6 +50,7 @@ interface Props {
   pending: Pending              // auto entries waiting for approval, and anything to confirm
   recurring: RecurringTxn[]
   bills: Bill[]
+  builder?: BuilderDue[]      // your part of builder payments ahead (lib/property)
   billSkips: string[]
   contributions: any[]
   payFirst: PayFirstMode
@@ -142,7 +144,7 @@ export default function DashboardClient(p: Props) {
 
   // ── What matters now: free to spend, reminders, the plan ahead ──
   const reviewOk = useMemo(() => ({ today, view, FX }), [today, view, FX])
-  const dueInp = { today, txns: p.transactions, accounts: h.accounts, loans: h.loans, insurance: p.insurance, mutualFunds: h.mutualFunds, recurring: p.recurring, rds: h.recurringDeposits, plans: p.plans, lic: h.lic, bills: p.bills, answers: p.billSkips }
+  const dueInp = { today, builder: p.builder, txns: p.transactions, accounts: h.accounts, loans: h.loans, insurance: p.insurance, mutualFunds: h.mutualFunds, recurring: p.recurring, rds: h.recurringDeposits, plans: p.plans, lic: h.lic, bills: p.bills, answers: p.billSkips }
   const dues = useMemo(() => buildDues({ ...dueInp, days: 45, view }), [reviewOk, p, h]) // eslint-disable-line react-hooks/exhaustive-deps
   const viewAccounts = useMemo(() => h.accounts.filter((a: any) => view === 'consolidated' || (view === 'uae' ? a.currency === 'AED' : a.currency !== 'AED')), [h.accounts, view])
   // Each account's warning counts any money reaching it; the totals count only real income

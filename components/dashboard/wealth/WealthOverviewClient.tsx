@@ -15,6 +15,7 @@ import InsidePanel from '../charts/Inside'
 import { NetWorthStack, type OwnLayer } from './WealthCharts'
 import { WealthPanels, type Overview } from '../WealthOverviewPanels'
 import TodoBar from '../todo/TodoBar'
+import Freshness from './Freshness'
 
 export interface WealthOverview extends Overview {
   drift: { cls: string; now: number; target: number; off: number }[]
@@ -29,6 +30,7 @@ interface Props {
   fixedDeposits: any[]; recurringDeposits: any[]; ppfEpf: any[]; gold: any[]
   bonds: any[]; lic: any[]; loans: any[]; otherAssets: any[]; gratuity: any
   overview: WealthOverview
+  lastEntry?: Record<string, string>      // each account's latest entry (how fresh)
 }
 
 // Where each net-worth row is managed
@@ -122,8 +124,10 @@ export default function WealthOverviewClient(p: Props) {
   }
   const lifeOk = o.protection.dependents === 0 || o.protection.gap <= 0
   const kpis = [
-    { label: 'Net worth', color: '#4B3BC4', dark: true, value: short(body?.nwEnd ?? nw.netWorth), sub: body?.moved != null ? `${body.moved >= 0 ? '+' : '−'}${short(Math.abs(body.moved))} ${body.word}` : 'History builds from your first visits', d: badge(body?.nwEnd ?? null, body?.nwStart ?? null, true), spark: body?.nwSeries.map(x => x ?? NaN) ?? [], href: '/dashboard/net-worth' },
-    { label: 'Investments', color: '#3B8EF0', value: short(nw.investments.value), sub: `${short(nw.investments.cost)} put in · ${gain >= 0 ? '+' : '−'}${short(Math.abs(gain))}`, d: gainPct == null ? { t: '—', s: NONE } : { t: `${gainPct >= 0 ? '+' : ''}${gainPct.toFixed(1)}%`, s: gainPct >= 0 ? GOOD : BAD }, spark: body?.invSeries ?? [], href: '/dashboard/investments', mini: nw.investments.value > 0 ? { kind: 'split' as const, parts: [{ value: Math.min(nw.investments.cost, nw.investments.value), color: '#3B8EF0' }, { value: Math.max(0, gain), color: '#16A34A' }] } : undefined },
+    { label: 'Net worth', color: '#4B3BC4', dark: true, how: { rows: [['What you own', money(nw.totalAssets)], ...nw.liabRows.filter(r => r.value > 0).map(r => [`− ${r.label}`, money(r.value)])] as [string, string][], total: ['= Net worth today', money(nw.netWorth)] as [string, string],
+        note: 'Investments at today’s prices, bank balances from your records, property at the value you set. Builder payments still to come aren’t taken off: that’s money you’ll pay, not money you owe the bank.' }, value: short(body?.nwEnd ?? nw.netWorth), sub: body?.moved != null ? `${body.moved >= 0 ? '+' : '−'}${short(Math.abs(body.moved))} ${body.word}` : 'History builds from your first visits', d: badge(body?.nwEnd ?? null, body?.nwStart ?? null, true), spark: body?.nwSeries.map(x => x ?? NaN) ?? [], href: '/dashboard/net-worth' },
+    { label: 'Investments', color: '#3B8EF0', how: { rows: [['Put in', money(nw.investments.cost)], [gain >= 0 ? '+ Gain' : '− Loss', money(Math.abs(gain))]] as [string, string][], total: ['= Worth today', money(nw.investments.value)] as [string, string],
+        note: 'Funds and shares at their latest price, deposits at what you put in plus interest. Not counted here: bank and cash, property, jewellery, vehicles and gratuity.' }, value: short(nw.investments.value), sub: `${short(nw.investments.cost)} put in · ${gain >= 0 ? '+' : '−'}${short(Math.abs(gain))}`, d: gainPct == null ? { t: '—', s: NONE } : { t: `${gainPct >= 0 ? '+' : ''}${gainPct.toFixed(1)}%`, s: gainPct >= 0 ? GOOD : BAD }, spark: body?.invSeries ?? [], href: '/dashboard/investments', mini: nw.investments.value > 0 ? { kind: 'split' as const, parts: [{ value: Math.min(nw.investments.cost, nw.investments.value), color: '#3B8EF0' }, { value: Math.max(0, gain), color: '#16A34A' }] } : undefined },
     { label: 'Property', color: '#14B8A6', value: short(property), sub: property > 0 ? (homeLoans > 0 ? `${short(homeLoans)} of it is home loan` : 'No home loan on it') : 'No property added', d: yours != null ? { t: `${yours}% yours`, s: GOOD } : { t: '—', s: NONE }, spark: [], href: '/dashboard/assets', mini: property > 0 ? { kind: 'split' as const, parts: [{ value: property - Math.min(property, homeLoans), color: '#0F766E' }, { value: Math.min(property, homeLoans), color: '#FCA5A5' }] } : undefined },
     { label: 'Bank & cash', color: '#2FB67C', value: short(nw.cash), sub: coverMonths != null ? 'Emergency fund · aim for 6 months' : 'In your accounts today', d: coverMonths != null ? { t: `${coverMonths.toFixed(1)} mo`, s: coverMonths >= 6 ? GOOD : coverMonths >= 3 ? NONE : BAD } : { t: 'today', s: NONE }, spark: [], href: '/dashboard/accounts', mini: coverMonths != null ? { kind: 'progress' as const, pct: coverMonths / 6 * 100, color: coverMonths >= 6 ? '#2FB67C' : '#F59E0B' } : undefined },
     { label: 'Loans left', color: '#DC2626', value: short(body?.lnEnd ?? 0), sub: body?.paid != null && (body.lnStart ?? 0) > 0 ? `${body.paid >= 0 ? 'Paid down' : 'Up by'} ${short(Math.abs(body.paid))} ${body.word}` : (body?.lnEnd ?? 0) > 0 ? 'Still to repay' : 'No loans', d: badge(body?.lnEnd ?? null, body?.lnStart ?? null, false), spark: body?.loanSeries ?? [], href: '/dashboard/loans' },
@@ -177,6 +181,7 @@ export default function WealthOverviewClient(p: Props) {
           <span>We couldn&apos;t load {p.failed.join(', ')} just now, so net worth may be understated. Refresh the page to try again.</span>
         </div>
       )}
+      <Freshness today={p.today} mutualFunds={p.mutualFunds} stocks={p.stocks} accounts={p.accounts} lastEntry={p.lastEntry ?? {}} otherAssets={p.otherAssets} />
       <TodoBar area="wealth" />
 
       {empty ? (

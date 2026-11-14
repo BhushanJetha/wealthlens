@@ -25,8 +25,13 @@ export default async function NetWorthPage() {
     essentials: p.essentials, policies: d.insurance.length + (d.holdings.lic ?? []).length,
   }
 
+  // Each account's latest entry, for how fresh the numbers are
+  const lastEntry: Record<string, string> = {}
+  for (const t of d.transactions) if (t.account_id && (!lastEntry[t.account_id] || t.txn_date > lastEntry[t.account_id])) lastEntry[t.account_id] = String(t.txn_date).slice(0, 10)
+
   return (
     <WealthOverviewClient
+      lastEntry={lastEntry}
       today={d.today}
       failed={d.failed}
       {...d.holdings}

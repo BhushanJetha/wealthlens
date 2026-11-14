@@ -184,3 +184,40 @@ export function propertyIdeas(m: PropertyModel, today: string, fmt: (n: number) 
   if (!m.valueAsOf || yearsBetween(m.valueAsOf, today) > 1) out.push({ tone: 'info', title: m.valueAsOf ? `Value last set ${new Date(`${m.valueAsOf}T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' })}` : 'Set what it’s worth', detail: 'Check what similar homes nearby sell for, and update it once a year.' })
   return out
 }
+
+// ── Builder payments as bills ────────────────────────────────────────────────
+// Each step still to pay on a property's schedule, on its date, for YOUR part
+// only: the share the loan still has to release goes from the bank to the
+// builder and never touches your account (lib/moneyOverview buildDues `extra`).
+// A step past its date and still unpaid is due today.
+export interface BuilderDue { id: string; date: string; label: string; sub: string; amount: number; currency: 'AED' | 'INR'; href: string; why: string }
+export function builderDues(o: { assets: any[]; loans: any[]; loanTxns: any[]; plans: any[]; today: string; days: number }): BuilderDue[] {
+  const out: BuilderDue[] = []
+  const gap = (d: string) => Math.round((Date.parse(`${d}T00:00:00Z`) - Date.parse(`${o.today}T00:00:00Z`)) / 864e5)
+  for (const asset of o.assets.filter(a => a.is_active !== false && ['property', 'land'].includes(a.kind))) {
+    const loan = asset.loan_id ? o.loans.find(l => l.id === asset.loan_id) ?? null : null
+    const plan = loan ? o.plans.filter(p => p.loan_id === loan.id) : []
+    if (!stepsOf(asset, plan).length) continue
+    const cur: 'AED' | 'INR' = asset.currency === 'AED' ? 'AED' : 'INR'
+    const fmt = (n: number) => `${cur === 'AED' ? 'AED ' : '₹'}${Math.round(n).toLocaleString(cur === 'AED' ? 'en-US' : 'en-IN')}`
+    const m = propertyModel({ asset, loan, txns: o.loanTxns, plan, today: o.today })
+    for (const s of m.schedule) {
+      if (s.status === 'paid' || !s.due || s.fromYou <= 0.5) continue
+      const g = gap(s.due)
+      if (g > o.days || g < -90) continue
+      out.push({ id: `build-${asset.id}-${s.id}`, date: g < 0 ? o.today : s.due, label: `${asset.name} · ${s.label}`, amount: s.fromYou, currency: cur,
+        sub: g < 0 ? `Builder payment · was due ${s.due}` : s.fromLoan > 0.5 ? `Builder payment · the bank releases ${fmt(s.fromLoan)}, this is your part` : 'Builder payment',
+        href: `/dashboard/assets/${asset.id}`, why: 'From the property’s payment steps' })
+    }
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date))
+}
+// What builderDues reads, in one round: homes and land, loan records, loan payment plans
+export const loadBuilderReads = (supabase: any, uid: string) => {
+  const opt = (q: any) => q.then((r: any) => r.data ?? [], () => [])
+  return Promise.all([
+    opt(supabase.from('other_assets').select('*').eq('user_id', uid).eq('is_active', true).in('kind', ['property', 'land'])),
+    opt(supabase.from('loan_transactions').select('*').eq('user_id', uid)),
+    opt(supabase.from('loan_payment_plan').select('*').eq('user_id', uid)),
+  ]).then(([assets, loanTxns, plans]) => ({ assets, loanTxns, plans }))
+}

@@ -5,11 +5,12 @@ import { loadGoalsData } from './goalsData'
 import { buildBills, heldByGoal } from './bigBills'
 import { isMissingTable } from './supabase/missingTable'
 import { payFirstModeOf } from './plan'
+import { builderDues, loadBuilderReads } from './property'
 
 export async function loadPlanData(supabase: any, uid: string) {
   const start = new Date(); start.setUTCMonth(start.getUTCMonth() - 4)
   const budgetsFrom = start.toISOString().slice(0, 7)
-  const [g, budgetsRes, recRes, plansRes, skipsRes, eventsRes, userRes] = await Promise.all([
+  const [g, budgetsRes, recRes, plansRes, skipsRes, eventsRes, userRes, builderReads] = await Promise.all([
     loadGoalsData(supabase, uid),
     supabase.from('budgets').select('*').eq('user_id', uid).gte('month_year', budgetsFrom),
     supabase.from('recurring_txns').select('*').eq('user_id', uid),
@@ -17,6 +18,7 @@ export async function loadPlanData(supabase: any, uid: string) {
     supabase.from('big_bill_skips').select('key').eq('user_id', uid),
     supabase.from('spend_events').select('*').eq('user_id', uid).gte('end_date', new Date().toISOString().slice(0, 10)),
     supabase.auth.getUser(),
+    loadBuilderReads(supabase, uid),
   ])
   const answers: string[] = (skipsRes.data ?? []).map((s: any) => s.key)
   const bills = buildBills({ goals: g.goals, contributions: g.contributions, insurance: g.insurance, lic: g.investments.lic_policies ?? [], accounts: g.accounts, skips: answers, held: heldByGoal(g.goals, g.links, g.investments) }, g.today)
@@ -29,6 +31,8 @@ export async function loadPlanData(supabase: any, uid: string) {
     events: (eventsRes.data ?? []) as any[],
     bills,
     payFirst: payFirstModeOf(userRes.data?.user?.user_metadata),
+    // Your part of the builder payments in the year ahead (lib/property)
+    builder: builderDues({ ...builderReads, loans: g.loans, today: g.today, days: 400 }),
   }
 }
 export type PlanData = Awaited<ReturnType<typeof loadPlanData>>

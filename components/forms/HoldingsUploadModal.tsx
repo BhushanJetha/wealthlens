@@ -7,6 +7,7 @@ import {
   FileText, Lock, Eye, EyeOff, TrendingUp, Activity, Trash2,
 } from 'lucide-react'
 import { useDropzone } from 'react-dropzone'
+import { casNew } from '@/lib/casDedupe'
 
 type Kind  = 'stocks' | 'mutual_funds'
 type Stage = 'idle' | 'detecting' | 'needs-password' | 'parsing' | 'review' | 'saving' | 'done' | 'error'
@@ -63,6 +64,7 @@ export default function HoldingsUploadModal({ onClose, kind }: Props) {
   const [stockRows, setStockRows]     = useState<StockRow[]>([])
   const [savedNew, setSavedNew]       = useState(0)
   const [savedUpd, setSavedUpd]       = useState(0)
+  const [skippedPays, setSkippedPays] = useState(0)   // statement payments you'd already recorded
   const [saveError, setSaveError]     = useState<string | null>(null)
 
   const router   = useRouter()
@@ -156,7 +158,7 @@ export default function HoldingsUploadModal({ onClose, kind }: Props) {
     setSaveError(null)
     const { data: { user } } = await supabase.auth.getUser()
 
-    let newCount = 0, updCount = 0
+    let newCount = 0, updCount = 0, skipped = 0
 
     // Persist a fund's parsed CAMS transaction history (best-effort; the
     // investment_transactions table may not exist until migration 012 is run).
@@ -169,7 +171,13 @@ export default function HoldingsUploadModal({ onClose, kind }: Props) {
       try {
         await supabase.from('investment_transactions')
           .delete().eq('user_id', user!.id).eq('asset_id', assetId).eq('source', 'cas_import')
-        await supabase.from('investment_transactions').insert(fundTxns.map(t => ({
+        // Payments already recorded here (a SIP, a buy, a linked bank payment) aren't added again
+        const { data: recorded } = await supabase.from('investment_transactions').select('txn_date,txn_type,amount')
+          .eq('user_id', user!.id).eq('asset_id', assetId)
+        const { add, already } = casNew(fundTxns, recorded ?? [])
+        skipped += already.length
+        if (!add.length) return
+        await supabase.from('investment_transactions').insert(add.map(t => ({
           user_id:      user!.id,
           asset_type:   'mutual_fund',
           asset_id:     assetId,
@@ -274,6 +282,7 @@ export default function HoldingsUploadModal({ onClose, kind }: Props) {
 
     setSavedNew(newCount)
     setSavedUpd(updCount)
+    setSkippedPays(skipped)
     setStage('done')
     router.refresh()
   }
@@ -612,6 +621,7 @@ export default function HoldingsUploadModal({ onClose, kind }: Props) {
               <div className="text-[12px] text-center" style={{ color: 'var(--text3)' }}>
                 {savedNew > 0 && <div>{savedNew} new holding{savedNew !== 1 ? 's' : ''} added</div>}
                 {savedUpd > 0 && <div>{savedUpd} existing holding{savedUpd !== 1 ? 's' : ''} updated</div>}
+                {skippedPays > 0 && <div>{skippedPays} payment{skippedPays !== 1 ? 's were' : ' was'} already recorded, so {skippedPays !== 1 ? 'they weren’t' : 'it wasn’t'} added again</div>}
               </div>
               <button onClick={onClose} className="mt-1 px-6 py-2.5 rounded-lg text-white text-[12px] font-bold" style={{ background: 'var(--income)' }}>Done</button>
             </div>

@@ -123,14 +123,25 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
   const sel = useSelection()
   const openDuplicate = (txn: any) => setEditing({ txn, duplicate: true })
 
-  async function deleteTxn(t: any) {
-    if (!confirm(`Delete ${t.merchant || 'this transaction'}?${t.link_ref?.recorded ? ` What it recorded on ${t.link_ref.name} is removed too.` : ''} This can’t be undone.`)) return
+  // Delete with Undo instead of "are you sure?": the row goes at once and is
+  // deleted for real 8 seconds later, unless you undo it (or delete another)
+  const [undo, setUndo] = useState<{ t: any; timer: any } | null>(null)
+  const undoRef = useRef(undo); undoRef.current = undo
+  async function reallyDelete(t: any) {
     setDeletingId(t.id)
     const res = await fetch(`/api/transactions?id=${t.id}`, { method: 'DELETE' })
     setDeletingId(null)
-    toast(res.ok ? 'Transaction deleted' : 'Couldn’t delete it. Try again.', res.ok ? 'success' : 'error')
+    if (!res.ok) toast('Couldn’t delete it. Try again.', 'error')
     router.refresh()
   }
+  function deleteTxn(t: any) {
+    const prev = undoRef.current
+    if (prev) { clearTimeout(prev.timer); reallyDelete(prev.t) }
+    const timer = setTimeout(() => { setUndo(null); reallyDelete(t) }, 8000)
+    setUndo({ t, timer })
+  }
+  // Leaving the page doesn't cancel a delete you made
+  useEffect(() => () => { const u = undoRef.current; if (u) { clearTimeout(u.timer); fetch(`/api/transactions?id=${u.t.id}`, { method: 'DELETE', keepalive: true }) } }, [])
 
   async function approve(t: any) {
     const err = await approveAuto(supabase, t)
@@ -641,6 +652,7 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
             onPage={setPage} onPageSize={s => { setPageSize(s); setPage(1) }} />}
         </div>}>
         {paged.map(t => {
+          if (undo && t.id === undo.t.id) return null
           const isTransfer = t.txn_type === 'transfer'
           const isLoan     = t.txn_type === 'loan'
           const catColor   = isTransfer
@@ -663,6 +675,9 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
               amountSub={t.auto_status === 'pending' ? 'auto entry · pending approval' : Number(t.friend_share) > 0 ? `split · your share ${lSym}${myShare(t).toLocaleString('en-IN')}`
                 : t.paid_by_friend_id ? 'a friend paid · you owe them' : inrEq ?? (!spendGroup(t) ? 'move · not spending' : undefined)}
               onOpen={() => openEdit(t)} {...(sel.on ? { selected: sel.ids.has(t.id), onSelect: () => sel.toggle(t.id) } : {})}
+              swipeLeft={{ label: t.auto_status === 'pending' ? 'Not paid' : 'Delete', color: '#DC2626', onSwipe: () => deleteTxn(t) }}
+              swipeRight={{ label: 'Edit', color: '#6A55E8', onSwipe: () => openEdit(t) }}
+              onLongPress={() => { sel.start(); sel.toggle(t.id) }}
               actions={[
                 ...(t.auto_status === 'pending' ? [{ label: 'Approve', icon: Check, onClick: () => approve(t) }] : []),
                 { label: 'Edit', icon: Pencil, onClick: () => openEdit(t) },
@@ -689,6 +704,14 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
       {activeModal === 'credit_card' && <CreditCardUploadModal onClose={() => setActiveModal('none')} />}
 
       {editing && <AddTransactionModal edit={editing} onClose={() => setEditing(null)} />}
+      {undo && (
+        <div role="status" className="fixed left-3 right-3 md:left-auto md:right-6 md:w-[420px] bottom-[84px] md:bottom-6 z-50 rounded-2xl px-4 py-3 flex items-center gap-3 text-[13.5px] text-white"
+          style={{ background: '#14172B', boxShadow: '0 12px 28px rgba(20,23,43,.25)' }}>
+          <span className="flex-1 min-w-0 truncate">Deleted <b>{undo.t.merchant || 'the entry'}</b>{undo.t.link_ref?.recorded ? ` and what it recorded on ${undo.t.link_ref.name}` : ''}</span>
+          <button onClick={() => { clearTimeout(undo.timer); setUndo(null) }} className="font-bold flex-shrink-0" style={{ color: '#B8ABFF' }}>Undo</button>
+          <span className="w-11 h-1 rounded-full overflow-hidden flex-shrink-0" style={{ background: 'rgba(255,255,255,.2)' }}><span className="block h-1 wl-undo-bar" style={{ background: '#B8ABFF' }} /></span>
+        </div>
+      )}
       <BulkBar sel={sel} rows={listRows} allIds={listRows.map((t: any) => t.id).filter(Boolean)} accounts={accounts} />
       {splitting && <SplitSheet txn={splitting} onClose={() => setSplitting(null)} />}
       {manageCats && <ManageCategoriesSheet usage={catUsage} onClose={() => setManageCats(false)} onChanged={() => router.refresh()} />}

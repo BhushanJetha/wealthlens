@@ -156,6 +156,22 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
   useEffect(() => { if (form.currency === 'AED' && liveRate === null) fetchLiveRate() }, [form.currency])
 
   const set = (patch: Partial<typeof form>) => setForm(p => ({ ...p, ...patch }))
+  // A shop you've paid before: its category and the account you last used fill
+  // in (only on a new entry, and only what you haven't picked yourself)
+  const [picked, setPicked] = useState({ category: false, account: !!(defaults?.account_id) })
+  const [remembered, setRemembered] = useState<string | null>(null)
+  async function rememberShop() {
+    const m = form.merchant.trim()
+    if (mode !== 'add' || m.length < 3 || (picked.category && picked.account)) return
+    const { data } = await supabase.from('transactions').select('category,sub_category,account_id,currency,txn_type')
+      .ilike('merchant', m.replace(/[%_]/g, '')).eq('txn_type', form.txn_type).order('txn_date', { ascending: false }).limit(1)
+    const last = data?.[0]
+    if (!last) { setRemembered(null); return }
+    const patch: Partial<typeof form> = {}
+    if (!picked.category && last.category) { patch.category = last.category; patch.sub_category = last.sub_category ?? '' }
+    if (!picked.account && last.account_id && last.currency === form.currency) patch.account_id = last.account_id
+    if (Object.keys(patch).length) { set(patch); setRemembered(m) }
+  }
   // Accounts and payment options follow the currency (₹ = India, AED = UAE):
   // switching it drops an account or payment mode from the other country
   function setCurrency(c: string) {
@@ -201,6 +217,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
     })
   }
   function setCategory(name: string, sub?: string) {
+    setPicked(x => ({ ...x, category: true }))
     if (isCardPayment(name)) { set({ txn_type: 'transfer' }); setTransferSubtype('Card bill'); return }
     // Loan categories are loan payments; leaving them makes it an expense again
     const txn_type: TxnType = LOAN_CATS.has(name) ? 'loan' : form.txn_type === 'loan' ? 'expense' : form.txn_type
@@ -438,9 +455,10 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
 
           <div>
             <Label>{isTransfer ? 'Label' : isIncome ? 'Received from' : 'Paid to'}</Label>
-            <input type="text" value={form.merchant} onChange={e => set({ merchant: e.target.value })}
+            <input type="text" value={form.merchant} onChange={e => { set({ merchant: e.target.value }); setRemembered(null) }} onBlur={rememberShop}
               placeholder={isTransfer ? 'e.g. Transfer to India' : isIncome ? 'e.g. Employer, tenant, bank' : 'e.g. Carrefour, Amazon, DEWA'}
               className="wl-input" style={FIELD} />
+            {remembered && <div className="text-[11.5px] mt-1" style={{ color: 'var(--accent2)' }}>Category and account filled in from your last {remembered}. Change them if this one’s different.</div>}
           </div>
 
           <div className="grid grid-cols-2 gap-2.5">
@@ -460,7 +478,7 @@ export default function AddTransactionModal({ onClose, onAdded, defaults, edit, 
                     <select value={friendPaid ? '__friend__' : form.account_id === '__cash__' ? cashId : form.account_id} className="wl-input" style={FIELD}
                       onChange={e => e.target.value === '__friend__'
                         ? (set({ account_id: '', paid_by_friend_id: friendsList.friends?.[0]?.id ?? '__new__' }), setSplitOn(false))
-                        : set({ account_id: e.target.value, paid_by_friend_id: '' })}>
+                        : (set({ account_id: e.target.value, paid_by_friend_id: '' }), setPicked(x => ({ ...x, account: true })))}>
                       <option value="">Not linked</option>
                       {!isTransfer && <option value={cashId}>Cash wallet</option>}
                       {form.txn_type === 'expense' && <option value="__friend__">A friend paid</option>}

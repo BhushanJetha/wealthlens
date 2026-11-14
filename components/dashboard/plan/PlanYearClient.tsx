@@ -22,7 +22,7 @@ export default function PlanYearClient({ data }: { data: PlanData }) {
   const money = (n: number) => fmtMoney(n, cur), short = (n: number) => fmtCompact(n, cur)
   const months = useMemo(() => yearAheadPlan({ cur, today, plan, txns: data.transactions, accounts: data.accounts, loans: data.loans, insurance: data.insurance,
     mutualFunds: data.investments.mutual_funds ?? [], rds: data.investments.recurring_deposits ?? [], recurring: data.recurring, lic: data.investments.lic_policies ?? [],
-    bills: data.bills, answers: data.answers, events: data.events }), [cur, today, plan, data])
+    bills: data.bills, answers: data.answers, events: data.events, builder: data.builder }), [cur, today, plan, data])
   const first = months.find(m => m.state !== 'comfortable')
   const [open, setOpen] = useState<string | null>(null)
   const shown = months.find(m => m.ym === (open ?? first?.ym)) ?? months[0]

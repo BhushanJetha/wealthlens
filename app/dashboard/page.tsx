@@ -12,6 +12,7 @@ import { withAutomation } from '@/lib/automation'
 import { loadWealthExtras } from '@/lib/wealthExtras'
 import { buildBills, loadBillReads } from '@/lib/bigBills'
 import { payFirstModeOf } from '@/lib/plan'
+import { builderDues, loadBuilderReads } from '@/lib/property'
 
 // Today's stored snapshot already says this (fx is stored to 4 decimals;
 // jsonb key order differs, so compare by key)
@@ -72,10 +73,11 @@ export default async function DashboardPage() {
     supabase.from('transactions').select('id,txn_date,merchant,category,amount,currency,txn_type,friend_id,paid_by_friend_id').eq('user_id', uid).or('paid_by_friend_id.not.is.null,friend_id.not.is.null'),
     supabase.from('income_plans').select('*').eq('user_id', uid),
     loadBillReads(supabase, uid),
+    loadBuilderReads(supabase, uid),
   ])
   // Goal interests live in user_metadata — read fresh (the session copy is as of sign-in)
   const [[auto, [txns, loansRes, ledger, stocksRes, mfRes, fdRes, insRes, goalsRes, giRes, budgetsRes,
-    rdRes, npsRes, licRes, goldRes, bondRes, etfRes, ppfRes, profileRes, extras, snapsRes, eventsRes, friendsRes, splitsRes, friendTxnsRes, plansRes, [contribRes, skipsRes, billHeld]]], { data: fresh }] = await Promise.all([
+    rdRes, npsRes, licRes, goldRes, bondRes, etfRes, ppfRes, profileRes, extras, snapsRes, eventsRes, friendsRes, splitsRes, friendTxnsRes, plansRes, [contribRes, skipsRes, billHeld], builderReads]], { data: fresh }] = await Promise.all([
     withAutomation(supabase, uid, today, load), supabase.auth.getUser(),
   ])
 
@@ -134,6 +136,7 @@ export default async function DashboardPage() {
       plans={plansRes.data ?? []}
       bills={bills}
       billSkips={billSkips}
+      builder={builderDues({ ...builderReads, loans: loansRes.data ?? [], today, days: 60 })}
       contributions={contribRes.data ?? []}
       payFirst={payFirstModeOf(fresh.user?.user_metadata ?? user!.user_metadata)}
       plansReady={!isMissingTable(plansRes.error)}

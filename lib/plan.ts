@@ -12,6 +12,7 @@ import { monthCommitments } from './homePlan'
 import { addMonths, ymOf } from './insights'
 import { isIncome, prepareMoney } from './money'
 import type { Bill } from './bigBills'
+import type { BuilderDue } from './property'
 
 const stepOf = (c: Cur) => (c === 'AED' ? 10 : 100)
 const roundTo = (v: number, c: Cur) => Math.round(v / stepOf(c)) * stepOf(c)
@@ -107,6 +108,7 @@ export interface YearMonth { ym: string; income: number; out: number; left: numb
 export function yearAheadPlan(inp: {
   cur: Cur; today: string; plan: MonthPlan; txns: any[]; accounts: any[]; loans: any[]; insurance: any[]; mutualFunds: any[]; rds: any[]
   recurring: any[]; lic: any[]; bills: Bill[]; answers: string[]; events: any[]
+  builder?: BuilderDue[]      // your part of the builder payments (lib/property)
 }): YearMonth[] {
   const { cur, plan } = inp
   const out: YearMonth[] = []
@@ -120,6 +122,7 @@ export function yearAheadPlan(inp: {
     const lines = [
       ...fixed.map(c => ({ label: c.label, amount: c.amount })),
       ...trips.map(e => ({ label: e.name, amount: Number(e.budget) })),
+      ...(inp.builder ?? []).filter(b => b.currency === cur && b.date.slice(0, 7) === ym).map(b => ({ label: b.label, amount: b.amount })),
       ...(plan.goals > 0 ? [{ label: 'Goals', amount: plan.goals }] : []),
       ...(plan.everyday > 0 ? [{ label: 'Everyday spending', amount: plan.everyday }] : []),
     ]

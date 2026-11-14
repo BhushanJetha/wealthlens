@@ -40,10 +40,30 @@ export const badgeOf = (cur: number, prev: number | null | undefined, upGood: bo
 }
 
 // ── A tile: the figure, its change, and its trend ──
+// How a tile's number is worked out, in plain words: what's added, what's
+// taken off, and what's left out on purpose
+export interface How { rows: [string, string][]; total: [string, string]; note?: string }
+function HowSheet({ title, how, onClose }: { title: string; how: How; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4" style={{ background: 'rgba(20,23,43,.32)' }} onClick={e => { e.preventDefault(); e.stopPropagation(); onClose() }}>
+      <div role="dialog" aria-modal="true" aria-label={`How ${title} is worked out`} onClick={e => { e.preventDefault(); e.stopPropagation() }}
+        className="w-full md:max-w-[400px] bg-white rounded-t-[22px] md:rounded-2xl px-5 py-4 flex flex-col gap-1 shadow-2xl cursor-default">
+        <div className="text-[12px] font-bold uppercase tracking-[.06em]" style={{ color: 'var(--accent)' }}>How this is worked out</div>
+        <div className="text-[15px] font-bold mb-1" style={{ color: 'var(--text)' }}>{title}</div>
+        {how.rows.map(([l, v]) => <div key={l} className="flex justify-between text-[13px] py-1" style={{ color: 'var(--text2)' }}><span>{l}</span><b className="tabular-nums" style={{ color: 'var(--text)' }}>{v}</b></div>)}
+        <div className="flex justify-between text-[14px] pt-2 mt-1" style={{ borderTop: '1px solid var(--line)', color: 'var(--text)' }}><b>{how.total[0]}</b><b className="tabular-nums">{how.total[1]}</b></div>
+        {how.note && <p className="text-[12px] rounded-[10px] px-3 py-2 mt-2 leading-relaxed" style={{ background: '#F5F6FA', color: 'var(--text2)' }}>{how.note}</p>}
+        <button onClick={e => { e.preventDefault(); e.stopPropagation(); onClose() }} className="wl-btn mt-2 justify-center" style={{ height: 38 }}>Close</button>
+      </div>
+    </div>
+  )
+}
+
 // With no trend to draw, a small bar (`mini`) sits where the line would be
-export function TrendTile({ label, color, value, sub, d, spark, href, gid, dark, mini }: {
-  label: string; color: string; value: string; sub: string; d: Badge; spark: number[]; href: string; gid: string; dark?: boolean; mini?: Mini
+export function TrendTile({ label, color, value, sub, d, spark, href, gid, dark, mini, how }: {
+  label: string; color: string; value: string; sub: string; d: Badge; spark: number[]; href: string; gid: string; dark?: boolean; mini?: Mini; how?: How
 }) {
+  const [showHow, setShowHow] = useState(false)
   const vals = spark.map((x, i) => ({ x: i, y: x })).filter(pt => Number.isFinite(pt.y))
   const lo = Math.min(...vals.map(pt => pt.y)), hi = Math.max(...vals.map(pt => pt.y)), r = hi - lo || 1, n = spark.length
   const P = vals.map(pt => ({ x: n > 1 ? pt.x * 100 / (n - 1) : 50, y: 26 - (pt.y - lo) / r * 20 }))
@@ -53,7 +73,10 @@ export function TrendTile({ label, color, value, sub, d, spark, href, gid, dark,
     <Link href={href} className="wl-card flex flex-col gap-1 pt-3.5 px-3.5 md:px-4 overflow-hidden hover:shadow-md transition-shadow min-w-0"
       style={dark ? { background: '#14172B', borderColor: '#14172B' } : undefined}>
       <div className="flex items-center justify-between gap-1.5">
-        <span className="inline-flex items-center gap-1.5 text-[12px] font-medium truncate" style={{ color: dark ? '#C9CBE0' : 'var(--text2)' }}>{!dark && <i className="w-2 h-2 rounded-[3px] flex-shrink-0" style={{ background: color }} />}{label}</span>
+        <span className="inline-flex items-center gap-1.5 text-[12px] font-medium truncate" style={{ color: dark ? '#C9CBE0' : 'var(--text2)' }}>{!dark && <i className="w-2 h-2 rounded-[3px] flex-shrink-0" style={{ background: color }} />}{label}
+          {how && <button onClick={e => { e.preventDefault(); e.stopPropagation(); setShowHow(true) }} aria-label={`How ${label} is worked out`}
+            className="w-[18px] h-[18px] rounded-full inline-flex items-center justify-center text-[10.5px] font-bold flex-shrink-0" style={dark ? { background: 'rgba(255,255,255,.16)', color: '#fff' } : { background: '#F1F2F6', color: 'var(--text3)' }}>i</button>}
+        </span>
         <span className="text-[11px] font-semibold px-1.5 py-[2px] rounded-full whitespace-nowrap" style={dark ? { background: 'rgba(255,255,255,.12)', color: d.s.color === '#B4231A' ? '#FF9C93' : d.s.color === '#15803D' ? '#8EF0BF' : '#C9CBE0' } : d.s}>{d.t}</span>
       </div>
       <div className="text-[20px] md:text-[23px] font-bold tabular-nums tracking-[-0.02em] truncate" style={{ color: dark ? '#fff' : 'var(--text)' }}>{value}</div>
@@ -64,6 +87,7 @@ export function TrendTile({ label, color, value, sub, d, spark, href, gid, dark,
         {line && <path d={`${line} L${P[P.length - 1].x.toFixed(1)} 30 L${P[0].x.toFixed(1)} 30 Z`} fill={`url(#${gid})`} />}
         {line && <path d={line} fill="none" stroke={stroke} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />}
       </svg>)}
+      {showHow && how && <HowSheet title={label} how={how} onClose={() => setShowHow(false)} />}
     </Link>
   )
 }

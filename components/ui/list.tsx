@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Search, AlertTriangle, ChevronRight, MoreHorizontal, type LucideIcon, Check } from 'lucide-react'
@@ -45,7 +45,10 @@ export function ListCard({ title, sub, right, toolbar, head, children, footer, e
   )
 }
 
-export function ListRow({ initial, color, title, sub, tag, warn, meta, metaColor, amount, amountColor, amountSub, actions: given = [], href: link, onOpen, selected, onSelect }: {
+// On a phone a row can be swiped: left for one action (delete), right for
+// another (edit); press and hold starts picking rows (`onLongPress`)
+export interface Swipe { label: string; color: string; onSwipe: () => void }
+export function ListRow({ initial, color, title, sub, tag, warn, meta, metaColor, amount, amountColor, amountSub, actions: given = [], href: link, onOpen, selected, onSelect, swipeLeft, swipeRight, onLongPress }: {
   initial?: React.ReactNode; color: string            // hex; tints the avatar and tag
   title: React.ReactNode; sub?: React.ReactNode       // sub = desktop second line (account, bank…)
   tag?: string; warn?: string | null                  // tag = category / type pill; warn = tooltip for a ⚠
@@ -53,12 +56,43 @@ export function ListRow({ initial, color, title, sub, tag, warn, meta, metaColor
   amount: React.ReactNode; amountColor?: string; amountSub?: React.ReactNode
   actions?: RowAction[]; href?: string; onOpen?: () => void
   selected?: boolean; onSelect?: () => void          // picking rows: a tap ticks it
+  swipeLeft?: Swipe; swipeRight?: Swipe; onLongPress?: () => void
 }) {
+  const [dx, setDx] = useState(0)
+  const touch = useRef<{ x: number; y: number; moving: boolean; timer: any; held: boolean } | null>(null)
+  const swallow = useRef(false)      // a swipe or a hold isn't a tap
+  const canSwipe = !onSelect && (!!swipeLeft || !!swipeRight)
+  const down = (e: React.PointerEvent) => {
+    if (e.pointerType !== 'touch' || (!canSwipe && !onLongPress)) return
+    const t = { x: e.clientX, y: e.clientY, moving: false, held: false, timer: null as any }
+    if (onLongPress && !onSelect) t.timer = setTimeout(() => { t.held = true; swallow.current = true; try { navigator.vibrate?.(15) } catch {} ; onLongPress() }, 480)
+    touch.current = t
+  }
+  const move = (e: React.PointerEvent) => {
+    const t = touch.current
+    if (!t) return
+    const x = e.clientX - t.x, y = e.clientY - t.y
+    if (!t.moving && Math.abs(y) > 10 && Math.abs(y) > Math.abs(x)) { clearTimeout(t.timer); touch.current = null; setDx(0); return }
+    if (Math.abs(x) > 10) { clearTimeout(t.timer); if (canSwipe) { t.moving = true; setDx(Math.max(swipeLeft ? -120 : 0, Math.min(swipeRight ? 120 : 0, x))) } }
+  }
+  const up = () => {
+    const t = touch.current
+    touch.current = null
+    if (!t) return
+    clearTimeout(t.timer)
+    if (t.moving) {
+      swallow.current = true
+      if (dx <= -80 && swipeLeft) swipeLeft.onSwipe()
+      else if (dx >= 80 && swipeRight) swipeRight.onSwipe()
+    }
+    setDx(0)
+  }
   const actions = onSelect ? [] : given, href = onSelect ? undefined : link
   const [sheet, setSheet] = useState(false)
   const router = useRouter()
   const tint = `${color}1A`
   const open = () => {
+    if (swallow.current) { swallow.current = false; return }
     if (onSelect) { onSelect(); return }
     if (href) { router.push(href); return }
     const desktop = typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches
@@ -129,12 +163,21 @@ export function ListRow({ initial, color, title, sub, tag, warn, meta, metaColor
   )
 
   return (
-    <div className="group [&+&]:border-t [&+&]:border-[var(--track)] hover:bg-[#FAFAFE] transition-colors">
+    <div className="group [&+&]:border-t [&+&]:border-[var(--track)] hover:bg-[#FAFAFE] transition-colors relative overflow-hidden">
+      {dx !== 0 && (
+        <div className="absolute inset-0 flex items-center justify-between px-5 text-[13.5px] font-semibold text-white" aria-hidden="true"
+          style={{ background: dx < 0 ? swipeLeft?.color : swipeRight?.color }}>
+          <span>{dx > 0 ? swipeRight?.label : ''}</span><span>{dx < 0 ? swipeLeft?.label : ''}</span>
+        </div>
+      )}
+      <div onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} className="relative"
+        style={{ background: dx ? '#fff' : undefined, transform: dx ? `translateX(${dx}px)` : undefined, transition: dx ? 'none' : 'transform .18s ease', touchAction: canSwipe ? 'pan-y' : undefined }}>
       {href && !actions.length
         ? <Link href={href} className="block">{body}</Link>
         : <div role={onOpen || onSelect || actions.length ? 'button' : undefined} tabIndex={onOpen || onSelect || actions.length ? 0 : undefined}
             onClick={open} onKeyDown={e => { if (e.key === 'Enter' || (onSelect && e.key === ' ')) { e.preventDefault(); open() } }}
             className={onOpen || onSelect || actions.length ? 'cursor-pointer' : ''} style={selected ? { background: 'var(--accent-bg)' } : undefined}>{body}</div>}
+      </div>
 
       {sheet && (
         <div className="md:hidden fixed inset-0 z-50 wl-sheet" onClick={() => setSheet(false)}>

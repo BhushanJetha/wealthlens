@@ -8,17 +8,19 @@ import { buildPortfolio } from './portfolio/build'
 import { withAutomation } from './automation'
 import { buildBills, loadBillReads } from './bigBills'
 import { buildTodo } from './todo'
+import { builderDues, loadBuilderReads } from './property'
 
 export async function loadTodo(supabase: any, uid: string) {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' })
   const since = new Date(); since.setUTCMonth(since.getUTCMonth() - 6)
   const opt = (q: any) => q.then((r: any) => r.data ?? [], () => [])
-  const [auto, [d, budgets, recGoals, plans, [contribRes, skipsRes, held]]] = await withAutomation(supabase, uid, today, () => Promise.all([
+  const [auto, [d, budgets, recGoals, plans, [contribRes, skipsRes, held], builderReads]] = await withAutomation(supabase, uid, today, () => Promise.all([
     loadPortfolioData(supabase, uid, { txMonths: 6 }),
     opt(supabase.from('budgets').select('*').eq('user_id', uid).gte('month_year', since.toISOString().slice(0, 7))),
     opt(supabase.from('goals').select('*').eq('user_id', uid).not('repeat_months', 'is', null).eq('status', 'active')),
     opt(supabase.from('income_plans').select('*').eq('user_id', uid)),
     loadBillReads(supabase, uid),
+    loadBuilderReads(supabase, uid),
   ]))
   const h = d.holdings
   const answers: string[] = (skipsRes.data ?? []).map((s: any) => s.key)
@@ -31,6 +33,7 @@ export async function loadTodo(supabase: any, uid: string) {
     stocks: h.stocks, mutualFunds: h.mutualFunds, fixedDeposits: h.fixedDeposits, rds: h.recurringDeposits, lic: h.lic ?? [],
     budgets, recurring: auto.recurring, plans, bills, answers, recGoals, contributions,
     needs: buildPortfolio(d).needs, confirm,
+    builder: builderDues({ ...builderReads, loans: h.loans, today, days: 30 }),
   })
   return { today, fx: d.fx, items, auto, txns: d.transactions, accounts: h.accounts, plans, bills, answers }
 }

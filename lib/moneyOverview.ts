@@ -14,6 +14,7 @@ import { ruleTextFor } from './rules'
 import { policyEvery, reservedFor, type Bill } from './bigBills'
 import { isCounted, sameName } from './regular'
 import { sipsOf } from './sips'
+import type { BuilderDue } from './property'
 
 export type DueKind = 'emi' | 'card' | 'premium' | 'sip' | 'bill' | 'repeat'
 export interface Due {
@@ -70,6 +71,7 @@ export function buildDues(inp: {
   today: string; days: number; view: View
   txns: any[]; accounts: any[]; loans: any[]; insurance: any[]; mutualFunds: any[]
   recurring?: RecurringTxn[]; rds?: any[]; plans?: IncomePlan[]; lic?: any[]; bills?: Bill[]; answers?: string[]
+  builder?: BuilderDue[]      // your part of the builder payments ahead (lib/property builderDues)
 }): Due[] {
   const { today, days, view } = inp
   const inView = (c: string) => view === 'consolidated' || (view === 'uae' ? c === 'AED' : c !== 'AED')
@@ -165,6 +167,8 @@ export function buildDues(inp: {
       kind: 'bill', payFrom: acc?.id ?? null, payFromSource: acc ? 'history' : null, href: '/dashboard/bills', category: r.category,
       why: `Found in your spending: about this amount in ${r.n} of the last 4 months`, seen: seenPayments(spends, r.name) })
   }
+  for (const b of inp.builder ?? []) if (inView(b.currency) && within(b.date))
+    out.push({ id: b.id, date: b.date, label: b.label, sub: b.sub, amount: b.amount, currency: b.currency, kind: 'bill', payFrom: null, payFromSource: null, href: b.href, why: b.why })
   return out.sort((a, b) => a.date.localeCompare(b.date) || b.amount - a.amount)
 }
 

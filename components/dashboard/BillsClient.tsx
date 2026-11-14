@@ -17,11 +17,13 @@ import { AiActions, KpiTile, LearnStrip, PageHeader, Panel, Segmented } from '@/
 import { toast } from '@/components/ui/toaster'
 import AddTransactionModal from '@/components/forms/AddTransactionModal'
 import { AsideSheet, BillFormSheet, PaySheet, TEMPLATES, type BillDraft } from './BillSheets'
+import type { BuilderDue } from '@/lib/property'
 
 type Cur = 'AED' | 'INR'
 type Filter = 'all' | 'monthly' | 'few'
 interface Props {
   today: string; fx: number; bills: Bill[]; answers: string[]; ready: boolean; recurringReady: boolean
+  builder?: BuilderDue[]      // your part of builder payments ahead (lib/property)
   transactions: any[]; accounts: any[]; loans: any[]; insurance: any[]; lic: any[]; mutualFunds: any[]; rds: any[]; plans: any[]; recurring: RecurringTxn[]
   holdings: Holding[]; goalLinks: any[]; contributions: any[]
 }
@@ -58,7 +60,7 @@ export default function BillsClient(p: Props) {
   const money = (n: number) => fmtMoney(n, cur)
 
   // What's free in each currency: the same number as Home's Free to spend
-  const duesFor = (c: Cur, days: number) => buildDues({ today, days, view: c === 'AED' ? 'uae' : 'india', txns: p.transactions, accounts: p.accounts, loans: p.loans, insurance: p.insurance, mutualFunds: p.mutualFunds, recurring: p.recurring, rds: p.rds, plans: p.plans, lic: p.lic, bills, answers })
+  const duesFor = (c: Cur, days: number) => buildDues({ today, days, builder: p.builder, view: c === 'AED' ? 'uae' : 'india', txns: p.transactions, accounts: p.accounts, loans: p.loans, insurance: p.insurance, mutualFunds: p.mutualFunds, recurring: p.recurring, rds: p.rds, plans: p.plans, lic: p.lic, bills, answers })
   const spare = useMemo(() => {
     const free = (c: Cur) => {
       const v = c === 'AED' ? 'uae' as const : 'india' as const

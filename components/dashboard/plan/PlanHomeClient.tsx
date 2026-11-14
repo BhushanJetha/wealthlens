@@ -40,14 +40,14 @@ export default function PlanHomeClient({ data, tax }: { data: PlanData; tax?: Ta
   // What leaves the bank in the next 30 days, and before the month ends
   const dues = useMemo(() => buildDues({ today, days: 30, view, txns: data.transactions, accounts: data.accounts, loans: data.loans, insurance: data.insurance,
     mutualFunds: data.investments.mutual_funds ?? [], recurring: data.recurring, rds: data.investments.recurring_deposits ?? [], plans: data.plans,
-    lic: data.investments.lic_policies ?? [], bills: data.bills, answers: data.answers }).filter(d => d.currency === cur), [data, today, view, cur])
+    lic: data.investments.lic_policies ?? [], bills: data.bills, answers: data.answers, builder: data.builder }).filter(d => d.currency === cur), [data, today, view, cur])
   const due30 = dues.reduce((s, d) => s + d.amount, 0)
   const toComeThisMonth = dues.filter(d => d.date.slice(0, 7) === ym).reduce((s, d) => s + d.amount, 0)
 
   // The year ahead (Plan › Year ahead) and the bank balance at each month's end
   const year = useMemo(() => yearAheadPlan({ cur, today, plan, txns: data.transactions, accounts: data.accounts, loans: data.loans, insurance: data.insurance,
     mutualFunds: data.investments.mutual_funds ?? [], rds: data.investments.recurring_deposits ?? [], recurring: data.recurring, lic: data.investments.lic_policies ?? [],
-    bills: data.bills, answers: data.answers, events: data.events }), [cur, today, plan, data])
+    bills: data.bills, answers: data.answers, events: data.events, builder: data.builder }), [cur, today, plan, data])
   const cash = data.accounts.filter(a => kindOf(a) !== 'card' && a.currency === cur).reduce((s, a) => s + (Number(a.current_balance) || 0), 0)
   const bal: number[] = []
   year.forEach((m, i) => bal.push((i ? bal[i - 1] : cash) + (i ? m.left : m.left * daysLeft / dim)))
@@ -77,7 +77,9 @@ export default function PlanHomeClient({ data, tax }: { data: PlanData; tax?: Ta
   const income = Math.max(plan.income, 1), over = plan.left < 0
 
   const kpis = [
-    { label: over ? 'Planned over income' : 'Left after the plan', color: '#6A55E8', dark: true, value: `${over ? '−' : ''}${short(Math.abs(plan.left))}`, sub: `From ${short(plan.income)} ${plan.incomeDeclared ? 'you expect' : 'usual income'}`, d: over ? { t: 'short', s: BAD } : { t: 'fits', s: GOOD }, spark: [], href: '/dashboard/plan',
+    { label: over ? 'Planned over income' : 'Left after the plan', color: '#6A55E8', dark: true,
+      how: { rows: [[plan.incomeDeclared ? 'Income you expect' : 'Usual income (last 3 months)', money(plan.income)], ['− Bills & EMIs', money(plan.bills + plan.emis)], ['− Everyday spending', money(plan.everyday)], ['− Goals', money(plan.goals)]] as [string, string][],
+        total: [over ? '= Short' : '= Left', money(plan.left)] as [string, string], note: 'Everyday spending is your budgets, or your usual spending where there’s no budget. A repeating bill in an everyday category is counted once, in Bills.' }, value: `${over ? '−' : ''}${short(Math.abs(plan.left))}`, sub: `From ${short(plan.income)} ${plan.incomeDeclared ? 'you expect' : 'usual income'}`, d: over ? { t: 'short', s: BAD } : { t: 'fits', s: GOOD }, spark: [], href: '/dashboard/plan',
       mini: { kind: 'split' as const, parts: [{ value: plan.bills + plan.emis, color: PART.bills }, { value: plan.everyday, color: PART.everyday }, { value: plan.goals, color: PART.goals }, { value: Math.max(0, plan.left), color: '#FFFFFF' }] } },
     { label: 'Budgets', color: '#6E8FF0', value: short(budgetSpent), sub: budgetCap > 0 ? `of ${short(budgetCap)} · ${daysLeft} day${daysLeft === 1 ? '' : 's'} left` : 'No budgets set this month', d: budgetCap === 0 ? { t: '—', s: NONE } : fast.length ? { t: `${fast.length} running fast`, s: BAD } : { t: 'on pace', s: GOOD }, spark: [], href: '/dashboard/budgets',
       mini: budgetCap > 0 ? { kind: 'progress' as const, pct: budgetSpent / budgetCap * 100, color: budgetSpent / budgetCap * 100 > pace + 10 ? '#F59E0B' : '#6E8FF0' } : undefined },

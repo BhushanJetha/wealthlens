@@ -122,6 +122,9 @@ body {
 
 /* Chart motion (design v2): progress bars grow, bars rise from the baseline */
 @keyframes wlGrow { from { width: 0; } }
+/* Undo bar: the time left to undo a delete */
+@keyframes wlShrink { from { width: 100%; } to { width: 0; } }
+.wl-undo-bar { width: 100%; animation: wlShrink 8s linear forwards; }
 @keyframes wlRise { from { transform: scaleY(0); } to { transform: none; } }
 .wl-grow { animation: wlGrow .8s ease both; }
 .wl-rise { transform-origin: bottom; animation: wlRise .7s cubic-bezier(.2,.8,.2,1) both; }

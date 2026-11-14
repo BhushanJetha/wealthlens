@@ -9,6 +9,7 @@ import { buildHomeInsights, daysBetween, fmtDay, type Attention } from './insigh
 import { buildDues, expectedIncome, balanceWarnings } from './moneyOverview'
 import { findReviewItems, reviewCount } from './review'
 import { recurringState } from './recurringGoals'
+import type { BuilderDue } from './property'
 
 export type TodoGroup = 'today' | 'week' | 'later'
 export type TodoArea = 'money' | 'wealth' | 'plan'
@@ -29,6 +30,7 @@ export interface TodoInput {
   recGoals: any[]; contributions: any[]
   needs: PortfolioNeed[]                   // lib/portfolio/build
   confirm: number                          // automatic entries waiting for a yes or no
+  builder?: BuilderDue[]                   // your part of the builder payments ahead (lib/property)
 }
 
 const SEV: Record<Attention['severity'], TodoGroup> = { high: 'today', medium: 'week', low: 'later' }
@@ -62,6 +64,14 @@ export function buildTodo(inp: TodoInput): TodoItem[] {
   for (const d of dues.filter(d => !d.payFrom && (d.kind === 'emi' || d.kind === 'card') && daysBetween(today, d.date) <= 7))
     out.push({ id: `payfrom-${d.id}`, group: 'week', area: 'money', icon: '🏦', title: `Which account pays ${d.label}?`, detail: 'Pick it once, and you’re warned if that account runs short',
       href: `/dashboard/money?payfrom=${encodeURIComponent(d.id)}`, action: 'Choose' })
+
+  // Builder payments: your part, in time to have the money ready
+  for (const b of inp.builder ?? []) {
+    const d = daysBetween(today, b.date)
+    const money = `${b.currency === 'AED' ? 'AED ' : '₹'}${Math.round(b.amount).toLocaleString(b.currency === 'AED' ? 'en-US' : 'en-IN')}`
+    out.push({ id: b.id, group: d <= 2 ? 'today' : d <= 10 ? 'week' : 'later', area: 'plan', icon: '🏠', href: b.href, action: 'See it',
+      title: `${money} for ${b.label} ${d <= 0 ? 'is due' : `due ${fmtDay(b.date)}`}`, detail: b.sub })
+  }
 
   // Entries to review: missing account, vague category, possible duplicates
   const toReview = reviewCount(findReviewItems(inp.txns, { today, fx, accounts: inp.accounts }))
