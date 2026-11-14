@@ -7,9 +7,9 @@ import { computeNetWorth, groupAssets, ASSET_GROUPS, viewAmount } from '@/lib/ne
 import { viewTrends } from '@/lib/homeTrends'
 import { fmtMoney, fmtCompact } from '@/lib/format'
 import { kindOf } from '@/lib/ledger'
-import { MONTH, mLabel, windowOf, sumOf, periodWord, pctChange } from '@/lib/period'
+import { MONTH, mLabel, windowOf, sumOf, periodWord, pctChange, fromFirst } from '@/lib/period'
 import { ListCard, ListRow } from '@/components/ui/list'
-import { usePeriod, monthsNeeded, PeriodLine, TrendTile, GOOD, BAD, NONE, Card, type Pt, type Badge } from '../charts/parts'
+import { usePeriod, monthsNeeded, PeriodLine, PeriodChips, TrendTile, GOOD, BAD, NONE, Card, type Pt, type Badge } from '../charts/parts'
 import { useTrends } from '../charts/useTrends'
 import InsidePanel from '../charts/Inside'
 import { NetWorthStack, type OwnLayer } from './WealthCharts'
@@ -95,7 +95,7 @@ export default function WealthOverviewClient(p: Props) {
   // ── Over the period ──
   const body = (() => {
     if (!data || !v) return null
-    const M = data.months, w = windowOf(M, per.from, per.to, now, per.compare)
+    const M = data.months, w = windowOf(M, fromFirst(per.period, per.from, data.first), per.to, now, per.compare)
     const isNowM = (i: number) => M[i] === now
     const nwAt = (i: number) => v.nw[i] ?? (isNowM(i) ? nw.netWorth : null)
     const grpAt = (i: number, keys: string[]) => {
@@ -174,6 +174,7 @@ export default function WealthOverviewClient(p: Props) {
           <h1 className="text-[22px] md:text-[26px] font-bold tracking-[-0.02em]" style={{ color: 'var(--text)' }}>What you own and owe<HelpButton /></h1>
           {body && <PeriodLine p={per} w={body.w} months={body.M} />}
         </div>
+        <PeriodChips />
       </div>
 
       {p.failed.length > 0 && (

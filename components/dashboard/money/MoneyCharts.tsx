@@ -9,14 +9,18 @@ import { useHover, chg, Tooltip, LegendChip, Axis, Labels, Dot, Card, ticksFor, 
 export interface Layer { key: string; label: string; color: string; values: number[] }
 
 // ── Spending by category, one filled layer each, stacked ──
-export function StackedSpend({ pts, layers, short, money, sub, foot, onPick }: {
-  pts: Pt[]; layers: Layer[]; short: (n: number) => string; money: (n: number) => string; sub: string; foot?: React.ReactNode
+// The chips under the title are each layer's total for the period picked;
+// tapping one opens those entries, so the two numbers always match. Tapping
+// the chart opens one month.
+export function StackedSpend({ pts, layers, totals, totalsLabel, short, money, sub, foot, onPick, onPickLayer, right }: {
+  pts: Pt[]; layers: Layer[]; totals: Record<string, number>; totalsLabel: string; short: (n: number) => string; money: (n: number) => string; sub: string; foot?: React.ReactNode
   onPick?: (i: number, layer?: string) => void     // a month tapped, and the layer under the finger
+  onPickLayer?: (layer: string) => void            // a chip tapped: that layer over the period
+  right?: React.ReactNode
 }) {
-  const [off, setOff] = useState<Record<string, boolean>>({})
   const hv = useHover()
   const n = pts.length, H = 240, BASE = 232, X = (i: number) => (n > 1 ? i / (n - 1) * 1000 : 500)
-  const shown = layers.filter(l => !off[l.key])
+  const shown = layers
   const tops: number[][] = []
   let acc = pts.map(() => 0)
   for (const l of shown) { acc = acc.map((x, i) => x + (l.values[i] ?? 0)); tops.push(acc) }
@@ -36,10 +40,16 @@ export function StackedSpend({ pts, layers, short, money, sub, foot, onPick }: {
     onPick(i, k >= 0 && at >= 0 ? shown[k].key : undefined)
   }
   return (
-    <Card title="What you spent on, month by month" sub={sub}>
-      <div role="group" aria-label="Categories shown" className="flex flex-wrap gap-1.5">
-        {layers.map(l => <LegendChip key={l.key} on={!off[l.key]} toggle={() => setOff(o => ({ ...o, [l.key]: !o[l.key] }))} label={l.label} total={short(sum(l.values))}
-          swatch={{ width: 12, height: 10, borderRadius: 3, background: l.color }} />)}
+    <Card title="What you spent on, month by month" sub={sub} right={right}>
+      <div className="flex flex-col gap-1.5">
+        <div role="group" aria-label={`Spending by category, ${totalsLabel}`} className="flex flex-wrap gap-1.5">
+          {layers.map(l => (
+            <button key={l.key} onClick={() => onPickLayer?.(l.key)} className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-full text-[12.5px] hover:bg-[#F5F3FE]" style={{ background: '#fff', border: '1px solid #D9DCE6', color: 'var(--text)' }}>
+              <span style={{ width: 12, height: 10, borderRadius: 3, background: l.color }} />{l.label}<b className="tabular-nums">{short(totals[l.key] ?? 0)}</b>
+            </button>
+          ))}
+        </div>
+        <span className="text-[11.5px]" style={{ color: 'var(--text3)' }}>Totals for {totalsLabel} · tap one for its entries, or a month on the chart for that month</span>
       </div>
       <div ref={hv.ref} onPointerMove={hv.move(n)} onPointerDown={hv.move(n)} onPointerLeave={hv.leave} onClick={pick} className={`relative ml-[52px] touch-pan-y ${onPick ? 'cursor-pointer' : ''}`} style={{ height: H }}>
         <Axis ticks={ticks} />
@@ -57,7 +67,7 @@ export function StackedSpend({ pts, layers, short, money, sub, foot, onPick }: {
         {h != null && (<>
           <div className="absolute top-0 pointer-events-none" style={{ left: `${X(h) / 10}%`, bottom: H - BASE, borderLeft: '1px dashed #9AA0B4' }} />
           {shown.length > 0 && <Dot left={X(h) / 10} top={Y(acc[h])} color="#14172B" />}
-          <Tooltip left={X(h) / 10} title={`${pts[h].title} · ${money(acc[h])}`} rows={[...shown].reverse().map(l => ({ label: l.label, color: l.color, value: money(l.values[h] ?? 0), ch: chg(l.values, h, false) }))} foot={onPick ? 'Tap to see the entries' : undefined} />
+          <Tooltip left={X(h) / 10} title={`${pts[h].title} · ${money(acc[h])}`} rows={[...shown].reverse().map(l => ({ label: l.label, color: l.color, value: money(l.values[h] ?? 0), ch: chg(l.values, h, false) }))} foot={onPick ? 'Tap for this month’s entries' : undefined} />
         </>)}
       </div>
       <Labels pts={pts} />

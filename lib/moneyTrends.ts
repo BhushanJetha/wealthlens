@@ -10,12 +10,13 @@ export interface MoneyMonth {
   income: number; incomeBy: Record<string, number>     // income group: earned / returns / extra
   spent: number; emi: number; invested: number
   groups: Record<string, number>; needs: number; wants: number
+  cats: Record<string, number>                         // by your own category (catOf)
   merchants: Record<string, { name: string; amount: number; count: number }>
   cardBills: number; cardBillCount: number
   sentAed: number; sentInr: number; sentCount: number  // UAE → India, by the month it landed
   count: number                                        // entries counted (spending and income)
 }
-const blank = (): MoneyMonth => ({ income: 0, incomeBy: {}, spent: 0, emi: 0, invested: 0, groups: {}, needs: 0, wants: 0, merchants: {},
+const blank = (): MoneyMonth => ({ income: 0, incomeBy: {}, spent: 0, emi: 0, invested: 0, groups: {}, needs: 0, wants: 0, cats: {}, merchants: {},
   cardBills: 0, cardBillCount: 0, sentAed: 0, sentInr: 0, sentCount: 0, count: 0 })
 
 export function moneyMonths(prepared: any[], o: { months: string[]; view: View; fx: number; rows?: Category[]; cardIds?: Set<string> }): MoneyMonth[] {
@@ -60,6 +61,7 @@ export function moneyMonths(prepared: any[], o: { months: string[]; view: View; 
     m.spent += v; m.count++
     const c = catOf(t), k = groupKeyOf(c, rows) ?? 'other'
     m.groups[k] = (m.groups[k] ?? 0) + v
+    m.cats[c] = (m.cats[c] ?? 0) + v
     if (needOf(c, rows) === false) m.wants += v; else m.needs += v
     const name = String(t.merchant || labelOf(c)).trim() || labelOf(c), key = name.toLowerCase()
     const e = m.merchants[key] ?? (m.merchants[key] = { name, amount: 0, count: 0 })
@@ -75,15 +77,16 @@ export function sumMonths(ms: MoneyMonth[]): MoneyMonth {
     for (const k of ['income', 'spent', 'emi', 'invested', 'needs', 'wants', 'cardBills', 'cardBillCount', 'sentAed', 'sentInr', 'sentCount', 'count'] as const) (s as any)[k] += m[k]
     for (const [k, v] of Object.entries(m.incomeBy)) s.incomeBy[k] = (s.incomeBy[k] ?? 0) + v
     for (const [k, v] of Object.entries(m.groups)) s.groups[k] = (s.groups[k] ?? 0) + v
+    for (const [k, v] of Object.entries(m.cats)) s.cats[k] = (s.cats[k] ?? 0) + v
     for (const [k, e] of Object.entries(m.merchants)) { const x = s.merchants[k] ?? (s.merchants[k] = { name: e.name, amount: 0, count: 0 }); x.amount += e.amount; x.count += e.count }
   }
   return s
 }
 
 // The biggest categories over some months; the rest as one "Everything else"
-export function topGroups(ms: MoneyMonth[], n = 5): { keys: string[]; rest: boolean } {
+export function topGroups(ms: MoneyMonth[], n = 5, field: 'groups' | 'cats' = 'groups'): { keys: string[]; rest: boolean } {
   const tot: Record<string, number> = {}
-  for (const m of ms) for (const [k, v] of Object.entries(m.groups)) tot[k] = (tot[k] ?? 0) + v
+  for (const m of ms) for (const [k, v] of Object.entries(m[field])) tot[k] = (tot[k] ?? 0) + v
   const all = Object.entries(tot).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([k]) => k)
   return { keys: all.slice(0, all.length > n + 1 ? n : n + 1), rest: all.length > n + 1 }
 }
@@ -91,7 +94,7 @@ export function topGroups(ms: MoneyMonth[], n = 5): { keys: string[]; rest: bool
 // ── The entries behind a number (tap a chart) ───────────────────────────────
 // The same rules as moneyMonths, so the entries add up to what the chart shows.
 export type Pick =
-  | { kind: 'spent'; group?: string; merchant?: string }
+  | { kind: 'spent'; group?: string; category?: string; merchant?: string }
   | { kind: 'income'; group?: string }
   | { kind: 'sent' }
 export interface Entry { t: any; v: number }
@@ -124,6 +127,7 @@ export function entriesFor(prepared: any[], o: { from: string; to: string; view:
     if (!sg || sg === 'loans' || sg === 'invest') continue
     const c = catOf(t)
     if (o.pick.group && (groupKeyOf(c, rows) ?? 'other') !== o.pick.group) continue
+    if (o.pick.category && c !== o.pick.category) continue
     if (o.pick.merchant && (String(t.merchant || labelOf(c)).trim() || labelOf(c)).toLowerCase() !== o.pick.merchant) continue
     out.push({ t, v })
   }

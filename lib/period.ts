@@ -1,11 +1,14 @@
 // The period chips Home and every section overview share: which months a
 // period covers, and the months before it to compare with. "Last N months"
 // counts this one; last quarter is the last full calendar quarter.
-export type PeriodKey = 'this' | 'last' | 'q' | 'm6' | 'm12' | 'y2'
-export const PERIODS: [PeriodKey, string][] = [['this', 'This month'], ['last', 'Last month'], ['q', 'Last quarter'], ['m6', 'Last 6 months'], ['m12', 'Last 12 months'], ['y2', 'Last 2 years']]
+export type PeriodKey = 'this' | 'last' | 'm3' | 'm6' | 'm12' | 'all' | 'q' | 'y2'
+// The choices shown; 'q' and 'y2' are older ones that still work if saved
+export const PERIODS: [PeriodKey, string][] = [['this', 'This month'], ['last', 'Last month'], ['m3', 'Last 3 months'], ['m6', 'Last 6 months'], ['m12', 'Last 12 months'], ['all', 'All']]
+const NAMES: Record<PeriodKey, string> = { this: 'This month', last: 'Last month', m3: 'Last 3 months', m6: 'Last 6 months', m12: 'Last 12 months', all: 'All', q: 'Last quarter', y2: 'Last 2 years' }
+// "All" reaches back ten years; pages start it at your first record
 export const PERIOD_KEY = 'wl-home-period'          // saved on this device (kept from when only Home had it)
-export const isPeriod = (p: any): p is PeriodKey => PERIODS.some(x => x[0] === p)
-export const periodName = (p: PeriodKey) => PERIODS.find(x => x[0] === p)![1]
+export const isPeriod = (p: any): p is PeriodKey => typeof p === 'string' && p in NAMES
+export const periodName = (p: PeriodKey) => NAMES[p]
 
 export const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 export const MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -19,7 +22,7 @@ export function rangeOf(p: PeriodKey, now: string): [string, string] {
   if (p === 'this') return [now, now]
   if (p === 'last') return [addM(now, -1), addM(now, -1)]
   if (p === 'q') { const qs = addM(now, -((Number(now.slice(5)) - 1) % 3)); return [addM(qs, -3), addM(qs, -1)] }
-  return [addM(now, -({ m6: 5, m12: 11, y2: 23 }[p])), now]
+  return [addM(now, -({ m3: 2, m6: 5, m12: 11, y2: 23, all: 119 }[p])), now]
 }
 
 // What a period is compared with: the same length just before it, the same
@@ -47,6 +50,8 @@ export function windowOf(months: string[], from: string, to: string, now: string
 export const periodLabel = (p: PeriodKey | null, from: string, to: string) =>
   p ? periodName(p) : from === to ? monthName(from) : from.slice(0, 4) === to.slice(0, 4) ? `${MON[Number(from.slice(5)) - 1]} – ${mLabel(to)}` : `${mLabel(from)} – ${mLabel(to)}`
 
+// "All" starts at your first record, not ten years back
+export const fromFirst = (p: PeriodKey | null, from: string, first: string | null | undefined) => (p === 'all' && first && first.slice(0, 7) > from ? first.slice(0, 7) : from)
 export const sumOf = (arr: number[], a: number, b: number) => { let s = 0; for (let i = Math.max(0, a); i <= b; i++) s += arr[i] ?? 0; return s }
 export const pctChange = (c: number, p: number) => (p ? (c - p) / Math.abs(p) * 100 : 0)
 // "in this period" / "this month" / "in October"

@@ -178,7 +178,7 @@ function compactRange(from: string, to: string): string {
 // and the full label; `compact` is the phone pill.
 export default function MonthPicker({ compact }: { compact?: boolean }) {
   const { fromMonth, toMonth, setDateRange, period, lastPreset, setPeriod } = useViewStore()
-  const SHORT: Record<PeriodKey, string> = { this: 'This month', last: 'Last month', q: 'Last quarter', m6: '6 months', m12: '12 months', y2: '2 years' }
+  const SHORT: Record<PeriodKey, string> = { this: 'This month', last: 'Last month', m3: '3 months', m6: '6 months', m12: '12 months', all: 'All', q: 'Last quarter', y2: '2 years' }
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const isSingleMonth = fromMonth === toMonth
@@ -228,7 +228,7 @@ export default function MonthPicker({ compact }: { compact?: boolean }) {
             style={{ borderColor: 'var(--border)' }}>
             <Calendar size={13} style={{ color: 'var(--accent)' }} />
             <span className="text-[12.5px] font-semibold whitespace-nowrap" style={{ color: 'var(--text)' }}>
-              {period && period !== 'this' && period !== 'last' ? `${periodName(period)} · ` : ''}{formatRange(fromMonth, toMonth)}
+              {period === 'all' ? 'All your records' : <>{period && period !== 'this' && period !== 'last' ? `${periodName(period)} · ` : ''}{formatRange(fromMonth, toMonth)}</>}
             </span>
           </button>
           {!period && (

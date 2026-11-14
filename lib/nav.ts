@@ -175,6 +175,8 @@ export function allDestinations(): { label: string; crumb: string; href: string;
 // reads a month), holdings and balances are always "today", and Insights,
 // Learn and Settings have no period: the picker isn't shown there.
 export function followsPeriod(pathname: string): boolean {
+  // Home and the Money and Wealth overviews have the period buttons on the page
+  if (['/dashboard', '/dashboard/money', '/dashboard/net-worth'].includes(pathname)) return false
   if (matches(pathname, '/dashboard/todo')) return false
   const { section } = resolveNav(pathname)
   if (!section) return true

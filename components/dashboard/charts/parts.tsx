@@ -4,7 +4,8 @@
 import { useRef, useState } from 'react'
 import Link from 'next/link'
 import { smoothPath } from '@/lib/homeTrends'
-import { pctChange, periodLabel, mLabel, monthName, type PeriodKey, type Compare, type Window } from '@/lib/period'
+import { pctChange, periodLabel, mLabel, monthName, PERIODS, type PeriodKey, type Compare, type Window } from '@/lib/period'
+import MonthPicker from '@/components/layout/MonthPicker'
 import { useViewStore } from '@/store/viewStore'
 import { fmtCompact } from '@/lib/format'
 import { MiniView, type Mini } from './Inside'
@@ -15,6 +16,23 @@ export function usePeriod(): Period {
   const { period, fromMonth, toMonth, compare } = useViewStore()
   return { period, from: fromMonth, to: toMonth, compare }
 }
+// The period buttons on Home, Money and Wealth: they set the one period every
+// page reads. "More" opens the full picker (months by hand, what to compare with).
+export function PeriodChips() {
+  const { period, setPeriod } = useViewStore()
+  return (
+    <div className="flex items-center gap-2 max-w-full">
+      <div role="group" aria-label="Period" className="flex gap-1 p-1 rounded-[14px] bg-white overflow-x-auto no-scrollbar max-w-full" style={{ border: '1px solid var(--line)' }}>
+        {PERIODS.map(([k, l]) => (
+          <button key={k} onClick={() => setPeriod(k)} aria-pressed={period === k} className="h-9 px-3.5 rounded-[10px] text-[13px] whitespace-nowrap flex-shrink-0"
+            style={period === k ? { background: 'var(--accent)', color: '#fff', fontWeight: 600 } : { color: 'var(--text2)' }}>{l}</button>
+        ))}
+      </div>
+      <MonthPicker compact />
+    </div>
+  )
+}
+
 // How many months of history a period (and what it's compared with) needs
 export function monthsNeeded(p: Period, now: string) {
   const span = (Number(now.slice(0, 4)) - Number(p.from.slice(0, 4))) * 12 + Number(now.slice(5)) - Number(p.from.slice(5)) + 1

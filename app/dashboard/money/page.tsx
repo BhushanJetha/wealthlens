@@ -7,14 +7,14 @@ import { withAutomation } from '@/lib/automation'
 import MoneyOverviewClient from '@/components/dashboard/MoneyOverviewClient'
 import { buildBills, loadBillReads } from '@/lib/bigBills'
 
-// Money overview: two years of entries for the period chips (as Home), what
+// Money overview: five years of entries for the period buttons (up to All), what
 // needs you, balances, categories and friends.
 export default async function MoneyPage() {
   const supabase = createClient()
   const user = await getSessionUser(supabase)
   const uid = user!.id
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' })
-  const start = new Date(); start.setUTCMonth(start.getUTCMonth() - 25)
+  const start = new Date(); start.setUTCMonth(start.getUTCMonth() - 61)
   const fromDate = `${start.toISOString().slice(0, 7)}-01`
   // Repeating entries, EMIs and SIPs whose day has come are recorded
   // alongside these reads; the rest wait here

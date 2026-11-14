@@ -4,8 +4,8 @@ import Link from 'next/link'
 import { fmtMoney, fmtCompact } from '@/lib/format'
 import { GROUPS } from '@/lib/categories'
 import { viewTrends, smoothPath, smoothBack, niceStep, type Trends, type ViewSeries } from '@/lib/homeTrends'
-import { MON, MONTH, mLabel, sumOf, pctChange as pct, windowOf, periodLabel, periodWord as pWord } from '@/lib/period'
-import { usePeriod, monthsNeeded, PeriodLine, TrendTile, GOOD, BAD, NONE, useHover, chg, Tooltip, LegendChip, Axis, Labels, Dot, type Pt, type Period } from './charts/parts'
+import { MON, MONTH, mLabel, sumOf, pctChange as pct, windowOf, periodLabel, periodWord as pWord, fromFirst } from '@/lib/period'
+import { usePeriod, monthsNeeded, PeriodLine, PeriodChips, TrendTile, GOOD, BAD, NONE, useHover, chg, Tooltip, LegendChip, Axis, Labels, Dot, type Pt, type Period } from './charts/parts'
 
 type View = 'uae' | 'india' | 'consolidated'
 
@@ -49,7 +49,7 @@ function Body({ data, v, view, per, mode, setMode, money, short, now, today, liv
   money: (n: number) => string; short: (n: number) => string; now: string; today: string; live: { nw: number; own: number; owe: number }; holderNote: string | null; side?: React.ReactNode; cur: string
 }) {
   const M = data.months
-  const w = windowOf(M, per.from, per.to, now, per.compare)
+  const w = windowOf(M, fromFirst(per.period, per.from, data.first), per.to, now, per.compare)
   const { a, b, len, pa, pb, hasPrev, isNow } = w
   const partial = per.from === per.to && per.to === now
   // Today's live figures stand in for this month when its snapshot isn't saved yet
@@ -126,6 +126,7 @@ function Body({ data, v, view, per, mode, setMode, money, short, now, today, liv
           <h2 className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Overview · {periodLabel(per.period, per.from, per.to).toLowerCase()}</h2>
           <p className="text-[12px]" style={{ color: 'var(--text3)' }}>{len > 1 ? `${mLabel(M[a])} – ${mLabel(M[b])}` : `${MONTH[Number(M[b].slice(5)) - 1]} ${M[b].slice(0, 4)}${isNow ? ', so far' : ''}`}{w.cmp ? ` · compared with ${w.cmp}` : ''}{holderNote ? ` · ${holderNote}` : ''}</p>
         </div>
+        <PeriodChips />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2.5 md:gap-3">

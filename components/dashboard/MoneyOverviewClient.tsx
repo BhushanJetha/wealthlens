@@ -9,16 +9,16 @@ import { createClient } from '@/lib/supabase/client'
 import { fmtMoney, fmtCompact } from '@/lib/format'
 import { viewAmount } from '@/lib/netWorth'
 import { kindOf } from '@/lib/ledger'
-import { prepareMoney } from '@/lib/money'
+import { prepareMoney, labelOf, catOf } from '@/lib/money'
 import { brandOf } from '@/lib/banks'
 import { buildHomeInsights, localToday, fmtDay, daysBetween, nextCardDue, type Attention } from '@/lib/insights'
 import { buildDues, expectedIncome, balanceWarnings, type Due } from '@/lib/moneyOverview'
 import { findReviewItems, reviewCount } from '@/lib/review'
 import { rankCards } from '@/lib/cardCycle'
-import { GROUPS, type Category } from '@/lib/categories'
+import { GROUPS, groupKeyOf, type Category } from '@/lib/categories'
 import { friendBalances, friendTotals } from '@/lib/friends'
 import { moneyMonths, sumMonths, topGroups, entriesFor, type Pick } from '@/lib/moneyTrends'
-import { MONTH, mLabel, monthsUpTo, windowOf, sumOf, periodLabel, periodWord } from '@/lib/period'
+import { MONTH, mLabel, monthsUpTo, windowOf, sumOf, periodLabel, periodWord, fromFirst } from '@/lib/period'
 import type { RecurringTxn } from '@/lib/recurring'
 import PendingConfirms, { pendingCount, type Pending } from './PendingConfirms'
 import IncomeChecks, { incomeCheckCount } from './IncomeChecks'
@@ -29,7 +29,7 @@ import { foundRegular, pendingCharges } from '@/lib/regular'
 import type { IncomePlan } from '@/lib/incomePlans'
 import { PageHeader, Panel } from '@/components/ui/kit'
 import { BankLogo } from '@/components/ui/BankCards'
-import { usePeriod, PeriodLine, TrendTile, badgeOf, NONE, Card, type Pt } from './charts/parts'
+import { usePeriod, PeriodLine, PeriodChips, TrendTile, badgeOf, NONE, Card, type Pt } from './charts/parts'
 import InsidePanel from './charts/Inside'
 import EntriesSheet, { type Drill } from './charts/EntriesSheet'
 import TodoBar from './todo/TodoBar'
@@ -108,22 +108,26 @@ export default function MoneyOverviewClient(p: Props) {
 
   // Month by month, for the period picked (and the same length before it)
   const now = today.slice(0, 7)
-  const months = useMemo(() => monthsUpTo(now, 25), [now])
+  const months = useMemo(() => monthsUpTo(now, 61), [now])
   const cardIds = useMemo(() => new Set<string>(p.accounts.filter(a => kindOf(a) === 'card').map(a => a.id)), [p.accounts])
   const prepared = useMemo(() => prepareMoney(p.transactions, { fx: FX, cardIds }), [p.transactions, FX, cardIds])
   const mm = useMemo(() => moneyMonths(prepared, { months, view, fx: FX, rows, cardIds }), [prepared, months, view, FX, rows, cardIds])
-  const w = windowOf(months, per.from, per.to, now, per.compare)
+  // "All" starts at the first month with anything in it
+  const firstMonth = months[mm.findIndex(m => m.count > 0 || m.emi > 0 || m.cardBills > 0)] ?? null
+  const w = windowOf(months, fromFirst(per.period, per.from, firstMonth), per.to, now, per.compare)
+  const [spendBy, setSpendBy] = useState<'groups' | 'cats'>('groups')
   const cut = (a: number, b: number) => mm.slice(Math.max(0, a), b + 1)
   const c = sumMonths(cut(w.a, w.b)), pv = w.hasPrev ? sumMonths(cut(w.pa, w.pb)) : null
   const series = (f: (m: typeof mm[number]) => number) => w.chart.map(i => f(mm[i]))
   const pts: Pt[] = w.chart.map(i => ({ label: mLabel(months[i]), title: `${MONTH[Number(months[i].slice(5)) - 1]} ${months[i].slice(0, 4)}${months[i] === now ? ' (so far)' : ''}`, ix: [i], sel: w.len === 1 && i === w.b }))
   const word = periodWord(per.period, per.to, per.from)
   // Tap a chart: the entries behind it, counted the same way (lib/moneyTrends entriesFor)
-  const openDrill = (pick: Pick, from: string, toM: string, title: string) => {
+  const openDrill = (pick: Pick, from: string, toM: string, title: string, keep?: (t: any) => boolean) => {
     const q = new URLSearchParams({ from, to: toM })
     if (pick.kind === 'spent' && pick.group) q.set('cat', `g:${pick.group}`)
+    if (pick.kind === 'spent' && pick.category) q.set('cat', pick.category)
     if (pick.kind === 'spent' && pick.merchant) q.set('q', pick.merchant)
-    setDrill({ title, by: pick.kind === 'spent' && pick.group ? 'merchant' : 'category', entries: entriesFor(prepared, { from, to: toM, view, fx: FX, rows, pick }),
+    setDrill({ title, by: pick.kind === 'spent' && (pick.category || pick.merchant) ? 'merchant' : 'category', entries: entriesFor(prepared, { from, to: toM, view, fx: FX, rows, pick }).filter(e => !keep || keep(e.t)),
       href: pick.kind === 'spent' ? `/dashboard/expenses?${q}` : undefined,
       note: pick.kind === 'spent' ? 'Split bills count your share only, as in the chart.' : pick.kind === 'sent' ? (uae ? 'What left in dirhams.' : 'What landed in India, in rupees.') : undefined })
   }
@@ -153,13 +157,22 @@ export default function MoneyOverviewClient(p: Props) {
     { label: 'Friends owe you', color: '#EC5B8C', raw: owedToYou, value: short(owedToYou), sub: youOwe > 0 ? `You owe ${short(youOwe)}` : owedToYou > 0 ? 'You owe nobody' : 'All settled', d: { t: `${owers.length} ${owers.length === 1 ? 'person' : 'people'}`, s: NONE }, spark: [], href: '/dashboard/money/friends', mini: owedToYou + youOwe > 0 ? { kind: 'split' as const, parts: [{ value: owedToYou, color: '#EC5B8C' }, { value: youOwe, color: '#D9DCE6' }] } : undefined },
   ]
 
-  // Spending layers: the biggest categories over the chart's months, the rest together
+  // Spending layers: the biggest groups (Home, Food…) or your own categories
+  // over the chart's months, the rest together. Each chip's total is the period's.
   const chartMonths = w.chart.map(i => mm[i])
-  const tg = topGroups(chartMonths, 5)
+  const field = spendBy
+  const tg = topGroups(chartMonths, 5, field)
+  const CAT_COLORS = ['#6A55E8', '#F29A2E', '#0F766E', '#3B8EF0', '#EC5B8C']
+  const nameOf = (k: string) => (field === 'groups' ? GROUPS.find(x => x.key === k)?.label ?? 'Other' : labelOf(k))
   const layers = [
-    ...tg.keys.map(k => { const g = GROUPS.find(x => x.key === k); return { key: k, label: g?.label ?? 'Other', color: g?.color ?? REST_COLOR, values: chartMonths.map(m => m.groups[k] ?? 0) } }),
-    ...(tg.rest ? [{ key: 'rest', label: 'Everything else', color: REST_COLOR, values: chartMonths.map(m => Object.entries(m.groups).filter(([k]) => !tg.keys.includes(k)).reduce((s, [, v]) => s + v, 0)) }] : []),
+    ...tg.keys.map((k, i) => ({ key: k, label: nameOf(k), color: field === 'groups' ? GROUPS.find(x => x.key === k)?.color ?? REST_COLOR : CAT_COLORS[i % CAT_COLORS.length], values: chartMonths.map(m => m[field][k] ?? 0) })),
+    ...(tg.rest ? [{ key: 'rest', label: 'Everything else', color: REST_COLOR, values: chartMonths.map(m => Object.entries(m[field]).filter(([k]) => !tg.keys.includes(k)).reduce((s, [, v]) => s + v, 0)) }] : []),
   ]
+  const layerTotals: Record<string, number> = Object.fromEntries(tg.keys.map(k => [k, c[field][k] ?? 0]))
+  layerTotals.rest = Object.entries(c[field]).filter(([k]) => !tg.keys.includes(k)).reduce((s, [, v]) => s + v, 0)
+  const pickOf = (k: string): Pick => (k === 'rest' ? { kind: 'spent' } : field === 'groups' ? { kind: 'spent', group: k } : { kind: 'spent', category: k })
+  // "Everything else": the entries in none of the layers shown
+  const keepOf = (k: string | undefined) => (k === 'rest' ? (t: any) => !tg.keys.includes(field === 'groups' ? groupKeyOf(catOf(t), rows) ?? 'other' : catOf(t)) : undefined)
   // The category that rose most against the months before
   const rise = pv ? Object.entries(c.groups).map(([k, v]) => ({ k, v, p: pv.groups[k] ?? 0 })).filter(x => x.p > 0 && x.v > x.p && x.v - x.p > c.spent * 0.02)
     .sort((a, b) => (b.v - b.p) / b.p - (a.v - a.p) / a.p)[0] : undefined
@@ -207,6 +220,7 @@ export default function MoneyOverviewClient(p: Props) {
           <h1 className="text-[22px] md:text-[26px] font-bold tracking-[-0.02em]" style={{ color: 'var(--text)' }}>Where your money moves<HelpButton /></h1>
           <PeriodLine p={per} w={w} months={months} />
         </div>
+        <PeriodChips />
       </div>
 
       <TodoBar area="money" />
@@ -217,8 +231,18 @@ export default function MoneyOverviewClient(p: Props) {
 
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-3.5 md:gap-4 items-stretch">
         <StackedSpend pts={pts} layers={layers} short={short} money={money}
-          onPick={(i, k) => { const m = monthAt(i), l = layers.find(x => x.key === k); openDrill({ kind: 'spent', group: k && k !== 'rest' ? k : undefined }, m, m, `${l && k !== 'rest' ? l.label : 'Spent'} · ${monthTitle(m)}`) }}
-          sub={`Each layer is a category · ${w.len >= 3 ? `${mLabel(months[w.a])} – ${mLabel(months[w.b])}` : `the 6 months to ${mLabel(months[w.b])}`}${w.isNow ? ` · ${MONTH[Number(now.slice(5)) - 1]} so far` : ''}`}
+          onPick={(i, k) => { const m = monthAt(i), l = layers.find(x => x.key === k); openDrill(k ? pickOf(k) : { kind: 'spent' }, m, m, `${l ? l.label : 'Spent'} · ${monthTitle(m)} only`, keepOf(k)) }}
+          totals={layerTotals} totalsLabel={periodLabel(per.period, per.from, per.to).toLowerCase()}
+          onPickLayer={k => openDrill(pickOf(k), months[w.a], months[w.b], `${layers.find(x => x.key === k)?.label ?? 'Spent'} · ${periodLabel(per.period, per.from, per.to)}`, keepOf(k))}
+          right={
+            <div role="group" aria-label="Show by" className="flex p-[3px] rounded-[10px] flex-shrink-0" style={{ background: '#F1F2F6' }}>
+              {([['groups', 'Groups'], ['cats', 'Your categories']] as const).map(([k, l]) => (
+                <button key={k} onClick={() => setSpendBy(k)} aria-pressed={spendBy === k} className="h-8 px-3 rounded-lg text-[12.5px]"
+                  style={spendBy === k ? { background: '#fff', color: 'var(--text)', fontWeight: 600, boxShadow: '0 1px 2px rgba(20,23,43,.08)' } : { color: 'var(--text2)' }}>{l}</button>
+              ))}
+            </div>
+          }
+          sub={`Each layer is ${spendBy === 'groups' ? 'a group of categories' : 'one of your categories'} · ${w.len >= 3 ? `${mLabel(months[w.a])} – ${mLabel(months[w.b])}` : `the 6 months to ${mLabel(months[w.b])}`}${w.isNow ? ` · ${MONTH[Number(now.slice(5)) - 1]} so far` : ''}`}
           foot={c.spent > 0 && (
             <div className="grid grid-cols-3 gap-2 md:gap-2.5">
               <div className="rounded-xl px-3 py-2.5" style={{ background: '#EEF4FF' }}><div className="text-[11.5px]" style={{ color: '#1D4ED8' }}>Needs</div><div className="text-[14px] md:text-[16px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{short(c.needs)} · {needPct}%</div></div>

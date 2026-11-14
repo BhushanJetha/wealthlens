@@ -204,6 +204,20 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
   const investGrand   = rowTot('Investment')
   const savingsRate   = incomeGrand > 0 ? Math.round((netGrand + investGrand) / incomeGrand * 100) : 0   // investing counts as saved
   const leftGrand     = months.reduce((a, m) => a + leftCol(m), 0)
+  // The rows of "What actually left your bank & cash", each month and in all;
+  // they add up from what came in to what's left (leftCol)
+  const cashIn = (m: string) => sidesByMonth[m].reduce((a, x) => a + x.income + x.received, 0)
+  const flowRow = (key: keyof CashOut, label: string, note?: string) => ({ key, label, note, sign: '−', col: (m: string) => flowByMonth[m][key], grand: months.reduce((a, m) => a + flowByMonth[m][key], 0) })
+  const cashRows = [
+    { key: 'in', label: 'Came in', note: view === 'consolidated' ? 'income, plus money landing in India from the UAE' : undefined, sign: '+', col: cashIn, grand: months.reduce((a, m) => a + cashIn(m), 0) },
+    flowRow('direct', 'Spent from bank & cash'),
+    flowRow('cardBills', 'Credit card bills paid', 'pays for the card spending above, so it isn’t counted there twice'),
+    flowRow('emis', 'Loan EMIs paid from the bank'),
+    flowRow('invested', 'Invested from the bank'),
+    flowRow('sentHome', 'Sent to India', 'a move to your India account, not spending'),
+    flowRow('friends', 'Lent to friends, less paid back'),
+    ...(scope === 'nre' ? [{ key: 'nro', label: 'Moved on to NRO', note: undefined, sign: '−', col: toNro, grand: months.reduce((a, m) => a + toNro(m), 0) }] : []),
+  ]
 
   // The grouped table (lib/accountFlows): every bank account (what came in,
   // every rupee or dirham that left) and every card (what was bought on it),
@@ -616,17 +630,36 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
                         <td className="px-4 py-2.5 text-right tabular-nums font-bold text-[13px]" style={{ color: 'var(--income)', borderLeft: '2px solid var(--line)' }}>{money(incomeGrand)}</td>
                       </tr>
                       <tr style={{ background: '#FAFAFE', borderTop: '1px solid var(--line)' }}>
-                        <td className="sticky left-0 px-4 py-3 font-black text-[11px] uppercase tracking-wider" style={{ background: '#FAFAFE', color: 'var(--text)', borderRight: '1px solid var(--line)' }}>Net (Inc − Exp)</td>
+                        <td className="sticky left-0 px-4 py-3 font-black text-[11px] uppercase tracking-wider" style={{ background: '#FAFAFE', color: 'var(--text)', borderRight: '1px solid var(--line)' }}>Income − expenses</td>
                         {months.map(m => { const n = netCol(m), has = incomeCol(m) > 0 || outflowCol(m) > 0
                           return (<td key={m} className="px-3 py-3 text-right tabular-nums font-black" style={{ color: !has ? 'var(--text3)' : n >= 0 ? 'var(--income)' : 'var(--rose)' }}>{has ? `${n < 0 ? '−' : ''}${sym}${fmt(Math.abs(n))}` : '—'}</td>) })}
                         <td className="px-4 py-3 text-right tabular-nums font-black text-[13px]" style={{ color: netGrand >= 0 ? 'var(--income)' : 'var(--rose)', borderLeft: '2px solid var(--line)' }}>{signed(netGrand)}</td>
+                      </tr>
+                      {/* What actually left your bank & cash (lib/money cashOut): card bills
+                          instead of the card spending they pay for, money sent to India, EMIs,
+                          investing and friends — so "left" is what's really still in your accounts */}
+                      <tr style={{ background: '#fff', borderTop: '2px solid var(--line)' }}>
+                        <td colSpan={months.length + 2} className="sticky left-0 px-4 pt-3 pb-1 text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text2)' }}>What actually left your bank &amp; cash</td>
+                      </tr>
+                      {cashRows.filter(r => r.grand !== 0).map(r => (
+                        <tr key={r.key} style={{ background: '#fff' }}>
+                          <td className="sticky left-0 pl-6 pr-4 py-2 text-[11.5px]" style={{ background: '#fff', color: 'var(--text2)', borderRight: '1px solid var(--line)' }}>{r.sign} {r.label}{r.note && <span className="block text-[10.5px]" style={{ color: 'var(--text3)' }}>{r.note}</span>}</td>
+                          {months.map(m => { const v = r.col(m); return <td key={m} className="px-3 py-2 text-right tabular-nums text-[11.5px]" style={{ color: 'var(--text2)' }}>{v ? `${v < 0 && r.sign === '−' ? '+' : ''}${sym}${fmt(Math.abs(v))}` : '—'}</td> })}
+                          <td className="px-4 py-2 text-right tabular-nums text-[11.5px] font-semibold" style={{ color: 'var(--text)', borderLeft: '2px solid var(--line)' }}>{r.grand < 0 && r.sign === '−' ? '+' : ''}{money(Math.abs(r.grand))}</td>
+                        </tr>
+                      ))}
+                      <tr style={{ background: '#F4F2FF', borderTop: '1px solid var(--line)' }}>
+                        <td className="sticky left-0 px-4 py-3 font-black text-[11px] uppercase tracking-wider" style={{ background: '#F4F2FF', color: 'var(--accent2)', borderRight: '1px solid var(--line)' }}>= Left in your accounts</td>
+                        {months.map(m => { const n = leftCol(m), has = cashIn(m) > 0 || outflowCol(m) > 0
+                          return (<td key={m} className="px-3 py-3 text-right tabular-nums font-black" style={{ color: !has ? 'var(--text3)' : n >= 0 ? 'var(--income)' : 'var(--rose)' }}>{has ? `${n < 0 ? '−' : ''}${sym}${fmt(Math.abs(n))}` : '—'}</td>) })}
+                        <td className="px-4 py-3 text-right tabular-nums font-black text-[13px]" style={{ color: leftGrand >= 0 ? 'var(--income)' : 'var(--rose)', borderLeft: '2px solid var(--line)' }}>{signed(leftGrand)}</td>
                       </tr>
                     </tfoot>
                   </table>
                 </div>
               )}
               <div className="px-4 py-2 text-[10px]" style={{ color: 'var(--text3)', borderTop: '1px solid var(--line)' }}>
-                Actual spend per category each month; card bills aren’t counted again, as the card purchases already are · click an amount to see the transactions · turn on By bank &amp; card to see it account by account.
+                Actual spend per category each month; card spending is counted when you use the card, so card bills aren’t counted again here · money sent to India is a move, not spending · “Left in your accounts” below takes off everything that left your bank &amp; cash, card bills and transfers home included · click an amount to see the transactions · turn on By bank &amp; card to see it account by account.
               </div>
             </div>
           )}
@@ -765,7 +798,7 @@ export default function ExpensesReportClient({ transactions: rawTxns, incomeTran
                   </tr>
                   {/* Net */}
                   <tr style={{ background: '#FAFAFE', borderTop: '1px solid var(--line)' }}>
-                    <td className="sticky left-0 px-4 py-3 font-black text-[11px] uppercase tracking-wider" style={{ background: '#FAFAFE', color: 'var(--text)', borderRight: '1px solid var(--line)' }}>Net (Inc − Exp)</td>
+                    <td className="sticky left-0 px-4 py-3 font-black text-[11px] uppercase tracking-wider" style={{ background: '#FAFAFE', color: 'var(--text)', borderRight: '1px solid var(--line)' }}>Income − expenses</td>
                     {yearsSorted.map(y => { const n = (catYear.inc[y] ?? 0) - yearAgg[y].outflow
                       return (<td key={y} className="px-4 py-3 text-right tabular-nums font-black" style={{ color: n >= 0 ? 'var(--income)' : 'var(--rose)' }}>{n < 0 ? '-' : ''}{sym}{fmt(Math.abs(n))}</td>) })}
                     <td className="px-4 py-3 text-right tabular-nums font-black text-[13px]" style={{ borderLeft: '2px solid var(--line)', color: (yearsSorted.reduce((a, y) => a + ((catYear.inc[y] ?? 0) - yearAgg[y].outflow), 0)) >= 0 ? 'var(--income)' : 'var(--rose)' }}>
