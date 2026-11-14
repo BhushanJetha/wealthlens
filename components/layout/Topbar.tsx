@@ -18,7 +18,7 @@ export default function Topbar({ user }: { user: any }) {
   const { uploadOpen, setUploadOpen, advisorOpen, openAdvisor, closeAdvisor } = useUiStore()
   const pathname = usePathname()
   const { section, tab, sub } = resolveNav(pathname)
-  const crumbs = [section?.label ?? 'WealthLens', tab && tab.label !== section?.label ? tab.label : null, sub && sub.label !== 'Overview' ? sub.label : null]
+  const crumbs = pathname.startsWith('/dashboard/todo') ? ['To do'] : [section?.label ?? 'WealthLens', tab && tab.label !== section?.label ? tab.label : null, sub && sub.label !== 'Overview' ? sub.label : null]
     .filter(Boolean) as string[]
   const firstName = (user?.full_name ?? '').split(' ')[0] || null
 

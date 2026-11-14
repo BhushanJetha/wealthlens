@@ -32,6 +32,7 @@ import { PayFirstRow } from './plan/PlanParts'
 import { foundRegular, pendingCharges } from '@/lib/regular'
 import HomeTrends from './HomeTrends'
 import { FreeBanner, NextMonthCard, BudgetsCard, DueWeekCard, GoalRingsCard, LoansCard, NeedsYouBar } from './HomeNow'
+import { useTodo } from './todo/useTodo'
 
 interface Props {
   firstName: string | null
@@ -183,6 +184,8 @@ export default function DashboardClient(p: Props) {
     txns: p.transactions, accounts: h.accounts, loans: h.loans, insurance: p.insurance, mutualFunds: h.mutualFunds, rds: h.recurringDeposits ?? [], recurring: p.recurring, events: p.events, lic: h.lic, bills: p.bills, usual, answers: p.billSkips }),
     [today, view, FX, nw.cash, dues, incoming, budgetsLeft, ins.trend.avgIncome, p, h]) // eslint-disable-line react-hooks/exhaustive-deps
   const accName = (id: string | null) => h.accounts.find((a: any) => a.id === id)?.name ?? null
+  // What needs you: the one To do list (lib/todo), the same as the bell and the To do page
+  const todo = useTodo()
   // How many things need you, and the first few, for the one row on top
   const waiting = pendingCount(p.pending) + incomeCheckCount(p.plans, p.transactions, today, FX) + billReminderCount(billsHere, p.transactions, today, p.billSkips)
     + (foundCount > 0 ? 1 : 0) + landedCheckCount(p.transactions, today, FX) + (payDue ? 1 : 0)
@@ -225,8 +228,7 @@ export default function DashboardClient(p: Props) {
         <Onboarding onImport={() => setUploadOpen(true)} goalInterests={p.goalInterests} />
       </>) : (<>
       {/* What needs you: one row; the full list opens below it */}
-      <NeedsYouBar count={ins.attention.length + waiting} titles={needTitles} open={needsOpen} onToggle={() => setNeedsOpen(o => !o)} />
-      {needsOpen && <AttentionCard items={ins.attention} pending={p.pending} accName={accName} onImport={() => setUploadOpen(true)} plans={p.plans} txns={p.transactions} today={today} fx={FX} bills={billsHere} billSkips={p.billSkips} accounts={h.accounts} foundCount={foundCount} payDue={payDue} payFirst={p.payFirst} />}
+      <NeedsYouBar items={todo.items} payDue={!!payDue} />
       <QuickActions openAdd={openAdd} upload={() => setUploadOpen(true)} voice={() => setModal('voice')} advisor={() => openAdvisor()} />
       {p.plansReady && p.plans.length === 0 && (
         <Link href="/dashboard/settings/income" className="wl-card px-4 py-3 flex items-center gap-3 wl-hide-viewing" style={{ background: '#F0EDFF', borderColor: '#DAD3FF' }}>

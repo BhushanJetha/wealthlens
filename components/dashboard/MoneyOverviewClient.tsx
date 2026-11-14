@@ -32,6 +32,7 @@ import { BankLogo } from '@/components/ui/BankCards'
 import { usePeriod, PeriodLine, TrendTile, badgeOf, NONE, Card, type Pt } from './charts/parts'
 import InsidePanel from './charts/Inside'
 import EntriesSheet, { type Drill } from './charts/EntriesSheet'
+import TodoBar from './todo/TodoBar'
 import { StackedSpend, IncomeColumns, RemitBars } from './money/MoneyCharts'
 
 interface Props {
@@ -66,6 +67,14 @@ export default function MoneyOverviewClient(p: Props) {
   const per = usePeriod()
   const [picking, setPicking] = useState<Due | null>(null)
   const [drill, setDrill] = useState<Drill | null>(null)
+  // From To do: "Which account pays …?" opens the chooser for that bill
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('payfrom')
+    if (!id) return
+    const d = buildDues({ today: p.today, days: 35, view: 'consolidated', txns: p.transactions, accounts: p.accounts, loans: p.loans, insurance: p.insurance, mutualFunds: p.mutualFunds, recurring: p.recurring, rds: p.rds, plans: p.plans, lic: p.lic, bills: p.bills, answers: p.billSkips }).find(x => x.id === id)
+    if (d) setPicking(d)
+    window.history.replaceState({}, '', '/dashboard/money')
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const plans = p.plans ?? []
   const rows = p.categories ?? []
   const bills = (p.bills ?? []).filter(b => view === 'consolidated' || (view === 'uae' ? b.currency === 'AED' : b.currency === 'INR')), billSkips = p.billSkips ?? []
@@ -197,45 +206,7 @@ export default function MoneyOverviewClient(p: Props) {
         </div>
       </div>
 
-      {needsCount > 0 && (
-        <Panel title="Needs you" right={<span className="text-[11px] font-semibold px-2 py-[3px] rounded-full" style={{ background: '#FEF2F2', color: '#DC2626' }}>{needsCount}</span>}>
-          <ul className="mt-2">
-            <BillReminders bills={bills} skips={billSkips} txns={p.transactions} today={today} accounts={p.accounts} foundCount={foundCount} />
-            <LandedChecks txns={p.transactions} today={today} fx={FX} />
-            <IncomeChecks plans={plans} txns={p.transactions} today={today} fx={FX} />
-            <PendingConfirms pending={p.pending} accName={accName} />
-            {needs.slice(0, 6).map(it => {
-              const body = (<>
-                <span className="w-2 h-2 rounded-full mt-[5px] flex-shrink-0" style={{ background: SEV_DOT[it.severity] }} aria-label={it.severity === 'high' ? 'Urgent' : it.severity === 'medium' ? 'Soon' : 'To do'} />
-                <span className="flex-1 min-w-0">
-                  <span className="block text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{it.title}</span>
-                  <span className="block text-[12px] mt-px" style={{ color: 'var(--text3)' }}>{it.detail}</span>
-                </span>
-                {(it.href || ('action' in it && it.action === 'upload')) && <ChevronRight size={16} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--text4)' }} />}
-              </>)
-              const cls = 'w-full flex gap-2.5 items-start py-[9px] text-left -mx-2 px-2 rounded-lg hover:bg-[#F5F3FE] transition-colors'
-              return (
-                <li key={it.id} style={{ borderTop: '1px solid #F1F5F9' }}>
-                  {'action' in it && it.action === 'upload' ? <button onClick={() => setUploadOpen(true)} className={cls}>{body}</button>
-                    : it.href ? <Link href={it.href} className={cls}>{body}</Link> : <div className={cls}>{body}</div>}
-                </li>
-              )
-            })}
-            {unsure.map(d => (
-              <li key={`u-${d.id}`} style={{ borderTop: '1px solid #F1F5F9' }}>
-                <button onClick={() => setPicking(d)} className="w-full flex gap-2.5 items-start py-[9px] text-left -mx-2 px-2 rounded-lg hover:bg-[#F5F3FE] transition-colors">
-                  <span className="w-2 h-2 rounded-full mt-[5px] flex-shrink-0" style={{ background: SEV_DOT.low }} aria-label="To do" />
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Which account pays {d.label}?</span>
-                    <span className="block text-[12px] mt-px" style={{ color: 'var(--text3)' }}>Pick it once, and you’ll be warned if that account runs short</span>
-                  </span>
-                  <span className="text-[12px] font-semibold whitespace-nowrap mt-px" style={{ color: 'var(--accent)' }}>Choose</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </Panel>
-      )}
+      <TodoBar area="money" />
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2.5 md:gap-3">
         {kpis.map((k, i) => <TrendTile key={k.label} {...k} gid={`mk${i}`} />)}

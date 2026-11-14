@@ -196,20 +196,24 @@ export function LoansCard({ loans, toView, money, homes = [], today }: { loans: 
 }
 
 // One row of what needs you; the full list opens below it
-export function NeedsYouBar({ count, titles, open, onToggle }: { count: number; titles: string[]; open: boolean; onToggle: () => void }) {
-  if (count === 0) return (
+// Home's one row of what needs you: the To do list (lib/todo) in short, and
+// pay yourself first when it's due. Tapping opens the full list.
+export function NeedsYouBar({ items, payDue }: { items: { id: string; title: string; group: string }[]; payDue?: boolean }) {
+  const today = items.filter(i => i.group === 'today').length
+  if (items.length === 0 && !payDue) return (
     <div className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--text2)' }}>
       <span className="w-5 h-5 rounded-full inline-flex items-center justify-center text-[11px]" style={{ background: 'var(--income-bg)', color: 'var(--income)' }}>✓</span>You’re all caught up
     </div>
   )
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <button onClick={onToggle} aria-expanded={open} className="inline-flex items-center gap-2 h-9 pl-1.5 pr-3 rounded-full text-[13px] font-semibold" style={{ background: '#14172B', color: '#fff' }}>
-        <span className="min-w-[22px] h-[22px] px-1 rounded-full inline-flex items-center justify-center text-[11.5px] font-bold" style={{ background: '#DC2626' }}>{count}</span>
-        Needs you<ChevronRight size={14} className="transition-transform" style={{ transform: open ? 'rotate(90deg)' : 'none' }} />
-      </button>
-      {!open && titles.slice(0, 3).map(t => (
-        <button key={t} onClick={onToggle} className="inline-flex items-center h-9 px-3 rounded-full text-[13px] max-w-[280px] truncate bg-white" style={{ border: '1px solid var(--line)', color: 'var(--text)' }}>{t}</button>
+      <Link href="/dashboard/todo" className="inline-flex items-center gap-2 h-9 pl-1.5 pr-3 rounded-full text-[13px] font-semibold" style={{ background: '#14172B', color: '#fff' }}>
+        <span className="min-w-[22px] h-[22px] px-1 rounded-full inline-flex items-center justify-center text-[11.5px] font-bold" style={{ background: today ? '#DC2626' : '#6A55E8' }}>{items.length}</span>
+        To do{today ? ` · ${today} today` : ''}<ChevronRight size={14} />
+      </Link>
+      {payDue && <Link href="/dashboard/plan" className="inline-flex items-center h-9 px-3 rounded-full text-[13px] font-semibold" style={{ background: '#E7F6EE', color: '#15803D' }}>Pay yourself first</Link>}
+      {items.slice(0, 3).map(t => (
+        <Link key={t.id} href="/dashboard/todo" className="inline-flex items-center h-9 px-3 rounded-full text-[13px] max-w-[280px] truncate bg-white" style={{ border: '1px solid var(--line)', color: 'var(--text)' }}>{t.title}</Link>
       ))}
     </div>
   )

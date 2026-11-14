@@ -161,6 +161,7 @@ export function allDestinations(): { label: string; crumb: string; href: string;
       }
     }
   }
+  out.push({ label: 'To do', crumb: 'Everything that needs you', href: '/dashboard/todo', section: SECTIONS[0] })
   // Views picked by chips on a page (a report type, a loan type, the day-by-day forecast)
   const named: [keyof typeof VIEWS, string, (l: string) => string][] = [['reports', 'money', l => `${l} report`], ['loans', 'wealth', l => `${l} loans`], ['forecast', 'plan', l => (l === 'By day' ? 'Cash-flow forecast' : 'Year ahead')]]
   for (const [k, sec, name] of named) {
@@ -174,6 +175,7 @@ export function allDestinations(): { label: string; crumb: string; href: string;
 // reads a month), holdings and balances are always "today", and Insights,
 // Learn and Settings have no period: the picker isn't shown there.
 export function followsPeriod(pathname: string): boolean {
+  if (matches(pathname, '/dashboard/todo')) return false
   const { section } = resolveNav(pathname)
   if (!section) return true
   if (section.key === 'plan') return matches(pathname, '/dashboard/budgets')

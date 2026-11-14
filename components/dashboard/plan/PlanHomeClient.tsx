@@ -16,6 +16,7 @@ import { CurSwitch, FixesCard, PayFirstRow } from './PlanParts'
 import { TrendTile, GOOD, BAD, NONE, Card, type Pt } from '../charts/parts'
 import InsidePanel from '../charts/Inside'
 import { BalanceAhead, YearColumns } from './PlanCharts'
+import TodoBar from '../todo/TodoBar'
 
 const PART = { bills: '#F2A65A', everyday: '#6E8FF0', goals: '#3FBF8C', left: '#D9DCE6' }
 
@@ -124,6 +125,8 @@ export default function PlanHomeClient({ data, tax }: { data: PlanData; tax?: Ta
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2.5 md:gap-3">
         {kpis.map((k, i) => <TrendTile key={k.label} {...k} gid={`pk${i}`} />)}
       </div>
+
+      <TodoBar area="plan" />
 
       {!plan.incomeDeclared && (
         <Link href="/dashboard/settings/income" className="wl-card px-4 py-3 flex items-center gap-3 text-[13px]" style={{ color: 'var(--text2)' }}>

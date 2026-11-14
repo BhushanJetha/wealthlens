@@ -13,7 +13,8 @@ import { usePeriod, monthsNeeded, PeriodLine, TrendTile, GOOD, BAD, NONE, Card, 
 import { useTrends } from '../charts/useTrends'
 import InsidePanel from '../charts/Inside'
 import { NetWorthStack, type OwnLayer } from './WealthCharts'
-import { WealthNeeds, WealthPanels, type Overview } from '../WealthOverviewPanels'
+import { WealthPanels, type Overview } from '../WealthOverviewPanels'
+import TodoBar from '../todo/TodoBar'
 
 export interface WealthOverview extends Overview {
   drift: { cls: string; now: number; target: number; off: number }[]
@@ -176,7 +177,7 @@ export default function WealthOverviewClient(p: Props) {
           <span>We couldn&apos;t load {p.failed.join(', ')} just now, so net worth may be understated. Refresh the page to try again.</span>
         </div>
       )}
-      <WealthNeeds needs={o.needs.filter(n => !n.href.startsWith('/dashboard/portfolio')).slice(0, 5)} />
+      <TodoBar area="wealth" />
 
       {empty ? (
         <div className="wl-card px-6 py-10 text-center flex flex-col items-center gap-3">
