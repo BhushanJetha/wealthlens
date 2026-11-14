@@ -34,6 +34,7 @@ import InsidePanel from './charts/Inside'
 import EntriesSheet, { type Drill } from './charts/EntriesSheet'
 import TodoBar from './todo/TodoBar'
 import { StackedSpend, IncomeColumns, RemitBars } from './money/MoneyCharts'
+import HelpButton from '@/components/ui/HelpButton'
 
 interface Props {
   today: string
@@ -143,13 +144,13 @@ export default function MoneyOverviewClient(p: Props) {
 
   const kpis = [
     { label: 'Came in', color: '#6A55E8', how: { rows: Object.entries(c.incomeBy).sort((a, b) => b[1] - a[1]).map(([k, v]) => [GROUPS.find(g => g.key === k)?.label ?? 'Other', money(v)]) as [string, string][], total: ['= Came in', money(c.income)] as [string, string],
-        note: `${uae ? '' : view === 'india' ? 'Money arriving from the UAE counts as income in this view, as earned. ' : 'Money sent from the UAE to India isn’t counted again when it lands. '}Not income: refunds, a friend paying you back, money back from selling an investment, and moves between your own accounts.` }, value: short(c.income), sub: w.len > 1 ? `About ${short(c.income / w.len)} a month` : 'Salary and other income', d: thisBadge ?? badgeOf(c.income, pv?.income, true), spark: series(m => m.income), href: '/dashboard/income' },
+        note: `${uae ? '' : view === 'india' ? 'Money arriving from the UAE counts as income in this view, as earned. ' : 'Money sent from the UAE to India isn’t counted again when it lands. '}Not income: refunds, a friend paying you back, money back from selling an investment, and moves between your own accounts.` }, raw: c.income, value: short(c.income), sub: w.len > 1 ? `About ${short(c.income / w.len)} a month` : 'Salary and other income', d: thisBadge ?? badgeOf(c.income, pv?.income, true), spark: series(m => m.income), href: '/dashboard/income' },
     { label: 'Spent', color: '#F29A2E', how: { rows: [['Needs', money(c.needs)], ['Wants', money(c.wants)]] as [string, string][], total: ['= Spent', money(c.spent)] as [string, string],
-        note: `Loan EMIs (${money(c.emi)}) and investing are shown on their own, not as spending. Split bills count your share only. Left out on purpose: card bills (the spending was counted when you used the card), moves between your own accounts, and refunds (they lower Spent; they aren’t income).` }, value: short(c.spent), sub: `+ ${short(c.emi)} in EMIs`, d: thisBadge ?? badgeOf(c.spent, pv?.spent, false), spark: series(m => m.spent), href: '/dashboard/expenses' },
-    { label: 'Card bills paid', color: '#3B8EF0', value: short(c.cardBills), sub: 'A move: card spending is counted when you buy', d: { t: `${c.cardBillCount} bill${c.cardBillCount === 1 ? '' : 's'}`, s: NONE }, spark: series(m => m.cardBills), href: '/dashboard/cards' },
-    { label: uae ? 'Sent to India' : 'From the UAE', color: '#8B5CF6', value: short(sent), sub: c.sentAed > 0 ? (uae ? `At ₹${avgRate!.toFixed(1)} a dirham on average` : `${fmtA(c.sentAed)} at ₹${avgRate!.toFixed(1)} a dirham`) : 'Nothing sent home in this period', d: thisBadge ?? badgeOf(sent, sentPrev, true), spark: series(m => (uae ? m.sentAed : m.sentInr)), href: '/dashboard/transfers' },
-    { label: 'Bank & cash', color: '#2FB67C', value: short(cash), sub: `In ${banks.length} account${banks.length === 1 ? '' : 's'} today`, d: { t: 'today', s: NONE }, spark: [], href: '/dashboard/accounts', mini: banks.length > 0 ? { kind: 'split' as const, parts: banks.map((a, i) => ({ value: viewAmount(Number(a.current_balance) || 0, a.currency, view, FX), color: ['#2FB67C', '#16A34A', '#0F766E', '#34D399', '#065F46'][i % 5] })) } : undefined },
-    { label: 'Friends owe you', color: '#EC5B8C', value: short(owedToYou), sub: youOwe > 0 ? `You owe ${short(youOwe)}` : owedToYou > 0 ? 'You owe nobody' : 'All settled', d: { t: `${owers.length} ${owers.length === 1 ? 'person' : 'people'}`, s: NONE }, spark: [], href: '/dashboard/money/friends', mini: owedToYou + youOwe > 0 ? { kind: 'split' as const, parts: [{ value: owedToYou, color: '#EC5B8C' }, { value: youOwe, color: '#D9DCE6' }] } : undefined },
+        note: `Loan EMIs (${money(c.emi)}) and investing are shown on their own, not as spending. Split bills count your share only. Left out on purpose: card bills (the spending was counted when you used the card), moves between your own accounts, and refunds (they lower Spent; they aren’t income).` }, raw: c.spent, value: short(c.spent), sub: `+ ${short(c.emi)} in EMIs`, d: thisBadge ?? badgeOf(c.spent, pv?.spent, false), spark: series(m => m.spent), href: '/dashboard/expenses' },
+    { label: 'Card bills paid', color: '#3B8EF0', raw: c.cardBills, value: short(c.cardBills), sub: 'A move: card spending is counted when you buy', d: { t: `${c.cardBillCount} bill${c.cardBillCount === 1 ? '' : 's'}`, s: NONE }, spark: series(m => m.cardBills), href: '/dashboard/cards' },
+    { label: uae ? 'Sent to India' : 'From the UAE', color: '#8B5CF6', raw: sent, value: short(sent), sub: c.sentAed > 0 ? (uae ? `At ₹${avgRate!.toFixed(1)} a dirham on average` : `${fmtA(c.sentAed)} at ₹${avgRate!.toFixed(1)} a dirham`) : 'Nothing sent home in this period', d: thisBadge ?? badgeOf(sent, sentPrev, true), spark: series(m => (uae ? m.sentAed : m.sentInr)), href: '/dashboard/transfers' },
+    { label: 'Bank & cash', color: '#2FB67C', raw: cash, value: short(cash), sub: `In ${banks.length} account${banks.length === 1 ? '' : 's'} today`, d: { t: 'today', s: NONE }, spark: [], href: '/dashboard/accounts', mini: banks.length > 0 ? { kind: 'split' as const, parts: banks.map((a, i) => ({ value: viewAmount(Number(a.current_balance) || 0, a.currency, view, FX), color: ['#2FB67C', '#16A34A', '#0F766E', '#34D399', '#065F46'][i % 5] })) } : undefined },
+    { label: 'Friends owe you', color: '#EC5B8C', raw: owedToYou, value: short(owedToYou), sub: youOwe > 0 ? `You owe ${short(youOwe)}` : owedToYou > 0 ? 'You owe nobody' : 'All settled', d: { t: `${owers.length} ${owers.length === 1 ? 'person' : 'people'}`, s: NONE }, spark: [], href: '/dashboard/money/friends', mini: owedToYou + youOwe > 0 ? { kind: 'split' as const, parts: [{ value: owedToYou, color: '#EC5B8C' }, { value: youOwe, color: '#D9DCE6' }] } : undefined },
   ]
 
   // Spending layers: the biggest categories over the chart's months, the rest together
@@ -203,7 +204,7 @@ export default function MoneyOverviewClient(p: Props) {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
           <div className="text-[13px]" style={{ color: 'var(--text3)' }}>Money · {viewLabel}</div>
-          <h1 className="text-[22px] md:text-[26px] font-bold tracking-[-0.02em]" style={{ color: 'var(--text)' }}>Where your money moves</h1>
+          <h1 className="text-[22px] md:text-[26px] font-bold tracking-[-0.02em]" style={{ color: 'var(--text)' }}>Where your money moves<HelpButton /></h1>
           <PeriodLine p={per} w={w} months={months} />
         </div>
       </div>
@@ -211,7 +212,7 @@ export default function MoneyOverviewClient(p: Props) {
       <TodoBar area="money" />
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2.5 md:gap-3">
-        {kpis.map((k, i) => <TrendTile key={k.label} {...k} gid={`mk${i}`} />)}
+        {kpis.map((k, i) => <TrendTile key={k.label} conv={{ cur, fx: FX }} {...k} gid={`mk${i}`} />)}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-3.5 md:gap-4 items-stretch">

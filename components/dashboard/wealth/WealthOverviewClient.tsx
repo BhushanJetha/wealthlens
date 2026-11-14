@@ -16,6 +16,7 @@ import { NetWorthStack, type OwnLayer } from './WealthCharts'
 import { WealthPanels, type Overview } from '../WealthOverviewPanels'
 import TodoBar from '../todo/TodoBar'
 import Freshness from './Freshness'
+import HelpButton from '@/components/ui/HelpButton'
 
 export interface WealthOverview extends Overview {
   drift: { cls: string; now: number; target: number; off: number }[]
@@ -125,13 +126,13 @@ export default function WealthOverviewClient(p: Props) {
   const lifeOk = o.protection.dependents === 0 || o.protection.gap <= 0
   const kpis = [
     { label: 'Net worth', color: '#4B3BC4', dark: true, how: { rows: [['What you own', money(nw.totalAssets)], ...nw.liabRows.filter(r => r.value > 0).map(r => [`− ${r.label}`, money(r.value)])] as [string, string][], total: ['= Net worth today', money(nw.netWorth)] as [string, string],
-        note: 'Investments at today’s prices, bank balances from your records, property at the value you set. Builder payments still to come aren’t taken off: that’s money you’ll pay, not money you owe the bank.' }, value: short(body?.nwEnd ?? nw.netWorth), sub: body?.moved != null ? `${body.moved >= 0 ? '+' : '−'}${short(Math.abs(body.moved))} ${body.word}` : 'History builds from your first visits', d: badge(body?.nwEnd ?? null, body?.nwStart ?? null, true), spark: body?.nwSeries.map(x => x ?? NaN) ?? [], href: '/dashboard/net-worth' },
+        note: 'Investments at today’s prices, bank balances from your records, property at the value you set. Builder payments still to come aren’t taken off: that’s money you’ll pay, not money you owe the bank.' }, raw: body?.nwEnd ?? nw.netWorth, value: short(body?.nwEnd ?? nw.netWorth), sub: body?.moved != null ? `${body.moved >= 0 ? '+' : '−'}${short(Math.abs(body.moved))} ${body.word}` : 'History builds from your first visits', d: badge(body?.nwEnd ?? null, body?.nwStart ?? null, true), spark: body?.nwSeries.map(x => x ?? NaN) ?? [], href: '/dashboard/net-worth' },
     { label: 'Investments', color: '#3B8EF0', how: { rows: [['Put in', money(nw.investments.cost)], [gain >= 0 ? '+ Gain' : '− Loss', money(Math.abs(gain))]] as [string, string][], total: ['= Worth today', money(nw.investments.value)] as [string, string],
-        note: 'Funds and shares at their latest price, deposits at what you put in plus interest. Not counted here: bank and cash, property, jewellery, vehicles and gratuity.' }, value: short(nw.investments.value), sub: `${short(nw.investments.cost)} put in · ${gain >= 0 ? '+' : '−'}${short(Math.abs(gain))}`, d: gainPct == null ? { t: '—', s: NONE } : { t: `${gainPct >= 0 ? '+' : ''}${gainPct.toFixed(1)}%`, s: gainPct >= 0 ? GOOD : BAD }, spark: body?.invSeries ?? [], href: '/dashboard/investments', mini: nw.investments.value > 0 ? { kind: 'split' as const, parts: [{ value: Math.min(nw.investments.cost, nw.investments.value), color: '#3B8EF0' }, { value: Math.max(0, gain), color: '#16A34A' }] } : undefined },
-    { label: 'Property', color: '#14B8A6', value: short(property), sub: property > 0 ? (homeLoans > 0 ? `${short(homeLoans)} of it is home loan` : 'No home loan on it') : 'No property added', d: yours != null ? { t: `${yours}% yours`, s: GOOD } : { t: '—', s: NONE }, spark: [], href: '/dashboard/assets', mini: property > 0 ? { kind: 'split' as const, parts: [{ value: property - Math.min(property, homeLoans), color: '#0F766E' }, { value: Math.min(property, homeLoans), color: '#FCA5A5' }] } : undefined },
-    { label: 'Bank & cash', color: '#2FB67C', value: short(nw.cash), sub: coverMonths != null ? 'Emergency fund · aim for 6 months' : 'In your accounts today', d: coverMonths != null ? { t: `${coverMonths.toFixed(1)} mo`, s: coverMonths >= 6 ? GOOD : coverMonths >= 3 ? NONE : BAD } : { t: 'today', s: NONE }, spark: [], href: '/dashboard/accounts', mini: coverMonths != null ? { kind: 'progress' as const, pct: coverMonths / 6 * 100, color: coverMonths >= 6 ? '#2FB67C' : '#F59E0B' } : undefined },
-    { label: 'Loans left', color: '#DC2626', value: short(body?.lnEnd ?? 0), sub: body?.paid != null && (body.lnStart ?? 0) > 0 ? `${body.paid >= 0 ? 'Paid down' : 'Up by'} ${short(Math.abs(body.paid))} ${body.word}` : (body?.lnEnd ?? 0) > 0 ? 'Still to repay' : 'No loans', d: badge(body?.lnEnd ?? null, body?.lnStart ?? null, false), spark: body?.loanSeries ?? [], href: '/dashboard/loans' },
-    { label: 'Life cover', color: '#6A55E8', value: short(fromInr(o.protection.cover)), sub: o.protection.health.count ? `Health cover ${short(fromInr(o.protection.health.amount))}` : 'No health policy added', d: o.protection.dependents === 0 ? { t: 'no dependents', s: NONE } : lifeOk ? { t: 'enough', s: GOOD } : { t: `${short(fromInr(o.protection.gap))} short`, s: BAD }, spark: [], href: '/dashboard/insurance', mini: o.protection.dependents > 0 && o.protection.need > 0 ? { kind: 'progress' as const, pct: o.protection.cover / o.protection.need * 100, color: lifeOk ? '#6A55E8' : '#F59E0B' } : undefined },
+        note: 'Funds and shares at their latest price, deposits at what you put in plus interest. Not counted here: bank and cash, property, jewellery, vehicles and gratuity.' }, raw: nw.investments.value, value: short(nw.investments.value), sub: `${short(nw.investments.cost)} put in · ${gain >= 0 ? '+' : '−'}${short(Math.abs(gain))}`, d: gainPct == null ? { t: '—', s: NONE } : { t: `${gainPct >= 0 ? '+' : ''}${gainPct.toFixed(1)}%`, s: gainPct >= 0 ? GOOD : BAD }, spark: body?.invSeries ?? [], href: '/dashboard/investments', mini: nw.investments.value > 0 ? { kind: 'split' as const, parts: [{ value: Math.min(nw.investments.cost, nw.investments.value), color: '#3B8EF0' }, { value: Math.max(0, gain), color: '#16A34A' }] } : undefined },
+    { label: 'Property', color: '#14B8A6', raw: property, value: short(property), sub: property > 0 ? (homeLoans > 0 ? `${short(homeLoans)} of it is home loan` : 'No home loan on it') : 'No property added', d: yours != null ? { t: `${yours}% yours`, s: GOOD } : { t: '—', s: NONE }, spark: [], href: '/dashboard/assets', mini: property > 0 ? { kind: 'split' as const, parts: [{ value: property - Math.min(property, homeLoans), color: '#0F766E' }, { value: Math.min(property, homeLoans), color: '#FCA5A5' }] } : undefined },
+    { label: 'Bank & cash', color: '#2FB67C', raw: nw.cash, value: short(nw.cash), sub: coverMonths != null ? 'Emergency fund · aim for 6 months' : 'In your accounts today', d: coverMonths != null ? { t: `${coverMonths.toFixed(1)} mo`, s: coverMonths >= 6 ? GOOD : coverMonths >= 3 ? NONE : BAD } : { t: 'today', s: NONE }, spark: [], href: '/dashboard/accounts', mini: coverMonths != null ? { kind: 'progress' as const, pct: coverMonths / 6 * 100, color: coverMonths >= 6 ? '#2FB67C' : '#F59E0B' } : undefined },
+    { label: 'Loans left', color: '#DC2626', raw: body?.lnEnd ?? 0, value: short(body?.lnEnd ?? 0), sub: body?.paid != null && (body.lnStart ?? 0) > 0 ? `${body.paid >= 0 ? 'Paid down' : 'Up by'} ${short(Math.abs(body.paid))} ${body.word}` : (body?.lnEnd ?? 0) > 0 ? 'Still to repay' : 'No loans', d: badge(body?.lnEnd ?? null, body?.lnStart ?? null, false), spark: body?.loanSeries ?? [], href: '/dashboard/loans' },
+    { label: 'Life cover', color: '#6A55E8', raw: fromInr(o.protection.cover), value: short(fromInr(o.protection.cover)), sub: o.protection.health.count ? `Health cover ${short(fromInr(o.protection.health.amount))}` : 'No health policy added', d: o.protection.dependents === 0 ? { t: 'no dependents', s: NONE } : lifeOk ? { t: 'enough', s: GOOD } : { t: `${short(fromInr(o.protection.gap))} short`, s: BAD }, spark: [], href: '/dashboard/insurance', mini: o.protection.dependents > 0 && o.protection.need > 0 ? { kind: 'progress' as const, pct: o.protection.cover / o.protection.need * 100, color: lifeOk ? '#6A55E8' : '#F59E0B' } : undefined },
   ]
 
   // Where it sits today
@@ -170,7 +171,7 @@ export default function WealthOverviewClient(p: Props) {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
           <div className="text-[13px]" style={{ color: 'var(--text3)' }}>Wealth · {viewLabel}</div>
-          <h1 className="text-[22px] md:text-[26px] font-bold tracking-[-0.02em]" style={{ color: 'var(--text)' }}>What you own and owe</h1>
+          <h1 className="text-[22px] md:text-[26px] font-bold tracking-[-0.02em]" style={{ color: 'var(--text)' }}>What you own and owe<HelpButton /></h1>
           {body && <PeriodLine p={per} w={body.w} months={body.M} />}
         </div>
       </div>
@@ -192,7 +193,7 @@ export default function WealthOverviewClient(p: Props) {
         </div>
       ) : (<>
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2.5 md:gap-3">
-          {kpis.map((k, i) => <TrendTile key={k.label} {...k} gid={`wk${i}`} />)}
+          {kpis.map((k, i) => <TrendTile key={k.label} conv={{ cur, fx: FX }} {...k} gid={`wk${i}`} />)}
         </div>
 
         {body ? (

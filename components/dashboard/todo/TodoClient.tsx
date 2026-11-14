@@ -11,6 +11,7 @@ import IncomeChecks, { incomeCheckCount } from '../IncomeChecks'
 import BillReminders, { billReminderCount } from '../BillReminders'
 import LandedChecks, { landedCheckCount } from '../LandedChecks'
 import { useTodo } from './useTodo'
+import HelpButton from '@/components/ui/HelpButton'
 
 const GROUP_DOT: Record<TodoGroup, string> = { today: '#DC2626', week: '#F59E0B', later: '#B9BDCB' }
 const GROUP_INK: Record<TodoGroup, string> = { today: '#B4231A', week: '#B45309', later: '#5F657A' }
@@ -44,7 +45,7 @@ export default function TodoClient(p: {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="text-[13px]" style={{ color: 'var(--text3)' }}>Everything that needs you</div>
-          <h1 className="text-[22px] md:text-[26px] font-bold tracking-[-0.02em]" style={{ color: 'var(--text)' }}>To do <span style={{ color: 'var(--text3)', fontWeight: 500 }}>· {list.length + (confirms ? 1 : 0)}</span></h1>
+          <h1 className="text-[22px] md:text-[26px] font-bold tracking-[-0.02em]" style={{ color: 'var(--text)' }}>To do <span style={{ color: 'var(--text3)', fontWeight: 500 }}>· {list.length + (confirms ? 1 : 0)}</span><HelpButton /></h1>
           <p className="text-[12.5px]" style={{ color: 'var(--text3)' }}>
             {(['today', 'week', 'later'] as TodoGroup[]).map(g => `${list.filter(i => i.group === g).length + (g === 'today' && confirms ? 1 : 0)} ${GROUP_LABEL[g].toLowerCase()}`).join(' · ')}
           </p>

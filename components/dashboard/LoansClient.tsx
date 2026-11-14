@@ -261,10 +261,21 @@ export default function LoansClient({ loans, pendingEmis = [], pendingDrafts = [
           {filtered.length > 0 && <span className="text-[12px]" style={{ color: 'var(--text3)' }}>Tap a loan for its payoff plan</span>}
         </div>
         {filtered.length === 0 ? (
-          <div className="wl-card flex flex-col items-center justify-center py-10 gap-3 text-center">
-            <Landmark size={28} style={{ color: 'var(--border2)' }} />
-            <div className="text-[13px]" style={{ color: 'var(--text3)' }}>No loans added yet</div>
-            <button onClick={() => setShowAdd(true)} className="wl-btn wl-btn-primary">Add loan</button>
+          <div className="wl-card grid grid-cols-1 md:grid-cols-2 gap-5 p-5 md:p-6 items-center">
+            <div className="flex flex-col gap-2.5">
+              <Landmark size={26} style={{ color: 'var(--accent)' }} />
+              <div className="text-[17px] font-bold" style={{ color: 'var(--text)' }}>No loans yet</div>
+              <div className="text-[13px] leading-relaxed" style={{ color: 'var(--text2)' }}>Add a loan to see what’s left, when it ends, how much is interest, and how much a prepayment would save.</div>
+              <div className="flex gap-2 flex-wrap"><button onClick={() => setShowAdd(true)} className="wl-btn wl-btn-primary">Add a loan</button></div>
+              <div className="text-[12px]" style={{ color: 'var(--text3)' }}>About 2 minutes. You need the amount, the rate and the EMI.</div>
+            </div>
+            <div className="relative rounded-xl p-4" style={{ border: '1px dashed #D9DCE6', background: '#FAFAFE' }} aria-hidden="true">
+              <span className="absolute top-2.5 right-2.5 text-[10.5px] font-bold tracking-[.06em] px-2 py-0.5 rounded-full" style={{ background: '#F1F2F6', color: '#5F657A' }}>EXAMPLE</span>
+              <div className="text-[11.5px]" style={{ color: 'var(--text3)' }}>Loan left</div>
+              <div className="text-[18px] font-extrabold" style={{ color: '#8A8FA3' }}>₹47,00,000</div>
+              <svg viewBox="0 0 200 70" className="w-full h-[70px] mt-1.5"><path d="M0 8 C60 14 120 32 200 66 L200 70 L0 70Z" fill="#FCA5A5" fillOpacity={0.35} /><path d="M0 8 C60 14 120 32 200 66" fill="none" stroke="#F87171" strokeWidth={2} /></svg>
+              <div className="flex justify-between text-[11px]" style={{ color: 'var(--text3)' }}><span>Today</span><span>Ends 2044</span></div>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5 md:gap-3.5">

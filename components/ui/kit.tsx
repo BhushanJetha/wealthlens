@@ -2,6 +2,7 @@
 import Link from 'next/link'
 import { Plus, ChevronRight, type LucideIcon } from 'lucide-react'
 import { useUiStore } from '@/store/uiStore'
+import HelpButton from './HelpButton'
 
 // Shared building blocks for design v2 (design/design_handoff_wealthlens).
 // Desktop and phone sizes are both handled here so pages stay simple.
@@ -107,7 +108,7 @@ export function PageHeader({ title, sub, actions, onAdd, addLabel = 'Add' }: {
   return (
     <div className="flex items-center md:items-end justify-between gap-3">
       <div className="min-w-0">
-        <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em]" style={{ color: 'var(--text)' }}>{title}</h1>
+        <h1 className="text-[22px] md:text-[24px] font-bold tracking-[-0.01em]" style={{ color: 'var(--text)' }}>{title}<HelpButton /></h1>
         {sub && <p className="text-[12px] md:text-[13px] mt-0.5" style={{ color: 'var(--text3)' }}>{sub}</p>}
       </div>
       {actions && <div className="hidden md:flex items-center gap-2 flex-shrink-0">{actions}</div>}

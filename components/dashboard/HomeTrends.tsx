@@ -71,13 +71,13 @@ function Body({ data, v, view, per, mode, setMode, money, short, now, today, liv
   // The months shown in the charts: the period (at least six months)
   const win = w.chart
   const kpis = [
-    { label: 'Income', color: '#6A55E8', value: short(c.inc), sub: len > 1 ? `About ${short(c.inc / len)} a month` : 'Salary and other income', d: delta(c.inc, p?.inc, true), spark: win.map(i => v.income[i]), href: '/dashboard/income' },
-    { label: 'Spent', color: '#F29A2E', value: short(c.sp), sub: `+ ${short(c.em)} in EMIs`, d: delta(c.sp, p?.sp, false), spark: win.map(i => v.spent[i]), href: '/dashboard/expenses/report' },
-    { label: 'Saved', color: '#0F766E', value: short(c.sv), sub: c.inc > 0 ? `${Math.round(c.sv / c.inc * 100)}% of income` : 'No income yet', d: delta(c.sv, p?.sv, true), spark: win.map(i => v.saved[i]), href: '/dashboard/reports',
+    { label: 'Income', color: '#6A55E8', raw: c.inc, value: short(c.inc), sub: len > 1 ? `About ${short(c.inc / len)} a month` : 'Salary and other income', d: delta(c.inc, p?.inc, true), spark: win.map(i => v.income[i]), href: '/dashboard/income' },
+    { label: 'Spent', color: '#F29A2E', raw: c.sp, value: short(c.sp), sub: `+ ${short(c.em)} in EMIs`, d: delta(c.sp, p?.sp, false), spark: win.map(i => v.spent[i]), href: '/dashboard/expenses/report' },
+    { label: 'Saved', color: '#0F766E', raw: c.sv, value: short(c.sv), sub: c.inc > 0 ? `${Math.round(c.sv / c.inc * 100)}% of income` : 'No income yet', d: delta(c.sv, p?.sv, true), spark: win.map(i => v.saved[i]), href: '/dashboard/reports',
       how: { rows: [['Came in', money(c.inc)], ['− Spent', money(c.sp)], ['− Loan EMIs', money(c.em)]] as [string, string][], total: ['= Saved', money(c.sv)] as [string, string],
         note: `Investing counts as saving: what went into funds, deposits and shares is part of it. ${view === 'india' ? 'Money arriving from the UAE counts as income in this view. ' : ''}Left out on purpose: card bills (the spending was counted when you used the card), moves between your own accounts, and refunds (they lower Spent; they aren’t income).` } },
-    { label: 'Invested', color: '#16A34A', value: short(c.iv), sub: 'SIPs, RDs, shares and more', d: delta(c.iv, p?.iv, true), spark: win.map(i => v.invested[i]), href: '/dashboard/investments' },
-    { label: 'Loans left', color: '#DC2626', value: short(lnEnd), sub: lnStart != null && lnStart > 0 ? `${lnEnd <= lnStart ? 'Paid down' : 'Up by'} ${short(Math.abs(lnEnd - lnStart))} ${periodWord}` : lnEnd > 0 ? 'Still to repay' : 'No loans',
+    { label: 'Invested', color: '#16A34A', raw: c.iv, value: short(c.iv), sub: 'SIPs, RDs, shares and more', d: delta(c.iv, p?.iv, true), spark: win.map(i => v.invested[i]), href: '/dashboard/investments' },
+    { label: 'Loans left', color: '#DC2626', raw: lnEnd, value: short(lnEnd), sub: lnStart != null && lnStart > 0 ? `${lnEnd <= lnStart ? 'Paid down' : 'Up by'} ${short(Math.abs(lnEnd - lnStart))} ${periodWord}` : lnEnd > 0 ? 'Still to repay' : 'No loans',
       d: lnStart ? { t: `${lnEnd <= lnStart ? '▼' : '▲'} ${Math.abs(pct(lnEnd, lnStart)).toFixed(1)}%`, s: lnEnd <= lnStart ? GOOD : BAD } : { t: '—', s: NONE }, spark: win.map(i => v.loans[i]), href: '/dashboard/loans' },
     { label: 'Net worth', color: '#4B3BC4', how: nwEnd != null ? { rows: [['What you own', money(ownAt(b) ?? 0)], ['− What you owe', money(v.owe[b] ?? (M[b] === now ? live.owe : 0))]] as [string, string][], total: ['= Net worth', money(nwEnd)] as [string, string],
         note: 'Owned: bank and cash, investments at today’s prices, property at the value you set. Owed: loans and card balances. A builder payment still to come isn’t taken off: it’s money you’ll pay, not money you owe the bank.' } : undefined, value: nwEnd != null ? short(nwEnd) : '—', sub: nwEnd != null && nwStart != null ? `${nwEnd >= nwStart ? '+' : '−'}${short(Math.abs(nwEnd - nwStart))} ${periodWord}` : nwEnd != null ? 'History builds from your first visits' : 'Not tracked for this month',
@@ -129,7 +129,7 @@ function Body({ data, v, view, per, mode, setMode, money, short, now, today, liv
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2.5 md:gap-3">
-        {kpis.map((k, i) => <TrendTile key={k.label} {...k} gid={`kg${i}`} />)}
+        {kpis.map((k, i) => <TrendTile key={k.label} conv={{ cur, fx: data.fx }} {...k} gid={`kg${i}`} />)}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-3.5 md:gap-4 items-stretch">

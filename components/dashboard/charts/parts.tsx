@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { smoothPath } from '@/lib/homeTrends'
 import { pctChange, periodLabel, mLabel, monthName, type PeriodKey, type Compare, type Window } from '@/lib/period'
 import { useViewStore } from '@/store/viewStore'
+import { fmtCompact } from '@/lib/format'
 import { MiniView, type Mini } from './Inside'
 
 // ── The one period every page reads (store/viewStore), set in the top bar ──
@@ -60,9 +61,13 @@ function HowSheet({ title, how, onClose }: { title: string; how: How; onClose: (
 }
 
 // With no trend to draw, a small bar (`mini`) sits where the line would be
-export function TrendTile({ label, color, value, sub, d, spark, href, gid, dark, mini, how }: {
+// `raw` + `conv`: the figure and today's rate, to show it in the other currency on hover
+export function TrendTile({ label, color, value, sub, d, spark, href, gid, dark, mini, how, raw, conv }: {
   label: string; color: string; value: string; sub: string; d: Badge; spark: number[]; href: string; gid: string; dark?: boolean; mini?: Mini; how?: How
+  raw?: number | null; conv?: { cur: string; fx: number }
 }) {
+  const other = raw != null && Number.isFinite(raw) && conv && conv.fx > 1
+    ? `≈ ${conv.cur === 'AED' ? fmtCompact(raw * conv.fx, 'INR') : fmtCompact(raw / conv.fx, 'AED')} at ₹${conv.fx.toFixed(2)} a dirham today` : undefined
   const [showHow, setShowHow] = useState(false)
   const vals = spark.map((x, i) => ({ x: i, y: x })).filter(pt => Number.isFinite(pt.y))
   const lo = Math.min(...vals.map(pt => pt.y)), hi = Math.max(...vals.map(pt => pt.y)), r = hi - lo || 1, n = spark.length
@@ -79,7 +84,7 @@ export function TrendTile({ label, color, value, sub, d, spark, href, gid, dark,
         </span>
         <span className="text-[11px] font-semibold px-1.5 py-[2px] rounded-full whitespace-nowrap" style={dark ? { background: 'rgba(255,255,255,.12)', color: d.s.color === '#B4231A' ? '#FF9C93' : d.s.color === '#15803D' ? '#8EF0BF' : '#C9CBE0' } : d.s}>{d.t}</span>
       </div>
-      <div className="text-[20px] md:text-[23px] font-bold tabular-nums tracking-[-0.02em] truncate" style={{ color: dark ? '#fff' : 'var(--text)' }}>{value}</div>
+      <div className="text-[20px] md:text-[23px] font-bold tabular-nums tracking-[-0.02em] truncate" style={{ color: dark ? '#fff' : 'var(--text)' }} title={other}>{value}</div>
       <div className="text-[11.5px] leading-snug min-h-[30px]" style={{ color: dark ? '#C9CBE0' : 'var(--text3)' }}>{sub}</div>
       {!line && mini ? <div className="mt-auto pt-1 pb-3.5"><MiniView m={mini} /></div> : (
       <svg viewBox="0 0 100 30" preserveAspectRatio="none" className="block -mx-3.5 md:-mx-4 h-10" style={{ width: 'calc(100% + 2rem)' }} aria-hidden="true">
@@ -87,7 +92,7 @@ export function TrendTile({ label, color, value, sub, d, spark, href, gid, dark,
         {line && <path d={`${line} L${P[P.length - 1].x.toFixed(1)} 30 L${P[0].x.toFixed(1)} 30 Z`} fill={`url(#${gid})`} />}
         {line && <path d={line} fill="none" stroke={stroke} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />}
       </svg>)}
-      {showHow && how && <HowSheet title={label} how={how} onClose={() => setShowHow(false)} />}
+      {showHow && how && <HowSheet title={label} how={other ? { ...how, note: `${how.note ?? ''}${how.note ? ' ' : ''}In the other currency: ${other.replace(/^≈ /, 'about ')}.` } : how} onClose={() => setShowHow(false)} />}
     </Link>
   )
 }

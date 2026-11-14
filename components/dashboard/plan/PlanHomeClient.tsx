@@ -17,6 +17,7 @@ import { TrendTile, GOOD, BAD, NONE, Card, type Pt } from '../charts/parts'
 import InsidePanel from '../charts/Inside'
 import { BalanceAhead, YearColumns } from './PlanCharts'
 import TodoBar from '../todo/TodoBar'
+import HelpButton from '@/components/ui/HelpButton'
 
 const PART = { bills: '#F2A65A', everyday: '#6E8FF0', goals: '#3FBF8C', left: '#D9DCE6' }
 
@@ -119,7 +120,7 @@ export default function PlanHomeClient({ data, tax }: { data: PlanData; tax?: Ta
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
           <div className="text-[13px]" style={{ color: 'var(--text3)' }}>Plan · {month}, day {day} of {dim}</div>
-          <h1 className="text-[22px] md:text-[26px] font-bold tracking-[-0.02em]" style={{ color: 'var(--text)' }}>Where your money is going next</h1>
+          <h1 className="text-[22px] md:text-[26px] font-bold tracking-[-0.02em]" style={{ color: 'var(--text)' }}>Where your money is going next<HelpButton /></h1>
         </div>
         {showSwitch && <CurSwitch cur={cur} onChange={setCur} />}
       </div>
