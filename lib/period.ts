@@ -22,18 +22,32 @@ export function rangeOf(p: PeriodKey, now: string): [string, string] {
   return [addM(now, -({ m6: 5, m12: 11, y2: 23 }[p])), now]
 }
 
-// Where a period sits in a list of months: its first and last index, its
-// length, and the same length just before it (to compare with), when held
-export interface Window { a: number; b: number; len: number; pa: number; pb: number; hasPrev: boolean; isNow: boolean; chart: number[] }
-export function windowOf(months: string[], p: PeriodKey, now: string): Window {
-  const [from, to] = rangeOf(p, now), at = (m: string) => months.indexOf(m)
-  const a = Math.max(0, at(from)), b = at(to) < 0 ? months.length - 1 : at(to), len = b - a + 1
-  const pa = a - len, pb = b - len
+// What a period is compared with: the same length just before it, the same
+// months a year earlier, or nothing
+export type Compare = 'prev' | 'yoy' | 'none'
+export const COMPARES: [Compare, string][] = [['prev', 'The months just before'], ['yoy', 'The same months last year'], ['none', 'Don’t compare']]
+
+// Where months `from`–`to` sit in a list of months: first and last index, the
+// length, the months to compare with (when held) and what to call them. This
+// month on its own is never compared (it isn't over).
+export interface Window { a: number; b: number; len: number; pa: number; pb: number; hasPrev: boolean; isNow: boolean; chart: number[]; cmp: string | null }
+export function windowOf(months: string[], from: string, to: string, now: string, compare: Compare = 'prev'): Window {
+  const at = (m: string) => months.indexOf(m)
+  const a = from < months[0] ? 0 : Math.max(0, at(from)), b = at(to) < 0 ? months.length - 1 : at(to), len = b - a + 1
+  const back = compare === 'yoy' ? 12 : len
+  const pa = a - back, pb = b - back
+  const partial = from === to && to === now
+  const hasPrev = !partial && compare !== 'none' && pa >= 0
   // Charts show the period, or the six months to its end when it's shorter than a quarter
   const lo = len >= 3 ? a : Math.max(0, b - 5)
-  return { a, b, len, pa, pb, hasPrev: p !== 'this' && pa >= 0, isNow: months[b] === now, chart: Array.from({ length: b - lo + 1 }, (_, i) => lo + i) }
+  const cmp = !hasPrev ? null : compare === 'yoy' ? 'the same months last year' : len === 1 ? monthName(months[pa]) : `${mLabel(months[pa])} – ${mLabel(months[pb])}`
+  return { a, b, len, pa, pb, hasPrev, isNow: months[b] === now, chart: Array.from({ length: b - lo + 1 }, (_, i) => lo + i), cmp }
 }
+// "Last 6 months", or the months picked: "Mar – Aug 26"
+export const periodLabel = (p: PeriodKey | null, from: string, to: string) =>
+  p ? periodName(p) : from === to ? monthName(from) : from.slice(0, 4) === to.slice(0, 4) ? `${MON[Number(from.slice(5)) - 1]} – ${mLabel(to)}` : `${mLabel(from)} – ${mLabel(to)}`
+
 export const sumOf = (arr: number[], a: number, b: number) => { let s = 0; for (let i = Math.max(0, a); i <= b; i++) s += arr[i] ?? 0; return s }
 export const pctChange = (c: number, p: number) => (p ? (c - p) / Math.abs(p) * 100 : 0)
 // "in this period" / "this month" / "in October"
-export const periodWord = (p: PeriodKey, to: string) => (p === 'this' ? 'this month' : p === 'last' ? `in ${MONTH[Number(to.slice(5)) - 1]}` : 'in this period')
+export const periodWord = (p: PeriodKey | null, to: string, from = to) => (p === 'this' ? 'this month' : from === to ? `in ${MONTH[Number(to.slice(5)) - 1]}` : 'in this period')

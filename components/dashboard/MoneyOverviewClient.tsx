@@ -17,8 +17,8 @@ import { findReviewItems, reviewCount } from '@/lib/review'
 import { rankCards } from '@/lib/cardCycle'
 import { GROUPS, type Category } from '@/lib/categories'
 import { friendBalances, friendTotals } from '@/lib/friends'
-import { moneyMonths, sumMonths, topGroups } from '@/lib/moneyTrends'
-import { MONTH, mLabel, monthsUpTo, windowOf, sumOf, periodName, periodWord, rangeOf } from '@/lib/period'
+import { moneyMonths, sumMonths, topGroups, entriesFor, type Pick } from '@/lib/moneyTrends'
+import { MONTH, mLabel, monthsUpTo, windowOf, sumOf, periodLabel, periodWord } from '@/lib/period'
 import type { RecurringTxn } from '@/lib/recurring'
 import PendingConfirms, { pendingCount, type Pending } from './PendingConfirms'
 import IncomeChecks, { incomeCheckCount } from './IncomeChecks'
@@ -29,8 +29,9 @@ import { foundRegular, pendingCharges } from '@/lib/regular'
 import type { IncomePlan } from '@/lib/incomePlans'
 import { PageHeader, Panel } from '@/components/ui/kit'
 import { BankLogo } from '@/components/ui/BankCards'
-import { usePeriod, PeriodChips, TrendTile, badgeOf, NONE, Card, type Pt } from './charts/parts'
+import { usePeriod, PeriodLine, TrendTile, badgeOf, NONE, Card, type Pt } from './charts/parts'
 import InsidePanel from './charts/Inside'
+import EntriesSheet, { type Drill } from './charts/EntriesSheet'
 import { StackedSpend, IncomeColumns, RemitBars } from './money/MoneyCharts'
 
 interface Props {
@@ -62,8 +63,9 @@ export default function MoneyOverviewClient(p: Props) {
   const short = (n: number) => fmtCompact(n, cur)
   const [today, setToday] = useState(p.today)
   useEffect(() => { setToday(localToday()) }, [])
-  const [period, setPeriod] = usePeriod()
+  const per = usePeriod()
   const [picking, setPicking] = useState<Due | null>(null)
+  const [drill, setDrill] = useState<Drill | null>(null)
   const plans = p.plans ?? []
   const rows = p.categories ?? []
   const bills = (p.bills ?? []).filter(b => view === 'consolidated' || (view === 'uae' ? b.currency === 'AED' : b.currency === 'INR')), billSkips = p.billSkips ?? []
@@ -100,14 +102,24 @@ export default function MoneyOverviewClient(p: Props) {
   const cardIds = useMemo(() => new Set<string>(p.accounts.filter(a => kindOf(a) === 'card').map(a => a.id)), [p.accounts])
   const prepared = useMemo(() => prepareMoney(p.transactions, { fx: FX, cardIds }), [p.transactions, FX, cardIds])
   const mm = useMemo(() => moneyMonths(prepared, { months, view, fx: FX, rows, cardIds }), [prepared, months, view, FX, rows, cardIds])
-  const w = windowOf(months, period, now)
-  const [, to] = rangeOf(period, now)
+  const w = windowOf(months, per.from, per.to, now, per.compare)
   const cut = (a: number, b: number) => mm.slice(Math.max(0, a), b + 1)
   const c = sumMonths(cut(w.a, w.b)), pv = w.hasPrev ? sumMonths(cut(w.pa, w.pb)) : null
   const series = (f: (m: typeof mm[number]) => number) => w.chart.map(i => f(mm[i]))
   const pts: Pt[] = w.chart.map(i => ({ label: mLabel(months[i]), title: `${MONTH[Number(months[i].slice(5)) - 1]} ${months[i].slice(0, 4)}${months[i] === now ? ' (so far)' : ''}`, ix: [i], sel: w.len === 1 && i === w.b }))
-  const word = periodWord(period, to)
-  const thisBadge = period === 'this' ? { t: `${Number(today.slice(8, 10))} days in`, s: NONE } : null
+  const word = periodWord(per.period, per.to, per.from)
+  // Tap a chart: the entries behind it, counted the same way (lib/moneyTrends entriesFor)
+  const openDrill = (pick: Pick, from: string, toM: string, title: string) => {
+    const q = new URLSearchParams({ from, to: toM })
+    if (pick.kind === 'spent' && pick.group) q.set('cat', `g:${pick.group}`)
+    if (pick.kind === 'spent' && pick.merchant) q.set('q', pick.merchant)
+    setDrill({ title, by: pick.kind === 'spent' && pick.group ? 'merchant' : 'category', entries: entriesFor(prepared, { from, to: toM, view, fx: FX, rows, pick }),
+      href: pick.kind === 'spent' ? `/dashboard/expenses?${q}` : undefined,
+      note: pick.kind === 'spent' ? 'Split bills count your share only, as in the chart.' : pick.kind === 'sent' ? (uae ? 'What left in dirhams.' : 'What landed in India, in rupees.') : undefined })
+  }
+  const monthAt = (i: number) => months[w.chart[i]]
+  const monthTitle = (m: string) => `${MONTH[Number(m.slice(5)) - 1]} ${m.slice(0, 4)}`
+  const thisBadge = per.from === per.to && per.to === now ? { t: `${Number(today.slice(8, 10))} days in`, s: NONE } : null
 
   const cash = banks.reduce((s, a) => s + viewAmount(Number(a.current_balance) || 0, a.currency, view, FX), 0)
   const fb = useMemo(() => friendBalances(p.friends ?? [], p.splits ?? [], p.friendTxns ?? []), [p.friends, p.splits, p.friendTxns])
@@ -181,9 +193,8 @@ export default function MoneyOverviewClient(p: Props) {
         <div className="min-w-0">
           <div className="text-[13px]" style={{ color: 'var(--text3)' }}>Money · {viewLabel}</div>
           <h1 className="text-[22px] md:text-[26px] font-bold tracking-[-0.02em]" style={{ color: 'var(--text)' }}>Where your money moves</h1>
-          <p className="text-[12px]" style={{ color: 'var(--text3)' }}>{periodName(period)} · {w.len > 1 ? `${mLabel(months[w.a])} – ${mLabel(months[w.b])}` : `${MONTH[Number(months[w.b].slice(5)) - 1]} ${months[w.b].slice(0, 4)}${w.isNow ? ', so far' : ''}`}</p>
+          <PeriodLine p={per} w={w} months={months} />
         </div>
-        <PeriodChips value={period} onChange={setPeriod} />
       </div>
 
       {needsCount > 0 && (
@@ -232,6 +243,7 @@ export default function MoneyOverviewClient(p: Props) {
 
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-3.5 md:gap-4 items-stretch">
         <StackedSpend pts={pts} layers={layers} short={short} money={money}
+          onPick={(i, k) => { const m = monthAt(i), l = layers.find(x => x.key === k); openDrill({ kind: 'spent', group: k && k !== 'rest' ? k : undefined }, m, m, `${l && k !== 'rest' ? l.label : 'Spent'} · ${monthTitle(m)}`) }}
           sub={`Each layer is a category · ${w.len >= 3 ? `${mLabel(months[w.a])} – ${mLabel(months[w.b])}` : `the 6 months to ${mLabel(months[w.b])}`}${w.isNow ? ` · ${MONTH[Number(now.slice(5)) - 1]} so far` : ''}`}
           foot={c.spent > 0 && (
             <div className="grid grid-cols-3 gap-2 md:gap-2.5">
@@ -244,10 +256,10 @@ export default function MoneyOverviewClient(p: Props) {
           {topShops.length === 0 ? <p className="text-[12.5px] py-8 text-center" style={{ color: 'var(--text3)' }}>No spending recorded in this period.</p> : (
             <div className="flex flex-col gap-2.5">
               {topShops.map(s => (
-                <div key={s.name}>
+                <button key={s.name} onClick={() => openDrill({ kind: 'spent', merchant: s.name.toLowerCase() }, months[w.a], months[w.b], `${s.name} · ${periodLabel(per.period, per.from, per.to)}`)} className="text-left rounded-lg -mx-1.5 px-1.5 py-0.5 hover:bg-[#FAFAFE]">
                   <div className="flex justify-between gap-2 text-[13px]"><span className="truncate" style={{ color: 'var(--text)' }}>{s.name} <span className="text-[11.5px]" style={{ color: 'var(--text3)' }}>· {s.count}×</span></span><b className="tabular-nums" style={{ color: 'var(--text)' }}>{short(s.amount)}</b></div>
                   <div className="h-1.5 rounded-full mt-1" style={{ background: 'var(--track)' }}><div className="h-full rounded-full" style={{ width: `${s.amount / shopMax * 100}%`, background: '#F29A2E' }} /></div>
-                </div>
+                </button>
               ))}
             </div>
           )}
@@ -256,8 +268,10 @@ export default function MoneyOverviewClient(p: Props) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3.5 md:gap-4 items-stretch">
-        <IncomeColumns pts={pts} layers={incomeLayers} short={short} money={money} total={sumOf(series(m => m.income), 0, w.chart.length - 1)} />
-        {hasRemit ? <RemitBars pts={pts} aed={series(m => m.sentAed)} inr={series(m => m.sentInr)} uaeView={uae} short={short} />
+        <IncomeColumns pts={pts} layers={incomeLayers} short={short} money={money} total={sumOf(series(m => m.income), 0, w.chart.length - 1)}
+          onPick={i => openDrill({ kind: 'income' }, monthAt(i), monthAt(i), `Came in · ${monthTitle(monthAt(i))}`)} />
+        {hasRemit ? <RemitBars pts={pts} aed={series(m => m.sentAed)} inr={series(m => m.sentInr)} uaeView={uae} short={short}
+          onPick={i => openDrill({ kind: 'sent' }, monthAt(i), monthAt(i), `${uae ? 'Sent to India' : 'From the UAE'} · ${monthTitle(monthAt(i))}`)} />
           : <Card title="UAE → India" sub="Money sent home"><p className="text-[12.5px] py-6 text-center" style={{ color: 'var(--text3)' }}>No transfers home in these months. They show here once a transfer to India is recorded.</p></Card>}
 
         <Card title="Accounts and cards" right={<Link href="/dashboard/accounts" className="text-[12.5px] font-semibold" style={{ color: 'var(--accent)' }}>All</Link>}>
@@ -310,6 +324,7 @@ export default function MoneyOverviewClient(p: Props) {
 
       <InsidePanel title="Inside Money" items={inside} />
 
+      <EntriesSheet drill={drill} cur={cur} accounts={p.accounts} onClose={() => setDrill(null)} />
       {picking && <PayFromSheet due={picking} accounts={p.accounts} onClose={() => setPicking(null)} onSaved={() => { setPicking(null); router.refresh() }} />}
     </div>
   )

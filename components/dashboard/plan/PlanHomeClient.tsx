@@ -170,7 +170,7 @@ export default function PlanHomeClient({ data, tax }: { data: PlanData; tax?: Ta
               {watch.map(l => {
                 const ahead = l.spent - l.cap * pace / 100, isFast = l.status === 'over' || l.pct > pace + 10
                 return (
-                  <div key={l.category}>
+                  <Link key={l.category} href={`/dashboard/expenses?from=${ym}&to=${ym}&cat=${encodeURIComponent(l.category)}`} className="block rounded-lg -mx-1.5 px-1.5 py-0.5 hover:bg-[#FAFAFE]">
                     <div className="flex justify-between gap-2 text-[13px]" style={{ color: 'var(--text)' }}><span className="truncate">{budgetLabel(l.category)}</span><span className="tabular-nums whitespace-nowrap"><b>{short(l.spent)}</b> <span style={{ color: 'var(--text3)' }}>of {short(l.cap)}</span></span></div>
                     <div className="relative h-2 rounded-full mt-1.5" style={{ background: '#EEF0F5' }}>
                       <div className="h-2 rounded-full" style={{ width: `${Math.min(100, l.pct)}%`, background: l.status === 'over' ? '#E5484D' : isFast ? '#F59E0B' : '#6E8FF0' }} />
@@ -179,7 +179,7 @@ export default function PlanHomeClient({ data, tax }: { data: PlanData; tax?: Ta
                     <div className="text-[11.5px] mt-1" style={{ color: l.status === 'over' ? '#B4231A' : isFast ? '#B45309' : '#15803D' }}>
                       {l.status === 'over' ? `Over by ${short(-l.left)}` : isFast ? `${short(ahead)} ahead of pace` : ahead < 0 ? `${short(-ahead)} under pace` : 'On pace'}
                     </div>
-                  </div>
+                  </Link>
                 )
               })}
             </div>

@@ -4,6 +4,7 @@ import { activeAccountsWithLedger } from '@/lib/ledger'
 import { activeLoansWithEmi } from '@/lib/loans'
 import { getAedInr } from '@/lib/fx'
 import CardsReportClient from '@/components/dashboard/CardsReportClient'
+import { WithViews } from '@/components/layout/ViewChips'
 
 // Card spending: what you bought on each credit card in a period, by card
 // and by category, and every charge
@@ -30,5 +31,5 @@ export default async function CardSpendingPage() {
   const liveById = new Map((live ?? []).map(a => [a.id, a]))
   const accounts = (all ?? []).map(a => liveById.get(a.id) ?? a)
 
-  return <CardsReportClient transactions={txns} accounts={accounts} loans={loans ?? []} fx={rate} />
+  return <WithViews of="reports" label="Report type"><CardsReportClient transactions={txns} accounts={accounts} loans={loans ?? []} fx={rate} /></WithViews>
 }

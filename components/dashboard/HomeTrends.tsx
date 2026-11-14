@@ -4,8 +4,8 @@ import Link from 'next/link'
 import { fmtMoney, fmtCompact } from '@/lib/format'
 import { GROUPS } from '@/lib/categories'
 import { viewTrends, smoothPath, smoothBack, niceStep, type Trends, type ViewSeries } from '@/lib/homeTrends'
-import { MON, MONTH, mLabel, rangeOf, sumOf, pctChange as pct, periodName, type PeriodKey } from '@/lib/period'
-import { usePeriod, PeriodChips, TrendTile, GOOD, BAD, NONE, useHover, chg, Tooltip, LegendChip, Axis, Labels, Dot, type Pt } from './charts/parts'
+import { MON, MONTH, mLabel, sumOf, pctChange as pct, windowOf, periodLabel, periodWord as pWord } from '@/lib/period'
+import { usePeriod, monthsNeeded, PeriodLine, TrendTile, GOOD, BAD, NONE, useHover, chg, Tooltip, LegendChip, Axis, Labels, Dot, type Pt, type Period } from './charts/parts'
 
 type View = 'uae' | 'india' | 'consolidated'
 
@@ -20,12 +20,12 @@ export default function HomeTrends({ view, fx, today, live, holderNote, side }: 
   const cur = view === 'uae' ? 'AED' : 'INR'
   const money = (n: number) => fmtMoney(n, cur), short = (n: number) => fmtCompact(n, cur)
   const now = today.slice(0, 7)
-  const [period, pick] = usePeriod()
+  const per = usePeriod()
   const [mode, setMode] = useState<'month' | 'year'>('month')
   const [data, setData] = useState<Trends | null>(null)
   const [failed, setFailed] = useState(false)
   // 25 months covers a year and the year before it; two years and year on year need five
-  const need = mode === 'year' || period === 'y2' ? 60 : 25
+  const need = mode === 'year' || monthsNeeded(per, now) > 25 ? 60 : 25
   useEffect(() => {
     if (data && data.months.length >= need) return
     let off = false
@@ -35,33 +35,30 @@ export default function HomeTrends({ view, fx, today, live, holderNote, side }: 
   }, [need]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const v = useMemo(() => (data ? viewTrends(data, view, fx) : null), [data, view, fx])
-  const chips = <PeriodChips value={period} onChange={pick} />
   if (!data || !v) return (
     <div className="flex flex-col gap-3.5 md:gap-[18px]">
-      <div className="flex justify-end">{chips}</div>
       {failed ? <div className="wl-card px-5 py-6 text-[13px]" style={{ color: 'var(--text3)' }}>Your trends couldn’t load just now. <button onClick={() => setData(null)} className="font-semibold underline" style={{ color: 'var(--accent)' }}>Try again</button></div>
         : <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">{Array.from({ length: 6 }, (_, i) => <div key={i} className="wl-card h-[148px] animate-pulse" style={{ background: '#FAFAFE' }} />)}</div>}
     </div>
   )
-  return <Body {...{ data, v, view, period, mode, setMode, chips, money, short, now, today, live, holderNote, side, cur }} />
+  return <Body {...{ data, v, view, per, mode, setMode, money, short, now, today, live, holderNote, side, cur }} />
 }
 
-function Body({ data, v, period, mode, setMode, chips, money, short, now, today, live, holderNote, side, cur }: {
-  data: Trends; v: ViewSeries; view: View; period: PeriodKey; mode: 'month' | 'year'; setMode: (m: 'month' | 'year') => void; chips: React.ReactNode
+function Body({ data, v, per, mode, setMode, money, short, now, today, live, holderNote, side, cur }: {
+  data: Trends; v: ViewSeries; view: View; per: Period; mode: 'month' | 'year'; setMode: (m: 'month' | 'year') => void
   money: (n: number) => string; short: (n: number) => string; now: string; today: string; live: { nw: number; own: number; owe: number }; holderNote: string | null; side?: React.ReactNode; cur: string
 }) {
-  const M = data.months, at = (m: string) => M.indexOf(m)
-  const [from, to] = rangeOf(period, now)
-  const a = Math.max(0, at(from)), b = at(to) < 0 ? M.length - 1 : at(to), len = b - a + 1
-  const pa = a - len, pb = b - len, hasPrev = period !== 'this' && pa >= 0
-  const isNow = M[b] === now
+  const M = data.months
+  const w = windowOf(M, per.from, per.to, now, per.compare)
+  const { a, b, len, pa, pb, hasPrev, isNow } = w
+  const partial = per.from === per.to && per.to === now
   // Today's live figures stand in for this month when its snapshot isn't saved yet
   const nwAt = (i: number) => v.nw[i] ?? (M[i] === now ? live.nw : null)
   const ownAt = (i: number) => v.own[i] ?? (M[i] === now ? live.own : null)
   const c = { inc: sumOf(v.income, a, b), sp: sumOf(v.spent, a, b), em: sumOf(v.emi, a, b), iv: sumOf(v.invested, a, b), sv: sumOf(v.saved, a, b) }
   const p = hasPrev ? { inc: sumOf(v.income, pa, pb), sp: sumOf(v.spent, pa, pb), iv: sumOf(v.invested, pa, pb), sv: sumOf(v.saved, pa, pb) } : null
   const delta = (cv: number, pv: number | undefined, upGood: boolean) => {
-    if (period === 'this') return { t: `${Number(today.slice(8, 10))} days in`, s: NONE }
+    if (partial) return { t: `${Number(today.slice(8, 10))} days in`, s: NONE }
     if (pv == null || !pv) return { t: '—', s: NONE }
     const d = pct(cv, pv), up = d >= 0
     return { t: `${up ? '▲' : '▼'} ${Math.abs(d).toFixed(0)}%`, s: up === upGood ? GOOD : BAD }
@@ -69,11 +66,10 @@ function Body({ data, v, period, mode, setMode, chips, money, short, now, today,
   const before = a > 0 ? a - 1 : null
   const nwEnd = nwAt(b), nwStart = before != null ? nwAt(before) : null
   const lnEnd = v.loans[b], lnStart = before != null ? v.loans[before] : null
-  const periodWord = period === 'this' ? 'this month' : period === 'last' ? `in ${MONTH[Number(to.slice(5)) - 1]}` : 'in this period'
+  const periodWord = pWord(per.period, per.to, per.from)
 
   // The months shown in the charts: the period (at least six months)
-  const lo = len >= 3 ? a : Math.max(0, b - 5)
-  const win = Array.from({ length: b - lo + 1 }, (_, i) => lo + i)
+  const win = w.chart
   const kpis = [
     { label: 'Income', color: '#6A55E8', value: short(c.inc), sub: len > 1 ? `About ${short(c.inc / len)} a month` : 'Salary and other income', d: delta(c.inc, p?.inc, true), spark: win.map(i => v.income[i]), href: '/dashboard/income' },
     { label: 'Spent', color: '#F29A2E', value: short(c.sp), sub: `+ ${short(c.em)} in EMIs`, d: delta(c.sp, p?.sp, false), spark: win.map(i => v.spent[i]), href: '/dashboard/expenses/report' },
@@ -95,7 +91,7 @@ function Body({ data, v, period, mode, setMode, chips, money, short, now, today,
       // Full years, this year so far, and the year your records begin (when they begin inside the window)
       .filter(x => x.ix.length && (x.ix.length === 12 || x.y === now.slice(0, 4) || (firstUsed > 0 && x.ix[0] === firstUsed)))
       .map(x => ({ label: x.y === now.slice(0, 4) ? `${x.y}*` : x.y, title: x.y === now.slice(0, 4) ? `${x.y} (so far)` : x.ix.length < 12 ? `${x.y} (from ${MON[Number(M[x.ix[0]].slice(5)) - 1]})` : x.y, ix: x.ix, sel: false }))
-  }, [yearly, data, period, firstUsed]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [yearly, data, per.from, per.to, firstUsed]) // eslint-disable-line react-hooks/exhaustive-deps
   const flow = (arr: number[]) => pts.map(pt => pt.ix.reduce((s, i) => s + (arr[i] ?? 0), 0))
   // A balance at each point's end: its last month with a figure
   const stock = (f: (i: number) => number | null) => pts.map(pt => { for (let k = pt.ix.length - 1; k >= 0; k--) { const x = f(pt.ix[k]); if (x != null) return x } return null })
@@ -124,10 +120,9 @@ function Body({ data, v, period, mode, setMode, chips, money, short, now, today,
     <div className="flex flex-col gap-3.5 md:gap-[18px]">
       <div className="flex flex-wrap items-center justify-between gap-2.5">
         <div className="min-w-0">
-          <h2 className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Overview · {periodName(period).toLowerCase()}</h2>
-          <p className="text-[12px]" style={{ color: 'var(--text3)' }}>{len > 1 ? `${mLabel(M[a])} – ${mLabel(M[b])}` : `${MONTH[Number(M[b].slice(5)) - 1]} ${M[b].slice(0, 4)}${isNow ? ', so far' : ''}`}{holderNote ? ` · ${holderNote}` : ''}</p>
+          <h2 className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Overview · {periodLabel(per.period, per.from, per.to).toLowerCase()}</h2>
+          <p className="text-[12px]" style={{ color: 'var(--text3)' }}>{len > 1 ? `${mLabel(M[a])} – ${mLabel(M[b])}` : `${MONTH[Number(M[b].slice(5)) - 1]} ${M[b].slice(0, 4)}${isNow ? ', so far' : ''}`}{w.cmp ? ` · compared with ${w.cmp}` : ''}{holderNote ? ` · ${holderNote}` : ''}</p>
         </div>
-        {chips}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2.5 md:gap-3">
@@ -137,8 +132,8 @@ function Body({ data, v, period, mode, setMode, chips, money, short, now, today,
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-3.5 md:gap-4 items-stretch">
         <FlowsChart pts={pts} I={flow(v.income)} S={flow(v.spent)} E={flow(v.emi)} V={flow(v.invested)} money={money} short={short} modeSwitch={modeSwitch}
           sub={`${yearly ? 'Each year’s total' : 'Each month'} · ${span}${isNow ? (yearly ? ' · this year so far' : ` · ${MON[Number(now.slice(5)) - 1]} so far`) : ''}`}
-          totals={{ inc: c.inc, out: c.sp + c.em, sv: c.sv }} periodName={periodName(period).toLowerCase()} />
-        <SpendDonut rows={groups} total={c.sp} short={short} sub={`Spending by category, ${periodWord}`} />
+          totals={{ inc: c.inc, out: c.sp + c.em, sv: c.sv }} periodName={periodLabel(per.period, per.from, per.to).toLowerCase()} />
+        <SpendDonut rows={groups} total={c.sp} short={short} sub={`Spending by category, ${periodWord} · tap one for its entries`} range={[M[a], M[b]]} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-3.5 md:gap-4 items-stretch">
@@ -227,7 +222,7 @@ function FlowsChart({ pts, I, S, E, V, money, short, modeSwitch, sub, totals, pe
 }
 
 // ── Where it went: spending by category group ──
-function SpendDonut({ rows, total, short, sub }: { rows: { key: string; label: string; color: string; value: number }[]; total: number; short: (n: number) => string; sub: string }) {
+function SpendDonut({ rows, total, short, sub, range }: { rows: { key: string; label: string; color: string; value: number }[]; total: number; short: (n: number) => string; sub: string; range: [string, string] }) {
   const C = 2 * Math.PI * 70, sum = rows.reduce((s, r) => s + r.value, 0) || 1
   let acc = 0
   const segs = rows.map(r => { const L = r.value / sum * C, s = { color: r.color, dash: `${Math.max(0, L - 2).toFixed(1)} ${C.toFixed(1)}`, off: (-acc).toFixed(1) }; acc += L; return s })
@@ -247,7 +242,7 @@ function SpendDonut({ rows, total, short, sub }: { rows: { key: string; label: s
         </div>
         <div className="flex flex-col">
           {rows.map(r => (
-            <Link key={r.key} href="/dashboard/expenses/report" className="flex items-center gap-2.5 min-h-[34px] text-[13px] rounded-lg -mx-1.5 px-1.5 hover:bg-[#FAFAFE]" style={{ color: 'var(--text)' }}>
+            <Link key={r.key} href={`/dashboard/expenses?from=${range[0]}&to=${range[1]}${r.key === 'rest' ? '' : `&cat=g:${r.key}`}`} className="flex items-center gap-2.5 min-h-[34px] text-[13px] rounded-lg -mx-1.5 px-1.5 hover:bg-[#FAFAFE]" style={{ color: 'var(--text)' }}>
               <i className="w-2.5 h-2.5 rounded-[3px] flex-shrink-0" style={{ background: r.color }} />
               <span className="flex-1 min-w-0 truncate">{r.label}</span>
               <span className="w-9 text-right text-[12px]" style={{ color: 'var(--text3)' }}>{Math.round(r.value / sum * 100)}%</span>

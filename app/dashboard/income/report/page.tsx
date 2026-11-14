@@ -1,6 +1,7 @@
 import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { fetchAll } from '@/lib/supabase/fetchAll'
 import IncomeReportClient from '@/components/dashboard/IncomeReportClient'
+import { WithViews } from '@/components/layout/ViewChips'
 
 export default async function IncomeReportPage() {
   const supabase = createClient()
@@ -20,5 +21,5 @@ export default async function IncomeReportPage() {
   // "Received from UAE" India income (lib/money) — same as the Income tab
   const transactions = [...(incomeRes.data ?? []), ...(transfersRes.data ?? [])]
 
-  return <IncomeReportClient transactions={transactions} />
+  return <WithViews of="reports" label="Report type"><IncomeReportClient transactions={transactions} /></WithViews>
 }

@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { ChevronLeft, ChevronRight, Calendar, X } from 'lucide-react'
 import { useViewStore, currentMonth } from '@/store/viewStore'
+import { PERIODS, COMPARES, periodName, type PeriodKey } from '@/lib/period'
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const MONTH_NAMES_LONG = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -33,6 +34,7 @@ function MonthRangePicker({ from, to, onApply, onClose }: {
   onApply: (from: string, to: string) => void;
   onClose: () => void;
 }) {
+  const { period, compare, setPeriod, setCompare } = useViewStore()
   const [pickYear, setPickYear] = useState(parseYM(to)[0])
   const [draft, setDraft] = useState<{ from: string; to: string | null }>({ from, to })
   const [selecting, setSelecting] = useState<'from' | 'to'>('from')
@@ -69,29 +71,32 @@ function MonthRangePicker({ from, to, onApply, onClose }: {
     onClose()
   }
 
-  function selectPreset(months: number) {
-    const now = currentMonth()
-    const start = addMonths(now, -(months - 1))
-    setDraft({ from: start, to: now })
-    setPickYear(parseYM(now)[0])
-    setSelecting('from')
-  }
-
   return (
     <div className="absolute top-full left-0 mt-2 z-50 rounded-2xl shadow-2xl overflow-hidden w-[340px] max-md:fixed max-md:left-3 max-md:right-3 max-md:top-16 max-md:mt-0 max-md:w-auto"
       style={{ background: '#fff', border: '1px solid var(--border)' }}>
 
-      {/* Presets */}
-      <div className="flex gap-1.5 p-3 pb-0">
-        {[['This month', 1], ['Last 3M', 3], ['Last 6M', 6], ['This year', 12]].map(([label, n]) => (
-          <button key={label} onClick={() => selectPreset(Number(n))}
-            className="flex-1 py-1.5 rounded-lg text-[10px] font-semibold border transition-all"
-            style={{ borderColor: 'var(--border)', color: 'var(--text3)', background: 'var(--bg2)' }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'var(--sage-bg)'; e.currentTarget.style.color = 'var(--sage)' }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'var(--bg2)'; e.currentTarget.style.color = 'var(--text3)' }}>
-            {label}
-          </button>
-        ))}
+      {/* Presets: they move on with time and apply to every page */}
+      <div className="p-3 pb-1">
+        <div className="text-[10.5px] font-bold uppercase tracking-[.06em] mb-1.5" style={{ color: 'var(--text3)' }}>Period</div>
+        <div className="grid grid-cols-2 gap-1.5">
+          {PERIODS.map(([k, label]) => (
+            <button key={k} onClick={() => { setPeriod(k); onClose() }} aria-pressed={period === k}
+              className="h-9 rounded-lg text-[12.5px] text-left px-3 border"
+              style={period === k ? { background: 'var(--accent-bg)', borderColor: 'var(--accent)', color: 'var(--accent2)', fontWeight: 700 } : { borderColor: 'var(--border)', color: 'var(--text2)' }}>
+              {label}{period === k ? ' ✓' : ''}
+            </button>
+          ))}
+        </div>
+        <div className="text-[10.5px] font-bold uppercase tracking-[.06em] mt-3 mb-1.5" style={{ color: 'var(--text3)' }}>Compare with</div>
+        <div role="group" aria-label="Compare with" className="flex flex-col gap-1">
+          {COMPARES.map(([k, label]) => (
+            <button key={k} onClick={() => setCompare(k)} aria-pressed={compare === k} className="h-8 rounded-lg text-[12.5px] text-left px-3 flex justify-between items-center"
+              style={compare === k ? { background: 'var(--accent-bg)', color: 'var(--accent2)', fontWeight: 600 } : { color: 'var(--text2)' }}>
+              {label}{compare === k && <span>✓</span>}
+            </button>
+          ))}
+        </div>
+        <div className="text-[10.5px] font-bold uppercase tracking-[.06em] mt-3" style={{ color: 'var(--text3)' }}>Or pick months</div>
       </div>
 
       {/* Year navigation */}
@@ -172,7 +177,8 @@ function compactRange(from: string, to: string): string {
 // The period every page reads (viewStore from/to month). Desktop shows arrows
 // and the full label; `compact` is the phone pill.
 export default function MonthPicker({ compact }: { compact?: boolean }) {
-  const { fromMonth, toMonth, setDateRange } = useViewStore()
+  const { fromMonth, toMonth, setDateRange, period, lastPreset, setPeriod } = useViewStore()
+  const SHORT: Record<PeriodKey, string> = { this: 'This month', last: 'Last month', q: 'Last quarter', m6: '6 months', m12: '12 months', y2: '2 years' }
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const isSingleMonth = fromMonth === toMonth
@@ -190,7 +196,8 @@ export default function MonthPicker({ compact }: { compact?: boolean }) {
     let hiddenAt = 0
     const onChange = () => {
       if (document.hidden) { hiddenAt = Date.now(); return }
-      if (hiddenAt && Date.now() - hiddenAt > 30 * 60 * 1000) { const m = currentMonth(); useViewStore.getState().setDateRange(m, m) }
+      // A preset's months move on (a new month may have begun); picked months go back to the preset
+      if (hiddenAt && Date.now() - hiddenAt > 30 * 60 * 1000) { const st = useViewStore.getState(); st.setPeriod(st.period ?? st.lastPreset) }
       hiddenAt = 0
     }
     document.addEventListener('visibilitychange', onChange)
@@ -207,7 +214,7 @@ export default function MonthPicker({ compact }: { compact?: boolean }) {
         <button onClick={() => setOpen(o => !o)} aria-haspopup="dialog" aria-expanded={open} aria-label={`Period: ${formatRange(fromMonth, toMonth)}`}
           className="h-9 px-3 rounded-full flex items-center gap-1.5 text-[12.5px] font-semibold whitespace-nowrap"
           style={{ background: '#fff', border: '1px solid var(--border)', color: 'var(--text)' }}>
-          <Calendar size={13} style={{ color: 'var(--accent)' }} />{compactRange(fromMonth, toMonth)}
+          <Calendar size={13} style={{ color: 'var(--accent)' }} />{period ? SHORT[period] : compactRange(fromMonth, toMonth)}
         </button>
       ) : (
         <div className="flex items-center rounded-lg overflow-hidden h-8"
@@ -221,12 +228,12 @@ export default function MonthPicker({ compact }: { compact?: boolean }) {
             style={{ borderColor: 'var(--border)' }}>
             <Calendar size={13} style={{ color: 'var(--accent)' }} />
             <span className="text-[12.5px] font-semibold whitespace-nowrap" style={{ color: 'var(--text)' }}>
-              {formatRange(fromMonth, toMonth)}
+              {period && period !== 'this' && period !== 'last' ? `${periodName(period)} · ` : ''}{formatRange(fromMonth, toMonth)}
             </span>
           </button>
-          {!isSingleMonth && (
-            <button onClick={() => { const m = currentMonth(); setDateRange(m, m) }}
-              aria-label="Back to this month" className="px-1 h-full opacity-60 hover:opacity-100" style={{ color: 'var(--text3)' }}>
+          {!period && (
+            <button onClick={() => setPeriod(lastPreset)}
+              aria-label={`Back to ${periodName(lastPreset).toLowerCase()}`} className="px-1 h-full opacity-60 hover:opacity-100" style={{ color: 'var(--text3)' }}>
               <X size={11} />
             </button>
           )}

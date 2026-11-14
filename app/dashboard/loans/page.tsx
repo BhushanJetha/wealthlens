@@ -2,6 +2,7 @@ import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { activeLoansWithEmi } from '@/lib/loans'
 import { withAutomation } from '@/lib/automation'
 import LoansClient from '@/components/dashboard/LoansClient'
+import { WithViews } from '@/components/layout/ViewChips'
 
 export default async function LoansPage() {
   const supabase = createClient()
@@ -13,5 +14,5 @@ export default async function LoansPage() {
     activeLoansWithEmi(supabase, user!.id),
     supabase.from('loan_transactions').select('loan_id,kind,txn_date,amount,principal,interest').eq('user_id', user!.id),
   ]))
-  return <LoansClient loans={loans ?? []} pendingEmis={auto.pending.emis} pendingDrafts={auto.pending.drafts.filter((t: any) => t.auto_ref?.kind === 'emi')} loanTxns={lt.data ?? []} today={today} />
+  return <WithViews of="loans" label="Loan type"><LoansClient loans={loans ?? []} pendingEmis={auto.pending.emis} pendingDrafts={auto.pending.drafts.filter((t: any) => t.auto_ref?.kind === 'emi')} loanTxns={lt.data ?? []} today={today} /></WithViews>
 }

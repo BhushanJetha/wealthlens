@@ -87,3 +87,45 @@ export function topGroups(ms: MoneyMonth[], n = 5): { keys: string[]; rest: bool
   const all = Object.entries(tot).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([k]) => k)
   return { keys: all.slice(0, all.length > n + 1 ? n : n + 1), rest: all.length > n + 1 }
 }
+
+// ── The entries behind a number (tap a chart) ───────────────────────────────
+// The same rules as moneyMonths, so the entries add up to what the chart shows.
+export type Pick =
+  | { kind: 'spent'; group?: string; merchant?: string }
+  | { kind: 'income'; group?: string }
+  | { kind: 'sent' }
+export interface Entry { t: any; v: number }
+export function entriesFor(prepared: any[], o: { from: string; to: string; view: View; fx: number; rows?: Category[]; pick: Pick }): Entry[] {
+  const rows = o.rows ?? [], out: Entry[] = []
+  const val = (t: any) => {
+    const v = Number(t.amount) || 0
+    if (o.view === 'consolidated') return t.currency === 'AED' ? v * o.fx : v
+    return (o.view === 'uae') === (t.currency === 'AED') ? v : null
+  }
+  for (const t of prepared) {
+    const m = String(t.txn_date).slice(0, 7)
+    if (m < o.from || m > o.to) continue
+    if (o.pick.kind === 'sent') {
+      if (t._remit) out.push({ t, v: o.view === 'uae' ? Number(t._aed) || 0 : Number(t.amount) || 0 })
+      continue
+    }
+    if (o.pick.kind === 'income') {
+      if (!isIncome(t, o.view)) continue
+      const v = t._remit ? Number(t.amount) || 0 : val(t)
+      if (v == null || !(v > 0)) continue
+      const g = t._remit ? 'earned' : groupKeyOf(catOf(t), rows, 'income') ?? 'extra'
+      if (!o.pick.group || o.pick.group === g) out.push({ t, v })
+      continue
+    }
+    if (t._remit || isIncome(t, o.view)) continue
+    const v = val(t)
+    if (v == null || !(v > 0)) continue
+    const sg = spendGroup(t)
+    if (!sg || sg === 'loans' || sg === 'invest') continue
+    const c = catOf(t)
+    if (o.pick.group && (groupKeyOf(c, rows) ?? 'other') !== o.pick.group) continue
+    if (o.pick.merchant && (String(t.merchant || labelOf(c)).trim() || labelOf(c)).toLowerCase() !== o.pick.merchant) continue
+    out.push({ t, v })
+  }
+  return out.sort((a, b) => String(b.t.txn_date).localeCompare(String(a.t.txn_date)))
+}

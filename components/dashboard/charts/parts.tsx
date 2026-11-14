@@ -1,37 +1,32 @@
 'use client'
 // Chart pieces shared by Home and the section overviews: the period chips,
 // a tile with its trend, hover, tooltip, legend chips, axis and labels.
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import Link from 'next/link'
 import { smoothPath } from '@/lib/homeTrends'
-import { PERIODS, PERIOD_KEY, isPeriod, pctChange, type PeriodKey } from '@/lib/period'
+import { pctChange, periodLabel, mLabel, monthName, type PeriodKey, type Compare, type Window } from '@/lib/period'
+import { useViewStore } from '@/store/viewStore'
 import { MiniView, type Mini } from './Inside'
 
-// ── One period for Home and every overview, saved on this device ──
-const EVT = 'wl-period'
-export function usePeriod(fallback: PeriodKey = 'm6'): [PeriodKey, (p: PeriodKey) => void] {
-  const [p, setP] = useState<PeriodKey>(fallback)
-  useEffect(() => {
-    try { const s = localStorage.getItem(PERIOD_KEY); if (isPeriod(s)) setP(s) } catch {}
-    const on = (e: Event) => { const d = (e as CustomEvent).detail; if (isPeriod(d)) setP(d) }
-    window.addEventListener(EVT, on)
-    return () => window.removeEventListener(EVT, on)
-  }, [])
-  const pick = (x: PeriodKey) => {
-    setP(x)
-    try { localStorage.setItem(PERIOD_KEY, x) } catch {}
-    window.dispatchEvent(new CustomEvent(EVT, { detail: x }))
-  }
-  return [p, pick]
+// ── The one period every page reads (store/viewStore), set in the top bar ──
+export interface Period { period: PeriodKey | null; from: string; to: string; compare: Compare }
+export function usePeriod(): Period {
+  const { period, fromMonth, toMonth, compare } = useViewStore()
+  return { period, from: fromMonth, to: toMonth, compare }
 }
-export function PeriodChips({ value, onChange }: { value: PeriodKey; onChange: (p: PeriodKey) => void }) {
+// How many months of history a period (and what it's compared with) needs
+export function monthsNeeded(p: Period, now: string) {
+  const span = (Number(now.slice(0, 4)) - Number(p.from.slice(0, 4))) * 12 + Number(now.slice(5)) - Number(p.from.slice(5)) + 1
+  const len = (Number(p.to.slice(0, 4)) - Number(p.from.slice(0, 4))) * 12 + Number(p.to.slice(5)) - Number(p.from.slice(5)) + 1
+  return span + (p.compare === 'yoy' ? 12 : p.compare === 'prev' ? len : 0)
+}
+// The period and what it's compared with, in words, under a page title
+export function PeriodLine({ p, w, months, extra }: { p: Period; w: Window; months: string[]; extra?: string }) {
   return (
-    <div role="group" aria-label="Period" className="flex gap-1 p-1 rounded-[14px] bg-white overflow-x-auto no-scrollbar max-w-full" style={{ border: '1px solid var(--line)' }}>
-      {PERIODS.map(([k, l]) => (
-        <button key={k} onClick={() => onChange(k)} aria-pressed={value === k} className="h-9 px-3.5 rounded-[10px] text-[13px] whitespace-nowrap flex-shrink-0"
-          style={value === k ? { background: 'var(--accent)', color: '#fff', fontWeight: 600 } : { color: 'var(--text2)' }}>{l}</button>
-      ))}
-    </div>
+    <p className="text-[12px]" style={{ color: 'var(--text3)' }}>
+      {periodLabel(p.period, p.from, p.to)} · {w.len > 1 ? `${mLabel(months[w.a])} – ${mLabel(months[w.b])}` : `${monthName(months[w.b])}${w.isNow ? ', so far' : ''}`}
+      {w.cmp ? ` · compared with ${w.cmp}` : ''}{extra ? ` · ${extra}` : ''}
+    </p>
   )
 }
 

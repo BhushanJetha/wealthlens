@@ -3,7 +3,7 @@ import { useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import { useViewStore } from '@/store/viewStore'
 import { useUiStore } from '@/store/uiStore'
-import { resolveNav } from '@/lib/nav'
+import { resolveNav, followsPeriod } from '@/lib/nav'
 import NotificationsPanel from './NotificationsPanel'
 import HolderChips from './HolderChips'
 import MonthPicker from './MonthPicker'
@@ -42,7 +42,7 @@ export default function Topbar({ user }: { user: any }) {
           </span>
         ))}
       </nav>
-      <MonthPicker />
+      {followsPeriod(pathname) && <MonthPicker />}
       <div className="ml-auto flex items-center gap-2.5 flex-wrap justify-end">
         <div className="pr-2.5" style={{ borderRight: '1px solid var(--border)' }}>
           <HolderChips firstName={firstName} />

@@ -2,6 +2,7 @@ import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { fetchAll } from '@/lib/supabase/fetchAll'
 import { activeLoansWithEmi } from '@/lib/loans'
 import CashFlowClient from '@/components/dashboard/CashFlowClient'
+import { WithViews } from '@/components/layout/ViewChips'
 
 export default async function CashFlowPage() {
   const supabase = createClient()
@@ -20,11 +21,9 @@ export default async function CashFlowPage() {
       .order('txn_date', { ascending: true }).order('id').range(a, b)),
   ])
 
-  return (
-    <CashFlowClient
+  return <WithViews of="forecast" label="Forecast view"><CashFlowClient
       accounts={accountsRes.data ?? []}
       loans={loansRes.data ?? []}
       transactions={txnsRes.data ?? []}
-    />
-  )
+    /></WithViews>
 }

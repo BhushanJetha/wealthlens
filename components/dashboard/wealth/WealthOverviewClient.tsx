@@ -7,9 +7,9 @@ import { computeNetWorth, groupAssets, ASSET_GROUPS, viewAmount } from '@/lib/ne
 import { viewTrends } from '@/lib/homeTrends'
 import { fmtMoney, fmtCompact } from '@/lib/format'
 import { kindOf } from '@/lib/ledger'
-import { MONTH, mLabel, windowOf, sumOf, periodName, periodWord, rangeOf, pctChange } from '@/lib/period'
+import { MONTH, mLabel, windowOf, sumOf, periodWord, pctChange } from '@/lib/period'
 import { ListCard, ListRow } from '@/components/ui/list'
-import { usePeriod, PeriodChips, TrendTile, GOOD, BAD, NONE, Card, type Pt, type Badge } from '../charts/parts'
+import { usePeriod, monthsNeeded, PeriodLine, TrendTile, GOOD, BAD, NONE, Card, type Pt, type Badge } from '../charts/parts'
 import { useTrends } from '../charts/useTrends'
 import InsidePanel from '../charts/Inside'
 import { NetWorthStack, type OwnLayer } from './WealthCharts'
@@ -61,8 +61,8 @@ export default function WealthOverviewClient(p: Props) {
   const cur = view === 'uae' ? 'AED' : 'INR'
   const money = (n: number) => fmtMoney(n, cur), short = (n: number) => fmtCompact(n, cur)
   const fromInr = (inr: number) => (view === 'uae' ? inr / FX : inr)
-  const [period, setPeriod] = usePeriod()
-  const { data, failed, retry } = useTrends(period === 'y2' ? 60 : 25)
+  const per = usePeriod()
+  const { data, failed, retry } = useTrends(monthsNeeded(per, p.today.slice(0, 7)) > 25 ? 60 : 25)
   const o = p.overview
 
   const nw = useMemo(() => computeNetWorth(p, view, FX), [p, view, FX])
@@ -91,7 +91,7 @@ export default function WealthOverviewClient(p: Props) {
   // ── Over the period ──
   const body = (() => {
     if (!data || !v) return null
-    const M = data.months, w = windowOf(M, period, now), [, to] = rangeOf(period, now)
+    const M = data.months, w = windowOf(M, per.from, per.to, now, per.compare)
     const isNowM = (i: number) => M[i] === now
     const nwAt = (i: number) => v.nw[i] ?? (isNowM(i) ? nw.netWorth : null)
     const grpAt = (i: number, keys: string[]) => {
@@ -110,7 +110,7 @@ export default function WealthOverviewClient(p: Props) {
     const saved = sumOf(v.saved, w.a, w.b), paid = lnStart != null ? lnStart - lnEnd : null
     const moved = nwEnd != null && nwStart != null ? nwEnd - nwStart : null
     const markets = moved != null && paid != null ? moved - saved - paid : null
-    const word = periodWord(period, to)
+    const word = periodWord(per.period, per.to, per.from)
     return { M, w, pts, layers, nwEnd, nwStart, lnEnd, lnStart, saved, paid, moved, markets, word, nwSeries: w.chart.map(nwAt), loanSeries: w.chart.map(i => v.loans[i]), invSeries: w.chart.map(i => v.inv[i] ?? (isNowM(i) && view === 'consolidated' ? nw.investments.value : NaN)), invested: sumOf(v.invested, w.a, w.b) }
   })()
 
@@ -166,9 +166,8 @@ export default function WealthOverviewClient(p: Props) {
         <div className="min-w-0">
           <div className="text-[13px]" style={{ color: 'var(--text3)' }}>Wealth · {viewLabel}</div>
           <h1 className="text-[22px] md:text-[26px] font-bold tracking-[-0.02em]" style={{ color: 'var(--text)' }}>What you own and owe</h1>
-          {body && <p className="text-[12px]" style={{ color: 'var(--text3)' }}>{periodName(period)} · {body.w.len > 1 ? `${mLabel(body.M[body.w.a])} – ${mLabel(body.M[body.w.b])}` : `${MONTH[Number(body.M[body.w.b].slice(5)) - 1]} ${body.M[body.w.b].slice(0, 4)}`}</p>}
+          {body && <PeriodLine p={per} w={body.w} months={body.M} />}
         </div>
-        <PeriodChips value={period} onChange={setPeriod} />
       </div>
 
       {p.failed.length > 0 && (

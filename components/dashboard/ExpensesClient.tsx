@@ -87,6 +87,14 @@ export default function ExpensesClient({ transactions, accounts }: { transaction
   useEffect(() => {
     const p = new URLSearchParams(window.location.search)
     const shared = p.get('text') || p.get('title')
+    // From a chart on an overview: its months, category and shop
+    const from = p.get('from'), to = p.get('to')
+    if (from && /^\d{4}-\d{2}$/.test(from) && to && /^\d{4}-\d{2}$/.test(to)) {
+      useViewStore.getState().setDateRange(from, to)
+      if (p.get('cat')) setCat(p.get('cat')!)
+      if (p.get('q')) setSearch(p.get('q')!)
+      window.history.replaceState({}, '', '/dashboard/expenses')
+    }
     if (shared) {
       setSharedText(shared)
       setActiveModal('message')

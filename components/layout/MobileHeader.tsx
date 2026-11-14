@@ -5,6 +5,7 @@ import { useUiStore } from '@/store/uiStore'
 import HolderChips from './HolderChips'
 import ViewSwitch from './ViewSwitch'
 import MonthPicker from './MonthPicker'
+import { followsPeriod } from '@/lib/nav'
 import NotificationsPanel from './NotificationsPanel'
 
 // Phones only. The design has no app bar: family chips sit at the top of every
@@ -25,10 +26,11 @@ export default function MobileHeader({ firstName }: { firstName: string | null }
 
 // Segmented UAE / India / All + period pill, optionally with bell and ✦
 export function MobileControls({ actions = true }: { actions?: boolean }) {
+  const pathname = usePathname()
   return (
     <div className="flex items-center gap-2">
       <ViewSwitch segmented className="flex-1 min-w-0" />
-      <MonthPicker compact />
+      {followsPeriod(pathname) && <MonthPicker compact />}
       {actions && <NotificationsPanel round />}
       {actions && <AskAiButton />}
     </div>

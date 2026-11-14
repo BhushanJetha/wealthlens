@@ -4,6 +4,7 @@ import { activeAccountsWithLedger } from '@/lib/ledger'
 import { activeLoansWithEmi } from '@/lib/loans'
 import { getAedInr } from '@/lib/fx'
 import ReportClient from '@/components/dashboard/ReportClient'
+import { WithViews } from '@/components/layout/ViewChips'
 
 export default async function ReportsPage() {
   const supabase = createClient()
@@ -31,5 +32,5 @@ export default async function ReportsPage() {
   const liveById = new Map((live ?? []).map((a: any) => [a.id, a]))
   const accounts = (all ?? []).map((a: any) => liveById.get(a.id) ?? a)
 
-  return <ReportClient transactions={txns} accounts={accounts} events={events ?? []} loans={loans ?? []} />
+  return <WithViews of="reports" label="Report type"><ReportClient transactions={txns} accounts={accounts} events={events ?? []} loans={loans ?? []} /></WithViews>
 }

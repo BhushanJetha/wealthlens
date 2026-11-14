@@ -1,6 +1,7 @@
 import { createClient, getSessionUser } from '@/lib/supabase/server'
 import { fetchAll } from '@/lib/supabase/fetchAll'
 import ExpensesReportClient from '@/components/dashboard/ExpensesReportClient'
+import { WithViews } from '@/components/layout/ViewChips'
 
 export default async function ExpensesReportPage() {
   const supabase = createClient()
@@ -30,12 +31,10 @@ export default async function ExpensesReportPage() {
   // into "Received from UAE" India income (lib/money)
   const income = incomeRes.data ?? []
 
-  return (
-    <ExpensesReportClient
+  return <WithViews of="reports" label="Report type"><ExpensesReportClient
       transactions={txns}
       incomeTransactions={income}
       budgets={budgetsRes.data ?? []}
       accounts={accounts ?? []}
-    />
-  )
+    /></WithViews>
 }
