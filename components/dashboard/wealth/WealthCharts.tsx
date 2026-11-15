@@ -20,9 +20,10 @@ function bridge(arr: (number | null)[]): (number | null)[] {
   return out
 }
 
-export function NetWorthStack({ pts, layers, loans, nw, short, money, sub, foot }: {
+export function NetWorthStack({ pts, layers, loans, nw, short, money, sub, foot, title = 'What your net worth is made of', right, tipTitle = 'vs month before' }: {
   pts: Pt[]; layers: OwnLayer[]; loans: number[]; nw: (number | null)[]
   short: (n: number) => string; money: (n: number) => string; sub: string; foot?: React.ReactNode
+  title?: string; right?: React.ReactNode; tipTitle?: string
 }) {
   const [off, setOff] = useState<Record<string, boolean>>({})
   const hv = useHover()
@@ -50,7 +51,7 @@ export function NetWorthStack({ pts, layers, loans, nw, short, money, sub, foot 
   const nwLast = (() => { for (let i = n - 1; i >= 0; i--) if (NW[i] != null) return i; return -1 })()
   const tg = (k: string) => () => setOff(o => ({ ...o, [k]: !o[k] }))
   return (
-    <Card title="What your net worth is made of" sub={sub}>
+    <Card title={title} sub={sub} right={right}>
       <div role="group" aria-label="Shown on the chart" className="flex flex-wrap gap-1.5">
         <LegendChip on={onNw} toggle={tg('nw')} label="Net worth" total={last(NW) != null ? short(last(NW)!) : '—'} change={since(NW, true)} swatch={{ width: 16, height: 3, borderRadius: 2, background: '#14172B' }} />
         {L.map(l => <LegendChip key={l.key} on={!off[l.key]} toggle={tg(l.key)} label={l.label} total={last(l.values) != null ? short(last(l.values)!) : '—'} change={since(l.values, true)} swatch={{ width: 12, height: 10, borderRadius: 3, background: l.color }} />)}
@@ -81,7 +82,7 @@ export function NetWorthStack({ pts, layers, loans, nw, short, money, sub, foot 
           <div className="absolute top-0 bottom-0 pointer-events-none" style={{ left: `${X(h) / 10}%`, borderLeft: '1px dashed #9AA0B4' }} />
           {onNw && NW[h] != null && <Dot left={X(h) / 10} top={Y(NW[h]!)} color="#14172B" />}
           {onLn && <Dot left={X(h) / 10} top={Y(-LN[h])} color="#DC2626" />}
-          <Tooltip left={X(h) / 10} title={`${pts[h].title} · vs month before`} rows={[
+          <Tooltip left={X(h) / 10} title={`${pts[h].title} · ${tipTitle}`} rows={[
             { label: 'Net worth', color: '#A79BFF', value: NW[h] != null ? money(NW[h]!) : '—', ch: chg(NW, h, true) },
             ...L.map(l => ({ label: l.label, color: l.color, value: l.values[h] != null ? money(l.values[h]!) : '—', ch: chg(l.values, h, true) })),
             { label: 'Loans', color: '#F87171', value: money(LN[h]), ch: chg(LN, h, false) },

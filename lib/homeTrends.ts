@@ -8,6 +8,10 @@ import { isIncome, spendGroup, catOf } from './money'
 import { groupKeyOf, type Category } from './categories'
 import { investmentFlows, type FlowInput } from './investFlows'
 import { loanOwedOn } from './loans'
+import { investmentEntries, investmentOuts } from './investEntries'
+import { balancesBack, kindOf } from './ledger'
+import { propertyModel, savedLoan } from './property'
+import { otherAssetValue } from './otherAssets'
 import { NW_RULES } from './netWorth'
 
 type Cur = 'AED' | 'INR'
@@ -18,6 +22,10 @@ export interface CurSeries {
   spent: number[]; emi: number[]; invested: number[]
   loans: number[]       // owed at the month's end (today for this month)
   groups: Record<string, number>[]   // spending by category group
+  // Built from your records, for how your wealth grew (each at the month's end):
+  invCost: number[]     // put into investments so far, less what was taken out (at what you paid)
+  propPaid: number[]    // paid towards homes and land so far (your money + the loan's releases)
+  cash: (number | null)[]   // bank & cash, worked back from today's balances through your statements
 }
 export interface SnapPoint { date: string; fx: number; uaeA: number; uaeL: number; indA: number; indL: number; inv: number | null; grp?: Record<string, number> | null }
 export interface Trends { months: string[]; fx: number; cur: Record<Cur, CurSeries>; snaps: (SnapPoint | null)[]; first: string | null }
@@ -34,11 +42,13 @@ const monthEnd = (ym: string) => { const [y, m] = ym.split('-').map(Number); ret
 
 export function buildTrends(inp: {
   months: string[]; prepared: any[]; rows?: Category[]; holdings: FlowInput; loans: any[]; loanTxns: any[]; snapshots: any[]; today: string; fx: number
+  txns?: any[]; accounts?: any[]; assets?: any[]      // for the history built from records (raw entries, accounts with balances, homes & land)
 }): Trends {
   const { months, prepared, rows = [], today, fx } = inp
   const at = new Map(months.map((m, i) => [m, i]))
   const blank = (): CurSeries => ({ income: months.map(() => 0), remitIn: months.map(() => 0), spent: months.map(() => 0), emi: months.map(() => 0),
-    invested: months.map(() => 0), loans: months.map(() => 0), groups: months.map(() => ({})) })
+    invested: months.map(() => 0), loans: months.map(() => 0), groups: months.map(() => ({})),
+    invCost: months.map(() => 0), propPaid: months.map(() => 0), cash: months.map(() => null) })
   const cur: Record<Cur, CurSeries> = { AED: blank(), INR: blank() }
   let first: string | null = null
 
@@ -72,6 +82,40 @@ export function buildTrends(inp: {
     })
   }
 
+  // ── How it grew, from your records ──
+  const ends = months.map(m => (m === thisMonth ? today : monthEnd(m)))
+  for (const c of ['AED', 'INR'] as Cur[]) {
+    const conv = (amt: number, cc: string) => ((cc === 'AED' ? 'AED' : 'INR') === c ? amt : 0)
+    const when = new Date(`${today}T12:00:00`)
+    // Investments: every payment in, less what came back out, so far
+    const ins = investmentEntries(inp.holdings as any, conv, when), outs = investmentOuts(inp.holdings as any, conv, when)
+    ends.forEach((d, i) => {
+      cur[c].invCost[i] = Math.max(0, ins.filter(e => e.date <= d).reduce((s, e) => s + e.amount, 0) - outs.filter(e => e.date <= d).reduce((s, e) => s + e.amount, 0))
+    })
+    // Homes & land: paid towards them so far — your own money and the loan's
+    // releases on their dates; one bought outright counts from its purchase date
+    for (const a of (inp.assets ?? []).filter(x => x.is_active !== false && ['property', 'land'].includes(x.kind) && (x.currency === 'INR' ? 'INR' : 'AED') === c)) {
+      const loan = a.loan_id ? inp.loans.find(l => l.id === a.loan_id) ?? null : null
+      const m = propertyModel({ asset: a, loan: loan ? savedLoan(loan) : null, txns: inp.loanTxns, today })
+      const pays: { date: string; amt: number }[] = [
+        ...m.own.map(o => ({ date: o.date, amt: o.amount })),
+        ...(loan ? inp.loanTxns.filter(t => t.loan_id === loan.id && t.kind === 'disbursement').map(t => ({ date: String(t.txn_date).slice(0, 10), amt: Number(t.amount) || 0 })) : []),
+      ]
+      const bought = String(a.purchase_date ?? a.value_as_of ?? a.created_at ?? '').slice(0, 10)
+      if (!pays.length && bought) pays.push({ date: bought, amt: Number(a.purchase_price) || otherAssetValue(a, today).value })
+      ends.forEach((d, i) => { cur[c].propPaid[i] += pays.filter(p => p.date <= d).reduce((s, p) => s + p.amt, 0) })
+    }
+    // Bank & cash: today's balances worked back through your statements
+    const banks = (inp.accounts ?? []).filter(a => kindOf(a) !== 'card' && (a.currency === 'AED' ? 'AED' : 'INR') === c)
+    if (banks.length && inp.txns) {
+      const bal = balancesBack(banks, inp.txns, fx, ends)
+      ends.forEach((_, i) => {
+        const vals = banks.map(a => bal[a.id]?.[i]).filter((x): x is number => x != null)
+        cur[c].cash[i] = vals.length ? vals.reduce((s, x) => s + x, 0) : null
+      })
+    }
+  }
+
   // The last snapshot of each month (worked out with today's rules)
   const snaps: (SnapPoint | null)[] = months.map(() => null)
   for (const s of [...inp.snapshots].sort((a, b) => String(a.snap_date).localeCompare(String(b.snap_date)))) {
@@ -90,6 +134,7 @@ export interface ViewSeries {
   income: number[]; spent: number[]; emi: number[]; saved: number[]; invested: number[]; loans: number[]; groups: Record<string, number>[]
   own: (number | null)[]; owe: (number | null)[]; nw: (number | null)[]; inv: (number | null)[]   // from snapshots; null before tracking began
   grp: (Record<string, number> | null)[]   // what you own by asset group (both countries together only)
+  invCost: number[]; propPaid: number[]; cash: (number | null)[]   // how it grew, from your records
 }
 // One view's numbers: a country in its own currency, or both in rupees at today's rate
 // (snapshots at the rate of their day). The India view counts money landing from the UAE
@@ -116,6 +161,11 @@ export function viewTrends(t: Trends, view: View, fx = t.fx): ViewSeries {
     // The split into investments is kept for both countries together only
     inv: view === 'consolidated' ? t.snaps.map(s => s?.inv ?? null) : t.snaps.map(() => null),
     grp: view === 'consolidated' ? t.snaps.map(s => s?.grp ?? null) : t.snaps.map(() => null),
+    invCost: pick((c, i) => t.cur[c].invCost?.[i] ?? 0), propPaid: pick((c, i) => t.cur[c].propPaid?.[i] ?? 0),
+    cash: Array.from({ length: n }, (_, i) => {
+      const a = t.cur.AED.cash?.[i] ?? null, r = t.cur.INR.cash?.[i] ?? null
+      return view === 'uae' ? a : view === 'india' ? r : a == null && r == null ? null : (r ?? 0) + (a ?? 0) * fx
+    }),
   }
 }
 

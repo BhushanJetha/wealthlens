@@ -99,13 +99,15 @@ const anchorOf = (a: any) => kindOf(a) === 'card' ? Number(a.outstanding_bal) ||
 const dayN = (d: string) => Math.floor(new Date(`${d.slice(0, 10)}T00:00:00Z`).getTime() / 864e5)
 
 // Every change to each account's balance after its starting balance date
-function ledgerMoves(accounts: any[], txns: any[], fx: number): Record<string, { t: any; delta: number }[]> {
+// `all`: every move, also those before the starting balance date (to work balances back)
+function ledgerMoves(accounts: any[], txns: any[], fx: number, all = false): Record<string, { t: any; delta: number }[]> {
   const byId = new Map(accounts.map(a => [a.id, a]))
   const moves: Record<string, { t: any; delta: number }[]> = {}
   const push = (id: string, t: any, delta: number) => { (moves[id] ||= []).push({ t, delta }) }
   // A saved balance already includes everything up to its date. The exception is
   // something you typed in that same day, after you last saved the account
   const after = (a: any, t: any) => {
+    if (all) return true
     const s = asOfOf(a), d = String(t.txn_date).slice(0, 10)
     if (!s || d > s) return true
     return d === s && t.source === 'manual' && !!t.created_at && !!a.updated_at && Date.parse(t.created_at) > Date.parse(a.updated_at)
@@ -153,6 +155,27 @@ export function balancesAt(accounts: any[], txns: any[], fx: number, days: strin
     const asOf = asOfOf(a), rows = moves[a.id] ?? []
     out[a.id] = days.map(d => asOf && d < asOf ? null
       : anchorOf(a) + rows.filter(r => String(r.t.txn_date).slice(0, 10) <= d).reduce((s, r) => s + r.delta, 0))
+  }
+  return out
+}
+
+// Each account's balance at the end of each day, worked BACK from its starting
+// balance through your statements before that date too: balance then = the
+// balance on its date − everything that moved after. An estimate (it's only as
+// complete as the statements imported); null before the account's first entry.
+export function balancesBack(accounts: any[], txns: any[], fx: number, days: string[]): Record<string, (number | null)[]> {
+  const moves = ledgerMoves(accounts, txns, fx, true)
+  const out: Record<string, (number | null)[]> = {}
+  for (const a of accounts) {
+    const asOf = asOfOf(a), rows = moves[a.id] ?? [], anchor = anchorOf(a)
+    const first = rows.reduce<string | null>((m, r) => { const d = String(r.t.txn_date).slice(0, 10); return !m || d < m ? d : m }, null)
+    const on = (d: string) => String(d).slice(0, 10)
+    out[a.id] = days.map(d => {
+      if (!asOf) return null
+      if (d >= asOf) return anchor + rows.filter(r => on(r.t.txn_date) > asOf && on(r.t.txn_date) <= d).reduce((s, r) => s + r.delta, 0)
+      if (!first || d < first.slice(0, 7) + '-01') return null
+      return anchor - rows.filter(r => on(r.t.txn_date) > d && on(r.t.txn_date) <= asOf).reduce((s, r) => s + r.delta, 0)
+    })
   }
   return out
 }

@@ -1,5 +1,5 @@
 'use client'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { AlertTriangle, Check } from 'lucide-react'
 import { useViewStore } from '@/store/viewStore'
@@ -68,7 +68,8 @@ export default function WealthOverviewClient(p: Props) {
   const money = (n: number) => fmtMoney(n, cur), short = (n: number) => fmtCompact(n, cur)
   const fromInr = (inr: number) => (view === 'uae' ? inr / FX : inr)
   const per = usePeriod()
-  const { data, failed, retry } = useTrends(monthsNeeded(per, p.today.slice(0, 7)) > 25 ? 60 : 25)
+  const { data, failed, retry } = useTrends(60)
+  const [growBy, setGrowBy] = useState<'year' | 'month'>('year')
   // A country view shows that country only; All shows both
   const o = view === 'uae' && p.byCountry ? p.byCountry.AED : view === 'india' && p.byCountry ? p.byCountry.INR : p.overview
   const partial = !!(o.protection as Protection).partial
@@ -121,6 +122,39 @@ export default function WealthOverviewClient(p: Props) {
     const markets = moved != null && paid != null ? moved - saved - paid : null
     const word = periodWord(per.period, per.to, per.from)
     return { M, w, pts, layers, nwEnd, nwStart, lnEnd, lnStart, saved, paid, moved, markets, word, nwSeries: w.chart.map(nwAt), loanSeries: w.chart.map(i => v.loans[i]), invSeries: w.chart.map(i => v.inv[i] ?? (isNowM(i) && view === 'consolidated' ? nw.investments.value : NaN)), invested: sumOf(v.invested, w.a, w.b) }
+  })()
+
+  // ── How it grew: built from your records, year by year (or month by month) ──
+  // Investments at what you put in, homes at what you've paid towards them (your
+  // money and the loan's releases), bank balances worked back from today, and
+  // the loan as it was released and repaid — so nothing appears in one day.
+  const grow = (() => {
+    if (!data || !v) return null
+    const M = data.months, n = M.length
+    const first = M.findIndex((_, i) => v.invCost[i] > 0 || v.propPaid[i] > 0 || v.loans[i] > 0 || (v.cash[i] ?? 0) > 0)
+    if (first < 0) return null
+    let idx: number[]
+    if (growBy === 'year') {
+      const years = Array.from(new Set(M.slice(first).map(m => m.slice(0, 4))))
+      idx = years.map(y => { const k = M.lastIndexOf(`${y}-12`); return k >= 0 ? k : n - 1 })
+      // Start from nothing: the month before your first record
+      if (first > 0) idx.unshift(first - 1)
+    } else idx = Array.from({ length: n - Math.max(first, n - 24) }, (_, k) => Math.max(first, n - 24) + k)
+    const isNowI = (i: number) => M[i] === now
+    const pts: Pt[] = idx.map((i, k) => growBy === 'year' && k === 0 && i === first - 1
+      ? { label: `Start`, title: `Before ${MONTH[Number(M[first].slice(5)) - 1]} ${M[first].slice(0, 4)}`, ix: [i], sel: false }
+      : growBy === 'year'
+      ? { label: isNowI(i) ? `${M[i].slice(0, 4)}*` : M[i].slice(0, 4), title: isNowI(i) ? `Today (${MONTH[Number(M[i].slice(5)) - 1]} ${M[i].slice(0, 4)})` : `End of ${M[i].slice(0, 4)}`, ix: [i], sel: false }
+      : { label: mLabel(M[i]), title: `${MONTH[Number(M[i].slice(5)) - 1]} ${M[i].slice(0, 4)}`, ix: [i], sel: false })
+    const layers: OwnLayer[] = [
+      { key: 'prop', label: 'Homes, paid so far', color: '#14B8A6', values: idx.map(i => v.propPaid[i]) },
+      { key: 'inv', label: 'Investments, put in', color: '#3B8EF0', values: idx.map(i => v.invCost[i]) },
+      { key: 'cash', label: 'Bank & cash', color: '#2FB67C', values: idx.map(i => v.cash[i]) },
+    ].filter(l => l.values.some(x => x != null && x > 0))
+    const cashFrom = M.findIndex(c => c >= M[first] && v.cash[M.indexOf(c)] != null)
+    return { pts, layers, loans: idx.map(i => v.loans[i]),
+      nw: idx.map(i => (v.cash[i] == null ? null : v.invCost[i] + v.propPaid[i] + (v.cash[i] ?? 0) - v.loans[i])),
+      since: M[first], cashFrom: cashFrom >= 0 ? M[cashFrom] : null }
   })()
 
   const badge = (cur: number | null, prev: number | null, upGood: boolean, digits = 1): Badge => {
@@ -204,15 +238,24 @@ export default function WealthOverviewClient(p: Props) {
         </div>
 
         {body ? (
-          <NetWorthStack pts={body.pts} layers={body.layers} loans={body.loanSeries} nw={body.nwSeries} short={short} money={money}
-            sub={`At each month’s end · ${body.w.len >= 3 ? `${mLabel(body.M[body.w.a])} – ${mLabel(body.M[body.w.b])}` : `the 6 months to ${mLabel(body.M[body.w.b])}`}${view === 'consolidated' ? '' : ' · the split by kind shows in the both-countries view'}`}
+          grow ? <NetWorthStack pts={grow.pts} layers={grow.layers} loans={grow.loans} nw={grow.nw} short={short} money={money}
+            title="How your wealth grew" tipTitle={growBy === 'year' ? 'vs year before' : 'vs month before'}
+            right={
+              <div role="group" aria-label="Show by" className="flex p-[3px] rounded-[10px] flex-shrink-0" style={{ background: '#F1F2F6' }}>
+                {([['year', 'Year by year'], ['month', 'Month by month']] as const).map(([k, l]) => (
+                  <button key={k} onClick={() => setGrowBy(k)} aria-pressed={growBy === k} className="h-8 px-3 rounded-lg text-[12.5px]"
+                    style={growBy === k ? { background: '#fff', color: 'var(--text)', fontWeight: 600, boxShadow: '0 1px 2px rgba(20,23,43,.08)' } : { color: 'var(--text2)' }}>{l}</button>
+                ))}
+              </div>
+            }
+            sub={`Since ${mLabel(grow.since)}, from your records: investments at what you put in, homes at what you’ve paid towards them, the loan as it was released and repaid${grow.cashFrom ? `, bank balances worked back from today (from ${mLabel(grow.cashFrom)})` : ''}. The net worth line shows where bank balances are known.`}
             foot={body.moved != null && (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-2.5">
                 <div className="rounded-xl px-3 py-2.5" style={{ background: '#EAF7EF' }}><div className="text-[11.5px]" style={{ color: '#1E6B44' }}>From what you saved</div><div className="text-[15px] md:text-[16px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{body.saved >= 0 ? '+' : '−'}{short(Math.abs(body.saved))}</div></div>
                 <div className="rounded-xl px-3 py-2.5" style={{ background: '#FDECEA' }}><div className="text-[11.5px]" style={{ color: '#8A1C14' }}>{(body.paid ?? 0) >= 0 ? 'Loans paid down' : 'More borrowed'}</div><div className="text-[15px] md:text-[16px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{body.paid != null ? `${body.paid >= 0 ? '+' : '−'}${short(Math.abs(body.paid))}` : '—'}</div></div>
                 <div className="rounded-xl px-3 py-2.5" style={{ background: '#EEF4FF' }}><div className="text-[11.5px]" style={{ color: '#1D4ED8' }}>Prices, markets and the rest</div><div className="text-[15px] md:text-[16px] font-bold tabular-nums" style={{ color: 'var(--text)' }}>{body.markets != null ? `${body.markets >= 0 ? '+' : '−'}${short(Math.abs(body.markets))}` : '—'}</div></div>
               </div>
-            )} />
+            )} /> : <div className="wl-card px-5 py-6 text-[13px]" style={{ color: 'var(--text3)' }}>Add investments, a loan or a home to see how your wealth grew.</div>
         ) : (
           <div className="wl-card px-5 py-6 text-[13px]" style={{ color: 'var(--text3)' }}>
             {failed ? <>Your history couldn’t load just now. <button onClick={retry} className="font-semibold underline" style={{ color: 'var(--accent)' }}>Try again</button></> : <div className="h-[300px] rounded-xl animate-pulse" style={{ background: '#FAFAFE' }} />}

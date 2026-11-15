@@ -62,6 +62,7 @@ export default function InsuranceClient({ policies, cover, premiums = [], today:
   const paidTotal = filtered.reduce((a, p) => a + conv(paidOf.get(p.id)?.paid ?? 0, p.currency), 0)
   const oldest = filtered.map(p => paidOf.get(p.id)?.since).filter(Boolean).sort()[0] as string | undefined
   const [openPolicy, setOpenPolicy] = useState<string | null>(null)
+  const [addMenu, setAddMenu] = useState(false)          // Add: read a PDF or type it in
   const totalAssured = filtered.reduce((a, p) => a + conv(Number(p.sum_assured ?? 0), p.currency), 0)
   const lifeAssured  = filtered.filter(p => p.policy_type === 'term_life').reduce((a, p) => a + conv(Number(p.sum_assured ?? 0), p.currency), 0)
 
@@ -122,6 +123,7 @@ export default function InsuranceClient({ policies, cover, premiums = [], today:
       } else {
         setPendingFile(null); setWrongPwd(false)
         setFilledNote(`Filled in ${data.found} of ${data.of} key details from your PDF. Check them before saving.`)
+        setAddMenu(false)
         setPrefill(data.policy ?? {})
       }
     } catch (e: any) { setUploadError(e.message) }
@@ -137,8 +139,8 @@ export default function InsuranceClient({ policies, cover, premiums = [], today:
   return (
     <div className="flex flex-col gap-3.5 md:gap-[18px] animate-fade-up">
       <div className="max-md:order-1"><PageHeader title="Insurance" sub="Renewals, premiums and cover · read from your policy PDFs or added by hand"
-        onAdd={() => setShowAdd(true)} addLabel="Add policy"
-        actions={<button onClick={() => setShowAdd(true)} className="wl-btn wl-btn-primary" style={{ height: 34 }}><Plus size={14} />Add policy</button>} /></div>
+        onAdd={() => setAddMenu(true)} addLabel="Add policy"
+        actions={<button onClick={() => setAddMenu(true)} className="wl-btn wl-btn-primary" style={{ height: 34 }}><Plus size={14} />Add policy</button>} /></div>
       {filtered.length > 0 && <div className="max-md:order-4"><InsightBar
         text={`You pay ${sym}${Math.round(totalPremium).toLocaleString('en-IN')} a year for ${sym}${(totalAssured / 100000).toFixed(1)}L of cover, including ${sym}${(lifeAssured / 10000000).toFixed(2)}Cr of term life.${daysToNext !== null ? ` Next premium is due in ${daysToNext} day${daysToNext === 1 ? '' : 's'}.` : ''} A common guide is term cover of about 10× your yearly income.`}
         prompt={`Explain my insurance page. Annual premiums ${sym}${Math.round(totalPremium)}, total cover ${sym}${Math.round(totalAssured)}, term life ${sym}${Math.round(lifeAssured)}. Policies: ${filtered.map((p: any) => `${p.policy_name} (${p.policy_type}) cover ${p.currency} ${p.sum_assured}, premium ${p.annual_premium}${p.expiry_date ? `, renews ${p.expiry_date}` : ''}`).join('; ')}.`} /></div>}
@@ -213,117 +215,90 @@ export default function InsuranceClient({ policies, cover, premiums = [], today:
         </section>
       )}
 
-      {/* Upload zone: local reader fills the Add-policy form */}
-      <section className="wl-card max-md:order-8 px-4 md:px-5 py-3.5 md:py-[18px]">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <h2 className="text-[14px] md:text-[15px] font-semibold flex items-center gap-2" style={{ color: 'var(--text)' }}>
-            <Upload size={15} style={{ color: 'var(--accent)' }} /> Fill in from a policy PDF
-          </h2>
-          <span className="rounded-full px-2 py-0.5 text-[10.5px] font-semibold" style={{ background: '#E7F7EF', color: '#1E8F5F' }}>Read on our server, no AI</span>
-        </div>
-        <div {...getRootProps()} className="mt-3 rounded-[14px] p-6 md:p-8 text-center cursor-pointer transition-colors"
-          style={{ border: `1.5px dashed ${isDragActive ? 'var(--accent)' : 'var(--border2)'}`, background: isDragActive ? 'var(--accent-bg)' : 'var(--canvas)' }}>
-          <input {...getInputProps()} />
-          <Shield size={24} className="mx-auto mb-2" style={{ color: 'var(--accent)' }} />
-          <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
-            {isDragActive ? 'Drop to read it…' : 'Drop your policy schedule PDF, or click to browse'}
-          </p>
-          <p className="text-[11.5px] mt-1 max-w-[460px] mx-auto" style={{ color: 'var(--text3)' }}>
-            We fill in the insurer, policy number, cover, premium and dates. You check the form before saving, and the PDF isn&apos;t kept.
-          </p>
-        </div>
-
-        {uploading && (
-          <div className="mt-3 flex items-center gap-2.5 text-[12.5px]" style={{ color: 'var(--text2)' }}>
-            <Loader2 size={16} className="animate-spin" style={{ color: 'var(--accent)' }} /> Reading your policy…
-          </div>
-        )}
-        {pendingFile && !uploading && (
-          <form onSubmit={e => { e.preventDefault(); if (password) readPolicy(pendingFile, password) }}
-            className="mt-3 flex flex-col sm:flex-row gap-2 sm:items-center">
-            <span className="text-[12.5px]" style={{ color: wrongPwd ? '#D9482F' : 'var(--text2)' }}>
-              {wrongPwd ? "That password didn't work. Try again:" : `${pendingFile.name} is password-protected. Enter its password:`}
-            </span>
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoFocus
-              className="wl-input sm:!w-[200px]" aria-label="PDF password" />
-            <span className="flex gap-2">
-              <button type="submit" disabled={!password} className="wl-btn wl-btn-primary disabled:opacity-60" style={{ height: 36 }}>Open</button>
-              <button type="button" onClick={() => setPendingFile(null)} className="wl-btn" style={{ height: 36 }}>Cancel</button>
-            </span>
-          </form>
-        )}
-        {uploadError && (
-          <div className="mt-3 rounded-[10px] px-3 py-2.5 flex items-center gap-2 text-[12.5px]" style={{ background: '#FDECE8', color: '#D9482F' }}>
-            <AlertCircle size={14} className="flex-shrink-0" /> {uploadError}
-          </div>
-        )}
-      </section>
-
-      {/* Policies */}
+      {/* Policies: one card each, with what it covers, what it costs and what you've paid */}
       {filtered.length === 0 ? (
-        <div className="max-md:order-2"><EmptyState message="No policies yet. Drop a policy PDF above to fill in the details, or add one by hand."
-          cta="Add policy" onCta={() => setShowAdd(true)} /></div>
+        <div className="max-md:order-2"><EmptyState message="No policies yet. Add one by hand, or let us read your policy PDF and fill in the details."
+          cta="Add policy" onCta={() => setAddMenu(true)} /></div>
       ) : (
-        <ListCard className="max-md:order-7" title="Your policies" sub={`${filtered.length} polic${filtered.length === 1 ? 'y' : 'ies'}`}
-          head={['Policy', 'Type', 'Renews', 'Premium / yr']}>
-          {filtered.map((p: any, i: number) => {
-            const lSym = p.currency === 'AED' ? 'AED ' : '₹'
-            const daysToExpiry = p.expiry_date ? Math.ceil((new Date(p.expiry_date).getTime() - today.getTime()) / 86400000) : null
-            return (
-              <ListRow key={p.id ?? i} color={TYPE_COLORS[p.policy_type] ?? '#64748B'} initial={<Shield size={16} />} title={p.policy_name}
-                sub={[p.provider, p.policy_number ? `#${p.policy_number}` : null, Number(p.sum_assured) > 0 ? `cover ${lSym}${Number(p.sum_assured).toLocaleString('en-IN')}` : null, p.insured_members?.length ? p.insured_members.join(', ') : null].filter(Boolean).join(' · ')}
-                tag={TYPE_LABELS[p.policy_type] ?? 'Other'}
-                meta={p.expiry_date ? `${fmtDay(p.expiry_date)} ${String(p.expiry_date).slice(0, 4)}` : '—'}
-                metaColor={daysToExpiry != null && daysToExpiry <= 60 ? '#D97706' : undefined}
-                amount={`${lSym}${Number(p.annual_premium).toLocaleString('en-IN')}`}
-                amountSub={(paidOf.get(p.id)?.paid ?? 0) > 0 ? `${lSym}${Math.round(paidOf.get(p.id)!.paid).toLocaleString('en-IN')} paid so far` : undefined}
-                onOpen={() => setEditPolicy(p)}
-                actions={[
-                  { label: 'Edit', icon: Pencil, onClick: () => setEditPolicy(p) },
-                  { label: 'Delete', icon: Trash2, onClick: () => setDeleteId(p.id), danger: true },
-                ]} />
-            )
-          })}
-        </ListCard>
+        <section className="max-md:order-7 flex flex-col gap-3" aria-label="Your policies">
+          <div className="flex justify-between items-baseline gap-3 px-0.5">
+            <h2 className="text-[15px] md:text-[16px] font-semibold" style={{ color: 'var(--text)' }}>Your policies <span style={{ color: 'var(--text3)', fontWeight: 500 }}>· {filtered.length}</span></h2>
+            <span className="text-[12.5px]" style={{ color: 'var(--text3)' }}>{money(paidTotal)} paid so far in all</span>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-3.5 items-start">
+            {filtered.map((p: any) => {
+              const x = paidOf.get(p.id)!, c = p.currency === 'AED' ? 'AED ' : '₹', f = (n: number) => `${c}${Math.round(n).toLocaleString('en-IN')}`
+              const col = TYPE_COLORS[p.policy_type] ?? '#64748B', open = openPolicy === p.id
+              const daysToExpiry = p.expiry_date ? Math.ceil((new Date(p.expiry_date).getTime() - today.getTime()) / 86400000) : null
+              const every = ({ monthly: 'a month', quarterly: 'a quarter', semi_annual: 'every 6 months', annual: 'a year' } as Record<string, string>)[p.premium_frequency] ?? 'a year'
+              return (
+                <article key={p.id} className="wl-card p-4 md:p-5 flex flex-col gap-3.5">
+                  <div className="flex items-start gap-3">
+                    <span className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: `${col}1A`, color: col }}><Shield size={18} /></span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap"><b className="text-[14.5px] truncate" style={{ color: 'var(--text)' }}>{p.policy_name}</b>
+                        <span className="text-[10.5px] font-semibold px-2 py-[1px] rounded-full" style={{ background: `${col}1A`, color: col }}>{TYPE_LABELS[p.policy_type] ?? 'Other'}</span></div>
+                      <div className="text-[12px] truncate" style={{ color: 'var(--text3)' }}>{[p.provider, p.policy_number ? `#${p.policy_number}` : null, p.insured_members?.length ? p.insured_members.join(', ') : null].filter(Boolean).join(' · ')}</div>
+                    </div>
+                    <button onClick={() => setEditPolicy(p)} aria-label="Edit policy" className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[var(--accent-bg)]" style={{ color: 'var(--text3)' }}><Pencil size={15} /></button>
+                    <button onClick={() => setDeleteId(p.id)} aria-label="Delete policy" className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#FDECEA]" style={{ color: '#DC2626' }}><Trash2 size={15} /></button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="rounded-xl px-3 py-2.5" style={{ background: '#F5F6FA' }}><div className="text-[11px]" style={{ color: 'var(--text3)' }}>Cover</div><div className="text-[15px] font-bold tabular-nums truncate" style={{ color: 'var(--text)' }}>{Number(p.sum_assured) > 0 ? fmtCompact(Number(p.sum_assured), p.currency) : '—'}</div><div className="text-[10.5px]" style={{ color: 'var(--text3)' }}>paid out on a claim</div></div>
+                    <div className="rounded-xl px-3 py-2.5" style={{ background: '#F5F6FA' }}><div className="text-[11px]" style={{ color: 'var(--text3)' }}>Premium</div><div className="text-[15px] font-bold tabular-nums truncate" style={{ color: 'var(--text)' }}>{f(x.per)}</div><div className="text-[10.5px]" style={{ color: 'var(--text3)' }}>{every}</div></div>
+                    <div className="rounded-xl px-3 py-2.5" style={{ background: '#EEF4FF' }}><div className="text-[11px]" style={{ color: '#1D4ED8' }}>Paid so far</div><div className="text-[15px] font-bold tabular-nums truncate" style={{ color: 'var(--text)' }}>{x.paid ? fmtCompact(x.paid, p.currency) : '—'}</div><div className="text-[10.5px]" style={{ color: 'var(--text3)' }}>{x.count ? `${x.count} premium${x.count === 1 ? '' : 's'}` : 'add a start date'}</div></div>
+                  </div>
+                  <div className="flex justify-between gap-3 text-[12px] flex-wrap" style={{ color: 'var(--text2)' }}>
+                    <span>{x.since ? `Since ${fmtDay(x.since)} ${x.since.slice(0, 4)}` : 'No start date'}{p.next_premium_date ? ` · next ${fmtDay(p.next_premium_date)}` : ''}</span>
+                    <span style={{ color: daysToExpiry != null && daysToExpiry <= 60 ? '#B45309' : 'var(--text3)' }}>{p.expiry_date ? `Ends ${fmtDay(p.expiry_date)} ${String(p.expiry_date).slice(0, 4)}` : ''}</span>
+                  </div>
+                  <button onClick={() => setOpenPolicy(open ? null : p.id)} aria-expanded={open} className="flex items-center justify-between rounded-xl px-3 h-10 text-[13px] font-semibold" style={{ background: open ? 'var(--accent-bg)' : '#fff', border: '1px solid var(--line)', color: 'var(--accent2)' }}>
+                    Premium history{x.recCount ? ` · ${x.recCount} found in your entries` : ''}<span style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>›</span>
+                  </button>
+                  {open && <PolicySchedule years={premiumSchedule(p, day, premiums)} cur={p.currency} monthly={p.premium_frequency !== 'annual'} />}
+                </article>
+              )
+            })}
+          </div>
+
+          {/* How these numbers work */}
+          <section className="wl-card px-4 md:px-5 py-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-[12.5px] leading-relaxed" style={{ color: 'var(--text2)' }} aria-label="How these numbers work">
+            <div><b className="block text-[13px] mb-1" style={{ color: 'var(--text)' }}>Why paid so far is far less than the cover</b>
+              The cover (sum assured) is what the insurer pays out if you claim — not money you put in. The premium is the price of that protection, so it’s a small part of it: {money(totalPremium)} a year buys {money(totalAssured)} of cover here.</div>
+            <div><b className="block text-[13px] mb-1" style={{ color: 'var(--text)' }}>How paid so far is worked out</b>
+              Each premium due from the start date to today. Where a payment you recorded matches one, it’s what you actually paid; otherwise today’s premium. If the start date is only this year’s renewal, edit it to the policy’s first day.</div>
+            <div><b className="block text-[13px] mb-1" style={{ color: 'var(--text)' }}>In your net worth</b>
+              Nothing is added: term, health, vehicle and travel cover has no value you can take back, and the premiums already came out of your bank. Plans that pay back (LIC, endowment, ULIPs) count in <Link href="/dashboard/investments/lic" className="font-semibold" style={{ color: 'var(--accent)' }}>Investments › LIC</Link>.</div>
+          </section>
+        </section>
       )}
 
-      {/* What you've paid so far, policy by policy */}
-      {filtered.length > 0 && paidTotal > 0 && (
-        <section className="wl-card max-md:order-7 px-4 md:px-5 py-4 md:py-[18px] overflow-x-auto" aria-label="Premiums paid so far">
-          <div className="flex justify-between items-baseline gap-3 flex-wrap">
-            <h2 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>What you’ve paid so far</h2>
-            <b className="text-[16px] tabular-nums" style={{ color: 'var(--text)' }}>{money(paidTotal)}</b>
+      {/* Add: read a policy PDF (filled in for you to check) or type it in */}
+      {addMenu && (
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4" style={{ background: 'rgba(20,23,43,.4)' }} onClick={() => !uploading && setAddMenu(false)}>
+          <div role="dialog" aria-modal="true" aria-label="Add a policy" onClick={e => e.stopPropagation()} className="w-full md:max-w-[480px] bg-white rounded-t-[22px] md:rounded-2xl p-5 flex flex-col gap-3.5 shadow-2xl">
+            <div className="flex justify-between items-center"><h2 className="text-[16px] font-bold" style={{ color: 'var(--text)' }}>Add a policy</h2>
+              <span className="rounded-full px-2 py-0.5 text-[10.5px] font-semibold" style={{ background: '#E7F7EF', color: '#1E8F5F' }}>PDF read on our server, no AI</span></div>
+            <div {...getRootProps()} className="rounded-[14px] p-6 text-center cursor-pointer transition-colors"
+              style={{ border: `1.5px dashed ${isDragActive ? 'var(--accent)' : 'var(--border2)'}`, background: isDragActive ? 'var(--accent-bg)' : 'var(--canvas)' }}>
+              <input {...getInputProps()} />
+              <Upload size={22} className="mx-auto mb-2" style={{ color: 'var(--accent)' }} />
+              <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{isDragActive ? 'Drop to read it…' : 'Drop your policy schedule PDF, or tap to choose'}</p>
+              <p className="text-[11.5px] mt-1" style={{ color: 'var(--text3)' }}>We fill in the insurer, number, cover, premium and dates for you to check. The PDF isn’t kept.</p>
+            </div>
+            {uploading && <div className="flex items-center gap-2.5 text-[12.5px]" style={{ color: 'var(--text2)' }}><Loader2 size={16} className="animate-spin" style={{ color: 'var(--accent)' }} /> Reading your policy…</div>}
+            {pendingFile && !uploading && (
+              <form onSubmit={e => { e.preventDefault(); if (password) readPolicy(pendingFile, password) }} className="flex flex-col gap-2">
+                <span className="text-[12.5px]" style={{ color: wrongPwd ? '#D9482F' : 'var(--text2)' }}>{wrongPwd ? "That password didn't work. Try again:" : `${pendingFile.name} is password-protected. Enter its password:`}</span>
+                <span className="flex gap-2"><input type="password" value={password} onChange={e => setPassword(e.target.value)} autoFocus className="wl-input flex-1" aria-label="PDF password" />
+                  <button type="submit" disabled={!password} className="wl-btn wl-btn-primary disabled:opacity-60" style={{ height: 38 }}>Open</button></span>
+              </form>
+            )}
+            {uploadError && <div className="rounded-[10px] px-3 py-2.5 flex items-center gap-2 text-[12.5px]" style={{ background: '#FDECE8', color: '#D9482F' }}><AlertCircle size={14} className="flex-shrink-0" /> {uploadError}</div>}
+            <div className="flex items-center gap-3 text-[12px]" style={{ color: 'var(--text3)' }}><span className="flex-1 h-px" style={{ background: 'var(--line)' }} />or<span className="flex-1 h-px" style={{ background: 'var(--line)' }} /></div>
+            <button onClick={() => { setAddMenu(false); setShowAdd(true) }} className="wl-btn justify-center" style={{ height: 42 }}><Pencil size={14} />Type it in</button>
           </div>
-          <table className="w-full mt-2.5 text-[12.5px] min-w-[560px]">
-            <thead><tr style={{ color: 'var(--text3)' }}>
-              <th className="text-left font-semibold py-2">Policy</th><th className="text-left font-semibold">Since</th><th className="text-right font-semibold">Premiums</th>
-              <th className="text-right font-semibold">By its schedule</th><th className="text-right font-semibold">In your entries</th><th className="text-right font-semibold">Paid so far</th>
-            </tr></thead>
-            <tbody>
-              {filtered.map((p: any) => { const x = paidOf.get(p.id)!, c = p.currency === 'AED' ? 'AED ' : '₹', f = (n: number) => `${c}${Math.round(n).toLocaleString('en-IN')}`
-                const open = openPolicy === p.id
-                return [
-                  <tr key={p.id} onClick={() => setOpenPolicy(open ? null : p.id)} className="cursor-pointer hover:bg-[#FAFAFE]" aria-expanded={open} style={{ borderTop: '1px solid var(--track)' }}>
-                    <td className="py-2.5 pr-3" style={{ color: 'var(--text)' }}><b className="font-semibold"><span className="inline-block w-4 transition-transform" style={{ transform: open ? 'rotate(90deg)' : 'none', color: 'var(--text3)' }}>›</span>{p.policy_name}</b><span className="block text-[11.5px]" style={{ color: 'var(--text3)' }}>{f(x.per)} {({ monthly: 'a month', quarterly: 'a quarter', semi_annual: 'every 6 months', annual: 'a year' } as Record<string, string>)[p.premium_frequency] ?? 'a year'}</span></td>
-                    <td style={{ color: 'var(--text2)' }}>{x.since ? `${fmtDay(x.since)} ${x.since.slice(0, 4)}` : '—'}</td>
-                    <td className="text-right tabular-nums" style={{ color: 'var(--text2)' }}>{x.count || '—'}</td>
-                    <td className="text-right tabular-nums" style={{ color: 'var(--text2)' }}>{x.scheduled ? f(x.scheduled) : '—'}</td>
-                    <td className="text-right tabular-nums" style={{ color: 'var(--text2)' }}>{x.recCount ? `${f(x.recorded)} · ${x.recCount}` : '—'}</td>
-                    <td className="text-right tabular-nums font-semibold" style={{ color: 'var(--text)' }}>{x.paid ? f(x.paid) : '—'}</td>
-                  </tr>,
-                  open && <tr key={`${p.id}-s`}><td colSpan={6} className="pb-3"><PolicySchedule years={premiumSchedule(p, day, premiums)} cur={p.currency} monthly={p.premium_frequency !== 'annual'} /></td></tr>,
-                ] })}
-            </tbody>
-          </table>
-          <p className="text-[11.5px] mt-2.5 leading-relaxed" style={{ color: 'var(--text3)' }}>
-            “By its schedule” counts each premium due from the policy’s start date to today, at today’s premium: if it went up over the years the real total is a little lower, and if the start date is just this year’s renewal, edit it to the first day of the policy.
-            “In your entries” is what you’ve recorded as insurance that names the insurer, the policy or its number. “Paid so far” is the larger of the two. Tap a policy for each premium, year by year.
-          </p>
-          <div className="mt-3 rounded-xl px-3.5 py-3 text-[12.5px] leading-relaxed" style={{ background: '#F4F2FF', color: 'var(--text2)' }}>
-            <b style={{ color: 'var(--text)' }}>In your net worth:</b> nothing is added. Term, health, vehicle and travel cover has no value you can take back — the premium buys protection, so it’s spending, and it already came out of your bank balance when you paid it.
-            Plans that pay back (LIC, endowment, money-back, ULIPs) are different: they’re in <Link href="/dashboard/investments/lic" className="font-semibold" style={{ color: 'var(--accent)' }}>Investments › LIC</Link> and count in your net worth at what they’re worth.
-          </div>
-        </section>
+        </div>
       )}
 
       {/* Add modal */}
@@ -381,38 +356,38 @@ export default function InsuranceClient({ policies, cover, premiums = [], today:
 // opens to its payments. Recorded = found in your entries; schedule = the
 // premium as it is today; next = still to come.
 function PolicySchedule({ years, cur, monthly }: { years: PremiumYear[]; cur: string; monthly: boolean }) {
-  const [open, setOpen] = useState<string | null>(null)
+  const [sel, setSel] = useState(() => years.find(y => y.count > 0)?.year ?? years[0]?.year)
   const f = (n: number) => `${cur === 'AED' ? 'AED ' : '₹'}${Math.round(n).toLocaleString('en-IN')}`
   const day = (d: string) => `${Number(d.slice(8, 10))} ${MON[Number(d.slice(5, 7)) - 1]}`
   const TAG = { recorded: { t: 'In your entries', bg: '#E7F6EE', c: '#15803D' }, schedule: { t: 'By the schedule', bg: '#F1F2F6', c: '#5F657A' }, next: { t: 'Next', bg: '#F4F2FF', c: '#4B3BC4' } }
   const tag = (k: keyof typeof TAG) => <span className="text-[10.5px] font-semibold px-1.5 py-[1px] rounded-full whitespace-nowrap" style={{ background: TAG[k].bg, color: TAG[k].c }}>{TAG[k].t}</span>
-  if (!years.length) return <p className="text-[12px] px-2 py-2" style={{ color: 'var(--text3)' }}>Add the policy’s start date to see each premium.</p>
+  if (!years.length) return <p className="text-[12px] px-1" style={{ color: 'var(--text3)' }}>Add the policy’s start date to see each premium.</p>
+  const y = years.find(x => x.year === sel) ?? years[0]
+  const total = years.reduce((s2, x) => s2 + x.paid, 0), max = Math.max(1, ...years.map(x => x.paid))
   return (
-    <div className="rounded-xl ml-4 mt-1" style={{ background: '#FAFAFE', border: '1px solid var(--line)' }}>
-      {years.map(y => {
-        const one = !monthly && y.rows.length === 1 ? y.rows[0] : null, isOpen = open === y.year
-        return (
-          <div key={y.year} style={{ borderTop: '1px solid var(--track)' }} className="first:border-t-0">
-            <button onClick={() => !one && setOpen(isOpen ? null : y.year)} className="w-full grid grid-cols-[56px_minmax(0,1fr)_auto] gap-3 items-center px-3 py-2 text-left text-[12.5px]" style={{ cursor: one ? 'default' : 'pointer' }}>
-              <b style={{ color: 'var(--text)' }}>{y.year}</b>
-              <span className="flex items-center gap-2 min-w-0" style={{ color: 'var(--text2)' }}>
-                {one ? <><span className="w-12 tabular-nums">{day(one.date)}</span>{tag(one.kind)}</> : <>{y.count ? `${y.count} premium${y.count === 1 ? '' : 's'} paid` : ''}{y.rows.some(r => r.kind === 'next') ? `${y.count ? ' · ' : ''}${y.rows.filter(r => r.kind === 'next').length} to come` : ''}<span style={{ color: 'var(--text3)' }}>{isOpen ? '▾' : '▸'}</span></>}
-              </span>
-              <b className="tabular-nums" style={{ color: one?.kind === 'next' ? 'var(--text3)' : 'var(--text)' }}>{one ? f(one.amount) : f(y.paid)}</b>
-            </button>
-            {isOpen && !one && (
-              <div className="pb-1.5">
-                {y.rows.map(r => (
-                  <div key={r.date} className="grid grid-cols-[56px_minmax(0,1fr)_auto] gap-3 items-center pl-[68px] pr-3 py-1.5 text-[12px]" style={{ color: 'var(--text2)' }}>
-                    <span className="col-span-2 flex items-center gap-2"><span className="w-12 tabular-nums">{day(r.date)}</span>{tag(r.kind)}</span>
-                    <span className="tabular-nums" style={{ color: r.kind === 'next' ? 'var(--text3)' : 'var(--text)' }}>{f(r.amount)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+    <div className="flex flex-col gap-2.5">
+      {/* A bar per year: what was paid that year; tap one for its premiums */}
+      <div role="tablist" aria-label="Year" className="flex gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+        {[...years].reverse().map(x => (
+          <button key={x.year} role="tab" aria-selected={x.year === y.year} onClick={() => setSel(x.year)} className="flex flex-col items-center gap-1 rounded-lg px-2 pt-2 pb-1.5 min-w-[54px]"
+            style={x.year === y.year ? { background: 'var(--accent-bg)', border: '1px solid var(--accent)' } : { background: '#fff', border: '1px solid var(--line)' }}>
+            <span className="w-5 rounded-sm" style={{ height: Math.max(3, x.paid / max * 34), background: x.paid > 0 ? (x.year === y.year ? 'var(--accent)' : '#C9C2F5') : '#E9EBF1' }} />
+            <span className="text-[11.5px] font-semibold" style={{ color: 'var(--text)' }}>{x.year}</span>
+          </button>
+        ))}
+      </div>
+      <div className="rounded-xl" style={{ background: '#FAFAFE', border: '1px solid var(--line)' }}>
+        <div className="flex justify-between px-3 py-2 text-[12.5px]" style={{ borderBottom: '1px solid var(--track)' }}>
+          <b style={{ color: 'var(--text)' }}>{y.year}{monthly && y.count ? ` · ${y.count} premium${y.count === 1 ? '' : 's'}` : ''}</b><b className="tabular-nums" style={{ color: 'var(--text)' }}>{f(y.paid)}</b>
+        </div>
+        {y.rows.map(r => (
+          <div key={r.date} className="flex justify-between items-center px-3 py-1.5 text-[12px]" style={{ color: 'var(--text2)' }}>
+            <span className="flex items-center gap-2"><span className="w-12 tabular-nums">{day(r.date)}</span>{tag(r.kind)}</span>
+            <span className="tabular-nums" style={{ color: r.kind === 'next' ? 'var(--text3)' : 'var(--text)' }}>{f(r.amount)}</span>
           </div>
-        )
-      })}
+        ))}
+      </div>
+      <div className="text-[11.5px] px-1" style={{ color: 'var(--text3)' }}>{f(total)} over {years.filter(x => x.count).length} year{years.filter(x => x.count).length === 1 ? '' : 's'} · tap a year for its premiums</div>
     </div>
   )
 }
