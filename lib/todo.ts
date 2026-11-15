@@ -17,6 +17,7 @@ export interface TodoItem {
   id: string; group: TodoGroup; area: TodoArea; icon: string
   title: string; detail: string; href: string; action: string
   upload?: boolean                         // the action opens the statement import
+  currency?: 'AED' | 'INR'                 // one country's (shown only in its view and All); none = both
 }
 export const GROUP_LABEL: Record<TodoGroup, string> = { today: 'Today', week: 'This week', later: 'When you can' }
 export const AREA_LABEL: Record<TodoArea, string> = { money: 'Money', wealth: 'Wealth', plan: 'Plan' }
@@ -28,7 +29,7 @@ export interface TodoInput {
   stocks: any[]; mutualFunds: any[]; fixedDeposits: any[]; rds: any[]; lic: any[]
   budgets: any[]; recurring: any[]; plans: any[]; bills: any[]; answers: string[]
   recGoals: any[]; contributions: any[]
-  needs: PortfolioNeed[]                   // lib/portfolio/build
+  needs: (PortfolioNeed & { currency?: 'AED' | 'INR' })[]   // lib/portfolio/build
   confirm: number                          // automatic entries waiting for a yes or no
   builder?: BuilderDue[]                   // your part of the builder payments ahead (lib/property)
 }
@@ -48,28 +49,31 @@ export function buildTodo(inp: TodoInput): TodoItem[] {
   if (inp.confirm > 0) out.push({ id: 'confirm', group: 'today', area: 'money', icon: '✓', action: 'Confirm', href: '/dashboard/todo#confirm',
     title: `${inp.confirm} automatic entr${inp.confirm === 1 ? 'y' : 'ies'} waiting for your OK`, detail: 'Repeating entries, EMIs and SIPs whose day has come' })
 
-  // Home's attention items, over both countries (uncategorised is covered by Review below)
-  const ins = buildHomeInsights({ view: 'consolidated', fx, today, focusMonth: today.slice(0, 7), txns: inp.txns, accounts: inp.accounts, loans: inp.loans,
-    insurance: inp.insurance, fixedDeposits: inp.fixedDeposits, budgets: inp.budgets, mutualFunds: inp.mutualFunds, stocks: inp.stocks, cash: 0, invested: { value: 0, cost: 0 } })
-  for (const a of ins.attention.filter(a => a.id !== 'uncat'))
-    out.push({ id: a.id, group: SEV[a.severity], area: areaOf(a.id), icon: iconOf(a.id), title: a.title, detail: a.detail,
-      href: a.href ?? '/dashboard/money', action: a.actionLabel ?? 'See it', upload: a.action === 'upload' })
+  // Home's attention items, each country on its own (so a country view shows
+  // only its own); uncategorised is covered by Review below
+  for (const [view, cur] of [['uae', 'AED'], ['india', 'INR']] as const) {
+    const ins = buildHomeInsights({ view, fx, today, focusMonth: today.slice(0, 7), txns: inp.txns, accounts: inp.accounts, loans: inp.loans,
+      insurance: inp.insurance, fixedDeposits: inp.fixedDeposits, budgets: inp.budgets, mutualFunds: inp.mutualFunds, stocks: inp.stocks, cash: 0, invested: { value: 0, cost: 0 } })
+    for (const a of ins.attention.filter(a => a.id !== 'uncat'))
+      out.push({ id: out.some(o => o.id === a.id) ? `${a.id}-${cur}` : a.id, currency: cur, group: SEV[a.severity], area: areaOf(a.id), icon: iconOf(a.id), title: a.title, detail: a.detail,
+        href: a.href ?? '/dashboard/money', action: a.actionLabel ?? 'See it', upload: a.action === 'upload' })
+  }
 
   // Accounts that run short of what's due from them, and bills with no account to pay them
   const dues = buildDues({ today, days: 14, view: 'consolidated', txns: inp.txns, accounts: inp.accounts, loans: inp.loans, insurance: inp.insurance,
     mutualFunds: inp.mutualFunds, recurring: inp.recurring, rds: inp.rds, plans: inp.plans, lic: inp.lic, bills: inp.bills, answers: inp.answers })
   const incoming = expectedIncome(inp.txns, inp.accounts, today, 35)
   for (const w of balanceWarnings(inp.accounts, dues, incoming, today, 14))
-    out.push({ id: w.id, group: daysBetween(today, w.date ?? today) <= 3 ? 'today' : 'week', area: 'money', icon: '⚠️', title: w.title, detail: w.detail, href: w.href ?? '/dashboard/accounts', action: 'Fix it' })
+    out.push({ id: w.id, currency: inp.accounts.find(a => a.id === w.accountId)?.currency === 'AED' ? 'AED' : 'INR', group: daysBetween(today, w.date ?? today) <= 3 ? 'today' : 'week', area: 'money', icon: '⚠️', title: w.title, detail: w.detail, href: w.href ?? '/dashboard/accounts', action: 'Fix it' })
   for (const d of dues.filter(d => !d.payFrom && (d.kind === 'emi' || d.kind === 'card') && daysBetween(today, d.date) <= 7))
-    out.push({ id: `payfrom-${d.id}`, group: 'week', area: 'money', icon: '🏦', title: `Which account pays ${d.label}?`, detail: 'Pick it once, and you’re warned if that account runs short',
+    out.push({ id: `payfrom-${d.id}`, currency: d.currency === 'AED' ? 'AED' : 'INR', group: 'week', area: 'money', icon: '🏦', title: `Which account pays ${d.label}?`, detail: 'Pick it once, and you’re warned if that account runs short',
       href: `/dashboard/money?payfrom=${encodeURIComponent(d.id)}`, action: 'Choose' })
 
   // Builder payments: your part, in time to have the money ready
   for (const b of inp.builder ?? []) {
     const d = daysBetween(today, b.date)
     const money = `${b.currency === 'AED' ? 'AED ' : '₹'}${Math.round(b.amount).toLocaleString(b.currency === 'AED' ? 'en-US' : 'en-IN')}`
-    out.push({ id: b.id, group: d <= 2 ? 'today' : d <= 10 ? 'week' : 'later', area: 'plan', icon: '🏠', href: b.href, action: 'See it',
+    out.push({ id: b.id, currency: b.currency, group: d <= 2 ? 'today' : d <= 10 ? 'week' : 'later', area: 'plan', icon: '🏠', href: b.href, action: 'See it',
       title: `${money} for ${b.label} ${d <= 0 ? 'is due' : `due ${fmtDay(b.date)}`}`, detail: b.sub })
   }
 
@@ -83,15 +87,16 @@ export function buildTodo(inp: TodoInput): TodoItem[] {
     const value = Math.max(0, inp.contributions.filter(c => c.goal_id === g.id).reduce((s, c) => s + (Number(c.amount) || 0), 0))
     const r = recurringState(g, value, inp.contributions, today)
     const money = (n: number) => `${g.currency === 'AED' ? 'AED ' : '₹'}${Math.round(n).toLocaleString(g.currency === 'AED' ? 'en-US' : 'en-IN')}`
-    if (r.status === 'short') out.push({ id: `goal-${g.id}`, group: r.days <= 7 ? 'week' : 'later', area: 'plan', icon: '🎯', href: `/dashboard/goals/${g.id}`, action: 'Set aside',
+    const gc: 'AED' | 'INR' = g.currency === 'AED' ? 'AED' : 'INR'
+    if (r.status === 'short') out.push({ id: `goal-${g.id}`, currency: gc, group: r.days <= 7 ? 'week' : 'later', area: 'plan', icon: '🎯', href: `/dashboard/goals/${g.id}`, action: 'Set aside',
       title: `${g.name} ${r.days === 0 ? 'today' : r.days === 1 ? 'tomorrow' : `on ${fmtDay(addDays(today, r.days))}`}`, detail: `${money(r.left)} still to set aside — ${money(r.saved)} of ${money(Number(g.target_amount))} is ready` })
-    else if (r.status === 'passed' && r.days >= -30) out.push({ id: `goal-${g.id}`, group: 'later', area: 'plan', icon: '🎯', href: `/dashboard/goals/${g.id}`, action: 'Record it',
+    else if (r.status === 'passed' && r.days >= -30) out.push({ id: `goal-${g.id}`, currency: gc, group: 'later', area: 'plan', icon: '🎯', href: `/dashboard/goals/${g.id}`, action: 'Record it',
       title: `${g.name} has passed`, detail: 'Record what you spent and start saving for the next one' })
   }
 
   // The portfolio manager's (premiums and maturities are already above, from Home)
   for (const n of inp.needs.filter(n => !/^(prem-|mat-)/.test(n.id)))
-    out.push({ id: `pm-${n.id}`, group: n.tone === 'warn' || n.tone === 'good' ? 'week' : 'later', area: 'wealth',
+    out.push({ id: `pm-${n.id}`, currency: n.currency, group: n.tone === 'warn' || n.tone === 'good' ? 'week' : 'later', area: 'wealth',
       icon: n.icon, title: n.title, detail: n.detail, href: n.href, action: n.id === 'review' ? 'Open' : n.id === 'profile' ? 'Answer' : 'See it' })
 
   const RANK: Record<TodoGroup, number> = { today: 0, week: 1, later: 2 }
@@ -102,3 +107,6 @@ const addDays = (d: string, n: number) => { const x = new Date(`${d}T12:00:00Z`)
 // Snoozed and "not for me" items (kept on this device): id → the day it may come back
 export const TODO_HIDE_KEY = 'wl-todo-hide'
 export const visibleTodo = (items: TodoItem[], hidden: Record<string, string>, today: string) => items.filter(i => !(hidden[i.id] && hidden[i.id] > today))
+// The UAE view shows UAE items, India view India items, All shows everything
+export const todoInView = (items: TodoItem[], view: 'uae' | 'india' | 'consolidated') =>
+  view === 'consolidated' ? items : items.filter(i => !i.currency || i.currency === (view === 'uae' ? 'AED' : 'INR'))

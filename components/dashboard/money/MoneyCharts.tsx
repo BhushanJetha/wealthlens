@@ -120,7 +120,7 @@ export function RemitBars({ pts, aed, inr, uaeView, short, onPick }: { pts: Pt[]
   const fmtA = (x: number) => `AED ${Math.round(x).toLocaleString('en-US')}`
   const h = hv.h != null && hv.h < n ? hv.h : null
   return (
-    <Card title="UAE → India" sub={totA > 0 ? `${fmtA(totA)} sent · ${short(totI)} landed` : `${short(totI)} landed in India`}>
+    <Card title="UAE → India" sub={uaeView ? `${fmtA(totA)} sent from your UAE accounts` : totA > 0 ? `${fmtA(totA)} sent · ${short(totI)} landed` : `${short(totI)} landed in India`}>
       <div ref={hv.ref} onPointerMove={hv.move(n)} onPointerDown={hv.move(n)} onPointerLeave={hv.leave} onClick={() => h != null && onPick?.(h)} className={`relative flex items-end gap-[6%] px-1 pt-5 touch-pan-y ${onPick ? 'cursor-pointer' : ''}`} style={{ height: H }}>
         {pts.map((pt, i) => (
           <div key={i} className="flex-1 relative min-w-0" style={{ height: `${val[i] / mx * 100}%`, minHeight: val[i] > 0 ? 4 : 0, background: val[i] > 0 ? 'linear-gradient(180deg,#8B7BF0,#6A55E8)' : 'transparent', borderRadius: '4px 4px 0 0', opacity: h == null || h === i ? 1 : 0.5 }}>
@@ -129,7 +129,7 @@ export function RemitBars({ pts, aed, inr, uaeView, short, onPick }: { pts: Pt[]
         ))}
         {h != null && <Tooltip left={(h + 0.5) / n * 100} title={pts[h].title} rows={[
           ...(aed[h] > 0 ? [{ label: 'Sent', color: '#6A55E8', value: fmtA(aed[h]), ch: { t: '', c: '' } }] : []),
-          { label: 'Landed', color: '#2FB67C', value: short(inr[h]), ch: { t: '', c: '' } },
+          ...(uaeView ? [] : [{ label: 'Landed', color: '#2FB67C', value: short(inr[h]), ch: { t: '', c: '' } }]),
           ...(rate(h) != null ? [{ label: 'Rate', color: '#C9CBE0', value: `₹${rate(h)!.toFixed(2)}`, ch: { t: '', c: '' } }] : []),
         ]} />}
       </div>

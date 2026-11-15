@@ -6,6 +6,7 @@ import { localToday } from '@/lib/insights'
 import { planTax, taxSuggestions, LIMITS, type TaxInput } from '@/lib/tax'
 import { fmtMoney, fmtCompact } from '@/lib/format'
 import { PageHeader, InsightBar, AiActions, LearnStrip, KpiTile, Panel, ProgressRow, Segmented, PALETTE } from '@/components/ui/kit'
+import { useViewStore } from '@/store/viewStore'
 
 // Marginal slab + 4% health & education cess
 const SLABS = { '5': 0.052, '20': 0.208, '30': 0.312 } as const
@@ -13,7 +14,17 @@ type Slab = keyof typeof SLABS
 
 // Tax planner (design v2): India, old regime. Deductions come from the
 // holdings you've added; all figures are estimates, not tax advice.
-export default function TaxClient({ input, gains }: { input: TaxInput; gains?: React.ReactNode }) {
+export default function TaxClient(props: { input: TaxInput; gains?: React.ReactNode }) {
+  const { view } = useViewStore()
+  if (view === 'uae') return (
+    <div className="wl-card px-6 py-10 text-center flex flex-col items-center gap-2">
+      <div className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>The tax planner is for your India income</div>
+      <div className="text-[13px] max-w-md" style={{ color: 'var(--text3)' }}>You’re looking at the UAE view, which has no income tax. Switch to India or All at the top to see this year’s deductions and what’s left to claim.</div>
+    </div>
+  )
+  return <TaxBody {...props} />
+}
+function TaxBody({ input, gains }: { input: TaxInput; gains?: React.ReactNode }) {
   const [today, setToday] = useState('')
   const [slab, setSlab] = useState<Slab>('30')
   useEffect(() => { setToday(localToday()) }, [])

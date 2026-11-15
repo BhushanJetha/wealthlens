@@ -10,6 +10,8 @@ import { EVENT_KINDS, eventKind, eventStats, eventSuggestions, yearSummary } fro
 import type { EventsData } from '@/lib/eventsData'
 import { PageHeader, InsightBar, KpiTile, KpiGrid, Panel, ProgressRow } from '@/components/ui/kit'
 import EventSheet from '@/components/forms/EventSheet'
+import { useViewStore } from '@/store/viewStore'
+import { rowsInView } from '@/lib/viewRows'
 
 const range = (e: any) => `${fmtDay(e.start_date)}${e.end_date !== e.start_date ? ` – ${fmtDay(e.end_date)}` : ''} ${String(e.end_date).slice(0, 4)}`
 const STATUS: Record<string, { label: string; bg: string; c: string }> = {
@@ -22,8 +24,11 @@ const STATUS: Record<string, { label: string; bg: string; c: string }> = {
 // Events & trips (design v2): a trip, a function at home, a festival, a home
 // project — each with its own budget, its spending tagged to it (expenses keep
 // their category, so nothing doubles up), totalled by year.
-export default function EventsClient({ data }: { data: EventsData }) {
+export default function EventsClient({ data: everything }: { data: EventsData }) {
   const router = useRouter()
+  // Only the country in view (UAE trips in dirhams, India's in rupees)
+  const { view } = useViewStore()
+  const data = useMemo(() => ({ ...everything, events: rowsInView(everything.events, view) }), [everything, view])
   const today = localToday()
   const years = useMemo(() => Array.from(new Set([today.slice(0, 4), ...data.events.map(e => String(e.start_date).slice(0, 4))])).sort().reverse(), [data.events, today])
   const [year, setYear] = useState(years[0])

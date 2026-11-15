@@ -72,7 +72,8 @@ export default function PlanHomeClient({ data, tax }: { data: PlanData; tax?: Ta
   const savedForGoals = goals.reduce((s, it) => s + (it.v.value || 0), 0), goalTarget = goals.reduce((s, it) => s + (Number(it.goal.target_amount) || 0), 0)
 
   // Tax this financial year (India)
-  const tp = useMemo(() => (tax ? planTax(tax, today) : null), [tax, today])
+  const showTax = cur === 'INR'          // India tax: not in the UAE view
+  const tp = useMemo(() => (tax && showTax ? planTax(tax, today) : null), [tax, today, showTax])
   const room80c = tp ? Math.max(0, LIMITS.c80 - tp.claim.c80) : 0
   const event = data.events.filter(e => !e.closed_at && e.currency === cur && String(e.start_date) >= today).sort((a, b) => String(a.start_date).localeCompare(String(b.start_date)))
   const income = Math.max(plan.income, 1), over = plan.left < 0
@@ -89,8 +90,9 @@ export default function PlanHomeClient({ data, tax }: { data: PlanData; tax?: Ta
     { label: 'Goals', color: '#3FBF8C', value: short(plan.goals), sub: goals.length ? `a month · ${short(savedForGoals)} saved so far` : 'No goals yet', d: goals.length ? { t: `${onTrack} of ${goals.length} on track`, s: onTrack === goals.length ? GOOD : BAD } : { t: '—', s: NONE }, spark: [], href: '/dashboard/goals',
       mini: goalTarget > 0 ? { kind: 'progress' as const, pct: savedForGoals / goalTarget * 100, color: '#3FBF8C' } : undefined },
     { label: 'Lowest balance', color: '#2FB67C', value: short(bal[low] ?? cash), sub: year[low] ? `End of ${MONTH[Number(year[low].ym.slice(5)) - 1]}${needs > 0 ? ` · stays ${(bal[low] ?? 0) >= needs ? 'above' : 'below'} a month of needs` : ''}` : '', d: needs > 0 ? ((bal[low] ?? 0) >= needs ? { t: 'safe', s: GOOD } : { t: 'tight', s: BAD }) : { t: '—', s: NONE }, spark: bal, href: '/dashboard/plan/year' },
-    { label: 'Tax-saving room', color: '#8B5CF6', value: tp ? fmtCompact(room80c, 'INR') : '—', sub: tp ? `Left under 80C · by 31 Mar` : 'India tax', d: tp ? { t: `FY ${tp.fy.start.slice(2, 4)}-${tp.fy.end.slice(2, 4)}`, s: NONE } : { t: '—', s: NONE }, spark: [], href: '/dashboard/tax',
-      mini: tp ? { kind: 'progress' as const, pct: tp.claim.c80 / LIMITS.c80 * 100, color: '#8B5CF6' } : undefined },
+    ...(showTax ? [] : [{ label: 'Trips & events', color: '#8B5CF6', value: String(event.length), sub: event[0] ? `${event[0].name}, ${fmtDay(String(event[0].start_date))}` : 'Nothing planned', d: { t: 'coming up', s: NONE }, spark: [] as number[], href: '/dashboard/events' }]),
+    ...(!showTax ? [] : [{ label: 'Tax-saving room', color: '#8B5CF6', value: tp ? fmtCompact(room80c, 'INR') : '—', sub: tp ? `Left under 80C · by 31 Mar` : 'India tax', d: tp ? { t: `FY ${tp.fy.start.slice(2, 4)}-${tp.fy.end.slice(2, 4)}`, s: NONE } : { t: '—', s: NONE }, spark: [], href: '/dashboard/tax',
+      mini: tp ? { kind: 'progress' as const, pct: tp.claim.c80 / LIMITS.c80 * 100, color: '#8B5CF6' } : undefined }]),
   ]
 
   const parts = [
@@ -112,7 +114,7 @@ export default function PlanHomeClient({ data, tax }: { data: PlanData; tax?: Ta
     { title: 'What if', href: '/dashboard/plan/what-if', value: 'Try a change', line: 'Prepay a loan, buy something big, earn more or less — see the effect first' },
     { title: 'Events & trips', href: '/dashboard/events', value: String(event.length), unit: 'coming up', line: event[0] ? `${event[0].name}, ${fmtDay(String(event[0].start_date))}${Number(event[0].budget) > 0 ? ` · ${short(Number(event[0].budget))}` : ''}` : 'Add a trip or function' },
     { title: 'Cash-flow forecast', href: '/dashboard/cashflow', value: short(bal[low] ?? cash), unit: 'lowest ahead', line: year[low] ? `End of ${MONTH[Number(year[low].ym.slice(5)) - 1]}` : 'Your balance, day by day', mini: { kind: 'spark' as const, values: bal, color: '#1E8A5C' } },
-    { title: 'Tax planner', href: '/dashboard/tax', value: tp ? fmtCompact(room80c, 'INR') : '—', unit: '80C room left', line: tp ? `${tp.fy.label} · ${tp.monthsLeft} month${tp.monthsLeft === 1 ? '' : 's'} left` : 'India tax', mini: tp ? { kind: 'progress' as const, pct: tp.claim.c80 / LIMITS.c80 * 100, color: '#8B5CF6' } : undefined },
+    ...(!showTax ? [] : [{ title: 'Tax planner', href: '/dashboard/tax', value: tp ? fmtCompact(room80c, 'INR') : '—', unit: '80C room left', line: tp ? `${tp.fy.label} · ${tp.monthsLeft} month${tp.monthsLeft === 1 ? '' : 's'} left` : 'India tax', mini: tp ? { kind: 'progress' as const, pct: tp.claim.c80 / LIMITS.c80 * 100, color: '#8B5CF6' } : undefined }]),
   ]
 
   return (
@@ -219,7 +221,7 @@ export default function PlanHomeClient({ data, tax }: { data: PlanData; tax?: Ta
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 md:gap-4 items-stretch">
+      <div className={`grid grid-cols-1 ${showTax ? 'lg:grid-cols-2' : ''} gap-3.5 md:gap-4 items-stretch`}>
         <Card title="Goals" right={<Link href="/dashboard/goals" className="text-[12.5px] font-semibold" style={{ color: 'var(--accent)' }}>All goals</Link>}>
           {goals.length === 0 ? (
             <div className="flex flex-col items-center justify-center text-center gap-2 py-6 flex-1">
@@ -243,7 +245,7 @@ export default function PlanHomeClient({ data, tax }: { data: PlanData; tax?: Ta
           )}
         </Card>
 
-        <Card title="Tax this year" sub={tp ? `${tp.fy.label} · India income` : 'India income'} right={<Link href="/dashboard/tax" className="text-[12.5px] font-semibold" style={{ color: 'var(--accent)' }}>Tax planner</Link>}>
+        {showTax && <Card title="Tax this year" sub={tp ? `${tp.fy.label} · India income` : 'India income'} right={<Link href="/dashboard/tax" className="text-[12.5px] font-semibold" style={{ color: 'var(--accent)' }}>Tax planner</Link>}>
           {tp ? (<>
             <div className="flex flex-col gap-3">
               {[
@@ -262,7 +264,7 @@ export default function PlanHomeClient({ data, tax }: { data: PlanData; tax?: Ta
               {room80c > 0 ? <>{fmtMoney(room80c, 'INR')} more under 80C, under the old regime, is up to <b style={{ color: 'var(--text)' }}>{fmtMoney(room80c * 0.312, 'INR')}</b> less tax at the 30% slab. {tp.daysLeft} days left in the year.</> : '80C is used in full this year.'}
             </p>
           </>) : <p className="text-[12.5px] py-6 text-center" style={{ color: 'var(--text3)' }}>Your tax picture shows here once your India investments are in.</p>}
-        </Card>
+        </Card>}
       </div>
 
       <Card title="The year ahead" sub="Each month: what’s expected in, less what’s planned to go out. Above the line is left over, below is short."

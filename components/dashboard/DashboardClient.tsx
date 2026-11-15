@@ -161,7 +161,7 @@ export default function DashboardClient(p: Props) {
     return { ...spendRoom({ today, cur: c, budgets: p.budgets, txns: p.transactions, safe: s.amount }), until: s.until, perDay: s.perDay, sts: s }
   }), [reviewOk, p, h]) // eslint-disable-line react-hooks/exhaustive-deps
   const toView = (n: number, c: string) => viewAmount(n, c, view, FX)
-  const week = useMemo(() => nextWeek(today, dues, incoming, p.events), [today, dues, incoming, p.events])
+  const week = useMemo(() => nextWeek(today, dues, incoming, p.events.filter((e: any) => view === 'consolidated' || (view === 'uae') === (e.currency === 'AED'))), [today, dues, incoming, p.events, view])
   // What usual spending will still take from the bank this month
   const usual = useMemo(() => rooms.flatMap(r => usualSpendLeft({ today, cur: r.cur, lines: r.lines, txns: p.transactions, accounts: h.accounts, dues, recurring: p.recurring, answers: p.billSkips })), [rooms, today, p.transactions, h.accounts, dues, p.recurring, p.billSkips])
   const budgetsLeft = usual.reduce((s, u) => s + toView(u.amount, u.currency), 0)
@@ -256,7 +256,7 @@ export default function DashboardClient(p: Props) {
         <DueWeekCard today={today} items={week.items} later={week.later} warnings={warnings} money={money}
           dueTotal={cashDues(week.out, h.accounts).reduce((s, d) => s + toView(d.amount, d.currency), 0)} />
         <GoalRingsCard goals={goals} short={short} />
-        <LoansCard loans={h.loans} toView={toView} money={money} homes={p.holdings.otherAssets ?? []} today={today} />
+        <LoansCard loans={h.loans.filter((l: any) => view === 'consolidated' || (view === 'uae') === (l.currency === 'AED'))} toView={toView} money={money} homes={p.holdings.otherAssets ?? []} today={today} />
       </div>
       </>)}
 

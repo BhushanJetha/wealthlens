@@ -9,6 +9,8 @@ import { EXAMPLE_NOTE } from '@/lib/portfolio/catalog'
 import type { Portfolio } from '@/lib/portfolio/build'
 import type { Cls } from '@/lib/portfolio/holdings'
 import { PageHeader, InsightBar, KpiTile, KpiGrid, Panel, Segmented } from '@/components/ui/kit'
+import { useViewStore } from '@/store/viewStore'
+import { curInView } from '@/lib/viewRows'
 
 const CLS_COLOR: Record<Cls, string> = { equity: '#6A55E8', debt: '#2FB67C', gold: '#F29A2E', cash: '#3B8EF0' }
 const pctTxt = (n: number) => `${n >= 0 ? '+' : '−'}${Math.abs(Math.round(n * 10) / 10)}%`
@@ -28,9 +30,12 @@ export default function PortfolioClient({ p, fx, reviews, reviewsReady, wealthRe
   const [error, setError] = useState('')
   const inr = (n: number) => fmtCompact(n, 'INR')
   const valIn = (v: number, c: string) => fmtCompact(v, c === 'AED' ? 'AED' : 'INR')
-  const act = p.reviews.filter(r => ['switch', 'trim', 'check'].includes(r.verdict))
-  const counts = { act: act.length, watch: p.reviews.filter(r => r.verdict === 'watch').length, keep: p.reviews.filter(r => r.verdict === 'keep').length, all: p.reviews.length }
-  const shown = filter === 'all' ? p.reviews : filter === 'act' ? act : p.reviews.filter(r => r.verdict === filter)
+  // Holdings of the country in view (your mix and targets are for both countries together)
+  const { view } = useViewStore()
+  const reviewsV = p.reviews.filter(r => curInView(r.h.currency, view))
+  const act = reviewsV.filter(r => ['switch', 'trim', 'check'].includes(r.verdict))
+  const counts = { act: act.length, watch: reviewsV.filter(r => r.verdict === 'watch').length, keep: reviewsV.filter(r => r.verdict === 'keep').length, all: reviewsV.length }
+  const shown = filter === 'all' ? reviewsV : filter === 'act' ? act : reviewsV.filter(r => r.verdict === filter)
   const mix = p.add.mix
   const big = p.drift[0]
 

@@ -3,7 +3,8 @@
 // it (bell, Home, an overview) and kept for two minutes. Snoozed and
 // "not for me" items are kept on this device and left out everywhere.
 import { useEffect, useState } from 'react'
-import { visibleTodo, TODO_HIDE_KEY, type TodoItem } from '@/lib/todo'
+import { visibleTodo, todoInView, TODO_HIDE_KEY, type TodoItem } from '@/lib/todo'
+import { useViewStore } from '@/store/viewStore'
 
 let shared: { at: number; p: Promise<{ items: TodoItem[]; today: string }> } | null = null
 const EVT = 'wl-todo'
@@ -19,6 +20,7 @@ const readHidden = (): Record<string, string> => { try { return JSON.parse(local
 export function useTodo(initial?: { items: TodoItem[]; today: string }) {
   const [data, setData] = useState<{ items: TodoItem[]; today: string } | null>(initial ?? null)
   const [hidden, setHidden] = useState<Record<string, string>>({})
+  const { view } = useViewStore()
   useEffect(() => {
     setHidden(readHidden())
     if (initial) shared = { at: Date.now(), p: Promise.resolve(initial) }
@@ -28,7 +30,8 @@ export function useTodo(initial?: { items: TodoItem[]; today: string }) {
     return () => window.removeEventListener(EVT, on)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const today = data?.today || new Date().toISOString().slice(0, 10)
-  const items = data ? visibleTodo(data.items, hidden, today) : []
+  // Only the country in view (UAE, India, or both in All)
+  const items = data ? visibleTodo(todoInView(data.items, view), hidden, today) : []
   // Hide until a day ('9999-12-31' = not for me), or bring everything back
   const hide = (id: string, until: string) => {
     const h = { ...readHidden(), [id]: until }
@@ -36,6 +39,7 @@ export function useTodo(initial?: { items: TodoItem[]; today: string }) {
     setHidden(h); window.dispatchEvent(new Event(EVT))
   }
   const refresh = () => load(true).then(d => { setData(d); window.dispatchEvent(new Event(EVT)) })
-  return { loaded: !!data, items, all: data?.items ?? [], today, hide, refresh, hiddenCount: data ? data.items.length - items.length : 0,
+  return { loaded: !!data, items, all: data?.items ?? [], today, hide, refresh, hiddenCount: data ? visibleTodo(data.items, {}, today).length - visibleTodo(data.items, hidden, today).length : 0,
+    otherCountry: data ? todoInView(data.items, 'consolidated').length - todoInView(data.items, view).length : 0,
     unhideAll: () => { try { localStorage.removeItem(TODO_HIDE_KEY) } catch {}; setHidden({}); window.dispatchEvent(new Event(EVT)) } }
 }

@@ -25,6 +25,8 @@ import InvestmentMatrix from '@/components/dashboard/InvestmentMatrix'
 import Pagination from '@/components/dashboard/Pagination'
 import { holdingHref, xirr } from '@/lib/holding'
 import { VerifyBadge } from './VerifyHolding'
+import { useViewStore } from '@/store/viewStore'
+import { rowsInView } from '@/lib/viewRows'
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 function getReturn(s: any, prices: Record<string, number>): number {
@@ -74,11 +76,15 @@ type Tab = 'portfolio' | 'analytics' | 'growth' | 'news'
 type SortKey = 'name' | 'return' | 'value' | 'invested' | 'price'
 
 // ─── component ────────────────────────────────────────────────────────────────
-export default function StocksDashboardClient({ stocks: initial }: { stocks: any[] }) {
+export default function StocksDashboardClient({ stocks: all }: { stocks: any[] }) {
   const router   = useRouter()
   const supabase = createClient()
+  // Only the country in view (India's shares in the India view, and so on)
+  const { view } = useViewStore()
+  const initial = useMemo(() => rowsInView(all, view), [all, view])
 
   const [stocks, setStocks]           = useState(initial)
+  useEffect(() => { setStocks(initial) }, [initial])
   const [tab, setTab]                 = useState<Tab>('portfolio')
   const [livePrices, setLivePrices]   = useState<Record<string, number>>({})
   const [priceChange, setPriceChange] = useState<Record<string, { change: number; changePct: number }>>({})

@@ -41,7 +41,7 @@ export function WealthNeeds({ needs }: { needs: Overview['needs'] }) {
 
 // How quickly your money can be reached, the AED / ₹ split (with what a 10%
 // fall in the rupee would do), and protection — in the view's currency
-export function WealthPanels({ o, view, fx, hideProtection }: { o: Overview; view: string; fx: number; hideProtection?: boolean }) {
+export function WealthPanels({ o, view, fx, hideProtection, hideCurrency }: { o: Overview; view: string; fx: number; hideProtection?: boolean; hideCurrency?: boolean }) {
   const cur = view === 'uae' ? 'AED' : 'INR'
   const show = (inr: number) => fmtCompact(view === 'uae' ? inr / fx : inr, cur)
   const total = o.access.reduce((s, a) => s + a.value, 0)
@@ -50,7 +50,7 @@ export function WealthPanels({ o, view, fx, hideProtection }: { o: Overview; vie
   const rupeeHit = c.inr / fx * 0.1   // in AED, if ₹ falls 10%
   const staying = o.returnPlan === 'no' || o.returnPlan === 'later'
   return (
-    <div className={`grid grid-cols-1 ${hideProtection ? 'lg:grid-cols-2' : 'lg:grid-cols-3'} gap-3.5 md:gap-4 wl-even`}>
+    <div className={`grid grid-cols-1 ${[!hideProtection, !hideCurrency].filter(Boolean).length === 0 ? '' : [!hideProtection, !hideCurrency].filter(Boolean).length === 1 ? 'lg:grid-cols-2' : 'lg:grid-cols-3'} gap-3.5 md:gap-4 wl-even`}>
       <Panel title={<span className="flex items-center gap-1.5"><Timer size={15} style={{ color: 'var(--accent)' }} />How quickly you can reach it</span>}>
         <div className="flex h-3 rounded-full overflow-hidden gap-[2px] mt-3" role="img" aria-label={o.access.map(a => `${a.label} ${show(a.value)}`).join(', ')}>
           {o.access.filter(a => a.value > 0).map(a => <div key={a.key} style={{ width: `${a.value / (total || 1) * 100}%`, background: a.color }} />)}
@@ -72,7 +72,7 @@ export function WealthPanels({ o, view, fx, hideProtection }: { o: Overview; vie
         </p>
       </Panel>
 
-      <Panel title={<span className="flex items-center gap-1.5"><Globe2 size={15} style={{ color: 'var(--accent)' }} />Dirhams or rupees</span>}>
+      {!hideCurrency && <Panel title={<span className="flex items-center gap-1.5"><Globe2 size={15} style={{ color: 'var(--accent)' }} />Dirhams or rupees</span>}>
         <div className="flex h-3 rounded-full overflow-hidden gap-[2px] mt-3" role="img" aria-label={`AED ${Math.round(c.aedPct)}%, rupees ${Math.round(c.inrPct)}%`}>
           {c.aedPct > 0 && <div style={{ width: `${c.aedPct}%`, background: '#2a78d6' }} />}
           {c.inrPct > 0 && <div style={{ width: `${c.inrPct}%`, background: '#eb6834' }} />}
@@ -89,7 +89,7 @@ export function WealthPanels({ o, view, fx, hideProtection }: { o: Overview; vie
             : staying ? 'You plan to stay abroad — the rupee has lost about 2–4% a year against the dirham over the long run, so keep some growth money outside rupees too.'
             : 'Where you’ll spend the money decides the right split — answer “Do you plan to move back?” in your profile.'}
         </p>
-      </Panel>
+      </Panel>}
 
       {!hideProtection && <Panel title={<span className="flex items-center gap-1.5"><ShieldCheck size={15} style={{ color: 'var(--accent)' }} />Is it protected?</span>}>
         <ul className="mt-2 flex flex-col gap-2 text-[12.5px]">

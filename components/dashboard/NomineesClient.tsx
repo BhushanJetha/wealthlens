@@ -5,6 +5,8 @@ import { UserCheck, UserX, ListChecks } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { NomineeRow } from '@/lib/portfolio/protection'
 import { PageHeader, InsightBar, KpiTile, KpiGrid, Segmented, Ring } from '@/components/ui/kit'
+import { useViewStore } from '@/store/viewStore'
+import { rowsInView } from '@/lib/viewRows'
 
 // Nominees (design v2): who gets each account, investment, policy and asset.
 // This is your record — the nominee itself is registered with the bank, fund
@@ -18,8 +20,11 @@ export default function NomineesClient({ rows: initial, ready, members }: { rows
   const [error, setError] = useState('')
   const [bulk, setBulk] = useState(members[0] ?? '')
   const key = (r: NomineeRow) => `${r.table}:${r.id}`
-  const set = rows.filter(r => r.nominee).length, pct = rows.length ? set / rows.length * 100 : 0
-  const shown = rows.filter(r => show === 'all' || !r.nominee)
+  // Only the country in view
+  const { view } = useViewStore()
+  const inView = rowsInView(rows, view)
+  const set = inView.filter(r => r.nominee).length, pct = inView.length ? set / inView.length * 100 : 0
+  const shown = inView.filter(r => show === 'all' || !r.nominee)
   const groups = useMemo(() => Array.from(new Set(shown.map(r => r.label))).map(l => ({ label: l, rows: shown.filter(r => r.label === l) })), [shown])
   const names = Array.from(new Set([...members, ...rows.map(r => r.nominee).filter(Boolean) as string[]]))
 

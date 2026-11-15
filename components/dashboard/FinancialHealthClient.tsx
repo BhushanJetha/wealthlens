@@ -5,6 +5,8 @@ import {
   Target, TrendingUp, Shield, CheckCircle2, AlertTriangle, ChevronRight,
   Star, Zap, Heart, BookOpen, Award, Layers, PiggyBank, BarChart2, Globe, Clock,
 } from 'lucide-react'
+import { useViewStore } from '@/store/viewStore'
+import { propsInView } from '@/lib/viewRows'
 
 // ── Scroll animation helpers ──────────────────────────────────────────────────
 function useInView(threshold = 0.12) {
@@ -229,7 +231,9 @@ function SectionHeader({ icon: Icon, color, title, sub }: {
 
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function FinancialHealthClient(props: Props) {
-  const data = useMemo(() => computeHealthData(props), [])
+  // Worked out on the country in view (both in All)
+  const { view } = useViewStore()
+  const data = useMemo(() => computeHealthData(propsInView(props, view)), [props, view])
   const [age, setAge] = useState(30)
   const [activeDecade, setActiveDecade] = useState(0)
 

@@ -8,7 +8,8 @@ import { reviewHoldings, whatToAdd, CLS_LABEL, type Perf } from './advice'
 import { lifeCoverCheck, nomineeRows } from './protection'
 import type { PortfolioData } from './data'
 
-export interface Need { id: string; icon: string; tone: 'warn' | 'info' | 'good'; title: string; detail: string; href: string }
+// `currency`: set when it's about one country's holding (a home, a deposit, a policy), so a country view shows only its own
+export interface Need { id: string; icon: string; tone: 'warn' | 'info' | 'good'; title: string; detail: string; href: string; currency?: 'AED' | 'INR' }
 
 export function buildPortfolio(d: Pick<PortfolioData, 'today' | 'fx' | 'holdings' | 'links' | 'insurance' | 'members' | 'profile' | 'monthly' | 'reviews' | 'wealthReady'>, perf: Record<string, Perf> = {}) {
   const { fx, today } = d
@@ -33,11 +34,11 @@ export function buildPortfolio(d: Pick<PortfolioData, 'today' | 'fx' | 'holdings
   const days = (dt?: string | null) => (dt ? Math.round((Date.parse(dt) - Date.parse(today)) / 864e5) : Infinity)
   const linked = new Set((d.holdings.otherAssets ?? []).map(a => a.loan_id).filter(Boolean))
   for (const l of (d.holdings.loans ?? []).filter(l => (l.loan_type ?? 'home_loan') === 'home_loan' && !linked.has(l.id)))
-    needs.push({ id: `home-${l.id}`, icon: '🏠', tone: 'warn', title: `${l.name} counts as debt, but the home doesn’t`, detail: d.wealthReady ? 'Add the home it bought so your net worth is right.' : 'Run migration 032, then add the home it bought.', href: '/dashboard/assets' })
+    needs.push({ id: `home-${l.id}`, currency: l.currency === 'AED' ? 'AED' : 'INR', icon: '🏠', tone: 'warn', title: `${l.name} counts as debt, but the home doesn’t`, detail: d.wealthReady ? 'Add the home it bought so your net worth is right.' : 'Run migration 032, then add the home it bought.', href: '/dashboard/assets' })
   for (const h of hs.filter(h => ['fd', 'bond', 'rd'].includes(h.type) && days(h.unlock) >= 0 && days(h.unlock) <= 30))
-    needs.push({ id: `mat-${h.key}`, icon: '🏦', tone: 'info', title: `${h.name} matures ${h.unlock}`, detail: 'Decide now: renew it, or put it towards a gap in your mix or a goal.', href: '/dashboard/portfolio' })
+    needs.push({ id: `mat-${h.key}`, currency: h.currency, icon: '🏦', tone: 'info', title: `${h.name} matures ${h.unlock}`, detail: 'Decide now: renew it, or put it towards a gap in your mix or a goal.', href: '/dashboard/portfolio' })
   for (const p of d.insurance.filter(p => days(p.next_premium_date) >= 0 && days(p.next_premium_date) <= 30))
-    needs.push({ id: `prem-${p.id}`, icon: '🛡️', tone: 'info', title: `${p.policy_name} premium due ${p.next_premium_date}`, detail: `${p.currency === 'AED' ? 'AED ' : '₹'}${Math.round(Number(p.annual_premium) || 0).toLocaleString('en-IN')} a year.`, href: '/dashboard/insurance' })
+    needs.push({ id: `prem-${p.id}`, currency: p.currency === 'AED' ? 'AED' : 'INR', icon: '🛡️', tone: 'info', title: `${p.policy_name} premium due ${p.next_premium_date}`, detail: `${p.currency === 'AED' ? 'AED ' : '₹'}${Math.round(Number(p.annual_premium) || 0).toLocaleString('en-IN')} a year.`, href: '/dashboard/insurance' })
   if (protection.gap > 0 && protection.dependents > 0) needs.push({ id: 'life', icon: '☂️', tone: 'warn', title: `Life cover looks ${inr(protection.gap)} short`, detail: `${protection.dependents} ${protection.dependents === 1 ? 'person depends' : 'people depend'} on you; a term plan is the cheapest way to close it.`, href: '/dashboard/insurance' })
   if (nominees.ready && nominees.missing > 0) needs.push({ id: 'nominees', icon: '📝', tone: 'warn', title: `${nominees.missing} account${nominees.missing === 1 ? '' : 's'} and policies without a nominee`, detail: 'Without one, family has to prove their claim — hard from India.', href: '/dashboard/nominees' })
   const big = drift[0]
@@ -48,7 +49,7 @@ export function buildPortfolio(d: Pick<PortfolioData, 'today' | 'fx' | 'holdings
   const latest = d.reviews[0]
   if (latest && !latest.seen_at) needs.push({ id: 'review', icon: '📊', tone: 'good', title: `Your ${latest.label} portfolio review is ready`, detail: `${latest.data?.actions?.length ?? 0} things to look at.`, href: `/dashboard/portfolio/reviews/${latest.id}` })
   for (const a of (d.holdings.otherAssets ?? []).filter(a => ['property', 'land'].includes(a.kind) && a.value_as_of && days(a.value_as_of) < -366))
-    needs.push({ id: `stale-${a.id}`, icon: '🗓️', tone: 'info', title: `Update what ${a.name} is worth`, detail: `Last set ${a.value_as_of}.`, href: '/dashboard/assets' })
+    needs.push({ id: `stale-${a.id}`, currency: a.currency === 'INR' ? 'INR' : 'AED', icon: '🗓️', tone: 'info', title: `Update what ${a.name} is worth`, detail: `Last set ${a.value_as_of}.`, href: '/dashboard/assets' })
 
   const investedInr = hs.filter(h => h.investable && h.type !== 'bank').reduce((s, h) => s + toInr(h.value, h.currency, fx), 0)
   return { hs, answers, rp, target, add, reviews, access, currency, protection, nominees, drift, needs, essentials, saving, fdRate, investedInr }

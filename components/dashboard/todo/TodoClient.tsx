@@ -108,6 +108,9 @@ export default function TodoClient(p: {
         </section>
       ))}
 
+      {t.otherCountry > 0 && (
+        <p className="text-[12.5px]" style={{ color: 'var(--text3)' }}>{t.otherCountry} more for the other country. Switch to All at the top to see everything.</p>
+      )}
       {t.hiddenCount > 0 && (
         <button onClick={t.unhideAll} className="self-start text-[12.5px] font-semibold" style={{ color: 'var(--accent)' }}>Show {t.hiddenCount} hidden for later</button>
       )}
