@@ -1,5 +1,6 @@
 'use client'
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
+import { premiumsPaid } from '@/lib/insurancePaid'
 import { useDropzone } from 'react-dropzone'
 import { useViewStore } from '@/store/viewStore'
 import { useRouter } from 'next/navigation'
@@ -29,7 +30,7 @@ const TYPE_LABELS: Record<string, string> = {
   vehicle: 'Vehicle', travel: 'Travel', other: 'Other',
 }
 
-export default function InsuranceClient({ policies, cover }: { policies: any[]; cover?: Protection & { nomineesMissing: number | null; parents: boolean } }) {
+export default function InsuranceClient({ policies, cover, premiums = [], today: todayStr }: { policies: any[]; cover?: Protection & { nomineesMissing: number | null; parents: boolean }; premiums?: any[]; today?: string }) {
   const { view, fxRate: FX } = useViewStore()
   const router   = useRouter()
   const supabase = createClient()
@@ -55,6 +56,11 @@ export default function InsuranceClient({ policies, cover }: { policies: any[]; 
   const conv = (amt: number, cur: string) => view === 'consolidated' ? toINR(amt, cur, FX) : amt
 
   const totalPremium = filtered.reduce((a, p) => a + conv(Number(p.annual_premium), p.currency), 0)
+  // Paid so far on each policy (lib/insurancePaid): by its schedule, and what your entries show
+  const day = todayStr ?? new Date().toISOString().slice(0, 10)
+  const paidOf = useMemo(() => new Map(localPolicies.map(p => [p.id, premiumsPaid(p, day, premiums)])), [localPolicies, day, premiums])
+  const paidTotal = filtered.reduce((a, p) => a + conv(paidOf.get(p.id)?.paid ?? 0, p.currency), 0)
+  const oldest = filtered.map(p => paidOf.get(p.id)?.since).filter(Boolean).sort()[0] as string | undefined
   const totalAssured = filtered.reduce((a, p) => a + conv(Number(p.sum_assured ?? 0), p.currency), 0)
   const lifeAssured  = filtered.filter(p => p.policy_type === 'term_life').reduce((a, p) => a + conv(Number(p.sum_assured ?? 0), p.currency), 0)
 
@@ -159,7 +165,9 @@ export default function InsuranceClient({ policies, cover }: { policies: any[]; 
           </section>
         </div>
 
-        <div className="max-md:order-3 grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3.5">
+        <div className="max-md:order-3 grid grid-cols-2 lg:grid-cols-5 gap-2.5 md:gap-3.5">
+          <div className="col-span-2 lg:col-span-1"><KpiTile label="Paid so far" value={short(paidTotal)} tint={3} icon={Wallet}
+            delta={oldest ? `Premiums since ${fmtDay(oldest)} ${oldest.slice(0, 4)}` : 'Add start dates to work it out'} /></div>
           <KpiTile label="Annual premium" value={short(totalPremium)} delta={`${filtered.length} polic${filtered.length === 1 ? 'y' : 'ies'}`} tint={2} icon={Wallet} />
           <KpiTile label="Policies" value={String(filtered.length)} tint={0} icon={Layers}
             delta={renewSoon ? `${renewSoon} renew${renewSoon === 1 ? 's' : ''} within 60 days` : 'None renewing soon'} tone={renewSoon ? 'bad' : 'neutral'} />
@@ -262,12 +270,12 @@ export default function InsuranceClient({ policies, cover }: { policies: any[]; 
             const daysToExpiry = p.expiry_date ? Math.ceil((new Date(p.expiry_date).getTime() - today.getTime()) / 86400000) : null
             return (
               <ListRow key={p.id ?? i} color={TYPE_COLORS[p.policy_type] ?? '#64748B'} initial={<Shield size={16} />} title={p.policy_name}
-                sub={[p.provider, p.policy_number ? `#${p.policy_number}` : null, p.insured_members?.length ? p.insured_members.join(', ') : null].filter(Boolean).join(' · ')}
+                sub={[p.provider, p.policy_number ? `#${p.policy_number}` : null, Number(p.sum_assured) > 0 ? `cover ${lSym}${Number(p.sum_assured).toLocaleString('en-IN')}` : null, p.insured_members?.length ? p.insured_members.join(', ') : null].filter(Boolean).join(' · ')}
                 tag={TYPE_LABELS[p.policy_type] ?? 'Other'}
                 meta={p.expiry_date ? `${fmtDay(p.expiry_date)} ${String(p.expiry_date).slice(0, 4)}` : '—'}
                 metaColor={daysToExpiry != null && daysToExpiry <= 60 ? '#D97706' : undefined}
                 amount={`${lSym}${Number(p.annual_premium).toLocaleString('en-IN')}`}
-                amountSub={Number(p.sum_assured) > 0 ? `cover ${lSym}${Number(p.sum_assured).toLocaleString('en-IN')}` : undefined}
+                amountSub={(paidOf.get(p.id)?.paid ?? 0) > 0 ? `${lSym}${Math.round(paidOf.get(p.id)!.paid).toLocaleString('en-IN')} paid so far` : undefined}
                 onOpen={() => setEditPolicy(p)}
                 actions={[
                   { label: 'Edit', icon: Pencil, onClick: () => setEditPolicy(p) },
@@ -276,6 +284,39 @@ export default function InsuranceClient({ policies, cover }: { policies: any[]; 
             )
           })}
         </ListCard>
+      )}
+
+      {/* What you've paid so far, policy by policy */}
+      {filtered.length > 0 && paidTotal > 0 && (
+        <section className="wl-card max-md:order-7 px-4 md:px-5 py-4 md:py-[18px] overflow-x-auto" aria-label="Premiums paid so far">
+          <div className="flex justify-between items-baseline gap-3 flex-wrap">
+            <h2 className="text-[14px] md:text-[15px] font-semibold" style={{ color: 'var(--text)' }}>What you’ve paid so far</h2>
+            <b className="text-[16px] tabular-nums" style={{ color: 'var(--text)' }}>{money(paidTotal)}</b>
+          </div>
+          <table className="w-full mt-2.5 text-[12.5px] min-w-[560px]">
+            <thead><tr style={{ color: 'var(--text3)' }}>
+              <th className="text-left font-semibold py-2">Policy</th><th className="text-left font-semibold">Since</th><th className="text-right font-semibold">Premiums</th>
+              <th className="text-right font-semibold">By its schedule</th><th className="text-right font-semibold">In your entries</th><th className="text-right font-semibold">Paid so far</th>
+            </tr></thead>
+            <tbody>
+              {filtered.map((p: any) => { const x = paidOf.get(p.id)!, c = p.currency === 'AED' ? 'AED ' : '₹', f = (n: number) => `${c}${Math.round(n).toLocaleString('en-IN')}`
+                return (
+                  <tr key={p.id} style={{ borderTop: '1px solid var(--track)' }}>
+                    <td className="py-2.5 pr-3" style={{ color: 'var(--text)' }}><b className="font-semibold">{p.policy_name}</b><span className="block text-[11.5px]" style={{ color: 'var(--text3)' }}>{f(x.per)} {({ monthly: 'a month', quarterly: 'a quarter', semi_annual: 'every 6 months', annual: 'a year' } as Record<string, string>)[p.premium_frequency] ?? 'a year'}</span></td>
+                    <td style={{ color: 'var(--text2)' }}>{x.since ? `${fmtDay(x.since)} ${x.since.slice(0, 4)}` : '—'}</td>
+                    <td className="text-right tabular-nums" style={{ color: 'var(--text2)' }}>{x.count || '—'}</td>
+                    <td className="text-right tabular-nums" style={{ color: 'var(--text2)' }}>{x.scheduled ? f(x.scheduled) : '—'}</td>
+                    <td className="text-right tabular-nums" style={{ color: 'var(--text2)' }}>{x.recCount ? `${f(x.recorded)} · ${x.recCount}` : '—'}</td>
+                    <td className="text-right tabular-nums font-semibold" style={{ color: 'var(--text)' }}>{x.paid ? f(x.paid) : '—'}</td>
+                  </tr>
+                ) })}
+            </tbody>
+          </table>
+          <p className="text-[11.5px] mt-2.5 leading-relaxed" style={{ color: 'var(--text3)' }}>
+            “By its schedule” counts each premium due from the policy’s start date to today, at today’s premium: if it went up over the years the real total is a little lower, and if the start date is just this year’s renewal, edit it to the first day of the policy.
+            “In your entries” is what you’ve recorded as insurance that names the insurer, the policy or its number. “Paid so far” is the larger of the two.
+          </p>
+        </section>
       )}
 
       {/* Add modal */}
