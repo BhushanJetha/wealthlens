@@ -1,6 +1,6 @@
 'use client'
 import { useState, useCallback, useEffect, useMemo } from 'react'
-import { premiumsPaid } from '@/lib/insurancePaid'
+import { premiumsPaid, premiumSchedule, type PremiumYear } from '@/lib/insurancePaid'
 import { useDropzone } from 'react-dropzone'
 import { useViewStore } from '@/store/viewStore'
 import { useRouter } from 'next/navigation'
@@ -61,6 +61,7 @@ export default function InsuranceClient({ policies, cover, premiums = [], today:
   const paidOf = useMemo(() => new Map(localPolicies.map(p => [p.id, premiumsPaid(p, day, premiums)])), [localPolicies, day, premiums])
   const paidTotal = filtered.reduce((a, p) => a + conv(paidOf.get(p.id)?.paid ?? 0, p.currency), 0)
   const oldest = filtered.map(p => paidOf.get(p.id)?.since).filter(Boolean).sort()[0] as string | undefined
+  const [openPolicy, setOpenPolicy] = useState<string | null>(null)
   const totalAssured = filtered.reduce((a, p) => a + conv(Number(p.sum_assured ?? 0), p.currency), 0)
   const lifeAssured  = filtered.filter(p => p.policy_type === 'term_life').reduce((a, p) => a + conv(Number(p.sum_assured ?? 0), p.currency), 0)
 
@@ -300,22 +301,28 @@ export default function InsuranceClient({ policies, cover, premiums = [], today:
             </tr></thead>
             <tbody>
               {filtered.map((p: any) => { const x = paidOf.get(p.id)!, c = p.currency === 'AED' ? 'AED ' : '₹', f = (n: number) => `${c}${Math.round(n).toLocaleString('en-IN')}`
-                return (
-                  <tr key={p.id} style={{ borderTop: '1px solid var(--track)' }}>
-                    <td className="py-2.5 pr-3" style={{ color: 'var(--text)' }}><b className="font-semibold">{p.policy_name}</b><span className="block text-[11.5px]" style={{ color: 'var(--text3)' }}>{f(x.per)} {({ monthly: 'a month', quarterly: 'a quarter', semi_annual: 'every 6 months', annual: 'a year' } as Record<string, string>)[p.premium_frequency] ?? 'a year'}</span></td>
+                const open = openPolicy === p.id
+                return [
+                  <tr key={p.id} onClick={() => setOpenPolicy(open ? null : p.id)} className="cursor-pointer hover:bg-[#FAFAFE]" aria-expanded={open} style={{ borderTop: '1px solid var(--track)' }}>
+                    <td className="py-2.5 pr-3" style={{ color: 'var(--text)' }}><b className="font-semibold"><span className="inline-block w-4 transition-transform" style={{ transform: open ? 'rotate(90deg)' : 'none', color: 'var(--text3)' }}>›</span>{p.policy_name}</b><span className="block text-[11.5px]" style={{ color: 'var(--text3)' }}>{f(x.per)} {({ monthly: 'a month', quarterly: 'a quarter', semi_annual: 'every 6 months', annual: 'a year' } as Record<string, string>)[p.premium_frequency] ?? 'a year'}</span></td>
                     <td style={{ color: 'var(--text2)' }}>{x.since ? `${fmtDay(x.since)} ${x.since.slice(0, 4)}` : '—'}</td>
                     <td className="text-right tabular-nums" style={{ color: 'var(--text2)' }}>{x.count || '—'}</td>
                     <td className="text-right tabular-nums" style={{ color: 'var(--text2)' }}>{x.scheduled ? f(x.scheduled) : '—'}</td>
                     <td className="text-right tabular-nums" style={{ color: 'var(--text2)' }}>{x.recCount ? `${f(x.recorded)} · ${x.recCount}` : '—'}</td>
                     <td className="text-right tabular-nums font-semibold" style={{ color: 'var(--text)' }}>{x.paid ? f(x.paid) : '—'}</td>
-                  </tr>
-                ) })}
+                  </tr>,
+                  open && <tr key={`${p.id}-s`}><td colSpan={6} className="pb-3"><PolicySchedule years={premiumSchedule(p, day, premiums)} cur={p.currency} monthly={p.premium_frequency !== 'annual'} /></td></tr>,
+                ] })}
             </tbody>
           </table>
           <p className="text-[11.5px] mt-2.5 leading-relaxed" style={{ color: 'var(--text3)' }}>
             “By its schedule” counts each premium due from the policy’s start date to today, at today’s premium: if it went up over the years the real total is a little lower, and if the start date is just this year’s renewal, edit it to the first day of the policy.
-            “In your entries” is what you’ve recorded as insurance that names the insurer, the policy or its number. “Paid so far” is the larger of the two.
+            “In your entries” is what you’ve recorded as insurance that names the insurer, the policy or its number. “Paid so far” is the larger of the two. Tap a policy for each premium, year by year.
           </p>
+          <div className="mt-3 rounded-xl px-3.5 py-3 text-[12.5px] leading-relaxed" style={{ background: '#F4F2FF', color: 'var(--text2)' }}>
+            <b style={{ color: 'var(--text)' }}>In your net worth:</b> nothing is added. Term, health, vehicle and travel cover has no value you can take back — the premium buys protection, so it’s spending, and it already came out of your bank balance when you paid it.
+            Plans that pay back (LIC, endowment, money-back, ULIPs) are different: they’re in <Link href="/dashboard/investments/lic" className="font-semibold" style={{ color: 'var(--accent)' }}>Investments › LIC</Link> and count in your net worth at what they’re worth.
+          </div>
         </section>
       )}
 
@@ -365,6 +372,47 @@ export default function InsuranceClient({ policies, cover, premiums = [], today:
         </div>
       )}
       <div className="max-md:order-9"><LearnStrip title="Term insurance: how much is enough" href="/dashboard/learn" /></div>
+    </div>
+  )
+}
+
+// One policy's premiums from its start: a line per year (with the date and
+// amount for a yearly policy), and for monthly or quarterly ones each year
+// opens to its payments. Recorded = found in your entries; schedule = the
+// premium as it is today; next = still to come.
+function PolicySchedule({ years, cur, monthly }: { years: PremiumYear[]; cur: string; monthly: boolean }) {
+  const [open, setOpen] = useState<string | null>(null)
+  const f = (n: number) => `${cur === 'AED' ? 'AED ' : '₹'}${Math.round(n).toLocaleString('en-IN')}`
+  const day = (d: string) => `${Number(d.slice(8, 10))} ${MON[Number(d.slice(5, 7)) - 1]}`
+  const TAG = { recorded: { t: 'In your entries', bg: '#E7F6EE', c: '#15803D' }, schedule: { t: 'By the schedule', bg: '#F1F2F6', c: '#5F657A' }, next: { t: 'Next', bg: '#F4F2FF', c: '#4B3BC4' } }
+  const tag = (k: keyof typeof TAG) => <span className="text-[10.5px] font-semibold px-1.5 py-[1px] rounded-full whitespace-nowrap" style={{ background: TAG[k].bg, color: TAG[k].c }}>{TAG[k].t}</span>
+  if (!years.length) return <p className="text-[12px] px-2 py-2" style={{ color: 'var(--text3)' }}>Add the policy’s start date to see each premium.</p>
+  return (
+    <div className="rounded-xl ml-4 mt-1" style={{ background: '#FAFAFE', border: '1px solid var(--line)' }}>
+      {years.map(y => {
+        const one = !monthly && y.rows.length === 1 ? y.rows[0] : null, isOpen = open === y.year
+        return (
+          <div key={y.year} style={{ borderTop: '1px solid var(--track)' }} className="first:border-t-0">
+            <button onClick={() => !one && setOpen(isOpen ? null : y.year)} className="w-full grid grid-cols-[56px_minmax(0,1fr)_auto] gap-3 items-center px-3 py-2 text-left text-[12.5px]" style={{ cursor: one ? 'default' : 'pointer' }}>
+              <b style={{ color: 'var(--text)' }}>{y.year}</b>
+              <span className="flex items-center gap-2 min-w-0" style={{ color: 'var(--text2)' }}>
+                {one ? <><span className="w-12 tabular-nums">{day(one.date)}</span>{tag(one.kind)}</> : <>{y.count ? `${y.count} premium${y.count === 1 ? '' : 's'} paid` : ''}{y.rows.some(r => r.kind === 'next') ? `${y.count ? ' · ' : ''}${y.rows.filter(r => r.kind === 'next').length} to come` : ''}<span style={{ color: 'var(--text3)' }}>{isOpen ? '▾' : '▸'}</span></>}
+              </span>
+              <b className="tabular-nums" style={{ color: one?.kind === 'next' ? 'var(--text3)' : 'var(--text)' }}>{one ? f(one.amount) : f(y.paid)}</b>
+            </button>
+            {isOpen && !one && (
+              <div className="pb-1.5">
+                {y.rows.map(r => (
+                  <div key={r.date} className="grid grid-cols-[56px_minmax(0,1fr)_auto] gap-3 items-center pl-[68px] pr-3 py-1.5 text-[12px]" style={{ color: 'var(--text2)' }}>
+                    <span className="col-span-2 flex items-center gap-2"><span className="w-12 tabular-nums">{day(r.date)}</span>{tag(r.kind)}</span>
+                    <span className="tabular-nums" style={{ color: r.kind === 'next' ? 'var(--text3)' : 'var(--text)' }}>{f(r.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
