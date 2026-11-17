@@ -79,6 +79,15 @@ export function buildTodo(inp: TodoInput): TodoItem[] {
       title: `${money} for ${b.label} ${d <= 0 ? 'is due' : `due ${fmtDay(b.date)}`}`, detail: b.sub })
   }
 
+  // Once a month: check each country's bank balances against your bank app
+  // (a balance set this month, or a statement imported, counts as checked)
+  for (const cur of ['AED', 'INR'] as const) {
+    const stale = inp.accounts.filter(a => a.account_type !== 'credit_card' && a.is_active !== false && (a.currency === 'AED' ? 'AED' : 'INR') === cur
+      && String(a.balance_as_of ?? a.updated_at ?? '').slice(0, 7) < today.slice(0, 7))
+    if (stale.length) out.push({ id: `balcheck-${cur}-${today.slice(0, 7)}`, currency: cur, group: 'later', area: 'money', icon: '🏦', href: '/dashboard/accounts', action: 'Check',
+      title: `Check your ${cur === 'AED' ? 'UAE' : 'India'} bank balances for this month`, detail: `${stale.slice(0, 3).map(a => a.name).join(', ')}${stale.length > 3 ? ` and ${stale.length - 3} more` : ''} — type what your bank shows, and the app counts from there` })
+  }
+
   // A SIP or RD recorded by itself takes its money off its "Paid from" account
   // (or the one it was last paid from). With neither, no bank balance goes down.
   for (const f of inp.mutualFunds) for (const sp of sipsOf(f)) {

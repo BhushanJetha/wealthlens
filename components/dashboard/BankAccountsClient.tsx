@@ -12,6 +12,7 @@ import AccountDetailsSheet from '@/components/forms/AccountDetailsSheet'
 import { fmtCompact } from '@/lib/format'
 import { Wallet, Landmark, Coins, Layers } from 'lucide-react'
 import NriAccountsCheck from './NriAccountsCheck'
+import BalanceCheck from './BalanceCheck'
 
 const TYPE_COLORS: Record<string, string> = {
   savings: '#16A34A', current: '#3B8EF0', salary: '#D97706', wallet: '#7C3AED',
@@ -114,6 +115,7 @@ export default function BankAccountsClient({ accounts, details = [] }: { account
           <KpiTile label="Accounts" value={String(filtered.length)} delta={`${new Set(filtered.map(a => a.account_type)).size} type(s)`} tint={3} icon={Layers} />
         </div>
 
+        <div className="max-md:order-6"><BalanceCheck accounts={filtered} /></div>
         {view !== 'uae' && <div className="max-md:order-7"><NriAccountsCheck accounts={accounts} /></div>}
 
         {/* Your accounts as bank cards — tap one for its bank details */}
