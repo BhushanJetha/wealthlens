@@ -101,7 +101,8 @@ export default function BatchPurchaseModal({ kind, onClose, existing }: {
     setLots(rows); setError(''); setShowSip(false)
   }
 
-  const valid = lots.map(l => ({ ...l, q: Number(l.qty), p: Number(l.price) })).filter(l => l.q > 0 && l.p > 0 && l.date)
+  // A share can come at no cost (a bonus issue, a gift): price 0 is fine there, not for a fund
+  const valid = lots.map(l => ({ ...l, q: Number(l.qty), p: Number(l.price) })).filter(l => l.q > 0 && l.date && (isStock ? String(l.price).trim() !== '' && l.p >= 0 : l.p > 0))
   const totalUnits    = valid.reduce((s, l) => s + l.q, 0)
   const totalInvested = valid.reduce((s, l) => s + l.q * l.p, 0)
   const avg           = totalUnits > 0 ? totalInvested / totalUnits : 0
@@ -110,7 +111,7 @@ export default function BatchPurchaseModal({ kind, onClose, existing }: {
     setError('')
     if (!existing && isStock && !symbol.trim()) { setError('Enter the stock symbol (e.g. INFY).'); return }
     if (!existing && !isStock && !name.trim())  { setError('Enter the fund name.'); return }
-    if (valid.length === 0)        { setError('Add at least one purchase with quantity, price and date.'); return }
+    if (valid.length === 0)        { setError(isStock ? 'Add at least one purchase with quantity, price (0 for a bonus) and date.' : 'Add at least one purchase with quantity, price and date.'); return }
 
     setSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
@@ -157,7 +158,8 @@ export default function BatchPurchaseModal({ kind, onClose, existing }: {
     // 2) Log every lot: optional cash-out expense + investment history row
     for (const l of valid) {
       const amount = l.q * l.p
-      if (recordExpense) {
+      // A bonus costs nothing: no payment is recorded for it
+      if (recordExpense && amount > 0) {
         await supabase.from('transactions').insert({
           user_id: user.id, txn_date: l.date, merchant: assetName,
           description: isStock ? `Buy ${l.q} ${symbol.trim()} @ ${sym(currency)}${l.p}` : `Lumpsum ${assetName} @ NAV ${l.p}`,
@@ -167,7 +169,7 @@ export default function BatchPurchaseModal({ kind, onClose, existing }: {
       }
       await supabase.from('investment_transactions').insert({
         user_id: user.id, asset_type: kind, asset_id: assetId, asset_name: assetName,
-        txn_date: l.date, txn_type: 'purchase', amount, units: l.q, nav: l.p, currency, source: 'buy_action',
+        txn_date: l.date, txn_type: 'purchase', amount, units: l.q, nav: l.p, currency, source: isStock && l.p === 0 ? 'bonus' : 'buy_action',
       }).then(() => {}, () => {})
     }
 
@@ -276,7 +278,14 @@ export default function BatchPurchaseModal({ kind, onClose, existing }: {
               {lots.map((l, i) => (
                 <div key={l._id} className="rounded-xl p-2.5" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[10px] font-semibold" style={{ color: 'var(--text3)' }}>Purchase {i + 1}</span>
+                    <span className="flex items-center gap-3">
+                      <span className="text-[10px] font-semibold" style={{ color: 'var(--text3)' }}>{isStock && l.price === '0' ? `Bonus ${i + 1}` : `Purchase ${i + 1}`}</span>
+                      {isStock && (
+                        <label className="flex items-center gap-1 text-[10.5px] font-semibold cursor-pointer" style={{ color: 'var(--text2)' }}>
+                          <input type="checkbox" checked={l.price === '0'} onChange={e => updateLot(l._id, { price: e.target.checked ? '0' : '' })} />Bonus or gift (price 0)
+                        </label>
+                      )}
+                    </span>
                     {lots.length > 1 && (
                       <button onClick={() => removeLot(l._id)} className="p-1 rounded" style={{ color: 'var(--rose)' }} aria-label="Remove">
                         <Trash2 size={13} />

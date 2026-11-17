@@ -60,7 +60,8 @@ export default function EditLotModal({ kind = 'stock', holding, lot, onClose }: 
   const opening = !!lot.opening
   async function save() {
     const u = Number(qty), p = Number(price)
-    if (!(u > 0) || !(p > 0) || !date) { setError('Enter a valid date, quantity and price.'); return }
+    // A share can be a bonus or a gift: price 0 is fine there
+    if (!(u > 0) || !(isStock ? price.trim() !== '' && p >= 0 : p > 0) || !date) { setError(isStock ? 'Enter a valid date, quantity and price (0 for a bonus or gift).' : 'Enter a valid date, quantity and price.'); return }
     setSaving(true); setError('')
     const oldU = Number(lot.units || 0), oldA = Number(lot.amount || 0)
     const newA = u * p
@@ -68,9 +69,9 @@ export default function EditLotModal({ kind = 'stock', holding, lot, onClose }: 
     const { error: e } = opening
       ? await supabase.from('investment_transactions').insert({
           user_id: user?.id, asset_type: isStock ? 'stock' : 'mutual_fund', asset_id: holding.id, asset_name: isStock ? holding.symbol ?? holding.name : holding.fund_name,
-          txn_date: date, txn_type: 'purchase', amount: newA, units: u, nav: p, currency: holding.currency ?? 'INR', source: 'manual' })
+          txn_date: date, txn_type: 'purchase', amount: newA, units: u, nav: p, currency: holding.currency ?? 'INR', source: isStock && p === 0 ? 'bonus' : 'manual' })
       : await supabase.from('investment_transactions')
-      .update({ units: u, nav: p, amount: newA, txn_date: date }).eq('id', lot.id)
+      .update({ units: u, nav: p, amount: newA, txn_date: date, ...(isStock && p === 0 ? { source: 'bonus' } : lot.source === 'bonus' ? { source: 'manual' } : {}) }).eq('id', lot.id)
     if (e) { setSaving(false); setError(e.message || 'Could not save.'); return }
     await applyHoldingDelta(u - oldU, newA - oldA)
     setSaving(false)

@@ -56,7 +56,8 @@ const SELL = new Set(['redemption', 'switch_out'])
 const ms = (d: string) => Date.parse(`${String(d).slice(0, 10)}T00:00:00Z`)
 const monthsBetween = (a: string, b: string) => Math.max(0, Math.round((ms(b) - ms(a)) / (30.44 * 864e5)))
 
-export interface Lot { id: string | null; date: string; kind: 'SIP' | 'Lump sum' | 'Opening' | 'Sold' | 'Dividend' | 'Other'; units: number | null; price: number | null; amount: number; raw: any }
+// 'Bonus': shares that came at no cost (a bonus issue, a gift) — a purchase at price 0
+export interface Lot { id: string | null; date: string; kind: 'SIP' | 'Lump sum' | 'Opening' | 'Bonus' | 'Sold' | 'Dividend' | 'Other'; units: number | null; price: number | null; amount: number; raw: any }
 export interface Maturity { date: string | null; amount: number | null; rate: number | null; monthsLeft: number | null }
 export interface Tax { kind: 'equity' | 'debt' | 'gold'; longGain: number; shortGain: number; tax: number | null; note: string }
 // A sale, matched first-in-first-out against what was bought (the Indian rule)
@@ -110,13 +111,14 @@ export function holdingModel(type: HType, r: any, txns: any[], today: string, op
   const lots: Lot[] = mine.map(t => ({
     id: t.id ?? null, date: String(t.txn_date).slice(0, 10), raw: t, amount: Number(t.amount) || 0,
     units: t.units != null ? Number(t.units) : null, price: t.nav != null ? Number(t.nav) : null,
-    kind: t.txn_type === 'sip' || (t.txn_type === 'purchase' && isSip(Number(t.amount) || 0)) ? 'SIP' : BUY.has(t.txn_type) ? 'Lump sum' : SELL.has(t.txn_type) ? 'Sold' : t.txn_type === 'dividend' ? 'Dividend' : 'Other',
+    kind: BUY.has(t.txn_type) && (t.source === 'bonus' || (Number(t.amount) === 0 && Number(t.units) > 0)) ? 'Bonus'
+      : t.txn_type === 'sip' || (t.txn_type === 'purchase' && isSip(Number(t.amount) || 0)) ? 'SIP' : BUY.has(t.txn_type) ? 'Lump sum' : SELL.has(t.txn_type) ? 'Sold' : t.txn_type === 'dividend' ? 'Dividend' : 'Other',
   }))
   const unitsNow = type === 'mutual_funds' ? Number(r.units) || 0 : type === 'stocks' ? Number(r.quantity) || 0 : type === 'etf_investments' ? Number(r.units) || 0 : null
   const avg = type === 'mutual_funds' ? Number(r.avg_nav) || null : type === 'stocks' || type === 'etf_investments' ? Number(r.avg_buy_price) || null : null
   const price = type === 'mutual_funds' ? Number(live.current_nav ?? r.avg_nav) || null : type === 'stocks' || type === 'etf_investments' ? Number(live.current_price || r.avg_buy_price) || null : null
   if (unitsNow != null) {
-    const bought = lots.filter(l => l.kind === 'SIP' || l.kind === 'Lump sum').reduce((s, l) => s + (l.units ?? 0), 0)
+    const bought = lots.filter(l => l.kind === 'SIP' || l.kind === 'Lump sum' || l.kind === 'Bonus').reduce((s, l) => s + (l.units ?? 0), 0)
     const sold = lots.filter(l => l.kind === 'Sold').reduce((s, l) => s + (l.units ?? 0), 0)
     const opening = unitsNow - bought + sold
     if (opening > 0.001) {
@@ -137,7 +139,7 @@ export function holdingModel(type: HType, r: any, txns: any[], today: string, op
   const gainKind = unitsNow != null ? gainKindOf(r) : null
   const open: OpenLot[] = [], sales: Sale[] = []
   for (const l of [...lots].sort((a, b) => a.date.localeCompare(b.date) || (a.kind === 'Opening' ? -1 : 0))) {
-    if ((l.kind === 'SIP' || l.kind === 'Lump sum' || l.kind === 'Opening') && l.units && l.units > 0)
+    if ((l.kind === 'SIP' || l.kind === 'Lump sum' || l.kind === 'Opening' || l.kind === 'Bonus') && l.units && l.units > 0)
       open.push({ date: l.date, units: l.units, unitCost: l.price ?? (l.amount > 0 ? l.amount / l.units : avg ?? 0) })
     else if (l.kind === 'Sold' && l.units && l.units > 0 && gainKind) {
       let left = l.units, fifoCost = 0, longCost = 0, longUnits = 0

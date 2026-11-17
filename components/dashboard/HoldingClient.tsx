@@ -26,7 +26,7 @@ const EDIT_TYPE: Partial<Record<HType, string>> = { etf_investments: 'etf', fixe
 type Range = '1Y' | '3Y' | '5Y' | 'Mine'
 const RANGE_MONTHS: Record<Range, number> = { '1Y': 12, '3Y': 36, '5Y': 60, Mine: 600 }
 const LOT_TINT: Record<Lot['kind'], { bg: string; c: string }> = {
-  SIP: { bg: 'var(--accent-bg)', c: 'var(--accent2)' }, 'Lump sum': { bg: '#FFF2E2', c: '#A35A12' }, Opening: { bg: '#F1F0F7', c: 'var(--text2)' },
+  SIP: { bg: 'var(--accent-bg)', c: 'var(--accent2)' }, 'Lump sum': { bg: '#FFF2E2', c: '#A35A12' }, Opening: { bg: '#F1F0F7', c: 'var(--text2)' }, Bonus: { bg: '#E7F6EE', c: '#15803D' },
   Sold: { bg: '#FDECEA', c: '#B4231A' }, Dividend: { bg: '#E7F7EF', c: '#1E7A50' }, Other: { bg: '#F1F0F7', c: 'var(--text2)' },
 }
 const card = 'wl-card p-4 md:p-5'
