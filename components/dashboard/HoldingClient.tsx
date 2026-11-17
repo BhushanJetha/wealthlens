@@ -145,6 +145,8 @@ export default function HoldingClient({ type, row, txns, kindTotal, accounts = [
   const done = () => { setSheet(null); router.refresh() }
   const editable = type === 'mutual_funds' || type === 'stocks'
   const kindFor = type === 'stocks' ? 'stock' : 'mutual_fund'
+  // The opening lot has no record of its own: edited, it becomes a dated purchase (EditLotModal)
+  const lotToEdit = (l: any) => l.raw ?? { opening: true, txn_date: l.date, units: l.units, nav: l.price != null ? Math.round(l.price * 10000) / 10000 : null, amount: l.amount }
   const benchRate = type === 'mutual_funds' ? (BENCH[String(row.fund_type ?? '').toLowerCase()] ?? 12) : type === 'stocks' ? BENCH.stock : type === 'etf_investments' ? BENCH.etf : null
 
   return (
@@ -312,8 +314,9 @@ export default function HoldingClient({ type, row, txns, kindTotal, accounts = [
               <span className="hidden md:block text-right tabular-nums" style={{ color: 'var(--text2)' }}>{l.price != null ? price(l.price) : '—'}</span>
               <span className="text-right font-semibold tabular-nums" style={{ color: 'var(--text)' }}>{money(l.amount)}</span>
               <span className="md:hidden text-[11.5px] tabular-nums col-span-2" style={{ color: 'var(--text3)' }}>{l.units != null ? `${l.units.toLocaleString('en-IN', { maximumFractionDigits: 3 })} units` : ''}{l.price != null ? ` at ${price(l.price)}` : ''}
-                {l.raw?.estimated && <button onClick={() => setAllotLot(l.raw)} className="ml-1.5 font-semibold" style={{ color: '#9A5A08' }}>· estimated, confirm</button>}</span>
-              <span className="hidden md:flex justify-end">{l.raw && editable && l.kind !== 'Sold' && <button onClick={() => setEditLot(l.raw)} aria-label="Edit this purchase" className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[var(--bg2)]" style={{ color: 'var(--text3)' }}><Pencil size={13} /></button>}</span>
+                {l.raw?.estimated && <button onClick={() => setAllotLot(l.raw)} className="ml-1.5 font-semibold" style={{ color: '#9A5A08' }}>· estimated, confirm</button>}
+                {editable && l.kind !== 'Sold' && (l.raw || l.kind === 'Opening') && <button onClick={() => setEditLot(lotToEdit(l))} className="ml-1.5 font-semibold wl-hide-viewing" style={{ color: 'var(--accent)' }}>· Edit</button>}</span>
+              <span className="hidden md:flex justify-end">{editable && l.kind !== 'Sold' && (l.raw || l.kind === 'Opening') && <button onClick={() => setEditLot(lotToEdit(l))} aria-label="Edit this purchase" className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[var(--bg2)]" style={{ color: 'var(--text3)' }}><Pencil size={13} /></button>}</span>
             </div>
           ))}
           <Pagination total={lots.length} page={page} pageSize={pageSize} onPage={setPage} onPageSize={s => { setPageSize(s); setPage(1) }} />

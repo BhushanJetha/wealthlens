@@ -24,7 +24,10 @@ function Field({ label, value, onChange, type = 'text', numeric = false }: {
 
 // Edit or delete one recorded purchase lot (investment_transactions row) and
 // re-adjust the parent holding's aggregate (quantity+avg for stocks; units +
-// invested + avg NAV for mutual funds).
+// invested + avg NAV for mutual funds). The "Opening" lot (what you held
+// before the first recorded purchase, worked out from the holding — no row of
+// its own) is edited by saving it as a dated purchase: from then on it's a
+// purchase like the others.
 export default function EditLotModal({ kind = 'stock', holding, lot, onClose }: {
   kind?: 'stock' | 'mutual_fund'; holding: any; lot: any; onClose: () => void
 }) {
@@ -54,13 +57,19 @@ export default function EditLotModal({ kind = 'stock', holding, lot, onClose }: 
     }
   }
 
+  const opening = !!lot.opening
   async function save() {
     const u = Number(qty), p = Number(price)
     if (!(u > 0) || !(p > 0) || !date) { setError('Enter a valid date, quantity and price.'); return }
     setSaving(true); setError('')
     const oldU = Number(lot.units || 0), oldA = Number(lot.amount || 0)
     const newA = u * p
-    const { error: e } = await supabase.from('investment_transactions')
+    const { data: { user } } = await supabase.auth.getUser()
+    const { error: e } = opening
+      ? await supabase.from('investment_transactions').insert({
+          user_id: user?.id, asset_type: isStock ? 'stock' : 'mutual_fund', asset_id: holding.id, asset_name: isStock ? holding.symbol ?? holding.name : holding.fund_name,
+          txn_date: date, txn_type: 'purchase', amount: newA, units: u, nav: p, currency: holding.currency ?? 'INR', source: 'manual' })
+      : await supabase.from('investment_transactions')
       .update({ units: u, nav: p, amount: newA, txn_date: date }).eq('id', lot.id)
     if (e) { setSaving(false); setError(e.message || 'Could not save.'); return }
     await applyHoldingDelta(u - oldU, newA - oldA)
@@ -84,10 +93,15 @@ export default function EditLotModal({ kind = 'stock', holding, lot, onClose }: 
       <div className="wl-sheet-wrap flex min-h-full items-start sm:items-center justify-center p-4 py-8">
         <div className="wl-sheet-panel wl-card p-5 w-full max-w-sm">
           <div className="flex justify-between items-center mb-1">
-            <h2 className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>Edit purchase</h2>
+            <h2 className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>{opening ? 'Edit opening holding' : 'Edit purchase'}</h2>
             <button onClick={onClose} style={{ color: 'var(--text3)' }}><X size={18} /></button>
           </div>
           <div className="text-[11px] mb-4 truncate" style={{ color: 'var(--text3)' }}>{title}</div>
+          {opening && (
+            <p className="text-[12px] rounded-lg px-3 py-2 mb-3 leading-relaxed" style={{ background: 'var(--bg2)', color: 'var(--text2)' }}>
+              What you held before your first recorded purchase. Set when you bought it and at what price: it’s saved as a dated purchase, and you can edit or delete it like the others.
+            </p>
+          )}
 
           {error && (
             <div className="rounded-lg p-3 text-[12px] mb-3" style={{ background: 'var(--rose-bg)', border: '1px solid var(--rose)', color: 'var(--rose)' }}>
@@ -109,11 +123,11 @@ export default function EditLotModal({ kind = 'stock', holding, lot, onClose }: 
           </div>
 
           <div className="flex gap-2 mt-4">
-            <button onClick={del} disabled={saving}
+            {!opening && <button onClick={del} disabled={saving}
               className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg border text-[12px] font-semibold disabled:opacity-50"
               style={{ borderColor: 'var(--rose)', color: 'var(--rose)', background: 'transparent' }}>
               <Trash2 size={13} /> Delete
-            </button>
+            </button>}
             <button onClick={save} disabled={saving}
               className="flex-1 py-2.5 rounded-lg text-white text-[12px] font-bold flex items-center justify-center gap-2 disabled:opacity-50"
               style={{ background: 'var(--sage)' }}>
