@@ -47,12 +47,28 @@ export function sipInBank(d: Pick<SipDue, 'fund' | 'date' | 'amount'>, txns: any
     && w.some(x => `${t.merchant ?? ''} ${t.description ?? ''}`.toLowerCase().includes(x))) ?? null
 }
 
+// The account an investment was last paid from: the latest payment in your
+// entries, in its currency and from an account, that names it. So an
+// automatic entry comes off the same bank even before "Paid from" is set.
+export function lastPaidFrom(names: string[], currency: string, txns: any[]): string | null {
+  // 3 letters is enough here (SBI, HDFC); common words don't count
+  const w = names.flatMap(n => String(n ?? '').toLowerCase().split(/[^a-z0-9]+/).filter(x => x.length >= 3 && !['the', 'fund', 'and', 'plan', 'direct', 'growth', 'bank'].includes(x))).slice(0, 3)
+  if (!w.length) return null
+  const hit = txns.filter(t => t.account_id && t.txn_type !== 'income' && (t.currency ?? 'INR') === currency
+    && (catOf(t) === 'Investment' || /\b(sip|rd)\b|recurring\s*deposit/i.test(`${t.sub_category ?? ''} ${t.merchant ?? ''} ${t.description ?? ''}`))
+    && w.some(x => `${t.merchant ?? ''} ${t.description ?? ''}`.toLowerCase().includes(x)))
+    .sort((a, b) => String(b.txn_date).localeCompare(String(a.txn_date)))[0]
+  return hit?.account_id ?? null
+}
+export const sipPaidFrom = (d: Pick<SipDue, 'fund' | 'sip'>, txns: any[] = []) =>
+  d.sip.account_id ?? d.fund.sip_account_id ?? lastPaidFrom([d.fund.fund_name, d.fund.amc ?? d.fund.fund_house ?? ''], d.fund.currency ?? 'INR', txns)
+
 // Mark one SIP's month done (recorded or skipped)
 export const claimSipMonth = (supabase: any, d: Pick<SipDue, 'fund' | 'sip' | 'month'>) => claimSip(supabase, d.fund, d.sip.id, d.month)
 
 // Record one instalment. `moneyRow` also adds the payment to your
 // transactions (when no bank statement has it).
-export async function recordSip(supabase: any, userId: string, d: SipDue, opts: { moneyRow: boolean; tag?: { review: boolean } }): Promise<string | null> {
+export async function recordSip(supabase: any, userId: string, d: SipDue, opts: { moneyRow: boolean; tag?: { review: boolean }; txns?: any[] }): Promise<string | null> {
   if (!(await claimSipMonth(supabase, d))) return 'Already recorded'
   const f = d.fund, paidOn = d.evidence?.txn_date ?? d.date, amount = Number(d.evidence?.amount) || d.amount
   const units = d.nav > 0 ? amount / d.nav : 0
@@ -66,7 +82,7 @@ export async function recordSip(supabase: any, userId: string, d: SipDue, opts: 
   ])
   if (opts.moneyRow) await supabase.from('transactions').insert({
     user_id: userId, txn_date: paidOn, merchant: f.fund_name, description: `Monthly SIP - ${f.fund_name}`, category: 'Investment', sub_category: 'SIP',
-    amount, currency: f.currency ?? 'INR', country: f.country ?? 'India', txn_type: 'expense', account_id: d.sip.account_id ?? f.sip_account_id ?? null, source: 'manual', is_verified: true,
+    amount, currency: f.currency ?? 'INR', country: f.country ?? 'India', txn_type: 'expense', account_id: sipPaidFrom(d, opts.txns), source: 'manual', is_verified: true,
     ...(opts.tag ? autoTag({ kind: 'sip', id: f.id, sip_id: d.sip.id, month: d.month, amount, units, nav: d.nav, inv_txn_id: invRes?.data?.id }, opts.tag.review) : {}),
   })
   f.units = (Number(f.units) || 0) + units; f.invested_amount = (Number(f.invested_amount) || 0) + amount
@@ -84,7 +100,7 @@ export async function runSips(supabase: any, userId: string, today: string, fund
     if (seen) { usedInv.add(seen); await claimSipMonth(supabase, d); writes++; continue }
     const bank = sipInBank(d, txns, usedBank)
     if (bank) { usedBank.add(bank); d.evidence = bank; await recordSip(supabase, userId, d, { moneyRow: false }); writes++ }
-    else if (d.sip.auto || review) { await recordSip(supabase, userId, d, { moneyRow: true, ...(review ? { tag: { review: !d.sip.auto } } : {}) }); writes++ }
+    else if (d.sip.auto || review) { await recordSip(supabase, userId, d, { moneyRow: true, txns, ...(review ? { tag: { review: !d.sip.auto } } : {}) }); writes++ }
     else pending.push(d)
   }
   return { ready: true, pending, writes }

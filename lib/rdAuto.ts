@@ -6,6 +6,7 @@
 import { ymOf, addMonths, daysBetween } from './insights'
 import { dateIn, autoTag } from './recurring'
 import { catOf } from './money'
+import { lastPaidFrom } from './sipAuto'
 
 export interface RdDue { rd: any; month: string; date: string; amount: number }
 
@@ -62,7 +63,7 @@ export async function runRds(supabase: any, userId: string, today: string, rds: 
     if (seen) continue
     await supabase.from('transactions').insert({
       user_id: userId, txn_date: d.date, merchant: `${d.rd.name} RD`, description: `Monthly RD - ${d.rd.bank_name ?? d.rd.name}`, category: 'Investment', sub_category: 'RD',
-      amount: d.amount, currency: d.rd.currency, country: d.rd.currency === 'AED' ? 'UAE' : 'India', txn_type: 'expense', account_id: d.rd.rd_account_id ?? null,
+      amount: d.amount, currency: d.rd.currency, country: d.rd.currency === 'AED' ? 'UAE' : 'India', txn_type: 'expense', account_id: d.rd.rd_account_id ?? lastPaidFrom([d.rd.name ?? '', d.rd.bank_name ?? ''], d.rd.currency ?? 'INR', txns),
       source: 'manual', is_verified: true, ...autoTag({ kind: 'rd', id: d.rd.id, month: d.month, amount: d.amount }, !d.rd.rd_auto),
     })
   }

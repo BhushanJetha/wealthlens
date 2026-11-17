@@ -9,6 +9,8 @@ import { buildHomeInsights, daysBetween, fmtDay, type Attention } from './insigh
 import { buildDues, expectedIncome, balanceWarnings } from './moneyOverview'
 import { findReviewItems, reviewCount } from './review'
 import { recurringState } from './recurringGoals'
+import { sipsOf } from './sips'
+import { sipPaidFrom, lastPaidFrom } from './sipAuto'
 import type { BuilderDue } from './property'
 
 export type TodoGroup = 'today' | 'week' | 'later'
@@ -75,6 +77,19 @@ export function buildTodo(inp: TodoInput): TodoItem[] {
     const money = `${b.currency === 'AED' ? 'AED ' : '₹'}${Math.round(b.amount).toLocaleString(b.currency === 'AED' ? 'en-US' : 'en-IN')}`
     out.push({ id: b.id, currency: b.currency, group: d <= 2 ? 'today' : d <= 10 ? 'week' : 'later', area: 'plan', icon: '🏠', href: b.href, action: 'See it',
       title: `${money} for ${b.label} ${d <= 0 ? 'is due' : `due ${fmtDay(b.date)}`}`, detail: b.sub })
+  }
+
+  // A SIP or RD recorded by itself takes its money off its "Paid from" account
+  // (or the one it was last paid from). With neither, no bank balance goes down.
+  for (const f of inp.mutualFunds) for (const sp of sipsOf(f)) {
+    if (sp.active === false || sipPaidFrom({ fund: f, sip: sp }, inp.txns)) continue
+    out.push({ id: `sipacc-${f.id}-${sp.id}`, currency: f.currency === 'AED' ? 'AED' : 'INR', group: 'later', area: 'money', icon: '🏦', href: '/dashboard/investments/mutual-funds', action: 'Set it',
+      title: `Which account pays your ${f.fund_name} SIP?`, detail: `${f.currency === 'AED' ? 'AED ' : '₹'}${Math.round(Number(sp.amount)).toLocaleString('en-IN')} a month is recorded, but no bank balance goes down until “Paid from” is set` })
+  }
+  for (const r of inp.rds.filter(r => r.is_active !== false && Number(r.monthly_amount) > 0)) {
+    if (r.rd_account_id || lastPaidFrom([r.name ?? '', r.bank_name ?? ''], r.currency ?? 'INR', inp.txns)) continue
+    out.push({ id: `rdacc-${r.id}`, currency: r.currency === 'AED' ? 'AED' : 'INR', group: 'later', area: 'money', icon: '🏦', href: '/dashboard/money/review', action: 'Fix it',
+      title: `Which account pays your ${r.name} RD?`, detail: 'Its monthly instalments are recorded with no account, so no bank balance goes down. Pick the account on one of them in Review.' })
   }
 
   // Entries to review: missing account, vague category, possible duplicates
